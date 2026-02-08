@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import sys
+
 try:
     from PIL import Image
 except ImportError:
@@ -48,14 +49,14 @@ def build():
     # 아이콘 및 리소스 경로 정의
     png_icon_path = os.path.join("src", "resources", "icon.png")
     ico_icon_path = os.path.join("src", "resources", "icon.ico")
-    
+
     # PNG를 ICO로 변환 (Windows 탐색기 아이콘 호환성 향상)
     print(f"--- Converting {png_icon_path} to {ico_icon_path} ---")
     try:
         img = Image.open(png_icon_path)
         # 여러 사이즈를 포함하는 ICO 생성
         icon_sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-        img.save(ico_icon_path, format='ICO', sizes=icon_sizes)
+        img.save(ico_icon_path, format="ICO", sizes=icon_sizes)
         print("Icon conversion successful.")
     except Exception as e:
         print(f"Icon conversion failed: {e}")

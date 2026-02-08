@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "2.4.0"
+version = "2.6.0"
 authors = [{ name = "N2", email = "your@email.com" }]
 
 description = "A high-performance string search utility with Multiprocessing and mmap."
