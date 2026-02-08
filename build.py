@@ -2,6 +2,11 @@ import os
 import shutil
 import subprocess
 import sys
+try:
+    from PIL import Image
+except ImportError:
+    print("Error: 'Pillow' library is required for building with icon. Please install it using 'pip install pillow'.")
+    sys.exit(1)
 
 
 def cleanup():
@@ -40,6 +45,23 @@ def build():
             shutil.rmtree(folder)
             print(f"Cleaned up {folder} folder.")
 
+    # 아이콘 및 리소스 경로 정의
+    png_icon_path = os.path.join("src", "resources", "icon.png")
+    ico_icon_path = os.path.join("src", "resources", "icon.ico")
+    
+    # PNG를 ICO로 변환 (Windows 탐색기 아이콘 호환성 향상)
+    print(f"--- Converting {png_icon_path} to {ico_icon_path} ---")
+    try:
+        img = Image.open(png_icon_path)
+        # 여러 사이즈를 포함하는 ICO 생성
+        icon_sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+        img.save(ico_icon_path, format='ICO', sizes=icon_sizes)
+        print("Icon conversion successful.")
+    except Exception as e:
+        print(f"Icon conversion failed: {e}")
+        # 실패 시 PNG 그대로 사용 시도 (작동 안 할 가능성 높음)
+        ico_icon_path = png_icon_path
+
     # PyInstaller 명령 실행
     cmd = [
         "pyinstaller",
@@ -48,6 +70,10 @@ def build():
         "--clean",
         "--name",
         "StringFinder",
+        # 실행 파일 자체의 아이콘 지정 (ICO 파일 사용)
+        f"--icon={ico_icon_path}",
+        # 내부 리소스 폴더 포함 (src/resources -> resources)
+        f"--add-data=src/resources{os.pathsep}resources",
         "--paths",
         "src",
         "--workpath",
@@ -68,6 +94,11 @@ def build():
         # 실패하더라도 cleanup은 실행하도록 구성 가능하나,
         # 디버깅을 위해 에러 발생 시엔 정지를 유지
         sys.exit(1)
+
+    # 임시 ICO 파일 삭제
+    if os.path.exists(ico_icon_path) and ico_icon_path.endswith(".ico"):
+        os.remove(ico_icon_path)
+        print(f"Removed temporary icon file: {ico_icon_path}")
 
     # 최종 정리 실행
     cleanup()

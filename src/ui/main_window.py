@@ -19,8 +19,10 @@ from utils.config_manager import ConfigManager
 from utils.app_strings import AppStrings
 from utils.logger import logger
 from core.system_manager import SystemManager
+from utils.resource_helper import get_resource_path
 import qdarktheme
 import os
+import ctypes
 
 
 class MainWindow(QMainWindow):
@@ -31,6 +33,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config_manager = ConfigManager()
+        
+        # 윈도우 작업표시줄 아이콘이 올바르게 표시되도록 AppUserModelID 설정 (Windows 전용)
+        if os.name == "nt":
+            myappid = f"N2.StringFinder.v{AppStrings.APP_VERSION}"
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
         # 윈도우 타이틀 설정
         self.setWindowTitle(AppStrings.APP_TITLE)
@@ -53,17 +60,25 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self._init_tray()
+        
+        # 메인 윈도우 아이콘 설정 (resource_helper 사용)
+        icon_path = get_resource_path(os.path.join("resources", "icon.png"))
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+            
         self._apply_theme()
         self._setup_system_configs()
 
     def closeEvent(self, event):
         """
-        X 버튼 클릭 시 종료하지 않고 트레이로 숨김
+        X 버튼 클릭 시 설정에 따라 처리 (트레이 숨김 또는 즉시 종료)
         """
-        if self.tray_icon.isVisible():
+        if self.config_manager.get_close_to_tray() and self.tray_icon.isVisible():
+            # 백그라운드 동작 설정이 켜져 있고 트레이 아이콘이 보인다면 숨김
             self.hide()
             event.ignore()
         else:
+            # 기본 동작: 프로그램 종료
             self._quit_application()
 
     def _quit_application(self):
@@ -147,14 +162,14 @@ class MainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             logger.error("시스템 트레이를 사용할 수 없습니다.")
 
-        # 아이콘 설정 (기본 앱 아이콘 사용)
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "icon.png")
+        # 아이콘 설정 (resource_helper 사용)
+        icon_path = get_resource_path(os.path.join("resources", "icon.png"))
         if os.path.exists(icon_path):
             self.tray_icon.setIcon(QIcon(icon_path))
         else:
             # 아이콘 파일이 없을 경우 다른 표준 아이콘 사용 시도
             self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
-            logger.warning(f"앱 아이콘 파일이 없습니다: {icon_path}")
+            logger.warning(f"앱 아이콘 파일을 찾을 수 없습니다: {icon_path}")
 
         self.tray_icon.setToolTip(AppStrings.APP_TITLE)
 

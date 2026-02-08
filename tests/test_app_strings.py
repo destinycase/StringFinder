@@ -9,5 +9,5 @@ def test_app_strings_constants():
 
 def test_app_version():
     """앱 버전 상수 테스트"""
-    assert AppStrings.APP_VERSION == "2.4.0"
-    assert "String Finder v2.4.0" in AppStrings.APP_TITLE
+    assert AppStrings.APP_VERSION == "2.4.4"
+    assert "String Finder v2.4.4" in AppStrings.APP_TITLE

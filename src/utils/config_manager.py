@@ -27,6 +27,7 @@ class ConfigManager:
             "theme": "Dark",
             "global_hotkey": "alt+shift+space",
             "run_at_startup": False,
+            "close_to_tray": False,
         }
         self.config = self._load()
 
@@ -144,4 +145,12 @@ class ConfigManager:
 
     def set_run_at_startup(self, run):
         self.config["run_at_startup"] = run
+        self.save()
+
+    def get_close_to_tray(self):
+        """닫기 버튼 클릭 시 트레이로 가기 여부 반환 (기본값 False: 프로그램 종료)"""
+        return self.config.get("close_to_tray", False)
+
+    def set_close_to_tray(self, value):
+        self.config["close_to_tray"] = value
         self.save()

@@ -5,11 +5,12 @@ class AppStrings:
     APP_NAME = "String Finder"
 
     # 상수로 하드코딩하여 빌드된 실행 파일에서도 정확한 버전을 표시함
-    APP_VERSION = "2.4.0"
+    APP_VERSION = "2.4.4"
     APP_TITLE = "String Finder"
 
     ADD_TAB_BTN = "+"
     SEARCH_TAB_DEFAULT_TITLE = "Search"
+    SELECT_FOLDER_TITLE = "검색할 폴더 선택"
 
     # Search Tab - General UI
     SEARCH_LABEL = "검색 문자열:"
@@ -73,7 +74,12 @@ class AppStrings:
     HOTKEY_LABEL = "전역 호출 단축키:"
     HOTKEY_EDIT_PLACEHOLDER = "여기를 클릭하고 단축키를 누르세요"
     HOTKEY_RECORDING = "단축키 기록 중... (키를 누르세요)"
-    STARTUP_LABEL = "윈도우 시작 시 자동 실행"
+    STARTUP_LABEL = "윈도우 시작 시 자동 실행:"
+    STARTUP_ENABLE = "자동 실행"
+    STARTUP_DISABLE = "자동 실행 안함"
+    CLOSE_BEHAVIOR_LABEL = "닫기 버튼(X) 동작:"
+    CLOSE_QUIT = "프로그램 종료"
+    CLOSE_TRAY = "백그라운드에서 동작 (트레이로 숨김)"
 
     # History Context Menu
     DELETE_HISTORY_ITEM = "삭제"

@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QPushButton,
     QMessageBox,
-    QCheckBox,
 )
 import os
 import subprocess
@@ -66,11 +65,44 @@ class SettingsDialog(QDialog):
 
         layout.addSpacing(10)
 
-        # 3. 시작 프로그램 설정
-        self.startup_check = QCheckBox(AppStrings.STARTUP_LABEL)
-        self.startup_check.setChecked(self.config_manager.get_run_at_startup())
-        self.startup_check.toggled.connect(self._on_startup_toggled)
-        layout.addWidget(self.startup_check)
+        # 3. 시작 프로그램 설정 (체크박스에서 콤보박스로 변경)
+        startup_layout = QHBoxLayout()
+        startup_label = QLabel(AppStrings.STARTUP_LABEL)
+        self.startup_combo = QComboBox()
+        self.startup_combo.addItem(AppStrings.STARTUP_DISABLE, False)
+        self.startup_combo.addItem(AppStrings.STARTUP_ENABLE, True)
+
+        # 현재 설정값 반영
+        index = self.startup_combo.findData(self.config_manager.get_run_at_startup())
+        if index != -1:
+            self.startup_combo.setCurrentIndex(index)
+        
+        self.startup_combo.currentIndexChanged.connect(self._on_startup_changed)
+        
+        startup_layout.addWidget(startup_label)
+        startup_layout.addWidget(self.startup_combo, 1)
+        layout.addLayout(startup_layout)
+
+        layout.addSpacing(10)
+
+        # 4. 닫기 버튼 동작 설정
+        close_behavior_layout = QHBoxLayout()
+        close_behavior_label = QLabel(AppStrings.CLOSE_BEHAVIOR_LABEL)
+        self.close_behavior_combo = QComboBox()
+        self.close_behavior_combo.addItem(AppStrings.CLOSE_QUIT, False)
+        self.close_behavior_combo.addItem(AppStrings.CLOSE_TRAY, True)
+
+        # 현재 설정값 반영
+        current_close_to_tray = self.config_manager.get_close_to_tray()
+        index = self.close_behavior_combo.findData(current_close_to_tray)
+        if index != -1:
+            self.close_behavior_combo.setCurrentIndex(index)
+
+        self.close_behavior_combo.currentIndexChanged.connect(self._on_close_behavior_changed)
+
+        close_behavior_layout.addWidget(close_behavior_label)
+        close_behavior_layout.addWidget(self.close_behavior_combo, 1)
+        layout.addLayout(close_behavior_layout)
 
         layout.addSpacing(20)
 
@@ -87,7 +119,7 @@ class SettingsDialog(QDialog):
         layout.addStretch()
 
         # 3. 닫기 버튼
-        close_btn = QPushButton("닫기")
+        close_btn = QPushButton(AppStrings.BTN_CLOSE)
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 
@@ -101,10 +133,17 @@ class SettingsDialog(QDialog):
         if self.parent() and hasattr(self.parent(), "_setup_system_configs"):
             self.parent()._setup_system_configs()
 
-    def _on_startup_toggled(self, checked):
-        self.config_manager.set_run_at_startup(checked)
+    def _on_startup_changed(self, index):
+        """시작 프로그램 설정 변경 시 호출"""
+        enabled = self.startup_combo.itemData(index)
+        self.config_manager.set_run_at_startup(enabled)
         if self.parent() and hasattr(self.parent(), "_setup_system_configs"):
             self.parent()._setup_system_configs()
+
+    def _on_close_behavior_changed(self, index):
+        """닫기 버튼 동작 설정 변경 시 호출"""
+        to_tray = self.close_behavior_combo.itemData(index)
+        self.config_manager.set_close_to_tray(to_tray)
 
     def _open_data_dir(self):
         """설정 파일이 저장된 데이터 폴더를 탐색기에서 엽니다."""

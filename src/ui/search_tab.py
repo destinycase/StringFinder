@@ -332,7 +332,7 @@ class SearchTab(QWidget):
         )
 
     def _add_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "검색할 폴더 선택")
+        folder = QFileDialog.getExistingDirectory(self, AppStrings.SELECT_FOLDER_TITLE)
         if folder:
             # 중복 체크
             for i in range(self.folder_list.count()):
