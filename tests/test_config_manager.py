@@ -42,3 +42,34 @@ def test_splitter_states(temp_dir):
 
         states = cm.get_splitter_states()
         assert states[0] == "aabbcc"
+
+
+def test_background_settings(temp_dir):
+    """백그라운드 관련 신규 설정 저장 테스트"""
+    from utils.config_manager import ConfigManager
+    from unittest.mock import patch
+
+    with patch.object(ConfigManager, "__init__", lambda x: None):
+        cm = ConfigManager()
+        cm.defaults = {"global_hotkey": "alt+shift+space", "run_at_startup": False, "theme": "Dark"}
+        cm.config_dir = temp_dir
+        cm.config_path = os.path.join(temp_dir, "config.json")
+        cm.config = cm.defaults.copy()
+
+        # 1. 초기값 확인
+        assert cm.get_global_hotkey() == "alt+shift+space"
+        assert cm.get_run_at_startup() is False
+
+        # 2. 값 수정 및 저장
+        cm.set_global_hotkey("ctrl+f12")
+        cm.set_run_at_startup(True)
+
+        # 3. 다시 로드하여 확인 (새 인스턴스 시뮬레이션)
+        cm2 = ConfigManager()
+        cm2.defaults = cm.defaults.copy()  # defaults 추가
+        cm2.config_dir = temp_dir
+        cm2.config_path = os.path.join(temp_dir, "config.json")
+        cm2.config = cm2._load()
+
+        assert cm2.get_global_hotkey() == "ctrl+f12"
+        assert cm2.get_run_at_startup() is True

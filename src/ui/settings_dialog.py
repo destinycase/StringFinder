@@ -1,8 +1,19 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QMessageBox
+from PySide6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QComboBox,
+    QPushButton,
+    QMessageBox,
+    QCheckBox,
+)
 import os
 import subprocess
 import sys  # sys 모듈 추가 (macOS/Linux 분기 처리를 위해 필요)
 from utils.app_strings import AppStrings
+from utils.logger import logger
+from ui.widgets import HotkeyLineEdit
 
 
 class SettingsDialog(QDialog):
@@ -40,9 +51,30 @@ class SettingsDialog(QDialog):
         theme_layout.addWidget(self.theme_combo, 1)
         layout.addLayout(theme_layout)
 
+        layout.addSpacing(10)
+
+        # 2. 전역 단축키 설정
+        hotkey_layout = QHBoxLayout()
+        hotkey_label = QLabel(AppStrings.HOTKEY_LABEL)
+        self.hotkey_edit = HotkeyLineEdit()
+        self.hotkey_edit.setText(self.config_manager.get_global_hotkey())
+        self.hotkey_edit.hotkey_changed.connect(self._on_hotkey_changed)
+
+        hotkey_layout.addWidget(hotkey_label)
+        hotkey_layout.addWidget(self.hotkey_edit, 1)
+        layout.addLayout(hotkey_layout)
+
+        layout.addSpacing(10)
+
+        # 3. 시작 프로그램 설정
+        self.startup_check = QCheckBox(AppStrings.STARTUP_LABEL)
+        self.startup_check.setChecked(self.config_manager.get_run_at_startup())
+        self.startup_check.toggled.connect(self._on_startup_toggled)
+        layout.addWidget(self.startup_check)
+
         layout.addSpacing(20)
 
-        # 2. 데이터 관리
+        # 4. 데이터 관리
         open_dir_btn = QPushButton(AppStrings.OPEN_DATA_DIR_BTN)
         open_dir_btn.clicked.connect(self._open_data_dir)
         layout.addWidget(open_dir_btn)
@@ -61,22 +93,39 @@ class SettingsDialog(QDialog):
 
     def _on_theme_changed(self, theme):
         self.config_manager.set_theme(theme)
-        # 테마 변경 알림 (MainWindow에서 처리하도록 신호를 보내거나 직접 적용 가능)
-        # 여기서는 단순 설정 저장만 수행
+        if self.parent():
+            self.parent()._apply_theme()
+
+    def _on_hotkey_changed(self, hotkey):
+        self.config_manager.set_global_hotkey(hotkey)
+        if self.parent() and hasattr(self.parent(), "_setup_system_configs"):
+            self.parent()._setup_system_configs()
+
+    def _on_startup_toggled(self, checked):
+        self.config_manager.set_run_at_startup(checked)
+        if self.parent() and hasattr(self.parent(), "_setup_system_configs"):
+            self.parent()._setup_system_configs()
 
     def _open_data_dir(self):
+        """설정 파일이 저장된 데이터 폴더를 탐색기에서 엽니다."""
         data_dir = self.config_manager.config_dir
         if os.path.exists(data_dir):
-            if os.name == "nt":  # Windows
-                os.startfile(data_dir)
-            else:  # macOS/Linux
-                subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", data_dir])
+            try:
+                if os.name == "nt":  # Windows
+                    os.startfile(data_dir)
+                else:  # macOS/Linux
+                    subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", data_dir])
+            except Exception as e:
+                logger.error(f"Failed to open data dir: {e}")
+                QMessageBox.warning(self, AppStrings.ERROR_TITLE if hasattr(AppStrings, 'ERROR_TITLE') else "오류", 
+                                    f"폴더를 열 수 없습니다: {e}")
 
     def _clear_all_data(self):
+        """저장된 모든 설정, 히스토리, 위치 정보를 삭제하고 초기화합니다."""
         reply = QMessageBox.question(
             self, AppStrings.CLEAR_ALL_DATA_BTN, AppStrings.CLEAR_ALL_DATA_CONFIRM, QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
             self.config_manager.clear_all_data()
-            QMessageBox.information(self, "완료", "모든 데이터가 초기화되었습니다. 프로그램을 재시작해 주세요.")
+            QMessageBox.information(self, AppStrings.SUCCESS_TITLE, AppStrings.INFO_CLEAR_SUCCESS)
             self.accept()

@@ -68,6 +68,10 @@ class FilterItemWidget(QWidget):
 
 
 class SearchTab(QWidget):
+    """
+    개별 검색 세션을 담당하는 탭 위젯입니다.
+    검색어 입력, 필터 설정, 결과 표시 및 미리보기 기능을 통합 제공합니다.
+    """
     status_message_requested = Signal(str)  # 상태줄 업데이트용 시그널
 
     def __init__(self, config_manager):
@@ -236,9 +240,12 @@ class SearchTab(QWidget):
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
         self.preview_text.setLineWrapMode(QTextEdit.NoWrap)
-        font = QFont("Consolas", 10)
+        
+        # OS별 고정폭 글꼴 설정 (Consolas/Menlo)
+        font_family = AppStrings.FONT_PREVIEW_WIN
         if sys.platform == "darwin":
-            font = QFont("Menlo", 10)
+            font_family = AppStrings.FONT_PREVIEW_MAC
+        font = QFont(font_family, 10)
         self.preview_text.setFont(font)
         preview_layout.addWidget(self.preview_text)
 
@@ -287,6 +294,9 @@ class SearchTab(QWidget):
             self.result_splitter.restoreState(QByteArray.fromHex(result_state.encode()))
         if filter_state:
             self.filter_splitter.restoreState(QByteArray.fromHex(filter_state.encode()))
+
+        # 초기 포커스를 검색창으로 설정
+        self.search_combo.setFocus()
 
     def _load_histories(self):
         """히스토리 데이터를 콤보박스에 로드 (현재 입력값 유지)"""
@@ -393,7 +403,7 @@ class SearchTab(QWidget):
             # 시그널 연결 해제하여 병렬 검색 중 발생할 수 있는 데이터 혼선 방지 (중요)
             try:
                 self.worker.progress_updated.disconnect(self._on_progress)
-                self.worker.result_found.disconnect(self._on_result_found)
+                self.worker.results_found.disconnect(self._on_results_found)  # Changed from result_found
                 self.worker.search_finished.disconnect(self._on_finished)
                 self.worker.search_error.disconnect(self._on_error)
             except RuntimeError:
@@ -483,7 +493,7 @@ class SearchTab(QWidget):
         # 시그널 연결: 워커 이벤트 -> UI 업데이트
         self.thread.started.connect(self.worker.run)  # 스레드 시작 시 워커의 run 메서드 실행
         self.worker.progress_updated.connect(self._on_progress)  # 검색 진행 상황 업데이트
-        self.worker.result_found.connect(self._on_result_found)  # 파일에서 일치하는 결과 발견 시
+        self.worker.results_found.connect(self._on_results_found)  # 파일에서 일치하는 결과 발견 시 (배치 처리)
         self.worker.search_finished.connect(self._on_finished)  # 검색 작업 완료 시
         self.worker.search_error.connect(self._on_error)  # 검색 중 오류 발생 시
 
@@ -497,36 +507,41 @@ class SearchTab(QWidget):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    def _on_result_found(self, file_path, count, matches):
+    def _on_results_found(self, results):
+        """지연된 UI 업데이트를 위해 배치로 수신된 결과 처리"""
         # 첫 번째 결과가 오면 리스트 보여줌
         if not self.result_splitter.isVisible():
             self.result_splitter.setVisible(True)
             self.empty_label.setVisible(False)
 
-        # 테이블 에 추가
-        row = self.result_table.rowCount()
-        self.result_table.insertRow(row)
+        for file_path, count, matches in results:
+            self.total_matches += count
+            self.total_files += 1
 
-        # 일치 수 (숫자 정렬을 위해 EditRole 사용)
-        count_item = QTableWidgetItem()
-        count_item.setData(Qt.DisplayRole, str(count))
-        count_item.setData(Qt.EditRole, int(count))
-        count_item.setTextAlignment(Qt.AlignCenter)
+            # 결과 테이블에 추가
+            row = self.result_table.rowCount()
+            self.result_table.insertRow(row)
 
-        # 파일 경로와 매칭 데이터를 item에 저장 (첫 번째 컬럼에 저장)
-        count_item.setData(Qt.UserRole, (file_path, matches))
+            # 일치 수 (숫자 정렬을 위해 EditRole 사용)
+            count_item = QTableWidgetItem()
+            count_item.setData(Qt.DisplayRole, str(count))
+            count_item.setData(Qt.EditRole, int(count))
+            count_item.setTextAlignment(Qt.AlignCenter)
 
-        # 파일 (아이콘 추가)
-        file_item = QTableWidgetItem(file_path)
-        file_item.setToolTip(file_path)
-        icon = self.icon_provider.icon(QFileInfo(file_path))
-        file_item.setIcon(icon)
+            # 파일 경로와 매칭 데이터를 item에 저장 (첫 번째 컬럼에 저장)
+            count_item.setData(Qt.UserRole, (file_path, matches))
 
-        self.result_table.setItem(row, 0, count_item)
-        self.result_table.setItem(row, 1, file_item)
+            # 파일 (아이콘 추가)
+            file_item = QTableWidgetItem(file_path)
+            file_item.setToolTip(file_path)
+            icon = self.icon_provider.icon(QFileInfo(file_path))
+            file_item.setIcon(icon)
 
-        self.total_files += 1
-        self.total_matches += count
+            self.result_table.setItem(row, 0, count_item)
+            self.result_table.setItem(row, 1, file_item)
+
+        # 요약 정보 갱신 (배치당 한 번만 수행하여 성능 향상)
+        self.result_group.setTitle(AppStrings.RESULT_GROUP_TITLE + f" ({self.total_files} files)")
 
     def _show_matches_from_table(self, item):
         # 어느 컬럼을 클릭해도 동작하도록 함
@@ -602,20 +617,32 @@ class SearchTab(QWidget):
             self.preview_text.setPlainText(AppStrings.RESULT_PREVIEW_ERROR)
 
     def _update_preview(self, file_path, target_line):
+        """
+        선택한 파일의 특정 라인 주변을 미리보기 텍스트 박스에 표시합니다.
+        
+        Args:
+            file_path (str): 대상 파일 경로
+            target_line (int): 강조할 라인 번호
+        """
         try:
             # 엑셀 파일 등 바이너리 파일은 미리보기 지원 안 함
             ext = os.path.splitext(file_path)[1].lower()
-            if ext in [".xlsx", ".xls"]:
+            if ext in [".xlsx", ".xls", ".xlsm", ".xlsb"]:
                 self.preview_text.setPlainText(AppStrings.RESULT_PREVIEW_ERROR)
                 return
 
-            # 파일 읽기 (인코딩 고려 필요하나 단순화하여 시도)
+            if not os.path.exists(file_path):
+                self.preview_text.setPlainText(AppStrings.RESULT_PREVIEW_ERROR)
+                return
+
+            # 파일 읽기 (인코딩 고려: 검색 시 사용된 것과 동일한 로직이 좋지만 여기서는 간결하게 시도)
+            # 대용량 파일의 경우 전체 readlines는 위험하므로 실제 배포 시에는 최적화 대상임
             lines = []
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                # 전체를 읽는 대신 필요한 부분만 읽도록 최적화 가능하지만 일단 단순 구현
                 lines = f.readlines()
 
             total = len(lines)
+            # 타겟 라인 전후 5줄씩 표시
             start = max(0, target_line - 1 - 5)
             end = min(total, target_line - 1 + 6)
 
@@ -624,16 +651,14 @@ class SearchTab(QWidget):
                 ln = i + 1
                 content = lines[i].rstrip()
                 if ln == target_line:
-                    # 매칭 라인 강조 (이미지 텍스트는 지원 안 하므로 단순 부호로 표시)
+                    # 매칭 라인 강조 기호 표시
                     preview_content += f"> {ln:4}: {content}\n"
                 else:
                     preview_content += f"  {ln:4}: {content}\n"
 
             self.preview_text.setPlainText(preview_content)
-
-            # 매칭 라인으로 스크롤 이동 및 강조 (텍스트 에디터 기능 활용)
-            # 여기서는 단순 텍스트 박스로 구현
-        except Exception:
+        except Exception as e:
+            logger.error(f"Preview error: {e}")
             self.preview_text.setPlainText(AppStrings.RESULT_PREVIEW_ERROR)
 
     def _on_finished(self, total_found):

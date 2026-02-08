@@ -25,6 +25,8 @@ class ConfigManager:
             "result_splitter_state": None,
             "filter_splitter_state": None,
             "theme": "Dark",
+            "global_hotkey": "alt+shift+space",
+            "run_at_startup": False,
         }
         self.config = self._load()
 
@@ -128,4 +130,18 @@ class ConfigManager:
         if os.path.exists(self.config_path):
             os.remove(self.config_path)
         self.config = self.defaults.copy()
+        self.save()
+
+    def get_global_hotkey(self):
+        return self.config.get("global_hotkey", "alt+shift+space")
+
+    def set_global_hotkey(self, hotkey):
+        self.config["global_hotkey"] = hotkey
+        self.save()
+
+    def get_run_at_startup(self):
+        return self.config.get("run_at_startup", False)
+
+    def set_run_at_startup(self, run):
+        self.config["run_at_startup"] = run
         self.save()

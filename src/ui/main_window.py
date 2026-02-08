@@ -7,16 +7,27 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStatusBar,
     QApplication,
+    QSystemTrayIcon,
+    QMenu,
+    QStyle,
 )
 from PySide6.QtCore import Qt, QByteArray
+from PySide6.QtGui import QIcon, QAction
 from ui.search_tab import SearchTab
 from ui.settings_dialog import SettingsDialog
 from utils.config_manager import ConfigManager
 from utils.app_strings import AppStrings
+from utils.logger import logger
+from core.system_manager import SystemManager
 import qdarktheme
+import os
 
 
 class MainWindow(QMainWindow):
+    """
+    어플리케이션의 메인 윈도우 클래스입니다.
+    탭 관리, 시스템 트레이, 테마 설정 및 전역 설정을 총괄합니다.
+    """
     def __init__(self):
         super().__init__()
         self.config_manager = ConfigManager()
@@ -36,23 +47,38 @@ class MainWindow(QMainWindow):
         # 윈도우 최소 크기 설정 (UI 요소 깨짐 방지)
         self.setMinimumSize(600, 400)
 
+        # 시스템 관리자 초기화
+        self.system_manager = SystemManager()
+        self.system_manager.hotkey_pressed.connect(self.toggle_visibility)
+
         self._init_ui()
+        self._init_tray()
         self._apply_theme()
+        self._setup_system_configs()
 
     def closeEvent(self, event):
         """
-        애플리케이션 종료 시 윈도우 상태 및 탭별 설정 저장
+        X 버튼 클릭 시 종료하지 않고 트레이로 숨김
         """
-        # 1. 윈도우 상태 (크기, 위치, 도킹 상태 등) 저장
+        if self.tray_icon.isVisible():
+            self.hide()
+            event.ignore()
+        else:
+            self._quit_application()
+
+    def _quit_application(self):
+        """실제 애플리케이션 종료 처리"""
+        # 1. 윈도우 상태 저장
         self.config_manager.set_window_state(self.saveGeometry(), self.saveState())
 
-        # 2. 모든 탭의 상태 저장 (예: 스플리터 위치)
+        # 2. 모든 탭 상태 저장
         for i in range(self.tab_widget.count()):
             current_tab = self.tab_widget.widget(i)
             if hasattr(current_tab, "save_splitter_states"):
                 current_tab.save_splitter_states()
 
-        super().closeEvent(event)
+        self.system_manager.unregister_hotkey()
+        QApplication.quit()
 
     def _init_ui(self):
         """
@@ -114,6 +140,65 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(new_tab, tab_title)
         self.tab_widget.setCurrentWidget(new_tab)  # 새로 추가된 탭을 현재 탭으로 설정
 
+    def _init_tray(self):
+        """시스템 트레이 아이콘 초기화"""
+        self.tray_icon = QSystemTrayIcon(self)
+
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            logger.error("시스템 트레이를 사용할 수 없습니다.")
+
+        # 아이콘 설정 (기본 앱 아이콘 사용)
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "icon.png")
+        if os.path.exists(icon_path):
+            self.tray_icon.setIcon(QIcon(icon_path))
+        else:
+            # 아이콘 파일이 없을 경우 다른 표준 아이콘 사용 시도
+            self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
+            logger.warning(f"앱 아이콘 파일이 없습니다: {icon_path}")
+
+        self.tray_icon.setToolTip(AppStrings.APP_TITLE)
+
+        # 트레이 메뉴 구성
+        tray_menu = QMenu(self)
+
+        show_action = QAction(AppStrings.TRAY_OPEN, self)
+        show_action.triggered.connect(self.show_normal_and_activate)
+
+        quit_action = QAction(AppStrings.TRAY_QUIT, self)
+        quit_action.triggered.connect(self._quit_application)
+
+        tray_menu.addAction(show_action)
+        tray_menu.addSeparator()
+        tray_menu.addAction(quit_action)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.Trigger:
+            self.toggle_visibility()
+
+    def show_normal_and_activate(self):
+        self.showNormal()
+        self.activateWindow()
+
+    def toggle_visibility(self):
+        if self.isVisible() and not self.isMinimized():
+            self.hide()
+        else:
+            self.show_normal_and_activate()
+
+    def _setup_system_configs(self):
+        """설저어에 따른 시스템 등록 초기화 (단축키, 시작프로그램)"""
+        # 단축키 등록
+        hotkey = self.config_manager.get_global_hotkey()
+        self.system_manager.register_hotkey(hotkey)
+
+        # 시작 프로그램 등록 동기화
+        should_run = self.config_manager.get_run_at_startup()
+        self.system_manager.set_run_at_startup(should_run)
+
     def _show_settings(self):
         """
         설정 다이얼로그를 표시합니다.
@@ -125,28 +210,15 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self):
         """
-        설정된 테마를 애플리케이션에 적용합니다.
+        설정 관리자로부터 테마 정보를 읽어와 qdarktheme을 적용하고, 
+        추가적인 전역 스타일(스크롤바 등)을 설정합니다.
         """
         theme = self.config_manager.get_theme().lower()
         app = QApplication.instance()
         if app:
             stylesheet = qdarktheme.load_stylesheet(theme)
-            # 스크롤바 폭 조절 스타일 추가
-            scrollbar_style = """
-                QScrollBar:vertical {
-                    width: 16px;
-                }
-                QScrollBar:horizontal {
-                    height: 16px;
-                }
-                QScrollBar::handle:vertical {
-                    min-height: 30px;
-                }
-                QScrollBar::handle:horizontal {
-                    min-width: 30px;
-                }
-            """
-            app.setStyleSheet(stylesheet + scrollbar_style)
+            # AppStrings에 정의된 공통 스크롤바 스타일 추가 적용
+            app.setStyleSheet(stylesheet + AppStrings.STYLE_SCROLLBAR)
 
     def _close_tab(self, index):
         if self.tab_widget.count() > 1:

@@ -1,5 +1,3 @@
-import os
-import sys
 
 
 class AppStrings:
@@ -7,7 +5,7 @@ class AppStrings:
     APP_NAME = "String Finder"
 
     # 상수로 하드코딩하여 빌드된 실행 파일에서도 정확한 버전을 표시함
-    APP_VERSION = "1.0.0"
+    APP_VERSION = "2.4.0"
     APP_TITLE = "String Finder"
 
     ADD_TAB_BTN = "+"
@@ -69,6 +67,14 @@ class AppStrings:
     CLEAR_ALL_DATA_BTN = "모든 데이터 초기화"
     CLEAR_ALL_DATA_CONFIRM = "모든 설정과 히스토리가 삭제됩니다. 계속하시겠습니까?"
 
+    # Tray & Shortcut Settings
+    TRAY_OPEN = "열기"
+    TRAY_QUIT = "종료"
+    HOTKEY_LABEL = "전역 호출 단축키:"
+    HOTKEY_EDIT_PLACEHOLDER = "여기를 클릭하고 단축키를 누르세요"
+    HOTKEY_RECORDING = "단축키 기록 중... (키를 누르세요)"
+    STARTUP_LABEL = "윈도우 시작 시 자동 실행"
+
     # History Context Menu
     DELETE_HISTORY_ITEM = "삭제"
     CLEAR_HISTORY = "전체 삭제"
@@ -90,6 +96,32 @@ class AppStrings:
     LOG_WORKER_FINISHED = "워커 종료. {}개 파일에서 일치하는 항목 발견 (총 {}개 파일 중)."
     LOG_WORKER_STOPPED = "워커가 조기에 중단되었습니다."
     LOG_WORKER_ERROR = "워커 오류: {}"
+
+    LOG_REGISTRY_ERROR = "레지스트리 조작 오류: {}"
+    LOG_HOTKEY_REGISTERED = "전역 단축키 등록 완료: {}"
+    LOG_HOTKEY_ERROR = "전역 단축키 등록 실패: {}"
+
+    # UI Styles & Fonts
+    STYLE_SCROLLBAR = """
+        QScrollBar:vertical { width: 16px; }
+        QScrollBar:horizontal { height: 16px; }
+        QScrollBar::handle:vertical { min-height: 30px; }
+        QScrollBar::handle:horizontal { min-width: 30px; }
+    """
+    FONT_PREVIEW_WIN = "Consolas"
+    FONT_PREVIEW_MAC = "Menlo"
+
+    # Additional Errors
+    ERROR_FILE_NOT_FOUND = "파일을 찾을 수 없습니다: {}"
+    ERROR_PERMISSION_DENIED = "파일 접근 권한이 없습니다: {}"
+    ERROR_SCAN_FAILED = "폴더 스캔 중 오류 ({}): {}"
+    ERROR_REGISTRY_ACCESS = "시스템 설정 접근 권한이 없습니다."
+    ERROR_HOTKEY_OCCUPIED = "사용하려는 단축키가 이미 사용 중입니다."
+    
+    BTN_CLOSE = "닫기"
+    INFO_CLEAR_SUCCESS = "모든 데이터가 초기화되었습니다. 프로그램을 재시작해 주세요."
+    INFO_TITLE = "알림"
+    SUCCESS_TITLE = "완료"
 
 
 # 클래스 정의 후 타이틀 최종 확정

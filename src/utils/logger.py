@@ -1,7 +1,6 @@
 import logging
 import sys
 
-from utils.app_strings import AppStrings
 
 
 def setup_logger():
