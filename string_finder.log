@@ -1,0 +1,20 @@
+2026-02-09 15:27:20 [ERROR] StringFinder: Excel 검색 중 예기치 않은 오류 발생 (C:\Users\shinhj\AppData\Local\Temp\tmp1vb1rgg2\corrupted.xlsx): invalid Zip archive: Could not find EOCD
+Traceback (most recent call last):
+  File "D:\Project\StringFinder\src\core\search_engine.py", line 248, in search_in_excel
+    workbook = CalamineWorkbook.from_path(file_path)
+python_calamine.ZipError: invalid Zip archive: Could not find EOCD
+2026-02-09 15:27:20 [INFO] StringFinder: 전역 단축키 등록 완료: alt+shift+k
+2026-02-09 15:27:20 [INFO] StringFinder: 워커 시작. 검색어: 'hello'
+2026-02-09 15:27:20 [INFO] StringFinder: 워커가 3개 파일을 검색 중입니다...
+2026-02-09 15:27:20 [INFO] StringFinder: 워커 종료. 3개 파일에서 일치하는 항목 발견 (총 3개 파일 중).
+2026-02-09 15:27:20 [INFO] StringFinder: 워커 시작. 검색어: 'search'
+2026-02-09 15:27:20 [INFO] StringFinder: 워커가 2개 파일을 검색 중입니다...
+2026-02-09 15:27:20 [INFO] StringFinder: 워커가 조기에 중단되었습니다.
+2026-02-09 15:27:20 [INFO] StringFinder: 워커 시작. 검색어: 'search'
+2026-02-09 15:27:20 [INFO] StringFinder: 워커가 1개 파일을 검색 중입니다...
+2026-02-09 15:27:20 [WARNING] StringFinder: 배치 작업 타임아웃 (300초)
+2026-02-09 15:27:20 [INFO] StringFinder: 워커 종료. 0개 파일에서 일치하는 항목 발견 (총 1개 파일 중).
+2026-02-09 15:27:20 [INFO] StringFinder: 워커 시작. 검색어: 'search'
+2026-02-09 15:27:20 [INFO] StringFinder: 워커가 1개 파일을 검색 중입니다...
+2026-02-09 15:27:20 [ERROR] StringFinder: 배치 처리 중 오류: File processing error
+2026-02-09 15:27:20 [INFO] StringFinder: 워커 종료. 0개 파일에서 일치하는 항목 발견 (총 1개 파일 중).

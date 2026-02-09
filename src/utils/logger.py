@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 
 
@@ -33,8 +34,13 @@ def setup_logger():
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # 파일 핸들러 (프로그램 실행 경로에 로그 파일 생성 및 기록)
-    log_file = "string_finder.log"
+    # 파일 핸들러 (사용자 AppData 경로에 로그 파일 생성 및 기록)
+    app_data = os.getenv("APPDATA")
+    log_dir = os.path.join(app_data, "StringFinder")
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    log_file = os.path.join(log_dir, "string_finder.log")
     file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="w")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)

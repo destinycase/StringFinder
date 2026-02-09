@@ -74,7 +74,7 @@ class SearchTab(QWidget):
     검색어 입력, 필터 설정, 결과 표시 및 미리보기 기능을 통합 제공합니다.
     """
 
-    status_message_requested = Signal(str)  # 상태줄 업데이트용 시그널
+    status_message_requested = Signal(str, int)  # 상태줄 업데이트용 시그널 (메시지, 타임아웃)
     progress_update_requested = Signal(int, int, bool)  # UX 개선: 진행률 업데이트 시그널 (current, total, visible)
 
     def __init__(self, config_manager):
@@ -506,14 +506,14 @@ class SearchTab(QWidget):
 
         search_text = self.search_combo.currentText().strip()
         if not search_text:
-            self.status_bar.showMessage(AppStrings.LOG_EMPTY_SEARCH_ABORTED, 5000)
+            self.status_message_requested.emit(AppStrings.LOG_EMPTY_SEARCH_ABORTED, 5000)
             return
 
         filename_filter = self.filename_combo.currentText().strip()
         if not filename_filter:
-            self.status_bar.showMessage(AppStrings.LOG_SEARCH_ALL_FILES_GUIDE, 3000)
+            self.status_message_requested.emit(AppStrings.LOG_SEARCH_ALL_FILES_GUIDE, 3000)
         else:
-            self.status_bar.showMessage(AppStrings.LOG_FILENAME_FILTER_GUIDE, 3000)
+            self.status_message_requested.emit(AppStrings.LOG_FILENAME_FILTER_GUIDE, 3000)
 
         # 검색 시작과 동시에 불필요한 입력 UI 팝업을 닫습니다.
         self.search_combo.hidePopup()
@@ -621,7 +621,7 @@ class SearchTab(QWidget):
     def _on_progress(self, current, total):
         """워커 작업 진행률 정보를 수신하여 UI에 반영합니다."""
         self.progress_update_requested.emit(current, total, True)
-        self.status_message_requested.emit(AppStrings.STATUS_SEARCH_PROGRESS.format(current, total))
+        self.status_message_requested.emit(AppStrings.STATUS_SEARCH_PROGRESS.format(current, total), 0)
 
     def _on_results_found(self, results):
         """워커로부터 전달받은 검색 결과 배치(batch)를 모델에 추가하고 요약을 갱신합니다."""
@@ -739,7 +739,7 @@ class SearchTab(QWidget):
         status_msg = AppStrings.STATUS_SEARCH_COMPLETED.format(
             self.scanned_count, self.total_files, self.total_matches, elapsed
         )
-        self.status_message_requested.emit(status_msg)
+        self.status_message_requested.emit(status_msg, 0)
 
         # 중단 모드였던 검색 버튼을 다시 '검색' 모드로 복원합니다.
         self._restore_search_button()
@@ -748,7 +748,7 @@ class SearchTab(QWidget):
         """작업 도중 발생한 치명적 오류를 처리하고 사용자에게 알립니다."""
         formatted_error = AppStrings.ERROR_SEARCH_LOG.format(error_msg)
         logger.error(formatted_error)
-        self.status_message_requested.emit(formatted_error)
+        self.status_message_requested.emit(formatted_error, 0)
         self.search_btn.setEnabled(True)
         self._stop_existing_search()
         self._restore_search_button()
