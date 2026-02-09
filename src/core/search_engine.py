@@ -66,7 +66,7 @@ class FileScanner:
     검색 대상이 되는 파일 리스트를 효율적으로 스캔하고 필터링하는 클래스입니다.
     """
 
-    def __init__(self, folders, extensions, filename_filter=None):
+    def __init__(self, folders, extensions, filename_filter=None, stop_check_callback=None):
         """
         스캐너를 초기화합니다.
 
@@ -74,25 +74,36 @@ class FileScanner:
             folders (list): 검색할 폴더 경로 리스트
             extensions (list): 검색할 확장자 리스트 (예: ['.txt', '.py'])
             filename_filter (str): 파일명에 포함되어야 할 필터링 문자열
+            stop_check_callback (callable): 중단 여부를 반환하는 함수 (True 반환 시 중단)
         """
         self.folders = folders
         self.extensions = [(e if e.startswith(".") else "." + e).lower() for e in extensions]
         self.filename_filter = filename_filter.lower() if filename_filter else None
+        self.stop_check_callback = stop_check_callback
 
     def scan(self):
         """
         설정된 폴더들을 순회하며 조건에 맞는 파일 리스트를 수집합니다.
+        외부에서 주입된 stop_check_callback이 True를 반환하면 즉시 중단합니다.
 
         Returns:
             list: (file_path, file_size) 튜플의 리스트
         """
         file_list = []
         for folder in self.folders:
+            if self.stop_check_callback and self.stop_check_callback():
+                break
+
             if not os.path.exists(folder):
                 continue
 
             for root, dirs, files in os.walk(folder):
+                if self.stop_check_callback and self.stop_check_callback():
+                    return file_list
+
                 for file in files:
+                    if self.stop_check_callback and self.stop_check_callback():
+                        return file_list
                     ext = splitext(file)[1].lower()
                     # 확장자 필터 체크
                     if ext in self.extensions:
@@ -400,8 +411,8 @@ def search_in_file(file_path, search_string, file_size=None, special_mode=None):
 
                 if count > 0:
                     return (file_path, count, matches)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Search error in {file_path}: {e}")
     return None
 
 

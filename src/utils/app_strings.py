@@ -3,7 +3,7 @@ class AppStrings:
     APP_NAME = "String Finder"
 
     # 상수로 하드코딩하여 빌드된 실행 파일에서도 정확한 버전을 표시함
-    APP_VERSION = "3.0.0"
+    APP_VERSION = "3.0.1"
     APP_TITLE = "String Finder"
 
     ADD_TAB_BTN = "+"

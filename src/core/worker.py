@@ -160,7 +160,12 @@ class ScanWorker(QObject):
         """실제 파일 스캔을 수행합니다."""
         self.scan_started.emit()
         try:
-            scanner = FileScanner(self.selected_folders, self.selected_exts, self.filename_filter)
+            scanner = FileScanner(
+                self.selected_folders,
+                self.selected_exts,
+                self.filename_filter,
+                stop_check_callback=lambda: not self.is_running
+            )
             file_list = scanner.scan()
             if self.is_running:
                 self.scan_finished.emit(file_list)

@@ -80,10 +80,23 @@ class ConfigManager:
     def save(self):
         """현재 인메모리 설정값들을 로컬 JSON 파일로 직렬화하여 영구 저장합니다."""
         try:
-            with open(self.config_path, "w", encoding="utf-8") as f:
+            # 원자적 저장(Atomic Save)을 위해 임시 파일에 먼저 씁니다.
+            temp_path = self.config_path + ".tmp"
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
+            
+            # 쓰기가 성공하면 원본 파일과 교체합니다.
+            if os.path.exists(self.config_path):
+                os.remove(self.config_path)
+            os.rename(temp_path, self.config_path)
+
         except (IOError, OSError) as e:
             logger.error(f"Config save error: {e}")
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
         except Exception as e:
             logger.error(f"Unexpected error saving config: {e}", exc_info=True)
 
