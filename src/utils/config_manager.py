@@ -31,8 +31,26 @@ class ConfigManager:
             "run_at_startup": False,
             "close_to_tray": False,
             "case_insensitive": False,
+            "result_column_widths": [60, 400, 100, 60],
+            "match_column_widths": [60, 400, 400],
         }
         self.config = self._load()
+
+    def get_column_widths(self, table_name):
+        """저장된 테이블 컬럼 너비를 반환합니다."""
+        if table_name == "result":
+            return self.config.get("result_column_widths", [100, 400, 200])
+        elif table_name == "match":
+            return self.config.get("match_column_widths", [60, 400, 400])
+        return None
+
+    def set_column_widths(self, table_name, widths):
+        """테이블 컬럼 너비를 저장합니다."""
+        if table_name == "result":
+            self.config["result_column_widths"] = widths
+        elif table_name == "match":
+            self.config["match_column_widths"] = widths
+        self.save()
 
     def get_case_insensitive(self):
         """대소문자 구분 여부 옵션의 현재 상태를 반환합니다."""

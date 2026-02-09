@@ -24,11 +24,14 @@ def test_worker_result_batching():
         mock_futures = []
         # 테스트에서는 모든 파일을 하나의 배치로 처리한다고 가정 (batch_size=100)
         f = MagicMock()
-        f.result.return_value = [
-            ("test1.txt", 1, [(1, "hello")]),
-            ("test2.txt", 1, [(1, "hello")]),
-            ("test3.txt", 1, [(1, "hello")])
-        ]
+        f.result.return_value = {
+            "results": [
+                ("test1.txt", 1, [(1, "hello")]),
+                ("test2.txt", 1, [(1, "hello")]),
+                ("test3.txt", 1, [(1, "hello")]),
+            ],
+            "skipped": [],
+        }
         mock_futures.append(f)
 
         # submit 호출 시 미래 객체들을 순차적으로 반환하도록 설정
@@ -101,7 +104,7 @@ def test_worker_exception_handling():
         # 오류 시그널 수신 확인 (배치 처리 중 오류는 로깅만 하고 계속 진행하므로 search_error는 발생하지 않음)
         # 단, 전체 run loop가 실패하는 경우에만 search_error가 발생함.
         # 여기서는 개별 배치의 예외를 확인.
-        
+
         with patch("core.worker.search_in_files_batch"):
             worker.run()
 

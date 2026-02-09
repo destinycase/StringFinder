@@ -39,7 +39,7 @@ def setup_logger():
     log_dir = os.path.join(app_data, "StringFinder")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    
+
     log_file = os.path.join(log_dir, "string_finder.log")
     file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="w")
     file_handler.setFormatter(formatter)

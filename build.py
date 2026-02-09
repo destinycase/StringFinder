@@ -65,6 +65,12 @@ def build():
 
     # PyInstaller 명령 실행
     # 윈도우 환경에서 PATH 이슈 방지를 위해 python -m PyInstaller 방식 사용
+    # PyInstaller 명령 실행
+    # 윈도우 환경에서 경로 잠금을 방지하기 위해 절대 경로를 사용하고 따옴표 처리를 보강합니다.
+    src_res = os.path.abspath(os.path.join("src", "resources"))
+    main_path = os.path.abspath(os.path.join("src", "main.py"))
+    icon_path = os.path.abspath(ico_icon_path)
+    
     cmd = [
         sys.executable,
         "-m",
@@ -74,17 +80,15 @@ def build():
         "--clean",
         "--name",
         "StringFinder",
-        # 실행 파일 자체의 아이콘 지정 (ICO 파일 사용)
-        f"--icon={ico_icon_path}",
-        # 내부 리소스 폴더 포함 (src/resources -> resources)
-        f"--add-data=src/resources{os.pathsep}resources",
+        f"--icon={icon_path}",
+        f"--add-data={src_res};resources",
         "--paths",
-        "src",
+        os.path.abspath("src"),
         "--workpath",
-        "build",
+        os.path.abspath("build"),
         "--distpath",
-        "dist",
-        os.path.join("src", "main.py"),
+        os.path.abspath("dist"),
+        main_path,
     ]
 
     print(f"Running command: {' '.join(cmd)}")

@@ -3,7 +3,7 @@ class AppStrings:
     APP_NAME = "String Finder"
 
     # 상수로 하드코딩하여 빌드된 실행 파일에서도 정확한 버전을 표시함
-    APP_VERSION = "2.9.1"
+    APP_VERSION = "3.0.0"
     APP_TITLE = "String Finder"
 
     ADD_TAB_BTN = "+"
@@ -39,7 +39,7 @@ class AppStrings:
     TAB_LOGS = "검색 로그"
     RESULT_SUMMARY_TEMPLATE = "총 {0}개 파일 / 총 {1}개 일치 찾음"
     STATUS_SEARCH_SUMMARY = "검색 완료 - 총 {0}개 파일 / 총 {1}개 일치 찾음 (소요 시간: {2:.2f}초)"
-    RESULT_EMPTY_MSG = "검색 결과가 없습니다. 상단에서 검색어나 필터를 조정해 보세요."
+    RESULT_EMPTY_MSG = "검색 된 결과가 없습니다"
     RESULT_FILTER_PLACEHOLDER = "결과 내 파일명 필터..."
     RESULT_EMPTY_NO_FOLDER = "검색 대상 폴더를 추가해주세요."  # UX 개선
     RESULT_EMPTY_NO_MATCH = "'{}'에 대한 결과가 없습니다. 다른 검색어를 시도해보세요."  # UX 개선
@@ -48,11 +48,13 @@ class AppStrings:
     RESULT_EXPORT_FILTER = "엑셀 파일 (*.xlsx);;텍스트 파일 (*.txt)"
     RESULT_EXPORT_ALL = "결과 모두 내보내기"
     RESULT_HEADER_COUNT = "일치 수"
-    RESULT_HEADER_FILE = "파일"
+    RESULT_HEADER_FOLDER = "폴더 경로"
+    RESULT_HEADER_FILENAME = "파일명"
+    RESULT_HEADER_EXTENSION = "확장자"
     RESULT_HEADER_POS = "위치"
     RESULT_HEADER_CONTENT = "라인 내용"
     RESULT_PREVIEW_TITLE = "상세 미리보기"
-    RESULT_PREVIEW_ERROR = "이 파일을 상세 미리보기를 표시할 수 없습니다."
+    RESULT_PREVIEW_ERROR = "이 파일은 상세 미리 보기를 표시할 수 없습니다."
 
     # Context Menu
     OPEN_FILE = "파일 열기"
@@ -98,6 +100,21 @@ class AppStrings:
     DELETE_HISTORY_ITEM = "삭제"
     CLEAR_HISTORY = "전체 삭제"
 
+    # Special Search
+    SPECIAL_SEARCH_LABEL = "특수 검색 모드:"
+    SPECIAL_SEARCH_OFF = "미사용"
+    SPECIAL_SEARCH_XML_PARTIAL = "XML (부분 일치)"
+    SPECIAL_SEARCH_XML_EXACT = "XML (전체 일치)"
+    SPECIAL_SEARCH_JSON_PARTIAL = "JSON (부분 일치)"
+    SPECIAL_SEARCH_JSON_EXACT = "JSON (전체 일치)"
+
+    # 레거시 호환 및 내부 매핑 용도
+    SPECIAL_SEARCH_ITEMS = ["미사용", "XML (부분 일치)", "XML (전체 일치)", "JSON (부분 일치)", "JSON (전체 일치)"]
+
+    # Validation
+    ERROR_NO_SELECTION = "검색 폴더와 확장자를 각각 최소 1개 선택해야합니다."
+    ERROR_NO_FOLDER_SELECTION = "검색 폴더를 최소 1개 선택해야합니다."
+
     # Logging & Debug
     LOG_APP_STARTED = "애플리케이션 시작 중..."
     LOG_SEARCH_STARTED = "검색 시작. 검색어: '{}', 파일명 필터: '{}'"
@@ -107,17 +124,19 @@ class AppStrings:
     LOG_BACKGROUND_WORKER_INIT = "백그라운드 워커 초기화 중..."
     LOG_EMPTY_SEARCH_ABORTED = "검색어를 입력해 주세요."
     LOG_SEARCH_ALL_FILES_GUIDE = "전체 파일을 대상으로 스캔을 시작합니다."
-    LOG_FILENAME_FILTER_GUIDE = "입력한 문자열을 포함한 파일만 검색합니다. ','를 넣어 여러 문자열을 넣을 수 있습니다. (예시: npc, fo)"
+    LOG_FILENAME_FILTER_GUIDE = (
+        "입력한 문자열을 포함한 파일만 검색합니다. ','를 넣어 여러 문자열을 넣을 수 있습니다. (예시: npc, fo)"
+    )
     LOG_SCAN_COMPLETED = "[Step 1] 파일 스캔 완료: {}개 파일 발견 (소요 시간: {:.3f}초)"
     LOG_SEARCH_COMPLETED_STEP = "[Step 2] 문자열 검색 완료 (소요 시간: {:.3f}초)"
 
     ERROR_EXCEL_SEARCH = "Excel 검색 오류 ({}): {}"
-    ERROR_LEGACY_EXCEL_SEARCH = "구형 Excel 검색 오류 ({}): {}"
 
     LOG_WORKER_STARTED = "워커 시작. 검색어: '{}'"
     LOG_WORKER_SCANNING = "워커가 {}개 파일을 검색 중입니다..."
-    LOG_WORKER_FINISHED = "워커 종료. {}개 파일에서 일치하는 항목 발견 (총 {}개 파일 중)."
-    LOG_WORKER_STOPPED = "워커가 조기에 중단되었습니다."
+    LOG_WORKER_FINISHED = "검색 완료: 총 {}개의 파일을 찾았습니다. (전체 대상: {}개)"
+    LOG_SEARCH_SKIPPED_SUMMARY = "규격 미준수 또는 오류로 스킵된 파일: {}개 (상세 목록은 로그 확인)"
+    LOG_WORKER_STOPPED = "사용자에 의해 검색이 중단되었습니다."
     LOG_WORKER_ERROR = "워커 오류: {}"
     LOG_WORKER_PROGRESS = "검색 진행 중... {}% 완료 ({}/{})"
     LOG_WORKER_COLLECTING_RESULTS = "일치하는 항목들을 취합하여 표시를 준비 중입니다 ({}개 파일)..."
@@ -155,14 +174,17 @@ class AppStrings:
 
     BTN_CLOSE = "닫기"
     INFO_CLEAR_SUCCESS = "모든 데이터가 초기화되었습니다. 프로그램을 재시작해 주세요."
-    INFO_TITLE = "알림"
-    SUCCESS_TITLE = "완료"
 
     # Excel / Model Headers (Internationalization support)
-    HEADER_COUNT = "일치"
-    HEADER_FILE_PATH = "파일"
+    HEADER_COUNT = "일치 한 수"
+    HEADER_FOLDER = "폴더"
+    HEADER_FILE = "파일"
     HEADER_POSITION = "위치"
     HEADER_CONTENT = "내용"
+    HEADER_JSON_KEY = "키 (Key)"
+    HEADER_JSON_VALUE = "수치 (Value)"
+    HEADER_XML_NAME = "이름 (Element/Attr)"
+    HEADER_XML_VALUE = "내용 (Value)"
     EXCEL_SHEET_TITLE = "검색 결과"
     EXCEL_MATCH_DETAIL = "매칭 상세"
     EXPORT_TEXT_HEADER = "=== {} 검색 결과 ==="
@@ -176,7 +198,7 @@ class AppStrings:
     # Status Bar Messages
     STATUS_SEARCH_COMPLETED = "검색 완료 - 총 {}개 대상 - 총 {}개 일치 파일 - 총 {}개 일치 내용 (소요 시간: {:.2f}초)"
     STATUS_SEARCH_PROGRESS = "검색 진행 중... {} / {} 완료"
-    
+
     # Newly consolidated strings
     LOG_FILE_NAME = "string_finder.log"
     LOG_APP_SHUTDOWN = "애플리케이션 종료 중... 로그 파일을 정리합니다."
@@ -191,6 +213,12 @@ class AppStrings:
     LOG_SCAN_TASK_FAILED = "스캔 작업 실패: {}"
     ERROR_EXCEL_SEARCH_UNEXPECTED = "Excel 검색 중 예기치 않은 오류 발생 ({}): {}"
     LOG_SEARCH_ERROR_IN_FILE = "파일 검색 중 오류 발생 {}: {}"
+
+    # 추가 통합 문자열
+    STATUS_ERROR_PREFIX = "에러: "
+    STYLE_PREVIEW_HIGHLIGHT_LINE = (
+        "background-color: #404040; color: #ffffff; border-left: 3px solid #ff9900; font-weight: bold;"
+    )
 
 
 # 클래스 정의 후 타이틀 최종 확정

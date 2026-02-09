@@ -34,7 +34,7 @@ def main():
             if os.path.exists(AppStrings.LOG_FILE_NAME):
                 os.remove(AppStrings.LOG_FILE_NAME)
         except Exception as e:
-            print(AppStrings.ERROR_LOG_DELETE.format(e))
+            logger.error(AppStrings.ERROR_LOG_DELETE.format(e))
 
     app.aboutToQuit.connect(cleanup_on_exit)
 

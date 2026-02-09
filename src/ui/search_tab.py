@@ -18,18 +18,21 @@ from PySide6.QtWidgets import (
     QFileIconProvider,
     QTableView,
     QTabWidget,
+    QComboBox,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, QThread, QByteArray, Signal, QSortFilterProxyModel
 from PySide6.QtGui import QFont
-from core.worker import SearchWorker
-from core.search_engine import SearchEngine, FileScanner
+from core.worker import SearchWorker, ScanWorker
+from core.search_engine import SearchEngine
 from utils.logger import logger
 from utils.app_strings import AppStrings
-from ui.widgets import HistoryComboBox
+from ui.widgets import HistoryComboBox, HtmlDelegate
 from ui.models import SearchResultModel, MatchDetailModel
 import os
 import sys
 import time
+import re
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
 
@@ -53,7 +56,9 @@ class FilterItemWidget(QWidget):
 
         self.delete_btn = QPushButton(AppStrings.DELETE_BTN)
         self.delete_btn.setFixedWidth(50)
-        self.delete_btn.setStyleSheet(f"QPushButton {{ {AppStrings.STYLE_DANGER_TEXT} }}")  # 삭제 동작 강조를 위한 스타일
+        self.delete_btn.setStyleSheet(
+            f"QPushButton {{ {AppStrings.STYLE_DANGER_TEXT} }}"
+        )  # 삭제 동작 강조를 위한 스타일
         if on_delete:
             self.delete_btn.clicked.connect(on_delete)
 
@@ -110,8 +115,6 @@ class SearchTab(QWidget):
         self.search_combo.history_item_deleted.connect(lambda t: self._remove_history_item(t, "search"))
         self.search_combo.history_cleared.connect(lambda: self._clear_history("search"))
 
-
-
         self.search_btn = QPushButton(AppStrings.SEARCH_BTN)
         self.search_btn.clicked.connect(self.start_search)
 
@@ -155,7 +158,7 @@ class SearchTab(QWidget):
         folder_btn_layout = QHBoxLayout()
         add_folder_btn = QPushButton(AppStrings.ADD_FOLDER_BTN)
         add_folder_btn.clicked.connect(self._add_folder)
-        
+
         # 필터 일괄 제어 버튼 (모두 선택/해제)
         self.folder_select_all_btn = QPushButton(AppStrings.SELECT_ALL_BTN)
         self.folder_select_all_btn.setFixedWidth(80)
@@ -163,7 +166,7 @@ class SearchTab(QWidget):
         self.folder_deselect_all_btn = QPushButton(AppStrings.DESELECT_ALL_BTN)
         self.folder_deselect_all_btn.setFixedWidth(80)
         self.folder_deselect_all_btn.clicked.connect(lambda: self._toggle_all_filters("folder", False))
-        
+
         folder_btn_layout.addWidget(add_folder_btn)
         folder_btn_layout.addWidget(self.folder_select_all_btn)
         folder_btn_layout.addWidget(self.folder_deselect_all_btn)
@@ -174,6 +177,18 @@ class SearchTab(QWidget):
         ext_group = QGroupBox(AppStrings.EXT_GROUP)
         ext_vbox = QVBoxLayout(ext_group)
         ext_vbox.setContentsMargins(10, 15, 10, 10)
+
+        # 특수 검색 콤보박스 추가
+        special_search_layout = QHBoxLayout()
+        special_search_label = QLabel(AppStrings.SPECIAL_SEARCH_LABEL)
+        self.special_search_combo = QComboBox()
+        self.special_search_combo.addItems(AppStrings.SPECIAL_SEARCH_ITEMS)
+        self.special_search_combo.currentTextChanged.connect(self._on_special_search_changed)
+
+        special_search_layout.addWidget(special_search_label)
+        special_search_layout.addWidget(self.special_search_combo, 1)
+        ext_vbox.addLayout(special_search_layout)
+
         self.ext_list = QListWidget()
         for ext in filters.get("extensions", []):
             self._add_ext_item(ext)
@@ -182,12 +197,12 @@ class SearchTab(QWidget):
         self.ext_edit = QLineEdit()
         self.ext_edit.setPlaceholderText(AppStrings.EXT_EDIT_PLACEHOLDER)
         self.ext_edit.returnPressed.connect(self._add_ext)
-        add_ext_btn = QPushButton(AppStrings.ADD_EXT_BTN)
-        add_ext_btn.setFixedWidth(50)
-        add_ext_btn.clicked.connect(self._add_ext)
+        self.add_ext_btn = QPushButton(AppStrings.ADD_EXT_BTN)
+        self.add_ext_btn.setFixedWidth(50)
+        self.add_ext_btn.clicked.connect(self._add_ext)
         ext_input_layout.addWidget(self.ext_edit)
-        ext_input_layout.addWidget(add_ext_btn)
-        
+        ext_input_layout.addWidget(self.add_ext_btn)
+
         ext_toggle_layout = QHBoxLayout()
         self.ext_select_all_btn = QPushButton(AppStrings.SELECT_ALL_BTN)
         self.ext_select_all_btn.clicked.connect(lambda: self._toggle_all_filters("ext", True))
@@ -195,7 +210,7 @@ class SearchTab(QWidget):
         self.ext_deselect_all_btn.clicked.connect(lambda: self._toggle_all_filters("ext", False))
         ext_toggle_layout.addWidget(self.ext_select_all_btn)
         ext_toggle_layout.addWidget(self.ext_deselect_all_btn)
-        
+
         ext_vbox.addWidget(self.ext_list)
         ext_vbox.addLayout(ext_input_layout)
         ext_vbox.addLayout(ext_toggle_layout)
@@ -224,23 +239,25 @@ class SearchTab(QWidget):
         # 검색된 파일 리스트 테이블 뷰 및 모델 설정
         self.result_view = QTableView()
         self.result_model = SearchResultModel(self.icon_provider)
-        
+
         # 결과 필터링을 위한 Proxy Model 설정
         self.proxy_model = QSortFilterProxyModel()
         self.proxy_model.setSourceModel(self.result_model)
         self.proxy_model.setFilterKeyColumn(1)  # 파일 경로 컬럼 기준 필터링
         self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        
+
         self.result_view.setModel(self.proxy_model)
 
         # 결과 내 필터 입력란 추가
         self.result_filter_edit = QLineEdit()
         self.result_filter_edit.setPlaceholderText(AppStrings.RESULT_FILTER_PLACEHOLDER)
         self.result_filter_edit.textChanged.connect(self.proxy_model.setFilterFixedString)
-        
-        self.result_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.result_view.setColumnWidth(0, 80)
-        self.result_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+
+        # 초기 컬럼 너비 복원 및 리사이즈 모드 설정
+        # 초기 컬럼 너비 복원 및 리사이즈 모드 설정
+        self._restore_column_widths("result")
+        self.result_view.horizontalHeader().setStretchLastSection(True)
+        self.result_view.horizontalHeader().sectionResized.connect(lambda i, o, n: self._save_column_widths("result"))
         self.result_view.setAlternatingRowColors(True)
         self.result_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.result_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -260,9 +277,12 @@ class SearchTab(QWidget):
         self.match_model = MatchDetailModel()
         self.match_view.setModel(self.match_model)
 
-        self.match_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.match_view.setColumnWidth(0, 80)
-        self.match_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        # 초기 컬럼 너비 복원 및 리사이즈 모드 설정
+        self._restore_column_widths("match")
+        self.match_view.horizontalHeader().setStretchLastSection(True)
+        self.match_view.horizontalHeader().sectionResized.connect(lambda i, o, n: self._save_column_widths("match"))
+        # 내용 컬럼들에 HTML 렌더링을 위한 델리게이트 적용
+        self.match_view.setItemDelegate(HtmlDelegate(self.match_view))
         self.match_view.setAlternatingRowColors(True)
         self.match_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.match_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -278,6 +298,7 @@ class SearchTab(QWidget):
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
         self.preview_text.setLineWrapMode(QTextEdit.NoWrap)
+        self.preview_text.setStyleSheet("QTextEdit { background-color: transparent; border: none; }")
 
         # 고정폭 폰트 설정 (코드 표시 가독성 향상)
         font_family = AppStrings.FONT_PREVIEW_WIN
@@ -462,14 +483,28 @@ class SearchTab(QWidget):
 
         self.config_manager.update_filters(folders, extensions)
 
+    def _on_special_search_changed(self, text):
+        """특수 검색 모드 변경 시 관련 UI의 활성화 상태를 제어합니다."""
+        is_off = text == AppStrings.SPECIAL_SEARCH_OFF
+        self.ext_list.setEnabled(is_off)
+        self.ext_edit.setEnabled(is_off)
+        self.ext_select_all_btn.setEnabled(is_off)
+        self.ext_deselect_all_btn.setEnabled(is_off)
+
+        # '추가' 버튼 등은 ext_edit 옆에 있으므로 레이아웃을 통해 찾거나 직접 필드를 추가해야 함
+        # 여기서는 self.ext_edit 위젯의 부모 레이아웃 등에서 찾지 않고 직접 참조가 필요할 수 있음
+        # _init_ui에서 add_ext_btn을 멤버 변수로 승격시킬 필요가 있음
+        if hasattr(self, "add_ext_btn"):
+            self.add_ext_btn.setEnabled(is_off)
+
     def _toggle_all_filters(self, filter_type, select_all):
         """모든 폴더 또는 확장자 필터의 체크 상태를 일괄 변경합니다."""
-        if filter_type == "folder":
+        if filter_type == "folder" or filter_type == "folder":  # filter_type == "folder" 중복 제거
             for i in range(self.folder_list.count()):
                 widget = self.folder_list.itemWidget(self.folder_list.item(i))
                 if widget:
                     widget.checkbox.setChecked(select_all)
-        elif filter_type == "ext":
+        if filter_type == "ext":
             for i in range(self.ext_list.count()):
                 widget = self.ext_list.itemWidget(self.ext_list.item(i))
                 if widget:
@@ -478,26 +513,11 @@ class SearchTab(QWidget):
 
     def _stop_existing_search(self):
         """현재 실행 중인 모든 검색 관련 객체들을 중단시키고 자원을 정리합니다."""
-        if self.worker:
-            # 새로운 검색 시작 시 이전 결과가 섞이지 않도록 시그널 연결을 선제적으로 해제합니다.
-            try:
-                self.worker.progress_updated.disconnect(self._on_progress)
-                self.worker.results_found.disconnect(self._on_results_found)
-                self.worker.search_finished.disconnect(self._on_finished)
-                self.worker.search_error.disconnect(self._on_error)
-            except RuntimeError:
-                pass
-            self.worker.stop()
-
-        if self.thread and self.thread.isRunning():
-            self.thread.quit()
-            # 워커가 안전하게 멈추기를 기다린 후 종료되지 않으면 강제 중단합니다.
-            if not self.thread.wait(1000):
-                self.thread.terminate()
-                self.thread.wait()
-        
-        self.worker = None
-        self.thread = None
+        if hasattr(self, "scan_worker") and self.scan_worker:
+            self.scan_worker.stop()
+        if hasattr(self, "scan_thread") and self.scan_thread.isRunning():
+            self.scan_thread.quit()
+            self.scan_thread.wait()
 
     def start_search(self):
         """사용자 입력을 검증하고 병렬 검색 워커 스레드를 시작합니다."""
@@ -539,10 +559,25 @@ class SearchTab(QWidget):
                 selected_folders.append(widget.text())
 
         selected_exts = []
-        for i in range(self.ext_list.count()):
-            widget = self.ext_list.itemWidget(self.ext_list.item(i))
-            if widget and widget.isChecked():
-                selected_exts.append(widget.text())
+        special_mode = self.special_search_combo.currentText()
+        if special_mode == AppStrings.SPECIAL_SEARCH_OFF:
+            for i in range(self.ext_list.count()):
+                widget = self.ext_list.itemWidget(self.ext_list.item(i))
+                if widget and widget.isChecked():
+                    selected_exts.append(widget.text())
+        else:
+            # 특수 검색 모드일 경우 해당 확장자만 강제로 설정
+            if "XML" in special_mode:
+                selected_exts = [".xml"]
+            elif "JSON" in special_mode:
+                selected_exts = [".json"]
+            else:
+                selected_exts = [special_mode.lower()]
+
+        # 유효성 검사: 폴더와 확장자 각각 최소 1개 선택 확인
+        if not selected_folders or not selected_exts:
+            QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.ERROR_NO_SELECTION)
+            return
 
         # 검색 결과를 담을 모델과 UI 상태를 전역적으로 초기화합니다.
         self.total_matches = 0
@@ -552,11 +587,11 @@ class SearchTab(QWidget):
         self.match_model.clear()
         self.preview_text.clear()
         self.result_group.setTitle(AppStrings.RESULT_GROUP_TITLE)
-        self.result_filter_edit.clear() # 필터 입력란 초기화
+        self.result_filter_edit.clear()  # 필터 입력란 초기화
 
         self.empty_label.setVisible(False)
         self.result_splitter.setVisible(False)
-        self.result_filter_edit.setVisible(False) # 필터 입력란 숨김
+        self.result_filter_edit.setVisible(False)  # 필터 입력란 숨김
 
         # 프로그레스 바를 노출하고 검색 버튼의 역할을 '중단'으로 변경하여 시각적 피드백을 제공합니다.
         self.progress_update_requested.emit(0, 100, True)
@@ -564,14 +599,33 @@ class SearchTab(QWidget):
         self.search_btn.setStyleSheet(AppStrings.STYLE_STOP_BTN_ACTIVE)
         self.search_btn.clicked.disconnect()
         self.search_btn.clicked.connect(self._stop_existing_search)
-        
+
         self.start_timer = time.time()
 
-        # 2. 파일 목록 스캔 단계 (패턴 매칭 및 시스템 콜 최소화를 통한 고속 스캐닝)
-        scan_start_time = time.time()
-        scanner = FileScanner(selected_folders, selected_exts, filename_filter)
-        file_list = scanner.scan()
-        scan_duration = time.time() - scan_start_time
+        # 2. 파일 목록 스캔 단계 (백그라운드 스레드에서 비동기 처리하여 UI 프리징 방지)
+        self.scan_thread = QThread()
+        self.scan_worker = ScanWorker(selected_folders, selected_exts, filename_filter)
+        self.scan_worker.moveToThread(self.scan_thread)
+
+        self.scan_thread.started.connect(self.scan_worker.run)
+        self.scan_worker.scan_started.connect(self._on_scan_started)
+        self.scan_worker.scan_finished.connect(
+            lambda files: self._on_scan_finished(files, search_text, selected_folders)
+        )
+        self.scan_worker.scan_error.connect(self._on_search_error)
+        self.scan_worker.finished.connect(self.scan_thread.quit)
+        self.scan_worker.finished.connect(self.scan_worker.deleteLater)
+        self.scan_thread.finished.connect(self.scan_thread.deleteLater)
+
+        self.scan_thread.start()
+
+    def _on_scan_started(self):
+        """스캔 작업이 시작되었을 때의 UI 처리를 담당합니다."""
+        self.scan_start_time = time.time()
+
+    def _on_scan_finished(self, file_list, search_text, selected_folders):
+        """스캔이 완료되면 실제 문자열 검색 워커를 실행합니다."""
+        scan_duration = time.time() - self.scan_start_time
         logger.info(AppStrings.LOG_SCAN_COMPLETED.format(len(file_list), scan_duration))
 
         self.scanned_count = len(file_list)
@@ -585,30 +639,40 @@ class SearchTab(QWidget):
                 self.empty_label.setText(AppStrings.RESULT_EMPTY_NO_FOLDER)
             else:
                 self.empty_label.setText(AppStrings.RESULT_EMPTY_NO_MATCH.format(search_text))
+
+            self.empty_label.setStyleSheet(f"color: {AppStrings.COLOR_RED}; font-size: 16px; font-weight: bold;")
             self.empty_label.setVisible(True)
-            
-            # 검색 버튼 원상 복구
             self._restore_search_button()
             return
 
-        # 3. 실제 문자열 검색 단계 (백그라운드 워커를 통한 비동기 병렬 처리)
+        # 3. 실제 문자열 검색 단계
         logger.info(AppStrings.LOG_BACKGROUND_WORKER_INIT)
         self.thread = QThread()
-        self.worker = SearchWorker(self.search_engine, file_list, search_text)
+        special_mode_val = self.special_search_combo.currentText()
+        if special_mode_val == AppStrings.SPECIAL_SEARCH_OFF:
+            special_mode_val = None
+
+        self.worker = SearchWorker(self.search_engine, file_list, search_text, special_mode=special_mode_val)
         self.worker.moveToThread(self.thread)
 
-        # 스레드와 워커의 시그널들을 연결하여 실시간 피드백을 구현합니다.
         self.thread.started.connect(self.worker.run)
         self.worker.progress_updated.connect(self._on_progress)
         self.worker.results_found.connect(self._on_results_found)
-        self.worker.search_finished.connect(self._on_finished)
-        self.worker.search_error.connect(self._on_error)
+        self.worker.skipped_found.connect(self._on_skipped_found)
+        self.worker.search_finished.connect(self._on_search_finished)
+        self.worker.search_error.connect(self._on_search_error)
+        self.worker.finished.connect(self._on_worker_finished)
 
-        # 작업 완료 후 객체가 자동으로 소멸되도록 연결합니다.
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.worker.finished.connect(self.worker.deleteLater)
-
+        self.skipped_files_list = []
         self.thread.start()
+
+    def _on_worker_finished(self):
+        """워커 작업이 완전히 종료(리소스 정리 포함)된 후 호출됩니다."""
+        if self.thread:
+            self.thread.quit()
+            self.thread.wait()
+        self.worker = None
+        self.thread = None
 
     def _restore_search_button(self):
         """검색 버튼의 상태를 초기 '검색' 모드로 복구합니다."""
@@ -617,6 +681,12 @@ class SearchTab(QWidget):
         self.search_btn.clicked.disconnect()
         self.search_btn.clicked.connect(self.start_search)
         self.search_btn.setEnabled(True)
+
+    def _on_skipped_found(self, file_paths):
+        """스킵된 파일 목록을 누적합니다."""
+        if not hasattr(self, "skipped_files_list"):
+            self.skipped_files_list = []
+        self.skipped_files_list.extend(file_paths)
 
     def _on_progress(self, current, total):
         """워커 작업 진행률 정보를 수신하여 UI에 반영합니다."""
@@ -634,7 +704,7 @@ class SearchTab(QWidget):
         if not self.result_splitter.isVisible():
             self.result_splitter.setVisible(True)
             self.empty_label.setVisible(False)
-            self.result_filter_edit.setVisible(True) # 필터 입력란 표시
+            self.result_filter_edit.setVisible(True)  # 필터 입력란 표시
 
         self.result_model.add_results(results)
 
@@ -650,7 +720,16 @@ class SearchTab(QWidget):
         source_index = self.proxy_model.mapToSource(index)
         file_path, matches = self.result_model.get_full_data(source_index.row())
         if file_path:
-            self.match_model.set_matches(file_path, matches)
+            # 검색어를 모델에 전달하여 강조된 HTML이 생성되도록 합니다.
+            search_text = self.search_combo.currentText()
+            special_mode = self.special_search_combo.currentText()
+            if special_mode == AppStrings.SPECIAL_SEARCH_OFF:
+                special_mode = "Normal"
+            self.match_model.set_matches(file_path, matches, search_text=search_text, search_mode=special_mode)
+
+            # 컬럼 리사이징 모드 및 너비 복원
+            self._restore_column_widths("match")
+            self.match_view.horizontalHeader().setStretchLastSection(True)
 
     def _on_view_clicked(self, index):
         """상세 매칭 리스트에서 특정 행이 클릭되면 미리보기 패널에 해당 라인 주변 코드를 노출합니다."""
@@ -690,40 +769,63 @@ class SearchTab(QWidget):
             start = max(0, target_line - 1 - 5)
             end = min(total, target_line - 1 + 6)
 
-            preview_content = ""
+            # 다크모드 및 라이트모드 모두에서 잘 보이는 스타일 지정
+            # 배경은 투명하게 하고, 텍스트 색상은 위젯의 기본 색상을 따르되 명시적으로 div로 감쌉니다.
+            preview_content = "<div style='font-family: inherit; font-size: inherit; line-height: 1.4;'>"
+            search_text = self.search_combo.currentText()
+            special_mode = self.special_search_combo.currentText()
+            is_json = "JSON" in special_mode
+            is_xml = "XML" in special_mode
+            is_exact = "전체 일치" in special_mode
+
             for i in range(start, end):
                 ln = i + 1
                 content = lines[i].rstrip()
-                if ln == target_line:
-                    # 일치하는 라인은 시각적으로 강조 기호를 덧붙입니다.
-                    preview_content += f"> {ln:4}: {content}\n"
-                else:
-                    preview_content += f"  {ln:4}: {content}\n"
+                from html import escape
 
-            self.preview_text.setPlainText(preview_content)
+                escaped_content = escape(content)
+
+                # 가독성과 유닛 테스트를 위해 강조 로직을 정적 메서드(get_highlighted_html)로 분리하여 처리
+                highlighted = self.get_highlighted_html(escaped_content, search_text, is_xml, is_json, is_exact)
+
+                # 다크모드 대응: 글자색을 테마에 따라 자동 조절하거나 명시적으로 밝게 지정
+                line_style = "padding: 2px 5px;"
+                if ln == target_line:
+                    line_style += AppStrings.STYLE_PREVIEW_HIGHLIGHT_LINE
+
+                preview_content += f"<div style='{line_style}'>{ln:4}: {highlighted}</div>"
+
+            preview_content += "</div>"
+            self.preview_text.setHtml(preview_content)
         except Exception as e:
             logger.error(f"Preview error: {e}")
             self.preview_text.setPlainText(AppStrings.RESULT_PREVIEW_ERROR)
 
-    def _on_finished(self, total_found):
-        """검색 작업이 전체 종료되면 버튼 상태를 복구하고 요약 정보를 출력합니다."""
-        self.search_btn.setEnabled(True)
-        self.progress_update_requested.emit(0, 100, False)
+    def _on_search_finished(self, found_count, skipped_count):
+        """검색 작업이 모든 배치를 마치고 성공적으로 종료되었을 때 호출됩니다."""
+        # 프로그레스바를 채우고 메시지를 표시합니다.
+        self.progress_update_requested.emit(self.scanned_count, self.scanned_count, False)
 
-        # 자원 정리를 시도합니다. 스레드가 살아있다면 안전하게 종료되기를 기다립니다.
-        if self.thread:
-            self.thread.quit()
-            self.thread.wait()
-            self.thread = None
-        self.worker = None
+        # 로그에 스킵된 정보 출력
+        if hasattr(self, "skipped_files_list") and self.skipped_files_list:
+            logger.warning(AppStrings.LOG_SEARCH_SKIPPED_SUMMARY.format(len(self.skipped_files_list)))
+            for f in self.skipped_files_list:
+                logger.debug(f" - {f}")
 
-        # 결과가 존재하는 경우 로그 탭 대신 결과 탭으로 자동 전환하여 즉시 결과 창을 보여줍니다.
-        if total_found > 0:
-            self.tab_widget.setCurrentIndex(0)
-            self.result_filter_edit.setVisible(True) # 필터 입력란 표시
+        logger.info(AppStrings.LOG_WORKER_FINISHED.format(found_count, self.scanned_count))
+        # self.status_message_requested.emit(...) 는 아래 883행에서 STATUS_SEARCH_COMPLETED로 통합 처리됨
+        self._restore_search_button()
+
+        # 결과 유무와 관계없이 항상 결과 탭을 먼저 노출합니다.
+        self.tab_widget.setCurrentIndex(0)
+        if found_count > 0:
+            self.result_filter_edit.setVisible(True)  # 필터 입력란 표시
+            self.result_splitter.setVisible(True)
+            self.empty_label.setVisible(False)
         else:
-            self.result_filter_edit.setVisible(False) # 필터 입력란 숨김
-
+            self.result_filter_edit.setVisible(False)  # 필터 입력란 숨김
+            self.result_splitter.setVisible(False)
+            self.empty_label.setVisible(True)
 
         # 결과 테이블 정렬을 활성화하고 빈도가 높은 순으로 기본 정렬합니다.
         self.result_view.setSortingEnabled(True)
@@ -741,16 +843,10 @@ class SearchTab(QWidget):
         )
         self.status_message_requested.emit(status_msg, 0)
 
-        # 중단 모드였던 검색 버튼을 다시 '검색' 모드로 복원합니다.
-        self._restore_search_button()
-
-    def _on_error(self, error_msg):
+    def _on_search_error(self, error_msg):
         """작업 도중 발생한 치명적 오류를 처리하고 사용자에게 알립니다."""
-        formatted_error = AppStrings.ERROR_SEARCH_LOG.format(error_msg)
-        logger.error(formatted_error)
-        self.status_message_requested.emit(formatted_error, 0)
-        self.search_btn.setEnabled(True)
-        self._stop_existing_search()
+        logger.error(AppStrings.LOG_WORKER_ERROR.format(error_msg))
+        self.status_message_requested.emit(f"{AppStrings.STATUS_ERROR_PREFIX}{error_msg}", 5000)
         self._restore_search_button()
 
     def _open_file_from_match_view(self, index):
@@ -758,6 +854,7 @@ class SearchTab(QWidget):
         file_path = self.match_model.current_file_path
         if file_path:
             from utils.file_helper import open_file
+
             open_file(file_path)
 
     def _open_file_from_view(self, index):
@@ -767,6 +864,7 @@ class SearchTab(QWidget):
         file_path, _ = self.result_model.get_full_data(source_index.row())
         if file_path:
             from utils.file_helper import open_file
+
             open_file(file_path)
 
     def _show_result_context_menu(self, pos):
@@ -924,3 +1022,81 @@ class SearchTab(QWidget):
                 for line_no, content in matches:
                     f.write(AppStrings.EXPORT_TEXT_LINE_PREFIX.format(line_no, content))
                 f.write(AppStrings.EXPORT_TEXT_SEPARATOR)
+
+    def _restore_column_widths(self, table_name):
+        """저장된 설정에서 컬럼 너비를 불러와 테이블에 적용합니다."""
+        widths = self.config_manager.get_column_widths(table_name)
+        if not widths:
+            return
+
+        view = self.result_view if table_name == "result" else self.match_view
+        header = view.horizontalHeader()
+
+        # 시그널 잠시 차단 (복원 중 저장 방지)
+        header.blockSignals(True)
+        for i, width in enumerate(widths):
+            if i < header.count():
+                header.setSectionResizeMode(i, QHeaderView.Interactive)
+                view.setColumnWidth(i, width)
+        header.blockSignals(False)
+
+    def _save_column_widths(self, table_name):
+        """현재 테이블의 컬럼 너비를 설정에 저장합니다."""
+        view = self.result_view if table_name == "result" else self.match_view
+        header = view.horizontalHeader()
+        widths = [view.columnWidth(i) for i in range(header.count())]
+        self.config_manager.set_column_widths(table_name, widths)
+
+    @staticmethod
+    def get_highlighted_html(escaped_content, search_text, is_xml, is_json, is_exact):
+        """
+        주어진 HTML 이스케이프된 내용에 대해 검색어 강조 HTML을 반환합니다.
+        유닛 테스트를 위해 UI와 분리된 정적 메서드로 구현되었습니다.
+        """
+        if not search_text:
+            return escaped_content
+
+        # 검색 패턴 생성: 전체 일치 모드일 경우 엄격한 경계(Boundary) 처리
+        pattern_str = re.escape(search_text)
+        if is_exact:
+            if is_xml or is_json:
+                # XML/JSON 특수 모드: 값이나 텍스트를 감싸는 구조적 기호(" ' > <)를 경계로 강제
+                pattern_str = rf'(?<=["\'>]){pattern_str}(?=["\'<])'
+            else:
+                # 일반 모드: 식별자의 일부가 될 수 있는 특수문자(._:-)를 포함한 네거티브 룩어라운드 적용
+                pattern_str = rf"(?<![a-zA-Z0-9._:-]){pattern_str}(?![a-zA-Z0-9._:-])"
+
+        try:
+            search_pattern = re.compile(pattern_str, re.IGNORECASE)
+        except re.error:
+            return escaped_content
+
+        if is_json and ":" in escaped_content:
+            # JSON: 첫 번째 콜론(:) 이후의 값 부분에서만 검색 및 강조
+            parts = escaped_content.split(":", 1)
+            key_part = parts[0]
+            val_part = parts[1]
+            highlighted_val = search_pattern.sub(
+                lambda m: f"<span style='color: #ff9900; font-weight: bold;'>{m.group()}</span>", val_part
+            )
+            return f"{key_part}:{highlighted_val}"
+        elif is_xml:
+            # XML: 태그 기호 사이의 이름 제외 강조
+            highlighted = search_pattern.sub(
+                lambda m: f"<span style='color: #ff9900; font-weight: bold;'>{m.group()}</span>", escaped_content
+            )
+            # 태그 시작 부분(<Tag) 오탐 보정
+            from html import escape
+
+            tag_token = escape(search_text)
+            bad_highlight = f"<{tag_token}"
+            if bad_highlight in highlighted:
+                highlighted = highlighted.replace(
+                    f"<span style='color: #ff9900; font-weight: bold;'>{tag_token}</span>", tag_token
+                )
+            return highlighted
+        else:
+            # 일반 모드: 전체 강조
+            return search_pattern.sub(
+                lambda m: f"<span style='color: #ff9900; font-weight: bold;'>{m.group()}</span>", escaped_content
+            )

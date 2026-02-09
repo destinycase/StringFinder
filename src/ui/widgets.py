@@ -1,7 +1,64 @@
-from PySide6.QtWidgets import QComboBox, QStyledItemDelegate, QStyle, QCompleter, QSizePolicy, QLineEdit
-from PySide6.QtCore import Qt, QRect, QEvent, Signal
-from PySide6.QtGui import QColor, QCursor, QPalette
+from PySide6.QtWidgets import (
+    QComboBox,
+    QStyledItemDelegate,
+    QStyle,
+    QCompleter,
+    QSizePolicy,
+    QLineEdit,
+    QStyleOptionViewItem,
+)
+from PySide6.QtCore import Qt, QRect, QEvent, Signal, QSize, QRectF
+from PySide6.QtGui import QColor, QCursor, QPalette, QTextDocument, QAbstractTextDocumentLayout
 from utils.app_strings import AppStrings
+
+
+class HtmlDelegate(QStyledItemDelegate):
+    """
+    HTML 텍스트 렌더링을 지원하는 델리게이트입니다.
+    QTableView 등의 셀에서 태그를 활용한 부분 강조(색상 등)가 가능하게 합니다.
+    """
+
+    def paint(self, painter, option, index):
+        options = QStyleOptionViewItem(option)
+        self.initStyleOption(options, index)
+
+        painter.save()
+
+        # HTML 문서를 생성하여 텍스트를 설정합니다.
+        doc = QTextDocument()
+        # 기본 폰트와 색상을 현재 테마와 맞춥니다.
+        doc.setDefaultFont(options.font)
+
+        # HTML 렌더링 시 기본 텍스트 색상을 설정합니다.
+        # 다크 모드 등을 고려하여 Palette에서 텍스트 색상을 가져옵니다.
+        text_color = options.palette.color(QPalette.ColorRole.Text).name()
+        html_content = f"<div style='color: {text_color};'>{options.text}</div>"
+        doc.setHtml(html_content)
+
+        # 배경색 및 선택 효과 등을 먼저 그립니다.
+        options.text = ""
+        option.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, options, painter)
+
+        # 텍스트를 그릴 위치로 이동합니다.
+        painter.translate(options.rect.left(), options.rect.top())
+        clip = QRectF(0, 0, options.rect.width(), options.rect.height())
+        painter.setClipRect(clip)
+
+        # 실제 HTML 내용을 그립니다.
+        ctx = QAbstractTextDocumentLayout.PaintContext()
+        # 선택된 상태일 경우 반전 등을 위해 텍스트 색상을 조절할 수도 있지만,
+        # HTML 내부에 이미 색상 지정이 있을 수 있으므로 기본 ctx를 사용합니다.
+        doc.documentLayout().draw(painter, ctx)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        options = QStyleOptionViewItem(option)
+        self.initStyleOption(options, index)
+        doc = QTextDocument()
+        doc.setDefaultFont(options.font)
+        doc.setHtml(options.text)
+        return QSize(int(doc.idealWidth()), int(doc.size().height()))
 
 
 class HistoryItemDelegate(QStyledItemDelegate):
@@ -98,7 +155,7 @@ class HistoryComboBox(QComboBox):
                     if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
                         text = self.itemText(index.row())
                         self.history_item_deleted.emit(text)
-                        
+
                         # 화면에서 즉시 항목을 제거하여 사용자 응답성을 높입니다.
                         self.removeItem(index.row())
                     return True

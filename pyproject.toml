@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "2.9.1"
+version = "3.0.0"
 authors = [{ name = "N2", email = "your@email.com" }]
 
 description = "A high-performance string search utility with Multiprocessing and mmap."
@@ -29,7 +29,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "3.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
