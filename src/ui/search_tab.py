@@ -105,11 +105,18 @@ class SearchTab(QWidget):
         self.search_combo.history_item_deleted.connect(lambda t: self._remove_history_item(t, "search"))
         self.search_combo.history_cleared.connect(lambda: self._clear_history("search"))
 
+        self.case_checkbox = QCheckBox(AppStrings.SEARCH_CASE_INSENSITIVE)
+        self.case_checkbox.setChecked(self.config_manager.get_case_insensitive())
+        self.case_checkbox.stateChanged.connect(
+            lambda state: self.config_manager.set_case_insensitive(state == Qt.CheckState.Checked.value)
+        )
+
         self.search_btn = QPushButton(AppStrings.SEARCH_BTN)
         self.search_btn.clicked.connect(self.start_search)
 
         search_input_layout.addWidget(search_label)
         search_input_layout.addWidget(self.search_combo, 1)
+        search_input_layout.addWidget(self.case_checkbox)
         search_input_layout.addWidget(self.search_btn)
 
         # 파일명 필터 라인
@@ -502,9 +509,14 @@ class SearchTab(QWidget):
         self.start_timer = time.time()
 
         # 파일 스캔 단계 (패턴 매칭 적용 - FileScanner 내부에서 로그 처리됨)
+        scan_start_time = time.time()
         scanner = FileScanner(selected_folders, selected_exts, filename_filter)
         file_list = scanner.scan()
+        scan_duration = time.time() - scan_start_time
+        logger.info(AppStrings.LOG_SCAN_COMPLETED.format(len(file_list), scan_duration))
+
         self.scanned_count = len(file_list)  # 검색 대상 파일 수 저장
+        self.search_stage_start = time.time()  # 검색 단계 시작 시간 저장
 
         if not file_list:
             logger.info(AppStrings.LOG_NO_FILES_TO_SEARCH)
@@ -527,7 +539,8 @@ class SearchTab(QWidget):
         # 2. 백그라운드 워커 실행 (병렬 처리)
         logger.info(AppStrings.LOG_BACKGROUND_WORKER_INIT)
         self.thread = QThread()
-        self.worker = SearchWorker(self.search_engine, file_list, search_text)
+        case_insensitive = self.case_checkbox.isChecked()
+        self.worker = SearchWorker(self.search_engine, file_list, search_text, not case_insensitive)
         self.worker.moveToThread(self.thread)
 
         # 시그널 연결: 워커 이벤트 -> UI 업데이트
@@ -648,6 +661,8 @@ class SearchTab(QWidget):
 
         # 시간 측정 완료
         elapsed = time.time() - self.start_timer
+        search_stage_duration = time.time() - self.search_stage_start
+        logger.info(AppStrings.LOG_SEARCH_COMPLETED_STEP.format(search_stage_duration))
 
         # 타이틀 업데이트 - 고정 타이틀 유지
         self.result_group.setTitle(AppStrings.RESULT_GROUP_TITLE)

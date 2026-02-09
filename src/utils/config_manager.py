@@ -29,8 +29,16 @@ class ConfigManager:
             "global_hotkey": "alt+shift+space",
             "run_at_startup": False,
             "close_to_tray": False,
+            "case_insensitive": False,
         }
         self.config = self._load()
+
+    def get_case_insensitive(self):
+        return self.config.get("case_insensitive", False)
+
+    def set_case_insensitive(self, value):
+        self.config["case_insensitive"] = value
+        self.save()
 
     def _load(self):
         if os.path.exists(self.config_path):

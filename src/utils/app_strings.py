@@ -3,7 +3,7 @@ class AppStrings:
     APP_NAME = "String Finder"
 
     # 상수로 하드코딩하여 빌드된 실행 파일에서도 정확한 버전을 표시함
-    APP_VERSION = "2.7.0"
+    APP_VERSION = "2.8.0"
     APP_TITLE = "String Finder"
 
     ADD_TAB_BTN = "+"
@@ -15,6 +15,7 @@ class AppStrings:
     SEARCH_EDIT_PLACEHOLDER = "검색할 문자열을 입력하세요..."
     SEARCH_BTN = "검색"
     SEARCH_BTN_STOP = "중지"  # UX 개선: 검색 중 버튼 텍스트
+    SEARCH_CASE_INSENSITIVE = "대소문자 구분 안 함"
     FILENAME_FILTER_LABEL = "파일명 필터:"
     FILENAME_EDIT_PLACEHOLDER = "파일명 일부 입력 (비워두면 전체 검색)..."
 
@@ -96,6 +97,8 @@ class AppStrings:
     LOG_NO_FILES_TO_SEARCH = "검색할 파일이 없습니다. UI를 초기화합니다."
     LOG_BACKGROUND_WORKER_INIT = "백그라운드 워커 초기화 중..."
     LOG_EMPTY_SEARCH_ABORTED = "검색어가 비어 있어 검색을 중단합니다."
+    LOG_SCAN_COMPLETED = "[Step 1] 파일 스캔 완료: {}개 파일 발견 (소요 시간: {:.3f}초)"
+    LOG_SEARCH_COMPLETED_STEP = "[Step 2] 문자열 검색 완료 (소요 시간: {:.3f}초)"
 
     ERROR_EXCEL_SEARCH = "Excel 검색 오류 ({}): {}"
     ERROR_LEGACY_EXCEL_SEARCH = "구형 Excel 검색 오류 ({}): {}"

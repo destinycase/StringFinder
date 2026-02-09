@@ -24,7 +24,7 @@ class SearchWorker(QObject):
     # 워커 종료 최종 알림 (리소스 정리용)
     finished = Signal()
 
-    def __init__(self, search_engine, file_list, search_string):
+    def __init__(self, search_engine, file_list, search_string, case_sensitive=True):
         """
         워커를 초기화합니다.
 
@@ -32,11 +32,13 @@ class SearchWorker(QObject):
             search_engine (SearchEngine): 검색을 수행할 엔진 인스턴스
             file_list (list): 검색 대상 파일 경로 리스트
             search_string (str): 검색할 문자열
+            case_sensitive (bool): 대소문자 구분 여부
         """
         super().__init__()
         self.search_engine = search_engine
         self.file_list = file_list
         self.search_string = search_string
+        self.case_sensitive = case_sensitive
         self.is_running = True
 
     def run(self):
@@ -64,7 +66,10 @@ class SearchWorker(QObject):
             BATCH_SIZE = 50
 
             with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-                future_to_file = {executor.submit(search_in_file, f, self.search_string): f for f in self.file_list}
+                future_to_file = {
+                    executor.submit(search_in_file, f, self.search_string, self.case_sensitive): f
+                    for f in self.file_list
+                }
 
                 for future in future_to_file:
                     if not self.is_running:

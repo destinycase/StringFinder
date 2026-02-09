@@ -64,8 +64,11 @@ def build():
         ico_icon_path = png_icon_path
 
     # PyInstaller 명령 실행
+    # 윈도우 환경에서 PATH 이슈 방지를 위해 python -m PyInstaller 방식 사용
     cmd = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--onefile",
         "--noconsole",
         "--clean",
