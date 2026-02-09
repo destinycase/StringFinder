@@ -3,7 +3,7 @@ class AppStrings:
     APP_NAME = "String Finder"
 
     # 상수로 하드코딩하여 빌드된 실행 파일에서도 정확한 버전을 표시함
-    APP_VERSION = "2.8.0"
+    APP_VERSION = "2.9.0"
     APP_TITLE = "String Finder"
 
     ADD_TAB_BTN = "+"
@@ -12,12 +12,12 @@ class AppStrings:
 
     # Search Tab - General UI
     SEARCH_LABEL = "검색 문자열:"
-    SEARCH_EDIT_PLACEHOLDER = "검색할 문자열을 입력하세요..."
+    SEARCH_EDIT_PLACEHOLDER = "검색어 입력..."
     SEARCH_BTN = "검색"
     SEARCH_BTN_STOP = "중지"  # UX 개선: 검색 중 버튼 텍스트
     SEARCH_CASE_INSENSITIVE = "대소문자 구분 안 함"
     FILENAME_FILTER_LABEL = "파일명 필터:"
-    FILENAME_EDIT_PLACEHOLDER = "파일명 일부 입력 (비워두면 전체 검색)..."
+    FILENAME_EDIT_PLACEHOLDER = "입력한 문자열을 포함한 파일만 검색 (예: npc, fo / 콤마로 구분)..."
 
     # Filter Group Boxes
     FOLDER_GROUP = "검색 폴더 리스트"
@@ -34,10 +34,13 @@ class AppStrings:
     EXT_EDIT_PLACEHOLDER = "확장자(예: txt)"
 
     # Result UI
-    RESULT_GROUP_TITLE = "검색 결과"
+    RESULT_GROUP_TITLE = "결과 및 로그"
+    TAB_RESULTS = "검색 결과"
+    TAB_LOGS = "검색 로그"
     RESULT_SUMMARY_TEMPLATE = "총 {0}개 파일 / 총 {1}개 일치 찾음"
     STATUS_SEARCH_SUMMARY = "검색 완료 - 총 {0}개 파일 / 총 {1}개 일치 찾음 (소요 시간: {2:.2f}초)"
     RESULT_EMPTY_MSG = "검색 결과가 없습니다. 상단에서 검색어나 필터를 조정해 보세요."
+    RESULT_FILTER_PLACEHOLDER = "결과 내 파일명 필터..."
     RESULT_EMPTY_NO_FOLDER = "검색 대상 폴더를 추가해주세요."  # UX 개선
     RESULT_EMPTY_NO_MATCH = "'{}'에 대한 결과가 없습니다. 다른 검색어를 시도해보세요."  # UX 개선
     RESULT_EXPORT_BTN = "내보내기"
@@ -56,10 +59,16 @@ class AppStrings:
     OPEN_FOLDER = "파일 위치 열기"
     COPY_PATH = "경로 복사 (Ctrl+C)"
     COPY_CONTENT = "내용 복사 (Ctrl+C)"
+    ERROR_TITLE = "오류"
+    SUCCESS_TITLE = "완료"
+    INFO_TITLE = "알림"
 
     # UX & Symbols
     SYMBOL_CLOSE = "×"
     COLOR_RED = "#FF5555"
+    SYMBOL_TAB_SEPARATOR = " "
+    PROGRESS_BAR_FORMAT = "%p% (%v/%m)"
+    SEARCH_TAB_TITLE_TEMPLATE = "{} {}"  # 예: "Search 1"
     HISTORY_ACTION_CLEAR = "action_clear"
     HISTORY_CLEAR_ALL = "--- 히스토리 전체 삭제 ---"
 
@@ -96,7 +105,9 @@ class AppStrings:
     LOG_FOUND_CANDIDATE_FILES = "검색 대상 파일 {}개 발견."
     LOG_NO_FILES_TO_SEARCH = "검색할 파일이 없습니다. UI를 초기화합니다."
     LOG_BACKGROUND_WORKER_INIT = "백그라운드 워커 초기화 중..."
-    LOG_EMPTY_SEARCH_ABORTED = "검색어가 비어 있어 검색을 중단합니다."
+    LOG_EMPTY_SEARCH_ABORTED = "검색어를 입력해 주세요."
+    LOG_SEARCH_ALL_FILES_GUIDE = "전체 파일을 대상으로 스캔을 시작합니다."
+    LOG_FILENAME_FILTER_GUIDE = "입력한 문자열을 포함한 파일만 검색합니다. ','를 넣어 여러 문자열을 넣을 수 있습니다. (예시: npc, fo)"
     LOG_SCAN_COMPLETED = "[Step 1] 파일 스캔 완료: {}개 파일 발견 (소요 시간: {:.3f}초)"
     LOG_SEARCH_COMPLETED_STEP = "[Step 2] 문자열 검색 완료 (소요 시간: {:.3f}초)"
 
@@ -108,6 +119,14 @@ class AppStrings:
     LOG_WORKER_FINISHED = "워커 종료. {}개 파일에서 일치하는 항목 발견 (총 {}개 파일 중)."
     LOG_WORKER_STOPPED = "워커가 조기에 중단되었습니다."
     LOG_WORKER_ERROR = "워커 오류: {}"
+    LOG_WORKER_PROGRESS = "검색 진행 중... {}% 완료 ({}/{})"
+    LOG_WORKER_COLLECTING_RESULTS = "일치하는 항목들을 취합하여 표시를 준비 중입니다 ({}개 파일)..."
+    LOG_UI_DISPLAYING_RESULTS = "검색 결과를 화면에 구성 중입니다. 잠시만 기다려 주세요..."
+    LOG_BATCH_TIMEOUT = "배치 작업 타임아웃 (300초)"
+    LOG_BATCH_ERROR = "배치 처리 중 오류: {}"
+    ERROR_TRAY_UNAVAILABLE = "시스템 트레이를 사용할 수 없습니다."
+    ERROR_RESOURCE_NOT_FOUND = "리소스를 찾을 수 없음: {}"
+    ERROR_OPEN_DIR_FAILED = "폴더를 열 수 없습니다: {}"
 
     LOG_REGISTRY_ERROR = "레지스트리 조작 오류: {}"
     LOG_HOTKEY_REGISTERED = "전역 단축키 등록 완료: {}"
@@ -122,6 +141,10 @@ class AppStrings:
     """
     FONT_PREVIEW_WIN = "Consolas"
     FONT_PREVIEW_MAC = "Menlo"
+    STYLE_DANGER_TEXT = "color: #ff5555;"
+    STYLE_STOP_BTN_ACTIVE = "QPushButton { background-color: #ff5555; color: white; }"
+    STYLE_SELECTION_INFO = "color: #888; font-size: 14px; margin: 20px;"
+    STYLE_SETTINGS_RECORDING = "QLineEdit { border: 2px solid #3498db; background-color: #2c3e50; }"
 
     # Additional Errors
     ERROR_FILE_NOT_FOUND = "파일을 찾을 수 없습니다: {}"
@@ -151,8 +174,23 @@ class AppStrings:
     ERROR_STREAMING = "스트리밍 오류: {}"
 
     # Status Bar Messages
-    STATUS_SEARCH_PROGRESS = "검색 중... ({}/{})"
     STATUS_SEARCH_COMPLETED = "검색 완료 - 총 {}개 대상 - 총 {}개 일치 파일 - 총 {}개 일치 내용 (소요 시간: {:.2f}초)"
+    STATUS_SEARCH_PROGRESS = "검색 진행 중... {} / {} 완료"
+    
+    # Newly consolidated strings
+    LOG_FILE_NAME = "string_finder.log"
+    LOG_APP_SHUTDOWN = "애플리케이션 종료 중... 로그 파일을 정리합니다."
+    ERROR_LOG_DELETE = "종료 시 로그 파일 삭제 실패: {}"
+    ERROR_FILE_TIMEOUT = "파일 처리 시간 초과 (300초): {}"
+    ERROR_FILE_PROCESSING = "파일 처리 오류 {}: {}"
+    ERROR_IO_DURING_SEARCH = "검색 중 I/O 오류 발생: {}"
+    ERROR_SEARCH_LOG = "검색 오류: {}"
+    ERROR_EXPORT = "내보내기 오류: {}"
+    EXPORT_TEXT_LINE_PREFIX = "   L{}: {}\n"
+    EXPORT_TEXT_SEPARATOR = "-" * 50 + "\n"
+    LOG_SCAN_TASK_FAILED = "스캔 작업 실패: {}"
+    ERROR_EXCEL_SEARCH_UNEXPECTED = "Excel 검색 중 예기치 않은 오류 발생 ({}): {}"
+    LOG_SEARCH_ERROR_IN_FILE = "파일 검색 중 오류 발생 {}: {}"
 
 
 # 클래스 정의 후 타이틀 최종 확정

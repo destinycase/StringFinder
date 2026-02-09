@@ -112,7 +112,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(open_dir_btn)
 
         clear_data_btn = QPushButton(AppStrings.CLEAR_ALL_DATA_BTN)
-        clear_data_btn.setStyleSheet("QPushButton { color: #ff5555; }")
+        clear_data_btn.setStyleSheet(f"QPushButton {{ {AppStrings.STYLE_DANGER_TEXT} }}")
         clear_data_btn.clicked.connect(self._clear_all_data)
         layout.addWidget(clear_data_btn)
 
@@ -158,8 +158,8 @@ class SettingsDialog(QDialog):
                 logger.error(f"Failed to open data dir: {e}")
                 QMessageBox.warning(
                     self,
-                    AppStrings.ERROR_TITLE if hasattr(AppStrings, "ERROR_TITLE") else "오류",
-                    f"폴더를 열 수 없습니다: {e}",
+                    AppStrings.ERROR_TITLE,
+                    AppStrings.ERROR_OPEN_DIR_FAILED.format(e),
                 )
 
     def _clear_all_data(self):

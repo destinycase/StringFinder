@@ -9,7 +9,8 @@ class ConfigManager:
     """
 
     def __init__(self):
-        # AppData/StringFinder 경로 설정
+        """사용자 로컬 AppData 내에 설정 저장소를 확보하고 기본값들을 준비합니다."""
+        # Windows 기준 AppData/StringFinder 경로를 사용합니다.
         app_data = os.getenv("APPDATA")
         self.config_dir = os.path.join(app_data, "StringFinder")
         if not os.path.exists(self.config_dir):
@@ -34,18 +35,21 @@ class ConfigManager:
         self.config = self._load()
 
     def get_case_insensitive(self):
+        """대소문자 구분 여부 옵션의 현재 상태를 반환합니다."""
         return self.config.get("case_insensitive", False)
 
     def set_case_insensitive(self, value):
+        """대소문자 구분 여부 옵션을 변경하고 파일로 즉시 저장합니다."""
         self.config["case_insensitive"] = value
         self.save()
 
     def _load(self):
+        """로컬 JSON 파일을 읽어 설정을 복원하며, 파일이 없거나 손상된 경우 기본값을 사용합니다."""
         if os.path.exists(self.config_path):
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    # 기본값과 병합 (새 필드 추가 대응)
+                    # 기존 설정 파일에 없는 새로운 필드는 기본값에서 보충하여 병합합니다.
                     merged = self.defaults.copy()
                     merged.update(data)
                     return merged
@@ -56,6 +60,7 @@ class ConfigManager:
         return self.defaults.copy()
 
     def save(self):
+        """현재 인메모리 설정값들을 로컬 JSON 파일로 직렬화하여 영구 저장합니다."""
         try:
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
@@ -65,9 +70,10 @@ class ConfigManager:
             logger.error(f"Unexpected error saving config: {e}", exc_info=True)
 
     def add_history(self, search_text):
+        """새로운 검색어를 기록 상단에 추가하며 최대 유지 개수(20개)를 넘지 않도록 관리합니다."""
         if search_text and search_text not in self.config["history"]:
             self.config["history"].insert(0, search_text)
-            self.config["history"] = self.config["history"][:20]  # 최대 20개
+            self.config["history"] = self.config["history"][:20]
             self.save()
 
     def remove_history_item(self, text):
@@ -109,6 +115,7 @@ class ConfigManager:
         return self.config["filters"]
 
     def set_window_state(self, geometry, state):
+        """메인 윈도우의 위치와 크기 정보를 직렬화하여 저장합니다."""
         self.config["geometry"] = geometry.toHex().data().decode()
         self.config["windowState"] = state.toHex().data().decode()
         self.save()
@@ -140,7 +147,7 @@ class ConfigManager:
         self.save()
 
     def clear_all_data(self):
-        """저장된 모든 설정 및 히스토리 삭제"""
+        """데이터베이스 파일(JSON)을 삭제하고 전체 초기화 상태로 되돌립니다."""
         if os.path.exists(self.config_path):
             os.remove(self.config_path)
         self.config = self.defaults.copy()

@@ -13,17 +13,18 @@ class HistoryItemDelegate(QStyledItemDelegate):
     item_delete_requested = Signal(str)
 
     def paint(self, painter, option, index):
+        """항목을 렌더링하며 마우스 오버 시 삭제 버튼(×)을 추가로 그립니다."""
         super().paint(painter, option, index)
 
-        # 항목이 선택된(마우스 오버) 상태일 때만 삭제 버튼 표시
+        # 현재 마우스가 올라가 있는 선택된 항목에만 버튼을 표시합니다.
         if not (option.state & QStyle.State.State_Selected):
             return
 
-        # 특수 항목(전체 삭제)에는 버튼 미표시
+        # 히스토리 비우기 등 특수한 동작 항목에는 버튼을 표시하지 않습니다.
         if index.data(Qt.ItemDataRole.UserRole) == AppStrings.HISTORY_ACTION_CLEAR:
             return
 
-        # 우측 끝에 '×' 표시 영역 계산
+        # 우측 끝 부분에 버튼이 그려질 영역을 계산합니다.
         margin = 10
         btn_width = option.rect.height()
         x_rect = QRect(
@@ -34,7 +35,7 @@ class HistoryItemDelegate(QStyledItemDelegate):
         )
 
         painter.save()
-        # 마우스 위치에 따른 강조
+        # 마우스 커서가 버튼 위에 있는지 확인하여 색상을 변경합니다.
         mouse_pos = option.widget.mapFromGlobal(QCursor.pos())
         if x_rect.contains(mouse_pos):
             painter.setPen(QColor(AppStrings.COLOR_RED))
@@ -62,6 +63,7 @@ class HistoryComboBox(QComboBox):
     history_cleared = Signal()
 
     def __init__(self, parent=None):
+        """히스토리 관리 기능이 있는 콤보박스를 초기화합니다."""
         super().__init__(parent)
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
@@ -74,8 +76,12 @@ class HistoryComboBox(QComboBox):
         self.completer().setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         self.activated.connect(self._on_activated)
 
+    def setPlaceholderText(self, text):
+        """내부 QLineEdit에 플레이스홀더 텍스트를 설정합니다."""
+        self.lineEdit().setPlaceholderText(text)
+
     def eventFilter(self, source, event):
-        """삭제 버튼 클릭 이벤트 감지 및 처리"""
+        """콤보박스 목록 내의 특정 항목에서 우측 삭제 버튼 클릭을 감지합니다."""
         if source == self.view().viewport() and event.type() in (
             QEvent.Type.MouseButtonPress,
             QEvent.Type.MouseButtonRelease,
@@ -87,12 +93,13 @@ class HistoryComboBox(QComboBox):
                 btn_size = rect.height()
                 x_rect = QRect(rect.right() - btn_size - margin, rect.top(), btn_size, btn_size)
 
+                # 클릭 위치가 버튼 영역 안인지 확인합니다.
                 if x_rect.contains(event.position().toPoint()):
                     if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
                         text = self.itemText(index.row())
                         self.history_item_deleted.emit(text)
-                        # removeItem은 외부 동기화 후 _load_histories 등에 의해 처리되거나 여기서 직접 해도 됨
-                        # 여기서는 즉각적인 체감을 위해 직접 삭제
+                        
+                        # 화면에서 즉시 항목을 제거하여 사용자 응답성을 높입니다.
                         self.removeItem(index.row())
                     return True
         return super().eventFilter(source, event)
@@ -105,12 +112,12 @@ class HistoryComboBox(QComboBox):
             self.lineEdit().clear()
 
     def set_history(self, items: list[str]):
-        """저장된 히스토리 목록으로 항목 초기화"""
+        """설정 관리자로부터 받은 데이터 목록을 콤보박스 항목으로 반영합니다."""
         self.blockSignals(True)
         self.clear()
         if items:
             self.addItems(items)
-            # 전체 삭제 항목 추가
+            # 마지막에 '전체 기록 비우기' 특수 항목을 추가합니다.
             self.addItem(AppStrings.HISTORY_CLEAR_ALL)
             self.setItemData(self.count() - 1, AppStrings.HISTORY_ACTION_CLEAR, Qt.ItemDataRole.UserRole)
         self.setCurrentIndex(-1)
@@ -163,15 +170,16 @@ class HotkeyLineEdit(QLineEdit):
         }
 
     def keyPressEvent(self, event):
+        """키보드 입력을 가로채서 단축키 텍스트 조합을 생성합니다."""
         key = event.key()
 
-        # ESC나 Backspace는 초기화 용도로 사용
+        # ESC나 Backspace가 입력되면 설정을 초기화합니다.
         if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
             self.clear()
             self.hotkey_changed.emit("")
             return
 
-        # 수정자(Modifier) 키만 눌린 경우 텍스트만 갱신하고 대기
+        # 수정자(Modifier) 키들의 조합 상태를 추출합니다.
         modifiers = event.modifiers()
         parts = []
 
@@ -184,12 +192,12 @@ class HotkeyLineEdit(QLineEdit):
         if modifiers & Qt.KeyboardModifier.MetaModifier:
             parts.append("meta")
 
-        # 실제 키 값 추출 (수정자 키 자체인 경우 제외)
+        # 실제 기능 키가 눌린 경우 최종 단축키 문자열을 확정합니다.
         if key not in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
             key_name = self._key_map.get(key)
             if not key_name:
                 key_name = event.text().lower()
-                if not key_name:  # 텍스트가 없는 특수키의 경우
+                if not key_name:
                     key_name = event.keyCombination().key().name.lower()
 
             if key_name:
@@ -197,9 +205,9 @@ class HotkeyLineEdit(QLineEdit):
                 hotkey_str = "+".join(parts)
                 self.setText(hotkey_str)
                 self.hotkey_changed.emit(hotkey_str)
-                self.clearFocus()  # 입력 완료 후 포커스 해제
+                self.clearFocus()  # 입력이 완료되면 포커스를 해제하여 기록 모드를 종료합니다.
         else:
-            # 수정자 키만 눌린 상태 표시
+            # 수정자 키(Ctrl, Alt 등)만 눌린 경우 진행 상황을 보여줍니다.
             if parts:
                 self.setText("+".join(parts) + "+...")
             else:
@@ -208,7 +216,7 @@ class HotkeyLineEdit(QLineEdit):
     def focusInEvent(self, event):
         self.setText(AppStrings.HOTKEY_RECORDING)
         # 기록 중임을 시각적으로 표현 (스타일 시트 활용 가능)
-        self.setStyleSheet("QLineEdit { border: 2px solid #3498db; background-color: #2c3e50; }")
+        self.setStyleSheet(AppStrings.STYLE_SETTINGS_RECORDING)
         super().focusInEvent(event)
 
     def focusOutEvent(self, event):

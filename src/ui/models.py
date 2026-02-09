@@ -9,11 +9,12 @@ class SearchResultModel(QAbstractTableModel):
     """
 
     def __init__(self, icon_provider):
+        """모델을 초기화하고 검색 엔진의 결과 항목 헤더를 설정합니다."""
         super().__init__()
         from utils.app_strings import AppStrings
 
         self.headers = [AppStrings.HEADER_COUNT, AppStrings.HEADER_FILE_PATH]
-        self._data = []  # list of [count, file_path, matches]
+        self._data = []  # [count, file_path, matches] 형태의 리스트
         self.icon_provider = icon_provider
 
     def rowCount(self, parent=QModelIndex()):
@@ -65,9 +66,10 @@ class SearchResultModel(QAbstractTableModel):
         return None
 
     def sort(self, column, order=Qt.AscendingOrder):
-        """데이터 정렬"""
+        """특정 열을 기준으로 데이터를 오름차순 또는 내림차순으로 정렬합니다."""
         self.layoutAboutToBeChanged.emit()
         reverse = order == Qt.DescendingOrder
+        # 리스트의 해당 인덱스 값을 기준으로 정렬을 수행합니다.
         self._data.sort(key=lambda x: x[column], reverse=reverse)
         self.layoutChanged.emit()
 
@@ -77,7 +79,7 @@ class SearchResultModel(QAbstractTableModel):
         self.endResetModel()
 
     def add_results(self, results):
-        """배치로 결과를 추가합니다 (file_path, count, matches)"""
+        """여러 개의 검색 결과를 모델에 한꺼번에 추가(Batch Insert)합니다. (file_path, count, matches)"""
         if not results:
             return
 
@@ -87,6 +89,7 @@ class SearchResultModel(QAbstractTableModel):
         self.endInsertRows()
 
     def get_full_data(self, row):
+        """특정 행의 전체 데이터(경로 및 매칭 리스트)를 반환합니다."""
         if 0 <= row < len(self._data):
             return self._data[row][1], self._data[row][2]
         return None, None
@@ -98,11 +101,12 @@ class MatchDetailModel(QAbstractTableModel):
     """
 
     def __init__(self):
+        """모델을 초기화하고 매칭 상세 정보(라인, 내용)의 헤더를 설정합니다."""
         super().__init__()
         from utils.app_strings import AppStrings
 
         self.headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_CONTENT]
-        self._data = []  # list of (line_no, content)
+        self._data = []  # (line_no, content) 튜플 리스트
         self.current_file_path = ""
 
     def rowCount(self, parent=QModelIndex()):
@@ -139,6 +143,7 @@ class MatchDetailModel(QAbstractTableModel):
         return None
 
     def set_matches(self, file_path, matches):
+        """특정 파일의 매칭 상세 목록을 모델에 설정하고 뷰를 갱신합니다."""
         self.beginResetModel()
         self.current_file_path = file_path
         self._data = matches
@@ -151,6 +156,7 @@ class MatchDetailModel(QAbstractTableModel):
         self.endResetModel()
 
     def get_line_no(self, row):
+        """특정 행의 실제 소스 코드 라인 번호를 반환합니다."""
         if 0 <= row < len(self._data):
             return self._data[row][0]
         return None

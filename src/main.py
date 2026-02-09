@@ -13,11 +13,30 @@ def main():
     app.setApplicationName(AppStrings.APP_NAME)
     app.setApplicationVersion(AppStrings.APP_VERSION)
 
-    # 테마 적용 (AttributeError 방지를 위해 load_stylesheet 사용)
+    # 시스템 테마에 맞춰 고대비 또는 다크 테마를 강제 적용합니다.
     app.setStyleSheet(qdarktheme.load_stylesheet())
 
     window = MainWindow()
     window.show()
+
+    # 프로그램 종료 시 로그 파일 삭제 로직 추가
+    def cleanup_on_exit():
+        import os
+        from utils.logger import logger
+
+        logger.info(AppStrings.LOG_APP_SHUTDOWN)
+
+        # 로깅 핸들러들을 닫아 파일 스트림 점유를 해제합니다.
+        for handler in logger.handlers:
+            handler.close()
+
+        try:
+            if os.path.exists(AppStrings.LOG_FILE_NAME):
+                os.remove(AppStrings.LOG_FILE_NAME)
+        except Exception as e:
+            print(AppStrings.ERROR_LOG_DELETE.format(e))
+
+    app.aboutToQuit.connect(cleanup_on_exit)
 
     sys.exit(app.exec())
 
