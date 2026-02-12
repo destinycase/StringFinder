@@ -107,6 +107,7 @@ class MatchDetailModel(QAbstractTableModel):
         self.current_file_path = ""
         self.search_text = ""
         self.search_mode = "Normal"
+        self.highlight_pattern = None
 
     def rowCount(self, parent=QModelIndex()):
         return len(self._data)
@@ -129,18 +130,17 @@ class MatchDetailModel(QAbstractTableModel):
             # 검색 강조 처리 (HTML) - 위치 컬럼 이외의 텍스트 컬럼에만 적용
             if self.search_text and col > 0:
                 escaped_content = escape(val)
-                # "전체 일치" 모드인지 확인 (AppStrings 상수에 따라 달라질 수 있으므로 "전체 일치" 문자열 포함 여부로 체크)
+                # "전체 일치" 모드인지 확인
                 if "전체 일치" in self.search_mode:
-                    # 전체가 일치할 때만 강조
                     if val.lower() == self.search_text.lower():
                         return f"<span style='color: #ff9900; font-weight: bold;'>{escaped_content}</span>"
                 else:
-                    # 부분 일치 모드: 기존처럼 정규식으로 부분 강조
-                    pattern = re.compile(re.escape(self.search_text), re.IGNORECASE)
-                    return pattern.sub(
-                        lambda m: f"<span style='color: #ff9900; font-weight: bold;'>{m.group()}</span>",
-                        escaped_content,
-                    )
+                    # 부분 일치 모드: 미리 컴파일된 정규식 재사용
+                    if self.highlight_pattern:
+                        return self.highlight_pattern.sub(
+                            lambda m: f"<span style='color: #ff9900; font-weight: bold;'>{m.group()}</span>",
+                            escaped_content,
+                        )
             return val
 
         elif role == Qt.EditRole:
@@ -173,6 +173,15 @@ class MatchDetailModel(QAbstractTableModel):
         self.current_file_path = file_path
         self.search_text = search_text
         self.search_mode = search_mode
+
+        # 정규식 미리 컴파일 (부분 일치 모드일 경우)
+        if search_text and "전체 일치" not in search_mode:
+            try:
+                self.highlight_pattern = re.compile(re.escape(search_text), re.IGNORECASE)
+            except re.error:
+                self.highlight_pattern = None
+        else:
+            self.highlight_pattern = None
 
         # 실제 데이터의 열 개수 확인 (Fallback 대응)
         col_count = len(matches[0]) if matches else 2

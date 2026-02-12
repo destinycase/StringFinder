@@ -27,11 +27,12 @@ def sample_text_file(temp_dir):
 
 
 @pytest.fixture
-def mock_config_manager(temp_dir):
+def mock_config_manager(temp_dir, monkeypatch):
     """임시 경로를 사용하는 ConfigManager 피처"""
     from utils.config_manager import ConfigManager
 
-    os.makedirs(temp_dir, exist_ok=True)
+    # ConfigManager가 사용하는 APPDATA 환경변수를 임시 폴더로 변경
+    monkeypatch.setenv("APPDATA", temp_dir)
     return ConfigManager()
 
 

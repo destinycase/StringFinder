@@ -95,6 +95,7 @@ class SearchTab(QWidget):
         self.total_matches = 0
         self.total_files = 0
         self.scanned_count = 0  # 검색 프로세스 전반에서 다룰 총 스캔 대상 파일 수
+        self.last_ui_update_time = 0
         self._init_ui()
         # _init_ui 내부의 _load_histories 호출로 대체 가능하므로 생성자에서는 제거해도 됨
         # (이미 _init_ui 끝에 추가함)
@@ -658,6 +659,7 @@ class SearchTab(QWidget):
         self.search_btn.clicked.connect(self._stop_existing_search)
 
         self.start_timer = time.time()
+        self.last_ui_update_time = time.time()
 
         # 2. 파일 목록 스캔 단계 (백그라운드 스레드에서 비동기 처리하여 UI 프리징 방지)
         self.scan_thread = QThread()
@@ -766,10 +768,11 @@ class SearchTab(QWidget):
 
     def _on_results_found(self, results):
         """워커로부터 전달받은 검색 결과 배치(batch)를 모델에 추가하고 요약을 갱신합니다."""
-        # 대량의 결과가 한꺼번에 유입될 때 UI 프리징을 최소화하기 위해 강제 렌더링을 시도합니다.
-        if len(results) > 1000:
-            logger.info(AppStrings.LOG_UI_DISPLAYING_RESULTS)
+        # 대량의 결과가 유입될 때 UI 갱신 빈도를 제어하여 반응성 확보 (Throttling)
+        current_time = time.time()
+        if current_time - self.last_ui_update_time > 0.1:  # 100ms 간격
             QApplication.processEvents()
+            self.last_ui_update_time = current_time
 
         # 첫 번째 유효한 결과가 도착하면 테이블 뷰를 활성화합니다.
         if not self.result_splitter.isVisible():
@@ -842,16 +845,34 @@ class SearchTab(QWidget):
                 self.preview_text.setPlainText(AppStrings.RESULT_PREVIEW_ERROR)
                 return
 
-            # 인코딩 오류를 방지하기 위해 utf-8 ignore 모드로 파일을 순차적으로 읽습니다.
-            # 대용량 파일에서 메모리 문제를 피하려면 개선 여지가 있습니다.
-            lines = []
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
+            # 인코딩 자동 감지 (core.search_engine의 기능 재사용)
+            from core.search_engine import detect_encoding_quickly
 
-            total = len(lines)
-            # 매칭 라인을 중심으로 상하 5줄 정도의 문맥을 확보합니다.
-            start = max(0, target_line - 1 - 5)
-            end = min(total, target_line - 1 + 6)
+            lines = []
+            encoding = "utf-8"
+            try:
+                with open(file_path, "rb") as f:
+                    head = f.read(1024)
+                    encoding = detect_encoding_quickly(head)
+            except Exception:
+                pass
+
+            # 감지된 인코딩으로 파일 열기 (Lazy Loading)
+            preview_lines_data = [] # (line_no, content)
+            context_range = 5
+            # target_line is 1-based
+            start_target = max(1, target_line - context_range)
+            end_target = target_line + context_range
+
+            current_idx = 0 # 1-based line counter
+            with open(file_path, "r", encoding=encoding, errors="replace") as f:
+                for line in f:
+                    current_idx += 1
+                    if current_idx < start_target:
+                        continue
+                    if current_idx > end_target:
+                        break
+                    preview_lines_data.append((current_idx, line.rstrip()))
 
             # 다크모드 및 라이트모드 모두에서 잘 보이는 스타일 지정
             # 배경은 투명하게 하고, 텍스트 색상은 위젯의 기본 색상을 따르되 명시적으로 div로 감쌉니다.
@@ -862,9 +883,7 @@ class SearchTab(QWidget):
             is_xml = "XML" in special_mode
             is_exact = "전체 일치" in special_mode
 
-            for i in range(start, end):
-                ln = i + 1
-                content = lines[i].rstrip()
+            for ln, content in preview_lines_data:
                 from html import escape
 
                 escaped_content = escape(content)

@@ -219,16 +219,23 @@ def search_in_json_special(file_path, search_string, exact_match=False):
 
             return bisect.bisect_left(newline_indices, pos) + 1
 
-        search_state = {"last_pos": 0}
+        search_state = {"last_pos": 0, "limit_hit": False}
+        MAX_JSON_DEPTH = 1000
 
-        def _recursive_search(obj, path=""):
+        def _recursive_search(obj, path="", depth=0):
+            if depth > MAX_JSON_DEPTH:
+                if not search_state["limit_hit"]:
+                    logger.warning(f"JSON recursion limit exceeded in {file_path}")
+                    search_state["limit_hit"] = True
+                return 0
+
             count = 0
             if isinstance(obj, dict):
                 for k, v in obj.items():
-                    count += _recursive_search(v, str(k))
+                    count += _recursive_search(v, str(k), depth + 1)
             elif isinstance(obj, list):
                 for i, v in enumerate(obj):
-                    count += _recursive_search(v, f"[{i}]")
+                    count += _recursive_search(v, f"[{i}]", depth + 1)
             else:
                 val_raw = normalize_unicode(str(obj))
                 val_lower = val_raw.lower()
@@ -264,7 +271,15 @@ def search_in_json_special(file_path, search_string, exact_match=False):
                     matches.append((line_no, path or "root", val_raw))
             return count
 
-        total_count = _recursive_search(data)
+        try:
+            total_count = _recursive_search(data)
+        except RecursionError:
+            logger.warning(f"RecursionError: JSON depth too deep in {file_path}")
+            return "SKIPPED"
+
+        if search_state["limit_hit"]:
+             return "SKIPPED"
+
         if total_count > 0:
             return (file_path, total_count, matches)
         return []  # 발견된 것 없음
