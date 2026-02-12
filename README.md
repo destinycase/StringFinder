@@ -1,126 +1,84 @@
-# StringFinder
+# 🔍 StringFinder v3.7.4
 
-**Production-Ready 고성능 문자열 검색 도구**
-
-Python의 가용 자원을 최대 활용하여 극강의 검색 속도를 제공하는 문자열 검색 유틸리티입니다.
-
-[![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-57%20passed-brightgreen.svg)](tests/)
+**StringFinder**는 Python과 Rust의 하이브리드 아키텍처를 기반으로 설계된 초고속 텍스트 검색 유틸리티입니다. 수만 개의 파일이나 기가바이트 단위의 대용량 파일에서도 지연 없는 검색 성능을 제공하며, 특히 개발 시 자주 접하는 JSON, XML, Excel 파일에 특화된 스마트 검색 기능을 제공합니다.
 
 ---
 
-## ✨ 주요 기능
+## 🚀 주요 특징
 
-### 🚀 성능 최적화
-- **mmap 기반 검색**: 대용량 파일(GB급)도 전체 메모리 로드 없이 고속 처리
-- **멀티프로세싱**: CPU 코어 수에 따라 자동 확장되는 병렬 검색 아키텍처
-- **Lazy Loading 미리보기**: 500MB+ 파일도 2초 이내 즉시 열람
-- **배치 처리**: IPC 오버헤드 최소화로 대량 파일 검색 최적화
+### 1. 극강의 성능 (Hybrid Architecture)
+- **Rust Parallel Engine**: `ignore` 및 `rayon` 크레이트를 활용한 멀티 스레드 디렉토리 스캔 및 내용 검색을 통해 Python 대비 **3~4배** 이상의 성능을 발휘합니다.
+- **Memory Mapping (mmap)**: 파일을 메모리에 직접 매핑하여 대용량 파일 검색 시에도 RAM 사용량을 최소화합니다.
+- **Binary Pre-check & Protection**: 파일을 텍스트로 디코딩하기 전 바이트 단위로 사전 검사하여 불필요한 IO를 줄이며, 바이너리 파일 감지 시 깨진 글자 대신 플레이스홀더를 표시하여 UI를 보호합니다.
 
-### 🛡️ 안정성
-- **포괄적 예외 처리**: JSON 재귀 제한, 인코딩 오류 자동 복구
-- **자동 인코딩 감지**: UTF-8, CP949(EUC-KR) 자동 판별로 한글 깨짐 방지
+### 2. 지능형 검색 (Smart Scan)
+- **Smart Filter**: 특수 검색(XML/JSON) 시 Rust 엔진이 1차적으로 키워드 포함 여부를 필터링하여, 내용이 있는 파일만 Python 파서에 전달함으로써 전체 검색 효율을 극대화합니다.
+- **Excel 전문 엔진**: `python-calamine` 엔진을 활용하여 여러 시트로 구성된 엑셀 파일 내의 셀 데이터를 시트명과 좌표(예: Sheet1!A1)와 함께 정확하게 탐색합니다.
+- **주석 제외 검색**: 소스 코드(C, Python, JS 등) 및 설정 파일(JSON, XML) 검색 시 주석을 제외한 실제 데이터 영역에서만 검색어 위치를 정확히 찾아냅니다.
 
-### 🎯 특수 기능
-- **XML/JSON 특수 검색**: 주석 제외, 구조화된 데이터(Value)만 검색
-- **Excel 하이브리드 엔진**: 파일 크기별 최적 라이브러리 자동 전환
-- **실시간 필터링**: 수만 건 결과 내 파일명/폴더명 즉시 필터링
-- **가상 스크롤 UI**: 100만 건 이상 결과도 부드러운 스크롤/정렬
+### 3. 현대적인 사용자 인터페이스
+- **PySide6(Qt) 기반**: 직관적이고 반응성이 뛰어난 GUI를 제공하며, 한글화된 로그 시스템을 통해 작업 단계를 명확히 안내합니다.
+- **Dark Mode**: 시스템 테마와 연동되는 세련된 다크 테마를 기본 지원합니다.
+- **Lazy Loading**: 수백만 라인의 검색 결과도 스크롤 시점에 필요한 만큼만 로드하여 UI 프리징을 방지합니다.
 
 ---
 
-## 🚀 설치 및 실행
+## � 설치 및 실행
 
-### 요구사항
-- **OS**: Windows 10/11 (권장)
-- **Python**: 3.12 이상
+### 일반 사용자 (Windows 실행 파일)
+1. `dist/StringFinder.exe` 파일을 다운로드합니다.
+2. 별도의 설치 과정 없이 파일을 실행하여 바로 사용합니다.
 
-### 설치
+### 개발자 (소스 코드 실행)
+본 프로젝트는 **Python 3.12+** 및 **Rust** 환경이 필요합니다.
+
 ```bash
-# 기본 설치
+# 1. 저장소 클론
+git clone https://github.com/your-repo/StringFinder.git
+cd StringFinder
+
+# 2. 의존성 설치
 pip install -r requirements.txt
 
-# 개발 환경 설치 (테스트 포함)
-pip install -e ".[dev]"
+# 3. Rust 엔진 컴파일 (maturin 활용)
+cd src/sf_engine
+maturin develop --release
+
+# 4. 애플리케이션 실행
+cd ../..
+python src/main.py
 ```
 
-### 실행
-```bash
-python run.py
-```
+---
 
-### 테스트 실행
+## �️ 개발 및 빌드
+
+### 로컬 빌드 (PyInstaller)
+Rust 엔진이 포함된 단일 실행 파일을 생성하려면 프로젝트 루트에서 제공되는 빌드 스크립트를 사용합니다.
+
 ```bash
+python build.py
+```
+*이 명령은 자동으로 Rust 바이너리를 릴리스 모드로 컴파일하고, 모든 자산(Asset)과 함께 단일 실행 파일로 패키징합니다.*
+
+---
+
+## 🧪 테스트 및 벤치마크
+프로젝트의 안정성과 성능을 보장하기 위해 60개 이상의 테스트 케이스가 포함되어 있습니다.
+
+```bash
+# 전체 테스트 실행
 pytest tests/
+
+# 성능 벤치마크만 실행
+pytest tests/test_performance_benchmarks.py --benchmark-only
 ```
 
 ---
 
-## 📁 프로젝트 구조
-
-```
-StringFinder/
-├── src/
-│   ├── core/          # 검색 엔진 (mmap, 멀티프로세싱)
-│   │   ├── search_engine.py
-│   │   └── worker.py
-│   ├── ui/            # PySide6 GUI 컴포넌트
-│   │   ├── search_tab.py
-│   │   ├── models.py
-│   │   └── widgets.py
-│   └── utils/         # 설정 관리 및 헬퍼
-│       ├── config_manager.py
-│       └── logger.py
-├── tests/             # 57개 테스트 케이스
-├── pyproject.toml     # 프로젝트 메타데이터
-├── requirements.txt   # 의존성 목록
-└── run.py             # 엔트리 포인트
-```
+## � 라이선스
+본 프로젝트는 [MIT License](LICENSE)를 따릅니다.
 
 ---
 
-## 🔧 기술 스택
-
-- **UI Framework**: PySide6 (Qt 6.10+)
-- **검색 엔진**: mmap + regex (바이트 레벨)
-- **병렬 처리**: ProcessPoolExecutor (멀티프로세싱)
-- **Excel 처리**: python-calamine + openpyxl
-- **테스트**: pytest + pytest-qt
-
----
-
-## 📝 버전 히스토리
-
-### v3.6.0 (2026-02-12) [Latest]
-- ✅ **Lazy Loading 미리보기**: 대용량 파일 즉시 열람
-- ✅ **테스트 커버리지 확대**: 57개 테스트 (UI, 유틸리티 포함)
-- ✅ **안정성 강화**: JSON 재귀 제한, 인코딩 자동 감지
-- ✅ **성능 최적화**: Regex 캐싱, UI Throttling
-
-### v3.5.1
-- 비동기 백그라운드 파일 스캔
-- XML/JSON 특수 검색 모드
-- 고해상도 아이콘 빌드
-
----
-
-## 📄 라이선스
-
-MIT License
-
----
-
-## 🤝 기여
-
-이슈 및 PR은 언제나 환영합니다!
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-**Made with ❤️ by N2**
+**StringFinder**와 함께 대규모 프로젝트의 검색 생산성을 한 단계 높여보세요!

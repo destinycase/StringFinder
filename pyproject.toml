@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "3.6.1"
+version = "3.7.4"
 authors = [{ name = "N2", email = "your@email.com" }]
 
 description = "Production-ready high-performance string search utility with multiprocessing, mmap, and lazy loading optimizations."
@@ -31,6 +31,13 @@ dependencies = [
     "Pillow>=10.0.0",
 ]
 
+[project.gui-scripts]
+string-finder = "main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = {find = {where = ["src"]}}
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
@@ -38,6 +45,8 @@ dev = [
     "pytest-benchmark>=4.0.0",
     "ruff>=0.1.0",
     "pyinstaller>=6.3.0",
+    "maturin>=1.5.0",
+    "mypy>=1.8.0",
 ]
 
 [tool.ruff]
@@ -48,3 +57,11 @@ target-version = "py312"
 testpaths = ["tests"]
 python_files = "test_*.py"
 addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # 점진적 도입
+check_untyped_defs = true
+ignore_missing_imports = true
