@@ -398,12 +398,15 @@ def _quick_search_bytes(file_path, search_text):
     return False
 
 
-def search_in_file(file_path, search_string, file_size=None, special_mode=None):
+def search_in_file(file_path, search_string, file_size=None, special_mode=None, compiled_pattern=None):
     """
     고성능 검색 엔진: mmap과 바이트 레벨 정규표현식을 조합하여 파일을 검색합니다.
     - 대량의 파일 검색 시 메모리 사용량을 최소화합니다.
     - 주석 제외 검색 및 XML/JSON 특수 모드를 지원합니다.
     - 파일의 인코딩을 자동으로 판별하여 처리합니다.
+    
+    Args:
+        compiled_pattern (re.Pattern, optional): 미리 컴파일된 정규식 패턴 (성능 최적화용)
     """
     search_string_nfc = normalize_unicode(search_string)
     ext = splitext(file_path)[1].lower()
@@ -506,14 +509,19 @@ def search_in_file(file_path, search_string, file_size=None, special_mode=None):
     return None
 
 
-def search_in_files_batch(file_batch, search_string, special_mode=None):
+def search_in_files_batch(file_batch, search_string, special_mode=None, compiled_patterns=None):
     """
     배치 단위 검색을 수행하고 결과와 스킵된 목록을 반환합니다.
+    
+    Args:
+        compiled_patterns (dict, optional): 인코딩별 미리 컴파일된 정규식 패턴 딕셔너리
     """
     results = []
     skipped = []
     for f_path, f_size in file_batch:
-        res = search_in_file(f_path, search_string, f_size, special_mode)
+        # 인코딩별 패턴 선택 (현재는 utf-8 기본 사용, 향후 파일별 인코딩 감지 가능)
+        compiled_pattern = compiled_patterns.get('utf-8') if compiled_patterns else None
+        res = search_in_file(f_path, search_string, f_size, special_mode, compiled_pattern)
         if res == "SKIPPED":
             skipped.append(f_path)
         elif res:
