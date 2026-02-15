@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "3.7.4"
+version = "4.19.1"
 authors = [{ name = "N2", email = "your@email.com" }]
 
-description = "Production-ready high-performance string search utility with multiprocessing, mmap, and lazy loading optimizations."
+description = "Production-ready high-performance string search utility with Rust engine, multiprocessing, and smart file scanning. Features UTF-16LE support, robust session management, and comprehensive error handling."
 readme = "README.md"
 requires-python = ">=3.12"
 keywords = ["search", "string-finder", "mmap", "multiprocessing", "performance"]
