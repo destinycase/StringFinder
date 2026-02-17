@@ -43,3 +43,32 @@
 | **Validation** | `chardet` | 인코딩 분석 |
 | **Code Quality** | `ruff`, `mypy`, `pytest` | 린팅, 정적 분석 및 테스트 |
 | **Distribution** | `PyInstaller` | 실행 파일 빌드 |
+
+---
+
+## 🚦 시작하기
+
+### 요구사항
+- Python 3.12 이상
+- Windows 10/11
+
+### 설치
+```bash
+pip install -e .
+```
+
+### 실행
+```bash
+python run.py
+```
+
+### 빌드
+```bash
+python build.py
+```
+
+---
+
+## 📝 라이선스
+
+이 프로젝트는 개인 프로젝트입니다.
