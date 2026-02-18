@@ -12,7 +12,8 @@ except ImportError:
 try:
     from PySide6.QtGui import QImage, QPainter
     from PySide6.QtSvg import QSvgRenderer
-    from PySide6.QtCore import QSize, Qt, QBuffer, QIODevice
+    from PySide6.QtCore import QSize, Qt
+    import tempfile
 except ImportError:
     print("Error: 'PySide6' is required for SVG icon conversion.")
     sys.exit(1)
@@ -57,7 +58,7 @@ def cleanup():
                 print(f"Removed: {pycache_path}")
 
     # 4. 임시 버전 파일 삭제
-    version_file = os.path.join("src", "utils", "_version.py")
+    version_file = os.path.join("src", "sf_utils", "_version.py")
     if os.path.exists(version_file):
         os.remove(version_file)
         print(f"Removed temporary version file: {version_file}")
@@ -86,7 +87,7 @@ def build():
 
     # 임시 _version.py 파일 생성 (Constants에서 로드됨)
     version_file_content = f'VERSION = "{app_version}"\n'
-    version_file_path = os.path.join("src", "utils", "_version.py")
+    version_file_path = os.path.join("src", "sf_utils", "_version.py")
     with open(version_file_path, "w", encoding="utf-8") as f:
         f.write(version_file_content)
     print(f"Created temporary version file: {version_file_path}")
@@ -116,19 +117,26 @@ def build():
             images = []
 
             for size in icon_sizes:
-                image = QImage(QSize(size, size), QImage.Format_ARGB32)
-                image.fill(Qt.transparent)
+                image = QImage(QSize(size, size), QImage.Format.Format_ARGB32)
+                image.fill(Qt.GlobalColor.transparent)
                 painter = QPainter(image)
                 renderer.render(painter)
                 painter.end()
 
-                buffer = QBuffer()
-                buffer.open(QIODevice.ReadWrite)
-                image.save(buffer, "PNG")
-                import io
-
-                pil_img = Image.open(io.BytesIO(buffer.data().data()))
-                images.append(pil_img)
+                # PySide6/Qt 버전에 따른 QBuffer 호환성 문제를 해결하기 위해 가장 안정적인 임시 파일 방식 사용
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                    temp_path = tf.name
+                try:
+                    # 확장자를 통해 포맷 자동 감지 (.png)
+                    image.save(temp_path)
+                    pil_img = Image.open(temp_path).copy()
+                    images.append(pil_img)
+                finally:
+                    if os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
 
             images[0].save(ico_icon_path, format="ICO", append_images=images[1:])
             print(f"Icon conversion successful: {ico_icon_path}")
@@ -141,7 +149,7 @@ def build():
 
     # PyInstaller 명령 실행
     assets_dir = os.path.abspath(os.path.join("src", "assets"))
-    main_path = os.path.abspath(os.path.join("src", "main.py"))
+    main_path = os.path.abspath(os.path.join("src", "sf_main.py"))
 
     cmd = [
         sys.executable,
