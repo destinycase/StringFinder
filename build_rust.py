@@ -6,10 +6,22 @@ import time
 import argparse
 
 
-def build_rust_engine():
+def build_rust_engine(clean_target=False):
     """Rust 엔진(sf_engine) 컴파일 및 배포"""
-    print("\n--- Building Rust Engine (sf_engine) ---")
+    # [개선] 빌드 시작 시 기존 부산물(.old_*) 선제적 정리
+    clean_old_binaries()
+
     rust_dir = os.path.join("src", "rust_engine")
+    if clean_target:
+        target_dir = os.path.join(rust_dir, "target")
+        if os.path.exists(target_dir):
+            print(f"[빌드] 기존 target 폴더 삭제 중: {target_dir}")
+            try:
+                shutil.rmtree(target_dir)
+            except Exception as e:
+                print(f"Warning: target 폴더 삭제 실패: {e}")
+
+    print("\n--- Building Rust Engine (sf_engine) ---")
     if not os.path.exists(rust_dir):
         print(f"Error: Rust directory {rust_dir} not found.")
         sys.exit(1)
@@ -42,6 +54,10 @@ def build_rust_engine():
 
             shutil.copy2(src_dll, dst_pyd)
             print(f"\n[Success] Rust binary deployed to: {dst_pyd}")
+
+            # [추가] 복사 완료 후 잠기지 않은 .old 파일들이 있다면 한 번 더 정리 시도
+            clean_old_binaries()
+
             print("Now you can use high-speed Rust engine in development mode (run.py).")
             return dst_pyd
         else:
@@ -56,8 +72,23 @@ def build_rust_engine():
         sys.exit(1)
 
 
-def clean_binary():
-    """배포된 바이너리 정리"""
+def clean_old_binaries():
+    """배포된 바이너리의 .old 부산물들만 정리"""
+    src_dir = "src"
+    if not os.path.exists(src_dir):
+        return
+    for file in os.listdir(src_dir):
+        if file.startswith("sf_engine.pyd.old_") or ".pyd.old_" in file:
+            try:
+                path = os.path.join(src_dir, file)
+                os.remove(path)
+                print(f"Removed old binary: {file}")
+            except Exception as e:
+                print(f"Debug: Old binary removal skipped: {e}")
+
+
+def clean_binary(clean_all=False):
+    """배포된 바이너리 및 빌드 산출물 정리"""
     dst_pyd = os.path.join("src", "sf_engine.pyd")
     if os.path.exists(dst_pyd):
         try:
@@ -65,18 +96,15 @@ def clean_binary():
             print(f"Removed binary: {dst_pyd}")
         except Exception as e:
             print(f"Error removing {dst_pyd}: {e}")
-    else:
-        print("No binary found to clean.")
 
-    # .old 파일들도 정리
-    src_dir = "src"
-    for file in os.listdir(src_dir):
-        if file.startswith("sf_engine.pyd.old_"):
-            try:
-                os.remove(os.path.join(src_dir, file))
-                print(f"Removed old binary: {file}")
-            except Exception:
-                pass
+    # .old 파일 정리 호출
+    clean_old_binaries()
+
+    if clean_all:
+        target_dir = os.path.join("src", "rust_engine", "target")
+        if os.path.exists(target_dir):
+            print(f"Cleaning rust target: {target_dir}")
+            shutil.rmtree(target_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
@@ -88,6 +116,7 @@ if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     if args.clean:
-        clean_binary()
+        clean_binary(clean_all=True)
     else:
-        build_rust_engine()
+        # 빌드 전 가벼운 클린업 수행 (선택 가능)
+        build_rust_engine(clean_target=False)

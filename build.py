@@ -1,7 +1,27 @@
 import os
 import shutil
-import subprocess
 import sys
+import argparse
+
+# [격리 강화] 프로젝트 루트를 스크립트 위치 기준으로 고정하여 작업 디렉토리 영향을 차단
+PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+os.chdir(PROJECT_ROOT)
+
+# [보호 가드] 프로젝트 마커 확인
+if not os.path.exists(os.path.join(PROJECT_ROOT, "pyproject.toml")) or not os.path.exists(
+    os.path.join(PROJECT_ROOT, "src", "sf_main.py")
+):
+    print(f"Error: Invalid project root: {PROJECT_ROOT}")
+    print("Please run this script from the StringFinder project root.")
+    sys.exit(1)
+
+# [격리 강화] sys.path에서 외부 프로젝트 경로(N2_ 등)가 유입되었는지 검사하고 정화
+for path in list(sys.path):
+    # StringFinder 프로젝트 내부가 아니면서 다른 프로젝트(N2_)로 추정되는 경로 제거
+    norm_path = os.path.normpath(path)
+    if ("N2_" in norm_path or "Video_Player" in norm_path) and PROJECT_ROOT not in norm_path:
+        print(f"Purging suspicious external path from sys.path: {path}")
+        sys.path.remove(path)
 
 try:
     from PIL import Image
@@ -22,7 +42,8 @@ except ImportError:
 def get_project_version():
     """pyproject.toml에서 프로젝트 버전을 추출합니다."""
     try:
-        with open("pyproject.toml", "r", encoding="utf-8") as f:
+        config_path = os.path.join(PROJECT_ROOT, "pyproject.toml")
+        with open(config_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip().startswith("version = "):
                     return line.split("=")[1].strip().strip('"').strip("'")
@@ -36,32 +57,35 @@ def cleanup():
     print("\n--- Cleaning up build byproducts ---")
 
     # 1. 고정적인 캐시 및 빌드 폴더 삭제
-    # (dist는 결과물이므로 제외하고 build 전용 폴더 및 캐시 삭제)
     targets = ["build", ".pytest_cache", ".ruff_cache"]
     for target in targets:
-        if os.path.exists(target):
-            shutil.rmtree(target)
-            print(f"Removed folder: {target}")
+        abs_target = os.path.join(PROJECT_ROOT, target)
+        if os.path.exists(abs_target):
+            shutil.rmtree(abs_target, ignore_errors=True)
+            print(f"Removed folder: {abs_target}")
 
-    # 2. 모든 PyInstaller 생성 .spec 파일 삭제
-    for file in os.listdir("."):
-        if file.endswith(".spec"):
-            os.remove(file)
-            print(f"Removed spec file: {file}")
+    # 2. PyInstaller 생성 .spec 파일 삭제
+    for file in os.listdir(PROJECT_ROOT):
+        if file.endswith(".spec") and file != "StringFinder.spec":
+            abs_file = os.path.join(PROJECT_ROOT, file)
+            os.remove(abs_file)
+            print(f"Removed spec file: {abs_file}")
 
     # 3. 모든 __pycache__ 폴더 재귀적 삭제
-    for root, dirs, _ in os.walk(".", topdown=False):
+    excluded_roots = {
+        os.path.normpath(os.path.join(PROJECT_ROOT, "venv312")),
+        os.path.normpath(os.path.join(PROJECT_ROOT, ".venv")),
+        os.path.normpath(os.path.join(PROJECT_ROOT, "venv")),
+    }
+    for root, dirs, _ in os.walk(PROJECT_ROOT, topdown=False):
+        norm_root = os.path.normpath(root)
+        if any(norm_root == ex or norm_root.startswith(ex + os.sep) for ex in excluded_roots):
+            continue
         for name in dirs:
             if name == "__pycache__":
                 pycache_path = os.path.join(root, name)
-                shutil.rmtree(pycache_path)
+                shutil.rmtree(pycache_path, ignore_errors=True)
                 print(f"Removed: {pycache_path}")
-
-    # 4. 임시 버전 파일 삭제
-    version_file = os.path.join("src", "sf_utils", "_version.py")
-    if os.path.exists(version_file):
-        os.remove(version_file)
-        print(f"Removed temporary version file: {version_file}")
 
 
 def build_rust_wrapper():
@@ -78,8 +102,10 @@ def build_rust_wrapper():
         sys.exit(1)
 
 
-def build():
+def build(clean_first=False):
     print("--- Starting Build Process ---")
+    if clean_first:
+        cleanup()
 
     # pyproject.toml에서 버전 획득
     app_version = get_project_version()
@@ -94,9 +120,10 @@ def build():
 
     # 시작 시 기존 build/dist 폴더 정리
     for folder in ["build", "dist", "rust_bin"]:
-        if os.path.exists(folder):
-            shutil.rmtree(folder)
-            print(f"Cleaned up {folder} folder.")
+        abs_folder = os.path.join(PROJECT_ROOT, folder)
+        if os.path.exists(abs_folder):
+            shutil.rmtree(abs_folder, ignore_errors=True)
+            print(f"Cleaned up {abs_folder} folder.")
 
     # Rust 엔진 빌드 실행
     rust_pyd_path = build_rust_wrapper()
@@ -148,47 +175,106 @@ def build():
         sys.exit(1)
 
     # PyInstaller 명령 실행
-    assets_dir = os.path.abspath(os.path.join("src", "assets"))
-    main_path = os.path.abspath(os.path.join("src", "sf_main.py"))
+    # (API 호출로 전환하기 위해 cmd 리스트에서 sys.executable 및 -m PyInstaller 제거)
+    assets_dir = os.path.join(PROJECT_ROOT, "src", "assets")
+    main_path = os.path.join(PROJECT_ROOT, "src", "sf_main.py")
+    dist_dir = os.path.join(PROJECT_ROOT, "dist")
+    build_dir = os.path.join(PROJECT_ROOT, "build")
 
-    cmd = [
-        sys.executable,
-        "-m",
-        "PyInstaller",
+    pyi_args = [
         "--onefile",
         "--noconsole",
-        "--clean",
         "--name",
         "StringFinder",
         f"--icon={os.path.abspath(ico_icon_path)}",
-        f"--add-data={assets_dir};assets",
-        # Rust 이진 파일 명시적 추가 (경로 세미콜론 주의 - Windows)
-        f"--add-binary={os.path.abspath(rust_pyd_path)};.",
+        f"--add-data={assets_dir}{os.pathsep}assets",
+        f"--add-binary={os.path.abspath(rust_pyd_path)}{os.pathsep}.",
         "--paths",
-        os.path.abspath("src"),
+        os.path.join(PROJECT_ROOT, "src"),
         "--workpath",
-        os.path.abspath("build"),
+        build_dir,
+        "--specpath",
+        build_dir,
         "--distpath",
-        os.path.abspath("dist"),
+        dist_dir,
         main_path,
     ]
 
-    print(f"Running command: {' '.join(cmd)}")
+    # Qt 바인딩 충돌 방지
+    qt_excludes = [
+        "PyQt5",
+        "PyQt5.QtCore",
+        "PyQt5.QtGui",
+        "PyQt5.QtWidgets",
+        "PyQt6",
+        "PyQt6.QtCore",
+        "PyQt6.QtGui",
+        "PyQt6.QtWidgets",
+        "PySide2",
+        "PySide2.QtCore",
+        "PySide2.QtGui",
+        "PySide2.QtWidgets",
+    ]
+    for module_name in qt_excludes:
+        pyi_args.extend(["--exclude-module", module_name])
 
+    # [격리 강화] 화이트리스트 방식으로 sys.path 재구성 (외부 site-packages 차단)
+    # 표준 라이브러리 경로와 현재 프로젝트 경로, 그리고 PyInstaller 관련 경로만 허용합니다.
+    original_path = list(sys.path)
     try:
-        subprocess.check_call(cmd)
+        # 안전한 경로 패턴: 파이썬 홈 디렉토리, 프로젝트 루트, 빌드 임시 디렉토리
+        python_home = os.path.normpath(sys.prefix).lower()
+        project_root = os.path.normpath(os.getcwd()).lower()
+
+        isolated_path = []
+        for p in sys.path:
+            norm_p = os.path.normpath(p).lower()
+
+            # [격리] 타 프로젝트 경로가 포함된 경우 강제 제외
+            if "n2_" in norm_p or "video_player" in norm_p or "comic_viewer" in norm_p:
+                continue
+
+            # 화이트리스트: 현재 파이썬 환경(venv 포함) 내부이거나 프로젝트 소스 내부인 경우만 허용
+            # 이를 통해 시스템 전역에 설치된 타 프로젝트의 site-packages나 사용자 레벨의 불필요한 경로를 차단합니다.
+            if norm_p.startswith(python_home) or norm_p.startswith(project_root):
+                isolated_path.append(p)
+
+        sys.path = isolated_path
+
+        print("\n--- Starting Isolated Build via PyInstaller API ---")
+        import PyInstaller.__main__
+
+        # [격리 강화] 빌드 환경 변수 강제 제어
+        # PYTHONPATH, PYTHONHOME이 설정되어 있으면 PyInstaller가 외부 모듈을 참조할 수 있음
+        os.environ.pop("PYTHONPATH", None)
+        os.environ.pop("PYTHONHOME", None)
+        os.environ["PYTHONNOUSERSITE"] = "1"  # 사용자 레벨 site-packages 무시
+
+        # PyInstaller API 호출
+        PyInstaller.__main__.run(pyi_args)
+
         print("\n--- Build Successful! ---")
         print(f"Executable location: {os.path.abspath(os.path.join('dist', 'StringFinder.exe'))}")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"\n--- Build Failed! --- \n{e}")
         sys.exit(1)
+    finally:
+        # sys.path 복구 (빌드 이후 사후 정리를 위해)
+        sys.path = original_path
 
-    # 최종 정리 실행 (src/sf_engine.pyd 임시 파일 포함)
+    # 최종 정리 실행
     cleanup()
-    if os.path.exists(rust_pyd_path):
-        os.remove(rust_pyd_path)
-        print(f"Removed temporary binary: {rust_pyd_path}")
+    print(f"Preserved binary for development: {rust_pyd_path}")
 
 
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser(description="StringFinder build script")
+    parser.add_argument("--clean", action="store_true", help="Clean build byproducts before building")
+    parser.add_argument("--clean-only", action="store_true", help="Only clean byproducts and exit")
+    args = parser.parse_args()
+
+    if args.clean_only:
+        cleanup()
+        sys.exit(0)
+
+    build(clean_first=args.clean)
