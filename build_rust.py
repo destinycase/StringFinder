@@ -8,7 +8,7 @@ import argparse
 
 def build_rust_engine(clean_target=False):
     """Rust 엔진(sf_engine) 컴파일 및 배포"""
-    # [개선] 빌드 시작 시 기존 부산물(.old_*) 선제적 정리
+    # 빌드 시작 시 기존 부산물(.old_*) 선제적 정리
     clean_old_binaries()
 
     rust_dir = os.path.join("src", "rust_engine")
@@ -55,7 +55,7 @@ def build_rust_engine(clean_target=False):
             shutil.copy2(src_dll, dst_pyd)
             print(f"\n[Success] Rust binary deployed to: {dst_pyd}")
 
-            # [추가] 복사 완료 후 잠기지 않은 .old 파일들이 있다면 한 번 더 정리 시도
+            # 복사 완료 후 잠기지 않은 .old 파일들이 있다면 한 번 더 정리 시도
             clean_old_binaries()
 
             print("Now you can use high-speed Rust engine in development mode (run.py).")
