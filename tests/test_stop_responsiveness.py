@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.worker import ScanWorker, SearchWorker
+from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from ui.search_tab import SearchTab
 
@@ -49,55 +49,6 @@ def test_search_worker_granular_rust_stop():
         assert not worker.is_running.is_set()
 
 
-def test_scan_worker_granular_smart_scan_stop():
-    """test_scan_worker_granular_smart_scan_stop 함수."""
-    folders = ["C:/dir1", "C:/dir2"]
-    worker = ScanWorker(folders, ["txt"], "", "test")
-
-    mock_files = [("C:/dir1/f1.txt", 100)]
-
-    with (
-        patch("core.search_engine.HAS_RUST_ENGINE", True),
-        patch("core.search_engine.find_files_with_keyword_fast", return_value=mock_files) as mock_find,
-    ):
-        # 1. 중간에 중단
-        worker.is_running.set()
-
-        def side_effect(*args, **kwargs):
-            worker.stop()
-            return mock_files
-
-        mock_find.side_effect = side_effect
-
-        worker.run()
-
-        assert mock_find.call_count == 1
-        assert not worker.is_running.is_set()
-
-
-def test_scan_worker_report_skipped_files():
-    """ScanWorker가 Rust 엔진에서 건너뛴 파일을 올바르게 보고하는지 확인."""
-    worker = ScanWorker(["C:/dir1"], ["txt"], "", "test")
-    mock_skipped = [("C:/dir1", "Walk error: mock failure")]
-    found_files = [("C:/dir1/ok.txt", 10)]
-
-    skipped_payloads = []
-    worker.signals.skipped_found.connect(lambda items: skipped_payloads.extend(items))
-
-    with (
-        patch("core.search_engine.HAS_RUST_ENGINE", True),
-        patch("core.search_engine.find_files_with_keyword_fast", return_value=(found_files, mock_skipped)) as mock_find,
-        patch("core.worker.FileScanner.scan") as mock_scan,
-    ):
-        worker.run()
-
-    assert mock_find.call_count == 1
-    # 더 이상 폴백(FileScanner.scan)을 수행하지 않아야 함
-    assert mock_scan.call_count == 0
-    actual_skipped = [list(item) if isinstance(item, tuple) else item for item in skipped_payloads]
-    expected_skipped = [list(item) if isinstance(item, tuple) else item for item in mock_skipped]
-    assert actual_skipped == expected_skipped
-
 
 @pytest.fixture
 def search_tab_with_mock(qtbot, mock_config_manager):
@@ -115,7 +66,7 @@ def test_search_tab_button_states_on_stop(search_tab_with_mock, qtbot):
     """test_search_tab_button_states_on_stop 함수."""
     tab = search_tab_with_mock
 
-    with patch("ui.search_tab.ScanWorker"), patch("ui.search_tab.SearchWorker"):
+    with patch("ui.search_tab.SearchWorker"):
         # 1. 초기 상태
         assert tab.search_panel.search_btn.isVisible()
         assert tab.search_panel.search_btn.text() == AppStrings.SEARCH_BTN

@@ -66,19 +66,21 @@ def test_policy_python_allowed_in_complex_mode(tmp_path):
 
 def test_policy_directory_scan_no_fallback(tmp_path):
     """정책 검증: 디렉토리 스캔 중 Rust 오류 발생 시 Python으로 폴백하지 않음"""
-    from core.worker import ScanWorker
+    from core.worker import SearchWorker
 
-    worker = ScanWorker(
-        selected_folders=[str(tmp_path)],
-        selected_exts=["txt"],
-        filename_filter=None,
-        search_string="test",
-        use_complex_search=False,
+    worker = SearchWorker(
+        {
+            "search_paths": [str(tmp_path)],
+            "extensions": ["txt"],
+            "filename_filter": None,
+            "search_string": "test",
+            "use_complex_search": False,
+        }
     )
 
     # Rust 엔진이 있지만 스캔 함수에서 에러가 나는 상황 모킹
     with patch("core.search_engine.HAS_RUST_ENGINE", True):
-        with patch("core.search_engine.find_files_with_keyword_fast", side_effect=Exception("Scan Crash")):
+        with patch("core.search_engine.search_directory_fast", side_effect=Exception("Scan Crash")):
             # worker.run()에서 Python 스캔으로 전환되지 않고 에러 신호를 보내야 함
             error_signals = []
             worker.signals.error.connect(lambda msg: error_signals.append(msg))

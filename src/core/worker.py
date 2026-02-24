@@ -204,10 +204,18 @@ class SearchWorker(QRunnable):
         def results_callback(batch):
             if not self.is_running.is_set():
                 return
-            from core.search_engine import _normalize_rust_matches
+            from core.search_engine import _normalize_rust_matches, _extract_excel_marker_skip_reason
 
             formatted_batch = []
+            skipped_batch = []
             for path, matches in batch:
+                excel_skip_reason = _extract_excel_marker_skip_reason(matches)
+                if excel_skip_reason:
+                    skipped_batch.append((path, excel_skip_reason))
+                    if hasattr(self, "all_skipped"):
+                        self.all_skipped.append((path, excel_skip_reason))
+                    continue
+
                 match_tuples, marker_binary_count = _normalize_rust_matches(matches, self.special_mode)
                 if marker_binary_count > 0:
                     formatted_batch.append(
@@ -266,6 +274,12 @@ class SearchWorker(QRunnable):
                 except RuntimeError:
                     pass
 
+            if skipped_batch:
+                try:
+                    self.signals.skipped_found.emit(skipped_batch)
+                except RuntimeError:
+                    pass
+
         # Removed no-op callback assignments (Item 7 from audit)
 
         # [상] H-01: 중지 시 UnboundLocalError 방지를 위해 변수 초기화 보장
@@ -311,38 +325,38 @@ class SearchWorker(QRunnable):
                 pass
             self.signals.search_finished.emit(0, 0, 0)
             return
+        # [Optimization] Streaming search might return empty results in search_res
+        # because results were already sent via callback. Use our accumulated stats.
+        # However, for mocks or non-streaming paths, we should also check search_res.
+        total_found = len(self.all_results)
+        total_matches = sum(cnt for _, cnt, _ in self.all_results)
+
+        # If all_results is empty but search_res has results (e.g. in Mocks)
+        if not total_found and isinstance(search_res, dict) and Constants.PAYLOAD_RESULTS in search_res:
+            res_list = search_res[Constants.PAYLOAD_RESULTS]
+            for item in res_list:
+                # Normalize manually if needed for stats
+                if len(item) == 2:  # path, matches
+                    self.all_results.append((item[0], len(item[1]), item[1]))
+                else:
+                    self.all_results.append(item)
+            total_found = len(self.all_results)
+            total_matches = sum(cnt for _, cnt, _ in self.all_results)
+
+        # Use skipped list from search_res or our accumulation if we had one
+        skipped_list = search_res.get(Constants.PAYLOAD_SKIPPED, []) if isinstance(search_res, dict) else []
+        skipped_count = len(skipped_list) + len(getattr(self, "all_skipped", []))
+
+        # [상] H-03: Rust 경로에서도 상세 skipped 항목 발행
+        if skipped_list:
+            self.signals.skipped_found.emit(skipped_list)
+
         if not self.is_running.is_set():
             logger.info(AppStrings.LOG_WKR_STOPPED)
         else:
             self.signals.progress_updated.emit(100, 100)
 
-            # [Optimization] Streaming search might return empty results in search_res
-            # because results were already sent via callback. Use our accumulated stats.
-            # However, for mocks or non-streaming paths, we should also check search_res.
-            total_found = len(self.all_results)
-            total_matches = sum(cnt for _, cnt, _ in self.all_results)
-
-            # If all_results is empty but search_res has results (e.g. in Mocks)
-            if not total_found and Constants.PAYLOAD_RESULTS in search_res:
-                res_list = search_res[Constants.PAYLOAD_RESULTS]
-                for item in res_list:
-                    # Normalize manually if needed for stats
-                    if len(item) == 2:  # path, matches
-                        self.all_results.append((item[0], len(item[1]), item[1]))
-                    else:
-                        self.all_results.append(item)
-                total_found = len(self.all_results)
-                total_matches = sum(cnt for _, cnt, _ in self.all_results)
-
-            # Use skipped list from search_res or our accumulation if we had one
-            skipped_list = search_res.get(Constants.PAYLOAD_SKIPPED, []) or []
-            skipped_count = len(skipped_list)
-
-            # [상] H-03: Rust 경로에서도 상세 skipped 항목 발행
-            if skipped_list:
-                self.signals.skipped_found.emit(skipped_list)
-
-            self.signals.search_finished.emit(total_found, total_matches, skipped_count)
+        self.signals.search_finished.emit(total_found, total_matches, skipped_count)
         elapsed = time.time() - self.worker_start_time
         logger.info(AppStrings.LOG_WKR_DONE.format(total_found, total_matches, elapsed))
         return total_found, total_matches, skipped_count
@@ -547,57 +561,3 @@ class SearchWorker(QRunnable):
                 self._executor = None
 
 
-class ScanWorker(SearchWorker):
-    """
-    [Legacy] ScanWorker skeleton for backward compatibility in tests.
-    Unified SearchWorker should be used for new code.
-    """
-
-    def __init__(self, selected_folders=None, selected_exts=None, filename_filter=None, search_string=None, **kwargs):
-        params = {
-            Constants.PAYLOAD_SEARCH_PATHS: selected_folders or [],
-            Constants.PAYLOAD_EXTENSIONS: selected_exts or [],
-            Constants.PAYLOAD_FILENAME_FILTER: filename_filter,
-            Constants.PAYLOAD_SEARCH_STRING: search_string or "",
-        }
-        params.update(kwargs)
-        super().__init__(params)
-        self.selected_folders = selected_folders or []
-        self.selected_exts = selected_exts or []
-        self.search_string = search_string or ""
-
-    def run(self):
-        from core.search_engine import find_files_with_keyword_fast
-
-        try:
-            if not self.is_running.is_set():
-                return
-
-            # [Legacy] Smart Scan logic for backward compatibility
-            ret = find_files_with_keyword_fast(
-                self.search_paths,
-                self.search_string,
-                self.extensions,
-                filename_filter=self.filename_filter,
-                special_mode=self.special_mode,
-                exclude_hidden=self.exclude_hidden,
-                exclude_binary=self.exclude_binary,
-                stop_event=self.stop_event,
-                return_skipped=True,
-            )
-            found_files, skipped = ret
-
-            if not self.is_running.is_set():
-                return
-
-            if skipped:
-                self.signals.skipped_found.emit(skipped)
-            self.signals.scan_finished.emit(found_files)
-        except Exception as e:
-            logger.error(f"[ScanWorker] Error: {e}", exc_info=True)
-            self.signals.error.emit(str(e))
-        finally:
-            self.signals.finished.emit()
-
-    def cleanup(self):
-        self.stop()

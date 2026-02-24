@@ -10,7 +10,7 @@ StringFinder는 "빠른 검색기"가 아니라 "운영 가능한 검색 시스�
 핵심 설계는 다음 네 가지입니다.
 
 - 성능 경로 분리: 일반 워크로드는 Rust, 정밀 유니코드 검색은 Python
-- 2단계 파이프라인: `ScanWorker`(대상 추출) + `SearchWorker`(본문 검색) 분리
+- 통합 파이프라인: 첫 번째 결과 도달 시간(Zero-TTFR) 최소화를 위해 스캔과 본문 검색을 단일 단계로 오케스트레이션 수행
 - 안정성 고도화: `catch_unwind` 기반 파닉 방어 및 Mmap 실패 시 Read 폴백 메커니즘
 - 작업 지속성: 탭 세션, 상태 복원, 로그 기반 진단을 포함한 운영 UX
 
@@ -48,13 +48,13 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 - API 호환성 가드: `sf_engine.API_VERSION >= 4` 확인 후 활성화
 
 ### 3) 동시성 모델
-- UI 반응성: Qt 스레드풀 기반 작업 분리
-- 병렬 엔진: `Rayon` 기반 글로벌 스레드풀 활용 (Rust 코어)
-- 작업 제어: `multiprocessing.Manager().Event()` 기반 중단 신호 전파
+- UI 반응성: Qt 스레드풀(`QThreadPool`) 기반 비동기 작업 처리
+- 병렬 엔진: `Rayon` 기반 글로벌 스레드풀 활용 (Rust 코어) 및 적응형(Adaptive) 워커 할당 정책이 적용된 `ProcessPoolExecutor` (Python 경로)
+- 작업 제어: `multiprocessing.Manager().Event()`를 통한 프로세스 간 중단 신호 전파 및 메모리 가드(Memory Guard) 모니터링
 
 ### 4) 검색 상태 머신
-- 상태: `IDLE -> SCANNING -> SEARCHING -> IDLE`
-- 중지 요청: `STOPPING`으로 전환 후 Scan/Search 워커에 중단 신호 전파
+- 상태: `IDLE -> SCANNING -> IDLE`
+- 중지 요청: `STOPPING`으로 전환 후 통합 `SearchWorker` 및 하위 엔진 구조에 중단 신호 전파
 
 ## 핵심 설계 결정과 트레이드오프
 ### 결정 1. "하나의 엔진"이 아닌 "정책 기반 다중 경로"
@@ -149,12 +149,11 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 - 중지 후 UI가 즉시 복귀하지 않으면 로그 탭에서 `[제어] 중지 요청`, `[워커] 중지 신호`, `STATUS_READY` 흐름을 확인하세요.
 
 ### 8. 현재 검색 파이프라인
-1. `ScanWorker`가 폴더/확장자/파일명 필터 조건으로 후보 파일을 수집합니다.
-2. 기본 경로에서는 Rust Smart Scan(`find_files_with_keyword_fast`)으로 후보를 빠르게 축소합니다.
-3. `SearchWorker`가 파일 리스트를 본문 검색합니다.
-4. 일반 검색은 Rust(`search_files_list_fast`, `search_directory_fast`), 복합 검색은 Python 경로를 우선 사용합니다.
-5. 스킵 파일은 사유와 함께 수집하여 결과 요약/로그에 노출합니다.
-6. 완료/중지/오류 시 상태를 `IDLE`로 복구하고 UI 입력을 재활성화합니다.
+1. **통합 검색 단계 (Unified Scan & Search)**: 기존의 `ScanWorker` / `SearchWorker` 분리형 대기 시간을 제거하고 `SearchWorker`가 대상 추출과 검색을 동시에 관장하여 TTFR(첫 결과 반환 대기 시간)을 최소화합니다. (기존 `ScanWorker`는 하위 호환성용으로만 지원)
+2. **Rust 고속 경로**: 성능이 극대화된 기본 모드로서, `search_directory_fast` 엔진 호출 시 `ignore::WalkBuilder` 기반 디렉토리 순회와 `Aho-Corasick` 파일 검색을 Rust 런타임 내에서 병렬로 단번에 해치웁니다.
+3. **Python 정밀 경로**: 고난도 유니코드 처리를 위한 복합 검색(`use_complex_search=True`) 시, `FileScanner`로 후보군만 조기 배제한 뒤 적응형 `ProcessPoolExecutor` 기반 풀을 통해 파일 본문 검색을 다중 수행합니다.
+4. **결과 파이프라인**: 스킵된 파일 목록과 매치 아이템 청크 단위는 채널 및 Qt Signal로 끊임없이 메인 스레드에 보고되어, UI의 ResultView 표와 통계 요약문에 부드럽게 병합처리됩니다.
+5. **상태 회복**: 검색 완료/중지/치명적 오류 발생 시 `IDLE` 상태로 즉각 단일 복귀를 관장하여 UI의 검색 창과 조건 입력을 안전하게 재활성화합니다.
 
 ---
 

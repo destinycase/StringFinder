@@ -452,7 +452,7 @@ class ResultView(QWidget):
         QTimer.singleShot(300, self._update_pagination_ui)
         self.update_ui_visibility()
 
-    def set_summary_info(self, file_count, match_count, duration, skip_count=0):
+    def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix=""):
         """상단 요약 정보를 업데이트합니다."""
         if file_count > 0 or skip_count > 0:
             summary_text = AppStrings.RESULT_SUMMARY_FORMAT.format(
@@ -461,7 +461,7 @@ class ResultView(QWidget):
                 skip_count=skip_count,
                 duration=f"{duration:.2f}",
             )
-            self.summary_label.setText(summary_text)
+            self.summary_label.setText(state_prefix + summary_text)
             self.summary_label.setVisible(True)
         else:
             self.summary_label.setText("")

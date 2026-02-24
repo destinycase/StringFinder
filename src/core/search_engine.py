@@ -173,12 +173,13 @@ def _normalize_rust_match(
 
     if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
         # 엑셀 패닉 마커 처리 (포맷: __SF_EXCEL_PANIC__|ext|detail)
+        # 패닉은 해당 파일(Excel) 검색 실패일 뿐이므로 warning으로 낮춰 전체 검색 강제 중지를 방지
         data = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :]
         if "|" in data:
             ext, detail = data.split("|", 1)
-            logger.error(f"Excel engine panic [{ext}]: {detail}")
+            logger.warning(f"Excel engine panic [{ext}]: {detail}")
         else:
-            logger.error(f"Excel engine panic: {data}")
+            logger.warning(f"Excel engine panic: {data}")
         return None, None
 
     # 2. 특수 모드 데이터 구조화 (벌크 검색 결과)

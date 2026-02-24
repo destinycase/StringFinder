@@ -446,7 +446,8 @@ class MainWindow(QMainWindow):
             return
 
         # [Safety] 메인 스레드에서 실행되도록 보장
-        if QThread.currentThread() != QApplication.instance().thread():
+        app_instance = QApplication.instance()
+        if app_instance and QThread.currentThread() != app_instance.thread():
             QTimer.singleShot(0, lambda: self._on_global_error_logged(level, message))
             return
 

@@ -1,7 +1,7 @@
 """
 [test_chaos_scan_worker.py]
 
-이 테스트는 파일 스캔 워커(ScanWorker)의 수명 주기 관리 및 동시성 안정성을 검증합니다.
+이 테스트는 통합 검색 워커(SearchWorker)의 수명 주기 관리 및 동시성 안정성을 검증합니다.
 
 - 테스트 목적:
   1. 검색 시작 직후 중단, 반복적인 재시작 상황에서 스레드가 정상적으로 해제되는지 확인.
@@ -18,11 +18,11 @@ import time
 
 import pytest
 
-from core.worker import ScanWorker
+from core.worker import SearchWorker
 
 
 @pytest.mark.chaos
-def test_chaos_rapid_scan_worker_start_stop(tmp_path):
+def test_chaos_rapid_search_worker_start_stop(tmp_path):
     root = tmp_path / "chaos_data"
     root.mkdir()
 
@@ -33,13 +33,13 @@ def test_chaos_rapid_scan_worker_start_stop(tmp_path):
     cycles = 25
 
     for _ in range(cycles):
-        worker = ScanWorker(
-            selected_folders=[str(root)],
-            selected_exts=["txt"],
-            filename_filter=None,
-            search_string="needle",
-            disable_smart_scan=True,
-            special_mode=None,
+        worker = SearchWorker(
+            {
+                "search_paths": [str(root)],
+                "extensions": ["txt"],
+                "filename_filter": None,
+                "search_string": "needle",
+            }
         )
         worker.signals.error.connect(lambda msg, sink=errors: sink.append(msg))
 

@@ -27,7 +27,7 @@ from typing import Any, cast
 import pytest
 
 from core.search_engine import FileScanner, search_directory_fast, search_files_list_fast, search_in_file
-from core.worker import ScanWorker, SearchWorker
+from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
@@ -328,31 +328,6 @@ def test_mixed_encodings_and_corrupt_bytes(tmp_path):
     assert r2 is not None
     assert r3 is None or (isinstance(r3, tuple) and len(r3) in (2, 3))
 
-
-def test_stop_during_slow_io_scan_worker():
-    worker = ScanWorker(["C:/dummy"], ["txt"], "", "needle")
-
-    def slow_scan(self):
-        for _ in range(40):
-            if self.stop_check_callback and self.stop_check_callback():
-                return []
-            time.sleep(0.02)
-        return [("C:/dummy/a.txt", 10)]
-
-    with (
-        pytest.MonkeyPatch.context() as mp_has_rust,
-        pytest.MonkeyPatch.context() as mp_scan,
-    ):
-        mp_has_rust.setattr("core.search_engine.HAS_RUST_ENGINE", False)
-        mp_scan.setattr("core.search_engine.FileScanner.scan", slow_scan)
-
-        t = threading.Thread(target=worker.run, daemon=True)
-        t.start()
-        time.sleep(0.1)
-        worker.stop()
-        t.join(timeout=2.0)
-
-    assert not t.is_alive()
 
 
 @pytest.mark.stress

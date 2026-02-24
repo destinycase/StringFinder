@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.worker import ScanWorker, SearchWorker
+from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from sf_utils.logger import logger, normalize_log_level
@@ -48,7 +48,6 @@ class SearchTab(QMainWindow):
         super().__init__()
         self.config_manager = config_manager
         self.worker: Optional[SearchWorker] = None
-        self.scan_worker: Optional[ScanWorker] = None
         self.icon_provider = QFileIconProvider()
         self.total_matches = 0
         self.total_files = 0
@@ -355,16 +354,6 @@ class SearchTab(QMainWindow):
     def cleanup(self):
         """탭을 닫거나 테스트 종료 시 리소스를 정리하여 메모리 누수와 세그폴트를 방지합니다."""
         self.stop()
-        if hasattr(self, "scan_worker") and self.scan_worker:
-            try:
-                self.scan_worker.signals.progress_updated.disconnect()
-                self.scan_worker.signals.scan_finished.disconnect()
-                self.scan_worker.signals.error.disconnect()
-                self.scan_worker.signals.finished.disconnect()
-            except (RuntimeError, TypeError):
-                pass
-            self.scan_worker.cleanup()
-            self.scan_worker = None
         if hasattr(self, "worker") and self.worker:
             try:
                 self.worker.signals.progress_updated.disconnect()
@@ -515,7 +504,7 @@ class SearchTab(QMainWindow):
                 self.last_search_duration = summary.get("total_elapsed", 0.0)
                 skipped_count = summary.get("skip_count", 0)
                 self.result_view_panel.set_summary_info(
-                    self.total_files, self.total_matches, self.last_search_duration, skip_count=skipped_count
+                    self.total_files, self.total_matches, self.last_search_duration, skip_count=skipped_count, state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED
                 )
 
             QTimer.singleShot(100, self.result_view_panel.auto_select_first_result)
@@ -540,12 +529,6 @@ class SearchTab(QMainWindow):
         logger.info(AppStrings.LOG_SCH_STOP_REQUESTED)
         self.search_state = Constants.SearchState.STOPPING
         self.search_panel.set_stopping_state()
-        try:
-            if getattr(self, "scan_worker", None) is not None:
-                if self.scan_worker and self.scan_worker.is_running:
-                    self.scan_worker.stop()
-        except Exception as e:
-            logger.debug(AppStrings.LOG_SCH_STOP_THREAD_ERR.format(e))
         try:
             if getattr(self, "worker", None) is not None:
                 if self.worker and self.worker.is_running:
@@ -631,8 +614,6 @@ class SearchTab(QMainWindow):
             display_mode = special_mode if special_mode else Constants.MODE_NORMAL
             logger.info(AppStrings.LOG_SCH_COND_EXT.format(exts_str, display_mode))
 
-            if self.scan_worker and self.scan_worker.is_running:
-                self.scan_worker.stop()
             exclude_hidden = self.search_panel.is_exclude_hidden()
             exclude_binary = self.search_panel.is_exclude_binary()
             self.result_view_panel.clear()
@@ -641,8 +622,7 @@ class SearchTab(QMainWindow):
             self.result_view_panel.set_search_context(search_text, special_mode)
 
             # [Optimization] Unified Scan & Search
-            # Separate ScanWorker is bypassed to achieve zero-TTFR.
-            # SearchWorker will now handle directory scanning and searching simultaneously.
+            # SearchWorker will handle directory scanning and searching simultaneously.
             params = {
                 Constants.PAYLOAD_SEARCH_PATHS: selected_folders,
                 Constants.PAYLOAD_EXTENSIONS: selected_exts,
@@ -679,10 +659,6 @@ class SearchTab(QMainWindow):
             if self.worker is None:
                 self._liveliness_timer.stop()
                 self.liveliness_updated.emit(False, self._liveliness_seconds)
-            self.scan_worker = None
-
-    # [하] L-01: 레거시 ScanWorker 관련 메서드(on_scan_finished, on_scan_error)가 모두 삭제되었습니다.
-    # 이제 SearchWorker가 스캔과 검색을 단일 단계로 통합하여 처리합니다.
 
     def _setup_search_worker(self, params):
         """_setup_search_worker 함수."""
@@ -747,7 +723,7 @@ class SearchTab(QMainWindow):
         self.ext_dock.setEnabled(enabled)
         self.filename_dock.setEnabled(enabled)
 
-    def _update_realtime_summary(self, force=False):
+    def _update_realtime_summary(self, force=False, status_text=None):
         """검색 진행률에 따라 상단 요약 정보와 결과 테이블을 실시간으로 업데이트합니다. (스로틀링 적용)"""
         now = time.time()
         # 1.0초 간격으로 업데이트 제한 (force=True인 경우 강제 업데이트)
@@ -766,8 +742,17 @@ class SearchTab(QMainWindow):
             # 검색 결과가 하나라도 있거나 스킵된 파일이 있는 경우에만 표시
             if self.total_files > 0 or total_skipped > 0:
                 self.last_search_duration = total_elapsed
+                
+                if status_text is None:
+                    if self.search_state in (Constants.SearchState.SCANNING, Constants.SearchState.SEARCHING):
+                        status_text = AppStrings.SUMMARY_PREFIX_SEARCHING
+                    elif self.search_state == Constants.SearchState.STOPPING:
+                        status_text = AppStrings.SUMMARY_PREFIX_STOPPED
+                    else:
+                        status_text = AppStrings.SUMMARY_PREFIX_FINISHED
+
                 self.result_view_panel.set_summary_info(
-                    self.total_files, self.total_matches, total_elapsed, skip_count=total_skipped
+                    self.total_files, self.total_matches, total_elapsed, skip_count=total_skipped, state_prefix=status_text
                 )
                 self.last_summary_update_time = now
 
@@ -797,7 +782,8 @@ class SearchTab(QMainWindow):
 
     def _on_search_finished(self, found_count, total_matches, skipped_count):
         """문자열 검색이 완료되었을 때 실행 시간을 계산하고 UI를 초기화합니다."""
-        self._update_realtime_summary(force=True)  # 종료 시 버퍼 플러시 및 최종 요약 강제 업데이트
+        status_text = AppStrings.SUMMARY_PREFIX_STOPPED if self.search_state == Constants.SearchState.STOPPING else AppStrings.SUMMARY_PREFIX_FINISHED
+        self._update_realtime_summary(force=True, status_text=status_text)  # 종료 시 버퍼 플러시 및 최종 요약 강제 업데이트
         self._liveliness_timer.stop()
         self.liveliness_updated.emit(False, self._liveliness_seconds)
         # [중] 진행률 무결성 보정: 종료 시 실제 처리량으로 100% 도달 보장 (0/0 방지)

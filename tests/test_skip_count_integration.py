@@ -23,13 +23,13 @@ def test_skip_count_accumulation_from_scan_phase(search_tab, qtbot):
     # SearchTab의 내부 상태를 직접 트리거하기 위해 start_search 대신 로직 시뮬레이션
     search_tab.skipped_files_list = []
 
-    # 2. ScanWorker의 스킵 신호 발생 시뮬레이션
+    # 2. 통합 파이프라인(SearchWorker)의 첫 번째 동작 중 스킵 신호 발생 시뮬레이션
     scan_skips = [("C:/Restricted/File1.txt", "Access Denied"), ("C:/Restricted/File2.txt", "OS Error")]
     search_tab._on_skipped_found(scan_skips)
 
     assert len(search_tab.skipped_files_list) == 2
 
-    # 3. SearchPhase(Phase 2)의 스킵 신호 발생 시뮬레이션
+    # 3. 통합 파이프라인의 후속 탐색 중 또 다른 스킵 신호 발생 시뮬레이션
     search_skips = [("C:/Search/Error.txt", "Read Error")]
     search_tab._on_skipped_found(search_skips)
 
@@ -41,7 +41,7 @@ def test_skip_count_accumulation_from_scan_phase(search_tab, qtbot):
         search_tab.total_matches = 100
         search_tab.scan_start_time = time.time()
 
-        # Phase 2 종료 시그널 시뮬레이션 (검색 단계에서 1개 추가로 스킵되었다고 가정)
+        # 통합 검색 단계(실제 SearchWorker 실행 결과 통계 수신) 종료 시그널 시뮬레이션
         # found_count: 10, total_matches: 100, skipped_count: 1
         search_tab._on_search_finished(10, 100, 1)
 
@@ -53,7 +53,7 @@ def test_skip_count_accumulation_from_scan_phase(search_tab, qtbot):
 
 
 def test_signal_connection_in_start_search(search_tab, qtbot):
-    """start_search 호출 시 ScanWorker의 skipped_found 시그널이 올바르게 연결되는지 확인"""
+    """start_search 호출 시 SearchWorker의 skipped_found 시그널이 올바르게 연결되는지 확인"""
 
     search_tab.search_panel.search_combo.setEditText("test")
     search_tab.folder_panel.add_folder("C:/Test")
