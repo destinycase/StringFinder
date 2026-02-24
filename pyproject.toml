@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "4.43.0"
+version = "4.48.0"
 authors = [{ name = "N2", email = "your@email.com" }]
 
 description = "Production-ready high-performance string search utility with Rust engine, multiprocessing, and smart file scanning. Features UTF-16LE support, robust session management, and comprehensive error handling."
@@ -55,7 +55,7 @@ target-version = "py312"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --tb=short -m \"not stress and not chaos\""
+addopts = "-v --tb=short"
 markers = [
     "stress: high-volume or long-running stress/load tests",
     "chaos: race-condition and rapid start/stop chaos tests",
