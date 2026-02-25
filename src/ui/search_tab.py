@@ -504,7 +504,11 @@ class SearchTab(QMainWindow):
                 self.last_search_duration = summary.get("total_elapsed", 0.0)
                 skipped_count = summary.get("skip_count", 0)
                 self.result_view_panel.set_summary_info(
-                    self.total_files, self.total_matches, self.last_search_duration, skip_count=skipped_count, state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED
+                    self.total_files,
+                    self.total_matches,
+                    self.last_search_duration,
+                    skip_count=skipped_count,
+                    state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED,
                 )
 
             QTimer.singleShot(100, self.result_view_panel.auto_select_first_result)
@@ -742,7 +746,7 @@ class SearchTab(QMainWindow):
             # 검색 결과가 하나라도 있거나 스킵된 파일이 있는 경우에만 표시
             if self.total_files > 0 or total_skipped > 0:
                 self.last_search_duration = total_elapsed
-                
+
                 if status_text is None:
                     if self.search_state in (Constants.SearchState.SCANNING, Constants.SearchState.SEARCHING):
                         status_text = AppStrings.SUMMARY_PREFIX_SEARCHING
@@ -752,7 +756,11 @@ class SearchTab(QMainWindow):
                         status_text = AppStrings.SUMMARY_PREFIX_FINISHED
 
                 self.result_view_panel.set_summary_info(
-                    self.total_files, self.total_matches, total_elapsed, skip_count=total_skipped, state_prefix=status_text
+                    self.total_files,
+                    self.total_matches,
+                    total_elapsed,
+                    skip_count=total_skipped,
+                    state_prefix=status_text,
                 )
                 self.last_summary_update_time = now
 
@@ -782,8 +790,14 @@ class SearchTab(QMainWindow):
 
     def _on_search_finished(self, found_count, total_matches, skipped_count):
         """문자열 검색이 완료되었을 때 실행 시간을 계산하고 UI를 초기화합니다."""
-        status_text = AppStrings.SUMMARY_PREFIX_STOPPED if self.search_state == Constants.SearchState.STOPPING else AppStrings.SUMMARY_PREFIX_FINISHED
-        self._update_realtime_summary(force=True, status_text=status_text)  # 종료 시 버퍼 플러시 및 최종 요약 강제 업데이트
+        status_text = (
+            AppStrings.SUMMARY_PREFIX_STOPPED
+            if self.search_state == Constants.SearchState.STOPPING
+            else AppStrings.SUMMARY_PREFIX_FINISHED
+        )
+        self._update_realtime_summary(
+            force=True, status_text=status_text
+        )  # 종료 시 버퍼 플러시 및 최종 요약 강제 업데이트
         self._liveliness_timer.stop()
         self.liveliness_updated.emit(False, self._liveliness_seconds)
         # [중] 진행률 무결성 보정: 종료 시 실제 처리량으로 100% 도달 보장 (0/0 방지)

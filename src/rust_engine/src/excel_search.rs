@@ -47,8 +47,11 @@ pub fn search_excel_file(
                         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                             break;
                         }
-                        match wb.worksheet_range(&sheet_name) {
-                            Ok(range) => {
+                        let range_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            wb.worksheet_range(&sheet_name)
+                        }));
+                        match range_result {
+                            Ok(Ok(range)) => {
                                 let (offset_row, offset_col) = range.start().unwrap_or((0, 0));
                                 for (row_idx, row) in range.rows().enumerate() {
                                     if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -65,10 +68,25 @@ pub fn search_excel_file(
                                     }
                                 }
                             }
-                            Err(e) => {
+                            Ok(Err(e)) => {
                                 ctx.results.push(SearchMatch::new(
                                     0,
                                     format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
+                                    None,
+                                    None,
+                                ));
+                            }
+                            Err(panic_err) => {
+                                let panic_msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                                    s.to_string()
+                                } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                                    s.clone()
+                                } else {
+                                    "Unknown sheet panic".to_string()
+                                };
+                                ctx.results.push(SearchMatch::new(
+                                    0,
+                                    format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
                                     None,
                                     None,
                                 ));
@@ -115,21 +133,49 @@ pub fn search_excel_file(
                         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                             break;
                         }
-                        if let Ok(range) = wb.worksheet_range(&sheet_name) {
-                            let (offset_row, offset_col) = range.start().unwrap_or((0, 0));
-                            for (row_idx, row) in range.rows().enumerate() {
-                                if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                                    break;
+                        let range_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            wb.worksheet_range(&sheet_name)
+                        }));
+                        match range_result {
+                            Ok(Ok(range)) => {
+                                let (offset_row, offset_col) = range.start().unwrap_or((0, 0));
+                                for (row_idx, row) in range.rows().enumerate() {
+                                    if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                        break;
+                                    }
+                                    for (col_idx, cell) in row.iter().enumerate() {
+                                        process_cell(
+                                            &sheet_name,
+                                            offset_row as usize + row_idx,
+                                            offset_col as usize + col_idx,
+                                            cell,
+                                            &mut ctx,
+                                        );
+                                    }
                                 }
-                                for (col_idx, cell) in row.iter().enumerate() {
-                                    process_cell(
-                                        &sheet_name,
-                                        offset_row as usize + row_idx,
-                                        offset_col as usize + col_idx,
-                                        cell,
-                                        &mut ctx,
-                                    );
-                                }
+                            }
+                            Ok(Err(e)) => {
+                                ctx.results.push(SearchMatch::new(
+                                    0,
+                                    format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
+                                    None,
+                                    None,
+                                ));
+                            }
+                            Err(panic_err) => {
+                                let panic_msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                                    s.to_string()
+                                } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                                    s.clone()
+                                } else {
+                                    "Unknown sheet panic".to_string()
+                                };
+                                ctx.results.push(SearchMatch::new(
+                                    0,
+                                    format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
+                                    None,
+                                    None,
+                                ));
                             }
                         }
                     }
@@ -173,21 +219,49 @@ pub fn search_excel_file(
                         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                             break;
                         }
-                        if let Ok(range) = wb.worksheet_range(&sheet_name) {
-                            let (offset_row, offset_col) = range.start().unwrap_or((0, 0));
-                            for (row_idx, row) in range.rows().enumerate() {
-                                if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                                    break;
+                        let range_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            wb.worksheet_range(&sheet_name)
+                        }));
+                        match range_result {
+                            Ok(Ok(range)) => {
+                                let (offset_row, offset_col) = range.start().unwrap_or((0, 0));
+                                for (row_idx, row) in range.rows().enumerate() {
+                                    if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                        break;
+                                    }
+                                    for (col_idx, cell) in row.iter().enumerate() {
+                                        process_cell(
+                                            &sheet_name,
+                                            offset_row as usize + row_idx,
+                                            offset_col as usize + col_idx,
+                                            cell,
+                                            &mut ctx,
+                                        );
+                                    }
                                 }
-                                for (col_idx, cell) in row.iter().enumerate() {
-                                    process_cell(
-                                        &sheet_name,
-                                        offset_row as usize + row_idx,
-                                        offset_col as usize + col_idx,
-                                        cell,
-                                        &mut ctx,
-                                    );
-                                }
+                            }
+                            Ok(Err(e)) => {
+                                ctx.results.push(SearchMatch::new(
+                                    0,
+                                    format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
+                                    None,
+                                    None,
+                                ));
+                            }
+                            Err(panic_err) => {
+                                let panic_msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                                    s.to_string()
+                                } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                                    s.clone()
+                                } else {
+                                    "Unknown sheet panic".to_string()
+                                };
+                                ctx.results.push(SearchMatch::new(
+                                    0,
+                                    format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
+                                    None,
+                                    None,
+                                ));
                             }
                         }
                     }

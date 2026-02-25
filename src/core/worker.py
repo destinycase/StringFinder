@@ -42,7 +42,7 @@ def shutdown_global_manager():
                 _global_manager = None
                 logger.debug(AppStrings.LOG_PERF_MANAGER_SHUTDOWN)
             except Exception as e:
-                logger.error(f"Global manager shutdown error: {e}", exc_info=True)
+                logger.error(AppStrings.LOG_PERF_MANAGER_SHUTDOWN_ERROR.format(e), exc_info=True)
             finally:
                 _global_manager = None
                 # 복구 불가능한 프로세스 중단 상황일 수 있으므로 로깅만 강화
@@ -204,16 +204,16 @@ class SearchWorker(QRunnable):
         def results_callback(batch):
             if not self.is_running.is_set():
                 return
-            from core.search_engine import _normalize_rust_matches, _extract_excel_marker_skip_reason
+            from core.search_engine import _normalize_rust_matches, _extract_marker_skip_reason
 
             formatted_batch = []
             skipped_batch = []
             for path, matches in batch:
-                excel_skip_reason = _extract_excel_marker_skip_reason(matches)
-                if excel_skip_reason:
-                    skipped_batch.append((path, excel_skip_reason))
+                skip_reason = _extract_marker_skip_reason(matches)
+                if skip_reason:
+                    skipped_batch.append((path, skip_reason))
                     if hasattr(self, "all_skipped"):
-                        self.all_skipped.append((path, excel_skip_reason))
+                        self.all_skipped.append((path, skip_reason))
                     continue
 
                 match_tuples, marker_binary_count = _normalize_rust_matches(matches, self.special_mode)
@@ -258,13 +258,13 @@ class SearchWorker(QRunnable):
                     mem_percent = psutil.virtual_memory().percent
                     if mem_percent > Constants.MEMORY_THRESHOLD_PERCENT:
                         err_msg = AppStrings.ERROR_MEMORY_CRITICAL
-                        logger.warning(f"{err_msg} (Current: {mem_percent}%)")
+                        logger.warning(AppStrings.LOG_SYS_MEMORY_WARNING.format(err_msg, mem_percent))
                         self.stop_event.set()
                         self.is_running.clear()
                         self.signals.error.emit(err_msg)
                         return
                 except Exception as e:
-                    logger.debug(f"Memory check fail: {e}")
+                    logger.debug(AppStrings.LOG_SYS_MEMORY_CHECK_FAIL.format(e))
 
                 try:
                     self.signals.results_found.emit(formatted_batch)
@@ -368,8 +368,9 @@ class SearchWorker(QRunnable):
                     self.search_paths,
                     self.extensions,
                     filename_filter=self.filename_filter,
-                    stop_check_callback=lambda: (not self.is_running.is_set())
-                    or (self.stop_event is not None and self.stop_event.is_set()),
+                    stop_check_callback=lambda: (
+                        (not self.is_running.is_set()) or (self.stop_event is not None and self.stop_event.is_set())
+                    ),
                     exclude_hidden=self.exclude_hidden,
                 )
                 self.file_list = scanner.scan()
@@ -403,7 +404,7 @@ class SearchWorker(QRunnable):
             try:
                 future.cancel()
             except Exception as e:
-                logger.debug(f"Future cancel error: {e}")
+                logger.debug(AppStrings.LOG_PERF_FUTURE_CANCEL_ERROR.format(e))
                 # 작업 취소 실패는 무시 가능하나 로깅 수준을 유지함
 
     def _run_batch_search(self, files, is_excel_fallback=False, force_python=False):
@@ -419,7 +420,7 @@ class SearchWorker(QRunnable):
                 self.stop_event = manager.Event()
                 if old_event and hasattr(old_event, "is_set") and old_event.is_set():
                     self.stop_event.set()
-                logger.debug("[M-05] stop_event upgraded to Manager.Event for multiprocess search.")
+                logger.debug(AppStrings.LOG_PERF_EVENT_UPGRADE)
 
         batch_size = Constants.BATCH_SIZE_LARGE if total > 10000 else Constants.BATCH_SIZE_NORMAL
         batches = [files[i : i + batch_size] for i in range(0, total, batch_size)]
@@ -559,5 +560,3 @@ class SearchWorker(QRunnable):
                 logger.debug(AppStrings.LOG_EXECUTOR_SHUTDOWN_ERROR.format(e))
             finally:
                 self._executor = None
-
-

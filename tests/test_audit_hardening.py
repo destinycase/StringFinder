@@ -41,7 +41,39 @@ def test_memory_guard_handling_json(tmp_path, monkeypatch):
 
     assert isinstance(result, tuple)
     assert result[0] == Constants.STATUS_SKIPPED
-    assert "ERR_MEMORY_GUARD" in str(result[1])
+    assert "Size exceeds limit" in str(result[1]) or "메모리" in str(result[1])
+
+
+def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch):
+    """
+    일반 검색 모드에서 Rust 엔진이 'ERR_PANIC|...' 형태의 마커를 반환할 때,
+    단순히 '일치 항목 0건'으로 조용히 실패(Silent Failure)하지 않고
+    반드시 STATUS_SKIPPED 처리되는지 확인하는 방어적 단위 테스트입니다.
+    """
+    file_path = tmp_path / "dummy.txt"
+    file_path.write_text("dummy")
+
+    class MockMatch:
+        def __init__(self, content):
+            self.content = content
+            self.line = 1
+            self.offset = 0
+            self.length = 0
+
+    def mock_search_file(path, query, mode_bits, stop_event=None, progress_cb=None):
+        return [MockMatch("ERR_PANIC|Simulated engine crash")]
+
+    import core.search_engine
+
+    monkeypatch.setattr(core.search_engine, "HAS_RUST_ENGINE", True)
+    monkeypatch.setattr(core.search_engine, "sf_engine", type("obj", (object,), {"search_file": mock_search_file}))
+
+    result = core.search_engine.search_in_file(str(file_path), "query", use_complex_search=False)
+
+    assert result is not None
+    assert isinstance(result, tuple)
+    assert result[0] == Constants.STATUS_SKIPPED
+    assert "Simulated engine crash" in str(result[1])
 
 
 def test_casefold_unicode_german(tmp_path):

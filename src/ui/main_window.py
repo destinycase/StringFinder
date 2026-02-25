@@ -472,6 +472,4 @@ class MainWindow(QMainWindow):
         # 2. 팝업 표시
         from PySide6.QtWidgets import QMessageBox
 
-        QMessageBox.critical(
-            self, AppStrings.ERROR_TITLE, f"{AppStrings.ERROR_SEARCH_CRITICAL_MSG.format(message)}"
-        )
+        QMessageBox.critical(self, AppStrings.ERROR_TITLE, f"{AppStrings.ERROR_SEARCH_CRITICAL_MSG.format(message)}")

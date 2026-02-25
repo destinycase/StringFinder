@@ -168,7 +168,7 @@ def _normalize_rust_match(
         # 이전: (None, None, None, None) 튜플 반환 후 호출부의 'is not None' 체크가 통과하여 TypeError 위험
         # 수정: None 반환으로 caller에서 안전하게 예외 처리
         error_msg = content[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR) :]
-        logger.warning(f"Excel sheet parse error: {error_msg}")
+        logger.warning(AppStrings.LOG_SCH_EXCEL_SHEET_ERROR_DETAIL.format(error_msg))
         return None, None
 
     if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
@@ -177,9 +177,9 @@ def _normalize_rust_match(
         data = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :]
         if "|" in data:
             ext, detail = data.split("|", 1)
-            logger.warning(f"Excel engine panic [{ext}]: {detail}")
+            logger.warning(AppStrings.LOG_SCH_EXCEL_ENGINE_PANIC_EXT.format(ext, detail))
         else:
-            logger.warning(f"Excel engine panic: {data}")
+            logger.warning(AppStrings.LOG_SCH_EXCEL_ENGINE_PANIC.format(data))
         return None, None
 
     # 2. 특수 모드 데이터 구조화 (벌크 검색 결과)
@@ -237,20 +237,25 @@ def _normalize_rust_matches(matches: Any, special_mode: Optional[str] = None) ->
     return normalized, binary_count
 
 
-def _extract_excel_marker_skip_reason(matches: Any) -> Optional[str]:
-    """Excel marker-only 결과를 skip 사유로 복원한다."""
+def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
+    """Excel marker-only 결과는 물론, 기타 모든 모드의 일반 에러(ERR_PANIC 등)도 skip 사유로 복원한다."""
     for match_obj in matches:
         content = str(getattr(match_obj, "content", ""))
         if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
             panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
             return AppStrings.ERROR_EXCEL_PANIC.format(panic_detail)
+        # [Fix] 엑셀 시트 파싱 에러(sheet error)는 파일 전체 스킵 사유가 아닙니다.
+        # 이 마커가 오더라도 다른 시트의 정상 매치 데이터가 존재할 수 있으므로 파일 전체를 스킵하지 않습니다.
         if content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
-            payload = content[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR) :]
-            if "|" in payload:
-                sheet_name, detail = payload.split("|", 1)
-            else:
-                sheet_name, detail = "unknown", payload
-            return AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, detail)
+            continue
+        # 일반 마커 처리
+        if content.startswith("ERR_") and "|" in content:
+            return format_skip_reason(content)
+        # 구형 메모리 가드 호환
+        if "ERR_MEMORY_GUARD" in content:
+            return format_skip_reason(
+                _build_skip_reason("ERR_MEMORY_GUARD", content.replace("ERR_MEMORY_GUARD", "").replace("|", "").strip())
+            )
     return None
 
 
@@ -540,6 +545,8 @@ def search_in_excel_special(
                     if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
                         panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
                         return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_PANIC.format(panic_detail))
+                    if content.startswith("ERR_") and "|" in content:
+                        return (Constants.STATUS_SKIPPED, format_skip_reason(content))
                     if content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
                         payload = content[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR) :]
                         if "|" in payload:
@@ -547,7 +554,7 @@ def search_in_excel_special(
                         else:
                             sheet_name, detail = "unknown", payload
                         sheet_error = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, detail)
-                        logger.warning(AppStrings.LOG_SCH_ERROR_FILE.format(file_path, sheet_error))
+                        logger.warning(f"[{file_path}] {sheet_error}")
                         sheet_errors.append(sheet_error)
                         continue
                     # [H-02] Rust 엔진 결과가 '\t' 또는 ' | ' 구분자로 올 수 있으므로 모두 지원
@@ -624,7 +631,7 @@ def search_in_excel_special(
                                 matches.append((0, sheet_name, f"{col_letter}{abs_row}", val_str))
             except BaseException as e:  # 특정 시트에서 패닉 발생 시 해당 시트만 스킵
                 sheet_err_msg = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, e)
-                logger.error(AppStrings.LOG_SCH_ERROR_FILE.format(file_path, sheet_err_msg))
+                logger.warning(f"[{file_path}] {sheet_err_msg}")
                 continue
 
         if count > 0:
@@ -653,12 +660,13 @@ def search_in_json_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             results = sf_engine.search_file(str(file_path), search_string, mode_bits)
             if results:
+                skip_reason = _extract_marker_skip_reason(results)
+                if skip_reason:
+                    if "ERR_MEMORY_GUARD" in skip_reason:
+                        logger.warning(AppStrings.LOG_SRCH_RUST_MEM_GUARD_WARN.format(file_path))
+                    return (Constants.STATUS_SKIPPED, skip_reason)
                 processed = []
                 for m in results:
-                    # 메모리 한도 확인 (큰 파일 안전성 향상)
-                    if "ERR_MEMORY_GUARD" in m.content:
-                        logger.warning(AppStrings.LOG_SRCH_RUST_MEM_GUARD_WARN.format(file_path))
-                        return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_MEMORY_GUARD.format(m.content))
                     parts = m.content.split("\t", 1)
                     # [H-24] JSON 경로 정규화: /를 .으로 변경하고 시작 / 제거
                     json_path = parts[0].lstrip("/").replace("/", ".")
@@ -751,11 +759,11 @@ def search_in_xml_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             results = sf_engine.search_file(str(file_path), search_string, mode_bits)
             if results:
+                skip_reason = _extract_marker_skip_reason(results)
+                if skip_reason:
+                    return (Constants.STATUS_SKIPPED, skip_reason)
                 processed = []
                 for m in results:
-                    # 메모리 한도 확인
-                    if "ERR_MEMORY_GUARD" in m.content:
-                        return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_MEMORY_GUARD.format(m.content))
                     parts = m.content.split("\t", 1)
                     tag_info = parts[0]
                     content_val = parts[1] if len(parts) > 1 else ""
@@ -856,11 +864,11 @@ def search_in_archive_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             results = sf_engine.search_file(str(file_path), search_string, mode_bits)
             if results:
+                skip_reason = _extract_marker_skip_reason(results)
+                if skip_reason:
+                    return (Constants.STATUS_SKIPPED, skip_reason)
                 processed = []
                 for m in results:
-                    # 메모리 한도 확인
-                    if "ERR_MEMORY_GUARD" in m.content:
-                        return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_MEMORY_GUARD.format(m.content))
                     parts = m.content.split("\t")
                     ns = parts[0].replace("NS: ", "") if len(parts) > 0 else ""
                     key = parts[1].replace("Key: ", "") if len(parts) > 1 else ""
@@ -987,12 +995,14 @@ def search_in_file(
                         binary_count,
                         [(1, AppStrings.MSG_BINARY_MATCH.format(binary_count), None, None)],
                     )
-                if is_binary:
-                    count = 0
-                    for m in rust_results:
-                        count += int(m.length) if (m.length is not None and m.length > 0) else 1
-                    return (file_path, count, [(1, AppStrings.MSG_BINARY_MATCH.format(count), None, None)])
-                return (file_path, len(normalized), normalized)
+
+                if normalized:
+                    return (file_path, len(normalized), normalized)
+
+                # 방어 로직: 정상 결과는 없으나 에러 마커가 숨겨져 있다면 스킵 처리합니다.
+                skip_reason = _extract_marker_skip_reason(rust_results)
+                if skip_reason:
+                    return (Constants.STATUS_SKIPPED, skip_reason)
 
             # [무결성 정책] Rust가 결과를 찾지 못했을 때 Python 폴백으로 재시도합니다.
             return None
@@ -1187,9 +1197,9 @@ def search_directory_fast(
                 elif match_tuples:
                     formatted_results.append((path, len(match_tuples), match_tuples))
                 else:
-                    excel_skip_reason = _extract_excel_marker_skip_reason(matches)
-                    if excel_skip_reason:
-                        skipped_results.append((path, excel_skip_reason))
+                    skip_reason = _extract_marker_skip_reason(matches)
+                    if skip_reason:
+                        skipped_results.append((path, skip_reason))
             for path, reason in skipped_list:
                 skipped_results.append((path, format_skip_reason(reason)))
         return {"results": formatted_results, "skipped": skipped_results}
@@ -1248,9 +1258,9 @@ def search_files_list_fast(
                 elif match_tuples:
                     formatted_results.append((path, len(match_tuples), match_tuples))
                 else:
-                    excel_skip_reason = _extract_excel_marker_skip_reason(matches)
-                    if excel_skip_reason:
-                        skipped_results.append((path, excel_skip_reason))
+                    skip_reason = _extract_marker_skip_reason(matches)
+                    if skip_reason:
+                        skipped_results.append((path, skip_reason))
             for path, reason in skipped_list:
                 skipped_results.append((path, format_skip_reason(reason)))
         return {"results": formatted_results, "skipped": skipped_results}

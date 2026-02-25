@@ -100,10 +100,10 @@ class AppStrings:
     COMPLEX_SEARCH_LABEL = " (느림)"
     COMPLEX_SEARCH_TOOLTIP = (
         "영어, 한글, 일반 특수 문자가 아닌 경우까지 검색 합니다.\n"
-        "예: 독일어(ß↔ss), 프랑스어(Œ↔oe), 원문자(?↔가) 및 복잡한 유니코드 변형\n"
-        "단, 속도가 느려질 수 있습니다."
+        "예: 독일어(ß↔ss), 프랑스어(Œ↔oe), 원문자(㉮↔가) 및 복잡한 유니코드 변형\n"
+        "정밀 하게 검사하는 대신, 속도가 느립니다."
     )
-    EXCLUDE_HIDDEN_LABEL = "숨김 항목 제외"
+    EXCLUDE_HIDDEN_LABEL = "시스템 항목 제외"
     EXCLUDE_HIDDEN_TOOLTIP = (
         "윈도우의 '숨김' 속성이 설정된 폴더와 파일을 검색에서 제외합니다.\n"
         ".git, node_modules, AppData 등 불필요한 스캔을 줄여 속도가 대폭 향상됩니다."
@@ -262,6 +262,10 @@ class AppStrings:
     MSG_CRITICAL_ERROR_POPUP = (
         "[시스템] 치명적인 오류가 발생했습니다:\n\n{}\n\n상세 내용은 crash_dump.txt를 확인하세요."
     )
+    LOG_SYS_CRITICAL_STOP_ALL = "[시스템] 치명적 오류 감지로 인해 모든 검색 작업을 강제 중지합니다."
+    LOG_SYS_TAB_STOP_FAIL = "[시스템] 탭 중지 실패: {}"
+    LOG_SYS_MEMORY_WARNING = "[시스템] {} (현재: {}%)"
+    LOG_SYS_MEMORY_CHECK_FAIL = "[시스템] 메모리 확인 실패: {}"
     # =========================================================================
     # [9] 설정 로그 (Config Logs) - 형식: [설정] 메시지
     # =========================================================================
@@ -294,6 +298,7 @@ class AppStrings:
     LOG_SYS_HANDLER_CLEANUP_FAIL = "[시스템] 클린업 핸들러 오류: {}"
     LOG_SYS_CRITICAL_POPUP_FAIL = "[시스템] 치명적 오류 팝업 표시 실패: {}"
     LOG_SYS_LOG_CLEANUP_FAILURE = "[시스템] 로그 정리 실패: {}"
+    LOG_CFG_UNEXPECTED_LOAD_ERROR = "[설정] 예기치 않은 구성 로드 오류: {}"
     # =========================================================================
     # [10] 검색 및 스캔 로그 (Search & Scan Logs) - 형식: [검색 / 스캔 / 엔진] 메시지
     # =========================================================================
@@ -369,6 +374,9 @@ class AppStrings:
     LOG_PERF_SKIP_RESIZE = "[성능] 대량 데이터({}행)로 인한 자동 폭 조절 건너뜀"
     LOG_PERF_SKIP_MATCH_RESIZE = "[성능] 대량 매치 데이터({}행)로 인한 상세 뷰 자동 폭 조절 건너뜀"
     LOG_PERF_ADJUST_MATCH_FAIL = "[성능] 상세 컬럼 폭 조정 실패: {}"
+    LOG_PERF_MANAGER_SHUTDOWN_ERROR = "[성능] 전역 멀티프로세싱 매니저 종료 오류: {}"
+    LOG_PERF_FUTURE_CANCEL_ERROR = "[성능] 작업 취소(Future) 오류: {}"
+    LOG_PERF_EVENT_UPGRADE = "[성능] 멀티프로세스 검색을 위해 Manager.Event로 stop_event가 업그레이드되었습니다."
     LOG_SYS_RUST_NO_FALLBACK = "[시스템] Rust 엔진을 로드할 수 없습니다. (Python 폴백 정책 제한됨)"
     # =========================================================================
     # [12] 에러 메시지 (Error Messages) - 형식: [오류] 메시지
@@ -436,6 +444,9 @@ class AppStrings:
     LOG_SCH_STOP_THREAD_ERR = "[오류] 스레드 중지 실패: {}"
     LOG_SCH_SCAN_THREAD_ERROR = "[오류] 스캔 스레드 종료 중 오류 발생: {}"
     LOG_SCH_SEARCH_THREAD_ERROR = "[오류] 검색 스레드 종료 중 오류 발생: {}"
+    LOG_SCH_EXCEL_SHEET_ERROR_DETAIL = "[검색] 엑셀 시트 파싱 오류: {}"
+    LOG_SCH_EXCEL_ENGINE_PANIC_EXT = "[검색] 엑셀 엔진 패닉 [{}]: {}"
+    LOG_SCH_EXCEL_ENGINE_PANIC = "[검색] 엑셀 엔진 패닉: {}"
     LOG_THEME_APPLY_FAIL = "[화면] 테마 적용 실패 (테마={}): {}"
     ERROR_SORT_WORKER = "[오류] 정렬 워커(SortWorker) 오류: {}"
     ERROR_GLOBAL_SORT_WORKER = "[오류] 전역 정렬 워커(GlobalSortWorker) 오류: {}"

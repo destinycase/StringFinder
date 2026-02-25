@@ -31,10 +31,43 @@ def build_rust_engine(clean_target=False):
     env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
     try:
-        # 1. Cargo를 사용하여 컴파일 실행
-        cargo_cmd = ["cargo", "build", "--release"]
+        # [OS Error 32 방어] 백그라운드 프로세스(rustc, rust-analyzer) 정리
+        try:
+            # sys.platform 확인 후 윈도우 환경인 경우만 실행
+            if sys.platform == "win32":
+                subprocess.call(
+                    [
+                        "powershell",
+                        "-Command",
+                        "Get-Process | Where-Object { $_.Path -match 'rustc|cargo|rust-analyzer' } | Stop-Process -Force",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception as e:
+            print(f"Debug: Failed to kill lock processes: {e}")
+
+        # 1. Cargo를 사용하여 컴파일 실행 (단일 스레드 -j 1 및 5회 재시도 루프)
+        cargo_cmd = ["cargo", "build", "--release", "-j", "1"]
         print(f"Running cargo: {' '.join(cargo_cmd)}")
-        subprocess.check_call(cargo_cmd, cwd=rust_dir, env=env)
+
+        retry_count = 0
+        max_retries = 5
+        success = False
+
+        while retry_count < max_retries:
+            try:
+                subprocess.check_call(cargo_cmd, cwd=rust_dir, env=env)
+                success = True
+                break
+            except subprocess.CalledProcessError as e:
+                retry_count += 1
+                if retry_count < max_retries:
+                    print(f"[경고] 빌드 실패 (OS Error 32 가능성). {retry_count}회 재시도 중... 대기 중...")
+                    time.sleep(2)
+                else:
+                    print(f"Rust build failed after {max_retries} retries: {e}")
+                    raise
 
         # 2. 생성된 dll을 .pyd로 변경하여 src 폴더로 복사
         src_dll = os.path.join(rust_dir, "target", "release", "sf_engine.dll")

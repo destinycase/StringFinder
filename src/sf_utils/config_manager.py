@@ -163,7 +163,7 @@ class ConfigManager:
                 logger.error(AppStrings.LOG_CFG_READ_ERROR.format(e))
             except Exception as e:
                 self.last_load_error = e
-                logger.error(f"Unexpected config load error: {e}")
+                logger.error(AppStrings.LOG_CFG_UNEXPECTED_LOAD_ERROR.format(e))
         return copy.deepcopy(self.defaults)
 
     def _migrate_config(self, config: dict, from_version: int) -> dict:
