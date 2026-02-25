@@ -87,13 +87,13 @@ class ResultView(QWidget):
         self.summary_label.setVisible(False)
         result_list_layout.addWidget(self.summary_label)
         self.result_view = QTableView()
-        self.result_view.setStyleSheet(UIStyles.STYLE_TABLE_VIEW)
         self.result_model = SearchResultModel(self.icon_provider)
         self.proxy_model = ResultProxyModel()
         self.proxy_model.setSourceModel(self.result_model)
         self.proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.result_view.setModel(self.proxy_model)
         self.result_view.setItemDelegate(HtmlDelegate(self.result_view))
+        self.result_model.sort_completed.connect(self._select_first_row_safely)
 
         # [Bug Fix] 필터 디바운스 적용
         self.result_file_filter_edit.textChanged.connect(lambda: self._filter_timer.start())
@@ -132,14 +132,13 @@ class ResultView(QWidget):
         self.match_filter_4_edit = QLineEdit()  # 컬럼 4
         self.match_filter_3_edit.setVisible(False)
         self.match_filter_4_edit.setVisible(False)
-        self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_LINE_PLACEHOLDER)
-        self.match_filter_2_edit.setPlaceholderText(AppStrings.MATCH_FILTER_CONTENT_PLACEHOLDER)
+        self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_LIST_PLACEHOLDER)
+        self.match_filter_2_edit.setPlaceholderText(AppStrings.MATCH_FILTER_VALUE_PLACEHOLDER)
         self.match_filter_layout.addWidget(self.match_filter_1_edit)
         self.match_filter_layout.addWidget(self.match_filter_2_edit)
         self.match_filter_layout.addWidget(self.match_filter_3_edit)
         self.match_filter_layout.addWidget(self.match_filter_4_edit)
         self.match_view = QTableView()
-        self.match_view.setStyleSheet(UIStyles.STYLE_TABLE_VIEW)
         self.match_model = MatchDetailModel()
         self.match_proxy_model = MatchProxyModel()
         self.match_proxy_model.setSourceModel(self.match_model)
@@ -194,6 +193,7 @@ class ResultView(QWidget):
         self.empty_label.setStyleSheet(UIStyles.STYLE_SELECTION_INFO)
         main_layout.insertWidget(0, self.empty_label)
         self.result_splitter.setVisible(False)
+        self._apply_theme_style()
         for i in range(self.result_filter_layout.count()):
             item = self.result_filter_layout.itemAt(i)
             if item:
@@ -201,6 +201,14 @@ class ResultView(QWidget):
                 if w:
                     w.setVisible(False)
         self._setup_copy_shortcuts()
+
+    def _apply_theme_style(self):
+        '''현재 테마에 맞게 테이블 스타일을 적용합니다.'''
+        theme = self.config_manager.get_theme()
+        is_dark = theme.lower() in [AppStrings.THEME_DARK.lower(), "dark", "auto"]
+        style = UIStyles.get_table_style(is_dark)
+        self.result_view.setStyleSheet(style)
+        self.match_view.setStyleSheet(style)
 
     def _create_pagination_widget(self):
         pagination_widget = QWidget()
@@ -442,8 +450,33 @@ class ResultView(QWidget):
             return
         was_empty = self.result_model.rowCount() == 0
         self.result_model.add_results(results)
-        if was_empty:
+        if was_empty and self.result_model.rowCount() > 0:
             self.update_ui_visibility()
+            # [UI/UX] 첫 검색 결과 도달 시 첫 번째 행을 명시적으로 선택
+            #         (검색 리스트 선택 하이라이팅 및 상세 뷰 동기화 강제)
+            QTimer.singleShot(0, self._select_first_row_safely)
+
+    def _select_first_row_safely(self, force=False):
+        """첫 번째 결과 항목을 명시적으로 선택하고 클릭 이벤트를 강제로 발생시킵니다."""
+        try:
+            if getattr(self, "result_view", None) is None:
+                return
+            if self.result_view.model() is not None and self.result_model.rowCount() > 0:
+                selection_model = self.result_view.selectionModel()
+                if selection_model and selection_model.hasSelection() and not force:
+                    return
+
+                if selection_model:
+                    selection_model.clearSelection()
+                self.result_view.selectRow(0)
+                
+                # currentRowChanged만으로는 충분치 않을 수 있어 클릭 이벤트를 직접 트리거
+                index = self.proxy_model.index(0, 0)
+                if index.isValid():
+                    self._on_result_clicked(index)
+        except RuntimeError:
+            # QTimer 이벤트가 UI 객체 파괴 후에 실행될 때 발생하는 예외 무시
+            pass
 
     def sort_results(self):
         """검색 종료 시 호출되어 전체 결과를 정렬합니다 (비동기)."""
@@ -518,10 +551,11 @@ class ResultView(QWidget):
 
     def set_results(self, results):
         """세션 로드 등 대량의 결과를 한꺼번에 설정할 때 사용합니다."""
-        self.result_model.clear()
+        self.clear()
         if results:
             self.result_model.add_results(results)
-        self.update_ui_visibility()
+            self.update_ui_visibility()
+            QTimer.singleShot(0, self._select_first_row_safely)
         self._update_pagination_ui()
 
     def get_results(self):
@@ -566,8 +600,8 @@ class ResultView(QWidget):
             self.match_filter_1_edit.setVisible(True)
             self.match_filter_2_edit.setVisible(True)
             self.match_filter_3_edit.setVisible(False)
-            self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_NAME_PLACEHOLDER)
-            self.match_filter_2_edit.setPlaceholderText(AppStrings.MATCH_FILTER_CONTENT_PLACEHOLDER)
+            self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_KEY_PLACEHOLDER)
+            self.match_filter_2_edit.setPlaceholderText(AppStrings.MATCH_FILTER_VALUE_PLACEHOLDER)
         elif Constants.MODE_JSON in mode:
             self.match_filter_1_edit.setVisible(True)
             self.match_filter_2_edit.setVisible(True)
@@ -597,7 +631,7 @@ class ResultView(QWidget):
             self.match_filter_2_edit.setVisible(False)
             self.match_filter_3_edit.setVisible(False)
             self.match_filter_4_edit.setVisible(False)
-            self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_CONTENT_PLACEHOLDER)
+            self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_LIST_PLACEHOLDER)
 
     def _on_result_filters_changed(self):
         """결과 목록 필터 변경 시 호출됩니다."""

@@ -32,6 +32,7 @@ def test_panic_large_utf16_xml(tmp_path):
 
         # 패닉이 발생하지 않으면 통과 (수정 후 기대 상태)
         assert result is not None
+        assert isinstance(result[1], int)
         assert result[1] > 0
     except Exception as e:
         # 패닉(pyo3_runtime.PanicException)이 발생하면 테스트 실패 (재현 성공)

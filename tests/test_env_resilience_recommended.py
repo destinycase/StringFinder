@@ -41,7 +41,9 @@ def _require_search_result(result: object) -> tuple[str, int, list[tuple[Any, ..
 def test_engine_api_version_mismatch_fallback(monkeypatch, api_version):
     import core.search_engine as search_engine
 
-    real_sf_engine = sys.modules.get("sf_engine")
+    real_pkg = sys.modules.get("rust_engine")
+    real_sf_engine = sys.modules.get("rust_engine.sf_engine")
+    
     fake_engine = types.SimpleNamespace(
         search_file=lambda *args, **kwargs: [],
         search_dir=lambda *args, **kwargs: ([], []),
@@ -51,15 +53,24 @@ def test_engine_api_version_mismatch_fallback(monkeypatch, api_version):
     if api_version is not None:
         fake_engine.API_VERSION = api_version
 
+    fake_pkg = types.ModuleType("rust_engine")
+    fake_pkg.sf_engine = fake_engine  # type: ignore
+
     try:
-        monkeypatch.setitem(sys.modules, "sf_engine", fake_engine)
+        monkeypatch.setitem(sys.modules, "rust_engine", fake_pkg)
+        monkeypatch.setitem(sys.modules, "rust_engine.sf_engine", fake_engine)
         reloaded = importlib.reload(search_engine)
         assert reloaded.HAS_RUST_ENGINE is False
     finally:
-        if real_sf_engine is None:
-            sys.modules.pop("sf_engine", None)
+        if real_pkg is None:
+            sys.modules.pop("rust_engine", None)
         else:
-            sys.modules["sf_engine"] = real_sf_engine
+            sys.modules["rust_engine"] = real_pkg
+            
+        if real_sf_engine is None:
+            sys.modules.pop("rust_engine.sf_engine", None)
+        else:
+            sys.modules["rust_engine.sf_engine"] = real_sf_engine
         importlib.reload(search_engine)
 
 

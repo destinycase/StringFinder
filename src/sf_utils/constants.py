@@ -126,6 +126,10 @@ class Constants:
     MAX_PER_FILE_MATCHES = 5_000  # 파일당 매치 상한 (5천 명)
     MEMORY_THRESHOLD_PERCENT = 85  # 메모리 사용량 임계값 (%)
 
+    # Rust 엔진 결과 배치 크기 및 지연 간격 (성능 튜닝용)
+    RUST_RESULT_BATCH_SIZE = 128
+    RUST_RESULT_FLUSH_MS = 75
+
     class SearchState:
         IDLE = "IDLE"
         SCANNING = "SCANNING"

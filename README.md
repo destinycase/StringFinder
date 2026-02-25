@@ -10,9 +10,9 @@ StringFinder는 "빠른 검색기"가 아니라 "운영 가능한 검색 시스�
 핵심 설계는 다음 네 가지입니다.
 
 - 성능 경로 분리: 일반 워크로드는 Rust, 정밀 유니코드 검색은 Python
-- 통합 파이프라인: 첫 번째 결과 도달 시간(Zero-TTFR) 최소화를 위해 스캔과 본문 검색을 단일 단계로 오케스트레이션 수행
+- 통합 파이프라인: 첫 번째 결과 도달 시간(Zero-TTFR) 최소화를 위해 스캔과 본문 검색을 단일 단계로 오케스트레이션 수행 및 Rust 엔진 첫 결과 **즉시 플러시(Immediate Flush)** 적용
 - 안정성 고도화: `catch_unwind` 기반 파닉 방어 및 Mmap 실패 시 Read 폴백 메커니즘
-- 작업 지속성: 탭 세션, 상태 복원, 로그 기반 진단을 포함한 운영 UX
+- 작업 지속성: 탭 세션, 상태 복원, 파라미터화된 청크 튜닝, 로그 기반 진단을 포함한 운영 UX
 
 이 선택의 결과는 최고 단일 벤치마크 점수보다, 이질적 사용자 환경에서의 안정적인 완료율과 예측 가능한 동작입니다.
 
@@ -101,7 +101,7 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 
 ### 2. 실행 방법
 - 배포본 사용: `StringFinder.exe` 실행
-- 소스 실행: `python run.py` (Maturin으로 빌드된 `sf_engine.pyd` 필요)
+- 소스 실행: `python run.py` (Maturin으로 빌드된 `src/rust_engine/sf_engine.pyd` 필요)
 
 ### 3. 기본 사용 순서
 1. `폴더 목록`에 검색 폴더를 추가합니다.
@@ -194,7 +194,7 @@ python run.py
 python build_rust.py
 ```
 
-- 산출물: `src/sf_engine.pyd`
+- 산출물: `src/rust_engine/sf_engine.pyd`
 - 정리:
 
 ```powershell
@@ -202,7 +202,8 @@ python build_rust.py --clean
 ```
 
 ### 6. 테스트
-기본 실행(`stress`, `chaos` 제외):
+
+기본 실행 (`stress`, `chaos` 제외):
 
 ```powershell
 pytest

@@ -141,7 +141,8 @@ class AppStrings:
     FILENAME_LIST_PLACEHOLDER = "필터 단어 (예: npc)"
     RESULT_FILTER_FILE_PLACEHOLDER = "파일 필터..."
     RESULT_FILTER_FOLDER_PLACEHOLDER = "폴더 필터..."
-    MATCH_FILTER_LINE_PLACEHOLDER = "라인 필터"
+    MATCH_FILTER_LIST_PLACEHOLDER = "목록 필터..."
+    MATCH_FILTER_LINE_PLACEHOLDER = "라인 필터..."
     MATCH_FILTER_CONTENT_PLACEHOLDER = "내용 필터..."
     MATCH_FILTER_NAME_PLACEHOLDER = "이름 필터..."
     MATCH_FILTER_KEY_PLACEHOLDER = "키 필터..."
@@ -164,7 +165,7 @@ class AppStrings:
     HEADER_CONTENT = "내용"
     HEADER_JSON_KEY = "키"
     HEADER_JSON_VALUE = "값"
-    HEADER_XML_NAME = "이름"
+    HEADER_XML_NAME = "키"  # 이름에서 키로 변경
     HEADER_XML_VALUE = "값"
     HEADER_ARCHIVE_NAMESPACE = "네임스페이스"
     HEADER_ARCHIVE_KEY = "키"

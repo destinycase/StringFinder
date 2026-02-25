@@ -101,7 +101,7 @@ def test_batch_recovery_scenario(tmp_path, monkeypatch):
 
         def search_files_list(self, file_list, *args, **kwargs):
             # search_directory_fast 등이 사용하는 함수
-            results = []
+            results: list[tuple[str, list]] = []
             skipped = []
             for path in file_list:
                 if "file_2" in str(path):

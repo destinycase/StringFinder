@@ -14,7 +14,8 @@ from sf_utils.constants import Constants
 EXCEL_EXTS = {".xlsx", ".xlsm", ".xls", ".xlsb"}
 logger = logging.getLogger("StringFinder.SearchEngine")
 try:
-    import sf_engine
+    from rust_engine import sf_engine  # type: ignore
+    import hashlib
 
     REQUIRED_API_VERSION = 4
     engine_version = getattr(sf_engine, "API_VERSION", 0)
@@ -23,7 +24,24 @@ try:
         HAS_RUST_ENGINE = False
     else:
         HAS_RUST_ENGINE = True
+        
+        # [SSOT 강제] 로드된 엔진의 물리 경로 및 해시 무결성 로깅
+        engine_path = getattr(sf_engine, "__file__", "unknown")
+        engine_hash = "unknown"
+        if engine_path != "unknown" and os.path.exists(engine_path):
+            try:
+                with open(engine_path, "rb") as f:
+                    file_hash = hashlib.sha256()
+                    while chunk := f.read(8192):
+                        file_hash.update(chunk)
+                engine_hash = file_hash.hexdigest()
+            except Exception as e:
+                engine_hash = f"error: {e}"
+        
+        logger.info(f"[SSOT] Loaded Rust Engine Path: {engine_path}")
+        logger.info(f"[SSOT] Rust Engine SHA-256: {engine_hash}")
         logger.info(AppStrings.LOG_SYS_RUST_SUCCESS)
+
 except ImportError:
     HAS_RUST_ENGINE = False
     logger.warning(AppStrings.LOG_SYS_RUST_FALLBACK)
@@ -1179,6 +1197,8 @@ def search_directory_fast(
             stop_event,
             progress_callback,
             kwargs.get("results_callback"),
+            batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
+            flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
         )
         formatted_results = []
         skipped_results = []
@@ -1240,6 +1260,8 @@ def search_files_list_fast(
             stop_event,
             progress_callback,
             kwargs.get("results_callback"),
+            batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
+            flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
         )
         formatted_results = []
         skipped_results = []

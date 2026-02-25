@@ -468,7 +468,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<Searc
 }
 
 #[pyfunction]
-#[pyo3(signature = (paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None))]
+#[pyo3(signature = (paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, flush_ms=None))]
 #[allow(clippy::too_many_arguments)]
 fn search_dir(
     py: Python<'_>,
@@ -481,6 +481,8 @@ fn search_dir(
     stop_event: Option<PyObject>,
     progress_callback: Option<PyObject>,
     results_callback: Option<PyObject>,
+    batch_size: Option<usize>,
+    flush_ms: Option<u64>,
 ) -> PyResult<(FileMatches, SkippedEntries)> {
     let stop_flag = Arc::new(AtomicBool::new(false));
     let progress_counter = Arc::new(AtomicU64::new(0));
@@ -533,35 +535,36 @@ fn search_dir(
         let stop_flag_dispatcher = stop_flag.clone();
         let done_dispatcher = done_flag.clone();
         
+        let batch_size_limit = batch_size.unwrap_or(100);
+        let flush_time_ms = flush_ms.unwrap_or(100) as u128;
+        
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
             let mut last_emit = std::time::Instant::now();
-            let mut emit_count = 0;
+            let mut is_first = true;
             
             while !done_dispatcher.load(Ordering::Relaxed) || !rx.is_empty() {
                 while let Ok(res) = rx.try_recv() {
                     batch.push(res);
                     
-                    // [Optimization] Variable Batch Sizing for Instant TTFR
-                    // For the first 3 batches, use a small size (10) to show results instantly.
-                    // Thereafter, use a larger size (100) for throughput efficiency.
-                    let current_batch_threshold = if emit_count < 3 { 10 } else { 100 };
+                    // [Optimization] Immediate Flush for the First Result (TTFR UX)
+                    let current_batch_threshold = if is_first { 1 } else { batch_size_limit };
                     
-                    if batch.len() >= current_batch_threshold || last_emit.elapsed().as_millis() >= 100 {
+                    if batch.len() >= current_batch_threshold || last_emit.elapsed().as_millis() >= flush_time_ms {
                         let _ = Python::with_gil(|py| {
                             let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
                         });
                         last_emit = std::time::Instant::now();
-                        emit_count += 1;
+                        is_first = false;
                     }
                 }
                 
-                if !batch.is_empty() && last_emit.elapsed().as_millis() >= 100 {
+                if !batch.is_empty() && last_emit.elapsed().as_millis() >= flush_time_ms {
                     let _ = Python::with_gil(|py| {
                         let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
                     });
                     last_emit = std::time::Instant::now();
-                    emit_count += 1;
+                    is_first = false;
                 }
 
                 if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
@@ -790,7 +793,7 @@ fn search_dir(
 }
 
 #[pyfunction]
-#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, **_kwargs))]
+#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, flush_ms=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn search_files_list(
     py: Python<'_>,
@@ -801,6 +804,8 @@ fn search_files_list(
     stop_event: Option<PyObject>,
     progress_callback: Option<PyObject>,
     results_callback: Option<PyObject>,
+    batch_size: Option<usize>,
+    flush_ms: Option<u64>,
     _kwargs: Option<PyObject>,
 ) -> PyResult<(FileMatches, SkippedEntries)> {
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -853,25 +858,34 @@ fn search_files_list(
         let stop_flag_dispatcher = stop_flag.clone();
         let done_dispatcher = done_flag.clone();
         
+        let batch_size_limit = batch_size.unwrap_or(100);
+        let flush_time_ms = flush_ms.unwrap_or(100) as u128;
+        
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
             let mut last_emit = std::time::Instant::now();
+            let mut is_first = true;
             
             while !done_dispatcher.load(Ordering::Relaxed) || !rx.is_empty() {
                 while let Ok(res) = rx.try_recv() {
                     batch.push(res);
-                    if batch.len() >= 100 || last_emit.elapsed().as_millis() >= 100 {
+                    
+                    let current_batch_threshold = if is_first { 1 } else { batch_size_limit };
+                    
+                    if batch.len() >= current_batch_threshold || last_emit.elapsed().as_millis() >= flush_time_ms {
                         let _ = Python::with_gil(|py| {
                             let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
                         });
                         last_emit = std::time::Instant::now();
+                        is_first = false;
                     }
                 }
-                if !batch.is_empty() && last_emit.elapsed().as_millis() >= 100 {
+                if !batch.is_empty() && last_emit.elapsed().as_millis() >= flush_time_ms {
                     let _ = Python::with_gil(|py| {
                         let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
                     });
                     last_emit = std::time::Instant::now();
+                    is_first = false;
                 }
                 if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
                 if stop_flag_dispatcher.load(Ordering::Relaxed) { break; }

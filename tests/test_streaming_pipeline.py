@@ -31,10 +31,11 @@ def test_worker_streaming_accumulation(qtbot):
 
         def side_effect(*args, **kwargs):
             results_cb = kwargs.get("results_callback")
-            # 배치 1번 전송
-            results_cb([("/path/file1.txt", [(1, "match1", 10, 5)])])
-            # 배치 2번 전송
-            results_cb([("/path/file2.txt", [(2, "match2", 20, 5), (3, "match3", 30, 5)])])
+            if results_cb:
+                # 배치 1번 전송
+                results_cb([("/path/file1.txt", [(1, "match1", 10, 5)])])
+                # 배치 2번 전송
+                results_cb([("/path/file2.txt", [(2, "match2", 20, 5), (3, "match3", 30, 5)])])
             return {Constants.PAYLOAD_RESULTS: [], Constants.PAYLOAD_SKIPPED: []}
 
         mock_search.side_effect = side_effect

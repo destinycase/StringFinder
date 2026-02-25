@@ -51,6 +51,8 @@ class SearchResultModel(QAbstractTableModel):
     수백만 개의 행이 있어도 화면에 보이는 부분만 처리하여 성능을 유지합니다.
     """
 
+    sort_completed = Signal()
+
     def __init__(self, icon_provider=None):
         """모델을 초기화하고 검색 엔진의 결과 항목 헤더를 설정합니다."""
         super().__init__()
@@ -107,6 +109,7 @@ class SearchResultModel(QAbstractTableModel):
         self._is_sorting = False
         self.go_to_page(self._current_page)
         self.layoutChanged.emit()
+        self.sort_completed.emit()
 
     def add_result(self, result: list):
         """단일 결과를 추가합니다."""

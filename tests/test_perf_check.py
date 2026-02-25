@@ -19,6 +19,7 @@ def test_performance_many_matches_on_one_line(tmp_path):
 
     # 3. 검증
     assert result is not None
+    assert isinstance(result[1], int)
     assert result[1] > 0
     # 최적화 전에는 O(Matches * LineLength)로 수 초가 걸릴 수 있음
     # 최적화 후에는 0.1s 이내여야 함

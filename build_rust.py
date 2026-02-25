@@ -69,9 +69,9 @@ def build_rust_engine(clean_target=False):
                     print(f"Rust build failed after {max_retries} retries: {e}")
                     raise
 
-        # 2. 생성된 dll을 .pyd로 변경하여 src 폴더로 복사
+        # 2. 생성된 dll을 .pyd로 변경하여 단일 경로(src/rust_engine)로 복사 (SSOT)
         src_dll = os.path.join(rust_dir, "target", "release", "sf_engine.dll")
-        dst_pyd = os.path.join("src", "sf_engine.pyd")
+        dst_pyd = os.path.join("src", "rust_engine", "sf_engine.pyd")
 
         if os.path.exists(src_dll):
             # 윈도우에서 사용 중인 .pyd 파일 교체 문제 해결
@@ -86,7 +86,7 @@ def build_rust_engine(clean_target=False):
                     print(f"Renamed locked file to: {old_pyd}")
 
             shutil.copy2(src_dll, dst_pyd)
-            print(f"\n[Success] Rust binary deployed to: {dst_pyd}")
+            print(f"\n[Success] Rust binary deployed to single path: {dst_pyd}")
 
             # 복사 완료 후 잠기지 않은 .old 파일들이 있다면 한 번 더 정리 시도
             clean_old_binaries()
@@ -107,7 +107,7 @@ def build_rust_engine(clean_target=False):
 
 def clean_old_binaries():
     """배포된 바이너리의 .old 부산물들만 정리"""
-    src_dir = "src"
+    src_dir = os.path.join("src", "rust_engine")
     if not os.path.exists(src_dir):
         return
     for file in os.listdir(src_dir):
@@ -122,7 +122,7 @@ def clean_old_binaries():
 
 def clean_binary(clean_all=False):
     """배포된 바이너리 및 빌드 산출물 정리"""
-    dst_pyd = os.path.join("src", "sf_engine.pyd")
+    dst_pyd = os.path.join("src", "rust_engine", "sf_engine.pyd")
     if os.path.exists(dst_pyd):
         try:
             os.remove(dst_pyd)

@@ -25,7 +25,7 @@ def test_signal_integrity_on_error():
     }
 
     worker = SearchWorker(params)
-    signals_received = []
+    signals_received: list[tuple] = []
 
     def on_error(msg):
         signals_received.append(("error", msg))
