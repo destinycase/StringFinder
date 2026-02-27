@@ -38,8 +38,15 @@ pub fn search_json_file(
         return Vec::new();
     }
 
+    // UTF-8 BOM 스킵 (serde_json은 BOM을 지원하지 않아 파싱 에러 발생)
+    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
+        &mmap[3..]
+    } else {
+        mmap
+    };
+
     // 스트리밍 데시리얼라이저를 사용하여 이터레이터 방식으로 접근 시도
-    let deserializer = serde_json::Deserializer::from_slice(mmap);
+    let deserializer = serde_json::Deserializer::from_slice(parse_mmap);
     let iter = deserializer.into_iter::<JsonValue>();
 
     for value_res in iter {
@@ -142,8 +149,15 @@ pub fn check_json_file(
         return false;
     }
 
+    // UTF-8 BOM 스킵
+    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
+        &mmap[3..]
+    } else {
+        mmap
+    };
+
     // 스트리밍 방식으로 구조 탐색하여 메모리 스파이크 억제
-    let deserializer = serde_json::Deserializer::from_slice(mmap);
+    let deserializer = serde_json::Deserializer::from_slice(parse_mmap);
     let iter = deserializer.into_iter::<JsonValue>();
 
     for value_res in iter {

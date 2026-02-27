@@ -84,6 +84,7 @@ class Constants:
     PAYLOAD_SKIPPED = "skipped"
     PAYLOAD_FILENAME_FILTER = "filename_filter"
     PAYLOAD_USE_COMPLEX_SEARCH = "use_complex_search"
+    PAYLOAD_IS_BOOLEAN = "is_boolean"
     PAYLOAD_EXCLUDE_HIDDEN = "exclude_hidden"
     PAYLOAD_EXCLUDE_BINARY = "exclude_binary"
     CONFIG_KEY_VERSION = "config_version"

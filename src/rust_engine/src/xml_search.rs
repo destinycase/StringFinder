@@ -22,7 +22,15 @@ pub fn search_xml_file(
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Vec<SearchMatch> {
     let mut results = Vec::new();
-    let mut reader = XmlReader::from_reader(mmap);
+    
+    // UTF-8 BOM 스킵
+    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
+        &mmap[3..]
+    } else {
+        mmap
+    };
+
+    let mut reader = XmlReader::from_reader(parse_mmap);
     reader.trim_text(false);
     let mut buf = Vec::new();
     let mut current_tags = Vec::new();
@@ -188,7 +196,14 @@ pub fn check_xml_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> bool {
-    let mut reader = XmlReader::from_reader(mmap);
+    // UTF-8 BOM 스킵
+    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
+        &mmap[3..]
+    } else {
+        mmap
+    };
+
+    let mut reader = XmlReader::from_reader(parse_mmap);
     reader.trim_text(false);
     let mut buf = Vec::new();
     let pat_lower = pattern.to_lowercase();

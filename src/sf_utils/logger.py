@@ -104,7 +104,7 @@ class QtLogHandlerProxy:
 qt_log_handler = QtLogHandlerProxy()
 
 
-def qt_message_handler(mode, context, message):
+def qt_message_handler(mode, _context, message):
     """qt_message_handler 함수."""
     if mode == QtMsgType.QtInfoMsg:
         pass

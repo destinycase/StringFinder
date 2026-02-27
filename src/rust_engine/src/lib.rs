@@ -161,17 +161,23 @@ fn do_search_with_mmap(
                     line_bytes = &line_bytes[..line_bytes.len() - 1];
                 }
                 
-                // ASCII 최적화: 바이트 레벨에서 대소문자 무시 비교
+                // [Optimization] line_str 지연 생성을 위한 클로저 또는 매치 로직
+                // SIMD 가속 디코딩을 우선 시도
                 let is_match = if line_bytes.is_ascii() && pat_bytes.is_ascii() {
                     line_bytes.eq_ignore_ascii_case(pat_bytes)
                 } else {
-                    // 유니코드: 지연 디코딩 후 비교
-                    let line_str = String::from_utf8_lossy(line_bytes);
-                    line_str.trim().to_lowercase() == pat_lower
+                    let s = match simdutf8::basic::from_utf8(line_bytes) {
+                        Ok(s) => s,
+                        Err(_) => "INVALID_UTF8" // ASCII가 아닌데 유효하지 않으면 매치 실패 유도
+                    };
+                    s.trim().to_lowercase() == pat_lower
                 };
 
                 if is_match {
-                    let content = String::from_utf8_lossy(line_bytes).trim().to_string();
+                    let content = match simdutf8::basic::from_utf8(line_bytes) {
+                        Ok(s) => s.trim().to_string(),
+                        Err(_) => String::from_utf8_lossy(line_bytes).trim().to_string(),
+                    };
                     results.push(SearchMatch::new(
                         line_number,
                         content,
@@ -195,11 +201,17 @@ fn do_search_with_mmap(
                 let is_match = if line_bytes.is_ascii() && pat_bytes.is_ascii() {
                     line_bytes.eq_ignore_ascii_case(pat_bytes)
                 } else {
-                    let line_str = String::from_utf8_lossy(line_bytes);
-                    line_str.trim().to_lowercase() == pat_lower
+                    let s = match simdutf8::basic::from_utf8(line_bytes) {
+                        Ok(s) => s,
+                        Err(_) => "INVALID_UTF8"
+                    };
+                    s.trim().to_lowercase() == pat_lower
                 };
                 if is_match {
-                    let content = String::from_utf8_lossy(line_bytes).trim().to_string();
+                    let content = match simdutf8::basic::from_utf8(line_bytes) {
+                        Ok(s) => s.trim().to_string(),
+                        Err(_) => String::from_utf8_lossy(line_bytes).trim().to_string(),
+                    };
                     results.push(SearchMatch::new(
                         line_number,
                         content,
@@ -452,6 +464,10 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<Searc
                 Vec::new()
             }
         } else {
+            // [Optimization] 매치 가능성 조기 확인 (SearchDir 전용)
+            if ac.find(mmap_content).is_none() {
+                return None;
+            }
             do_search_with_mmap(mmap_content, pat_lower, pat_bytes, ac, is_exact, is_boolean, &stop_flag)
         }
     };
@@ -543,14 +559,16 @@ fn search_dir(
             let mut last_emit = std::time::Instant::now();
             let mut is_first = true;
             
-            while !done_dispatcher.load(Ordering::Relaxed) || !rx.is_empty() {
+            loop {
+                let mut received = false;
                 while let Ok(res) = rx.try_recv() {
                     batch.push(res);
-                    
-                    // [Optimization] Immediate Flush for the First Result (TTFR UX)
-                    let current_batch_threshold = if is_first { 1 } else { batch_size_limit };
-                    
-                    if batch.len() >= current_batch_threshold || last_emit.elapsed().as_millis() >= flush_time_ms {
+                    received = true;
+                    if batch.len() >= batch_size_limit { break; }
+                }
+                if !batch.is_empty() {
+                    let current_threshold = if is_first { 1 } else { batch_size_limit };
+                    if batch.len() >= current_threshold || last_emit.elapsed().as_millis() >= flush_time_ms {
                         let _ = Python::with_gil(|py| {
                             let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
                         });
@@ -558,21 +576,12 @@ fn search_dir(
                         is_first = false;
                     }
                 }
-                
-                if !batch.is_empty() && last_emit.elapsed().as_millis() >= flush_time_ms {
-                    let _ = Python::with_gil(|py| {
-                        let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
-                    });
-                    last_emit = std::time::Instant::now();
-                    is_first = false;
-                }
-
-                if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
                 if stop_flag_dispatcher.load(Ordering::Relaxed) { break; }
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                if !received {
+                    if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
-            
-            // Final flush
             if !batch.is_empty() {
                 let _ = Python::with_gil(|py| {
                     let _ = cb_clone.bind(py).call1((batch,));
@@ -628,7 +637,7 @@ fn search_dir(
         }
 
         let walker = builder
-            .threads(rayon::current_num_threads())
+            .threads(std::cmp::max(1, rayon::current_num_threads()))
             .build_parallel();
 
         walker.run(|| {
@@ -698,9 +707,9 @@ fn search_dir(
 
                             if let Some(ref valid_exts) = exts_ptr {
                                 if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                                    // 성능 최적화: valid_exts는 이미 set_dir 루프 외부에서 to_lowercase() 처리됨
-                                    // 매칭 시에도 Case Insensitive 집합 조회이므로 별도 변환 최소화
+                                    // [Optimization] 원본 상태로 먼저 체크하여 일치하면 할당 스키
                                     if !valid_exts.contains(ext) {
+                                        // 대문자가 섞인 경우에만 소문자 변환 시도
                                         let ext_lower = ext.to_lowercase();
                                         if !valid_exts.contains(&ext_lower) {
                                             return ignore::WalkState::Continue;
@@ -866,13 +875,16 @@ fn search_files_list(
             let mut last_emit = std::time::Instant::now();
             let mut is_first = true;
             
-            while !done_dispatcher.load(Ordering::Relaxed) || !rx.is_empty() {
+            loop {
+                let mut received = false;
                 while let Ok(res) = rx.try_recv() {
                     batch.push(res);
-                    
-                    let current_batch_threshold = if is_first { 1 } else { batch_size_limit };
-                    
-                    if batch.len() >= current_batch_threshold || last_emit.elapsed().as_millis() >= flush_time_ms {
+                    received = true;
+                    if batch.len() >= batch_size_limit { break; }
+                }
+                if !batch.is_empty() {
+                    let current_threshold = if is_first { 1 } else { batch_size_limit };
+                    if batch.len() >= current_threshold || last_emit.elapsed().as_millis() >= flush_time_ms {
                         let _ = Python::with_gil(|py| {
                             let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
                         });
@@ -880,16 +892,11 @@ fn search_files_list(
                         is_first = false;
                     }
                 }
-                if !batch.is_empty() && last_emit.elapsed().as_millis() >= flush_time_ms {
-                    let _ = Python::with_gil(|py| {
-                        let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
-                    });
-                    last_emit = std::time::Instant::now();
-                    is_first = false;
-                }
-                if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
                 if stop_flag_dispatcher.load(Ordering::Relaxed) { break; }
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                if !received {
+                    if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
             if !batch.is_empty() {
                 let _ = Python::with_gil(|py| {
@@ -1138,26 +1145,30 @@ fn find_files_with_keyword(
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
             let mut last_emit = std::time::Instant::now();
+            let mut is_first = true;
             
-            while !done_dispatcher.load(Ordering::Relaxed) || !rx.is_empty() {
+            loop {
+                let mut received = false;
                 while let Ok(res) = rx.try_recv() {
                     batch.push(res);
-                    if batch.len() >= 100 || last_emit.elapsed().as_millis() >= 100 {
+                    received = true;
+                    if batch.len() >= 100 { break; }
+                }
+                if !batch.is_empty() {
+                    let current_threshold = if is_first { 1 } else { 100 };
+                    if batch.len() >= current_threshold || last_emit.elapsed().as_millis() >= 100 {
                         let _ = Python::with_gil(|py| {
                             let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
                         });
                         last_emit = std::time::Instant::now();
+                        is_first = false;
                     }
                 }
-                if !batch.is_empty() && last_emit.elapsed().as_millis() >= 100 {
-                    let _ = Python::with_gil(|py| {
-                        let _ = cb_clone.bind(py).call1((batch.drain(..).collect::<Vec<_>>(),));
-                    });
-                    last_emit = std::time::Instant::now();
-                }
-                if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
                 if stop_flag_dispatcher.load(Ordering::Relaxed) { break; }
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                if !received {
+                    if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
             if !batch.is_empty() {
                 let _ = Python::with_gil(|py| {
@@ -1202,7 +1213,7 @@ fn find_files_with_keyword(
                 .git_ignore(false)
                 .git_exclude(false);
             let walker = builder
-                .threads(rayon::current_num_threads())
+                .threads(std::cmp::max(1, rayon::current_num_threads()))
                 .build_parallel();
 
             let results_ref = results.clone();
@@ -1292,7 +1303,9 @@ fn find_files_with_keyword(
 
                     if let Some(ref valid_exts) = ex {
                         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                            // [Optimization] 원본 상태로 먼저 체크하여 일치하면 할당 스킵
                             if !valid_exts.contains(ext) {
+                                // 대문자가 섞인 경우에만 소문자 변환 시도
                                 let ext_lower = ext.to_lowercase();
                                 if !valid_exts.contains(&ext_lower) {
                                     return ignore::WalkState::Continue;
@@ -1349,10 +1362,13 @@ fn find_files_with_keyword(
                                         if let Some(ext) =
                                             path_buf.extension().and_then(|s| s.to_str())
                                         {
-                                            let ext_lower = ext.to_lowercase();
-                                            if ["xlsx", "xlsb", "xls", "xlsm"]
-                                                .contains(&ext_lower.as_str())
-                                            {
+                                            // [Optimization] match_ignore_ascii_case 성격의 로직으로 할당 제거
+                                            let is_excel_ext = ext.eq_ignore_ascii_case("xlsx") 
+                                                || ext.eq_ignore_ascii_case("xlsb")
+                                                || ext.eq_ignore_ascii_case("xls")
+                                                || ext.eq_ignore_ascii_case("xlsm");
+                                            
+                                            if is_excel_ext {
                                                 !search_excel_file(
                                                     &path_buf,
                                                     &kw_panic,
@@ -1361,7 +1377,7 @@ fn find_files_with_keyword(
                                                     sf_panic,
                                                 )
                                                 .is_empty()
-                                            } else if is_json && ext_lower == "json" {
+                                            } else if is_json && ext.eq_ignore_ascii_case("json") {
                                                 if f_size > MAX_JSON_SIZE {
                                                     if ac_panic.find(&mmap).is_none() {
                                                         false
@@ -1383,7 +1399,7 @@ fn find_files_with_keyword(
                                                         sf_panic,
                                                     )
                                                 }
-                                            } else if is_xml && ext_lower == "xml" {
+                                            } else if is_xml && ext.eq_ignore_ascii_case("xml") {
                                                 if ac_panic.find(&mmap).is_none() {
                                                     false
                                                 } else {
@@ -1395,7 +1411,7 @@ fn find_files_with_keyword(
                                                         sf_panic,
                                                     )
                                                 }
-                                            } else if is_archive && ext_lower == "archive" {
+                                            } else if is_archive && ext.eq_ignore_ascii_case("archive") {
                                                 if f_size > MAX_JSON_SIZE {
                                                     if ac_panic.find(&mmap).is_none() {
                                                         false
@@ -1422,18 +1438,18 @@ fn find_files_with_keyword(
                                                 if exclude_binary && !is_explicit_extension && is_binary(&mmap) {
                                                     return false;
                                                 }
-                                                // 바이트 레벨 조기 탈출: 매치 가능성이 없는 경우 디코딩 스킵
-                                                if ac_panic.find(&mmap).is_none() {
-                                                    return false;
-                                                }
-                                                simple_check_text_mmap(
-                                                    &mmap,
-                                                    &kw_panic,
-                                                    &ac_panic,
-                                                    is_exact,
-                                                    &ext_lower,
-                                                    sf_panic,
-                                                )
+                                                 // [Optimization] 매치 가능성 조기 확인 (UTF-8/ASCII 대다수 케이스 최적화)
+                                                 if ac_panic.find(&mmap).is_none() {
+                                                     return false;
+                                                 }
+                                                 simple_check_text_mmap(
+                                                     &mmap,
+                                                     &kw_panic,
+                                                     &ac_panic,
+                                                     is_exact,
+                                                     ext,
+                                                     sf_panic,
+                                                 )
                                             }
                                         } else {
                                             // 일반 텍스트 검색 for files without extension

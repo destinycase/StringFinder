@@ -2,7 +2,7 @@ use encoding_rs::{Encoding, EUC_KR, UTF_16BE, UTF_16LE, UTF_8};
 use simdutf8::basic::from_utf8 as simd_from_utf8;
 use unicode_normalization::UnicodeNormalization;
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{GlobSet, GlobSetBuilder};
 
 pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
     if data.len() >= 2 {
@@ -68,7 +68,11 @@ pub fn build_glob_set(filters: &[String]) -> Option<GlobSet> {
         } else {
             filter.clone()
         };
-        if let Ok(glob) = Glob::new(&pattern.to_lowercase()) {
+        // [Optimization] GlobBuilder를 사용하여 대소문자 무시 속성을 직접 부여 (힙 할당 감소)
+        if let Ok(glob) = globset::GlobBuilder::new(&pattern)
+            .case_insensitive(true)
+            .build() 
+        {
             builder.add(glob);
         }
     }
@@ -77,7 +81,9 @@ pub fn build_glob_set(filters: &[String]) -> Option<GlobSet> {
 
 pub fn match_filename_glob(filename: &str, glob_set: &Option<GlobSet>) -> bool {
     match glob_set {
-        Some(set) => set.is_match(filename.to_lowercase()),
+        // [Optimization] GlobSetBuilder에서 case_insensitive(true)를 설정했으므로
+        // 여기서 더 이상 filename.to_lowercase()를 호출할 필요가 없음 (할당 제거)
+        Some(set) => set.is_match(filename),
         None => true,
     }
 }

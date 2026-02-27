@@ -24,7 +24,7 @@ try:
         HAS_RUST_ENGINE = False
     else:
         HAS_RUST_ENGINE = True
-        
+
         # [SSOT 강제] 로드된 엔진의 물리 경로 및 해시 무결성 로깅
         engine_path = getattr(sf_engine, "__file__", "unknown")
         engine_hash = "unknown"
@@ -37,7 +37,7 @@ try:
                 engine_hash = file_hash.hexdigest()
             except Exception as e:
                 engine_hash = f"error: {e}"
-        
+
         logger.info(f"[SSOT] Loaded Rust Engine Path: {engine_path}")
         logger.info(f"[SSOT] Rust Engine SHA-256: {engine_hash}")
         logger.info(AppStrings.LOG_SYS_RUST_SUCCESS)
@@ -173,6 +173,9 @@ def _normalize_rust_match(
     if content.startswith(RUST_MATCH_MARKER_LONG_LINE):
         preview = content[len(RUST_MATCH_MARKER_LONG_LINE) :]
         return (line, AppStrings.MSG_LONG_LINE_PREVIEW.format(preview), offset, length), None
+
+    if content == "MATCH":
+        return (line, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, offset, length), None
 
     if content.startswith("ERR_") and "|" in content:
         # 일반적인 에러 마커 처리 (ERR_PANIC 등)
@@ -337,7 +340,7 @@ def detect_encoding_quickly(data: bytes) -> str:
     if data.startswith(b"\xef\xbb\xbf"):
         return Constants.ENC_UTF8_SIG
     if data.startswith(b"\xff\xfe"):
-        return Constants.ENC_UTF16
+        return Constants.ENC_UTF16_LE
     if data.startswith(b"\xfe\xff"):
         return Constants.ENC_UTF16_BE
     try:
@@ -544,6 +547,7 @@ def search_in_excel_special(
     exact_match: bool = False,
     use_complex_search: bool = False,
     stop_event=None,
+    is_boolean: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """search_in_excel_special ?⑥닔."""
     signature_ok, signature_error = _check_excel_signature(file_path)
@@ -554,8 +558,13 @@ def search_in_excel_special(
             mode_bits = Constants.RUST_MODE_NORMAL | Constants.RUST_MODE_EXCEL
             if exact_match:
                 mode_bits |= Constants.RUST_MODE_EXACT
+            if is_boolean:
+                mode_bits |= Constants.RUST_MODE_BOOLEAN_ONLY
             results = sf_engine.search_file(str(file_path), search_string, mode_bits)
             if results:
+                if is_boolean:
+                    # [Boolean] 일치 항목 발견 시 즉시 반환
+                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 processed = []
                 sheet_errors: List[str] = []
                 for m in results:
@@ -637,6 +646,9 @@ def search_in_excel_special(
                                 is_match = (search_string_norm in val_norm) or (search_string_lower in val_lower)
                             if is_match:
                                 count += 1
+                                if is_boolean:
+                                    # [Boolean] 일치 항목 발견 시 즉시 반환
+                                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                                 col_letter = ""
                                 temp_col = col_idx
                                 while temp_col >= 0:
@@ -667,6 +679,7 @@ def search_in_json_special(
     exact_match: bool = False,
     use_complex_search: bool = False,
     stop_event=None,
+    is_boolean: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """
     JSON 특수 검색을 수행합니다.
@@ -676,8 +689,13 @@ def search_in_json_special(
             mode_bits = Constants.RUST_MODE_JSON
             if exact_match:
                 mode_bits |= Constants.RUST_MODE_EXACT
+            if is_boolean:
+                mode_bits |= Constants.RUST_MODE_BOOLEAN_ONLY
             results = sf_engine.search_file(str(file_path), search_string, mode_bits)
             if results:
+                if is_boolean:
+                    # [Boolean] 일치 항목 발견 시 즉시 반환
+                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 skip_reason = _extract_marker_skip_reason(results)
                 if skip_reason:
                     if "ERR_MEMORY_GUARD" in skip_reason:
@@ -750,6 +768,9 @@ def search_in_json_special(
                 is_match = (val_comp == search_string) if exact_match else (search_string in val_comp)
                 if is_match:
                     total_count += 1
+                    if is_boolean:
+                        # [Boolean] 일치 항목 발견 시 즉시 반환
+                        return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                     matches.append((1, path or "root", val_raw))
 
         if total_count > 0:
@@ -766,6 +787,7 @@ def search_in_xml_special(
     exact_match: bool = False,
     use_complex_search: bool = False,
     stop_event=None,
+    is_boolean: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """
     XML 특수 검색을 수행합니다.
@@ -775,8 +797,13 @@ def search_in_xml_special(
             mode_bits = Constants.RUST_MODE_XML
             if exact_match:
                 mode_bits |= Constants.RUST_MODE_EXACT
+            if is_boolean:
+                mode_bits |= Constants.RUST_MODE_BOOLEAN_ONLY
             results = sf_engine.search_file(str(file_path), search_string, mode_bits)
             if results:
+                if is_boolean:
+                    # [Boolean] 일치 항목 발견 시 즉시 반환
+                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 skip_reason = _extract_marker_skip_reason(results)
                 if skip_reason:
                     return (Constants.STATUS_SKIPPED, skip_reason)
@@ -831,6 +858,9 @@ def search_in_xml_special(
                     val_comp = val.casefold()
                     if (search_string in val_comp) if not exact_match else (search_string == val_comp):
                         count += 1
+                        if is_boolean:
+                            # [Boolean] 일치 항목 발견 시 즉시 반환
+                            return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                         matches.append((self.parser.CurrentLineNumber, str(k), val))
 
             def char_data(self, data):
@@ -840,6 +870,9 @@ def search_in_xml_special(
                     text_comp = text.casefold()
                     if (search_string in text_comp) if not exact_match else (search_string == text_comp):
                         count += 1
+                        if is_boolean:
+                            # [Boolean] 일치 항목 발견 시 즉시 반환
+                            return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                         matches.append(
                             (
                                 self.parser.CurrentLineNumber,
@@ -871,6 +904,7 @@ def search_in_archive_special(
     exact_match: bool = False,
     use_complex_search: bool = False,
     stop_event=None,
+    is_boolean: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """
     Archive 특수 검색을 수행합니다.
@@ -880,8 +914,13 @@ def search_in_archive_special(
             mode_bits = Constants.RUST_MODE_ARCHIVE
             if exact_match:
                 mode_bits |= Constants.RUST_MODE_EXACT
+            if is_boolean:
+                mode_bits |= Constants.RUST_MODE_BOOLEAN_ONLY
             results = sf_engine.search_file(str(file_path), search_string, mode_bits)
             if results:
+                if is_boolean:
+                    # [Boolean] 일치 항목 발견 시 즉시 반환
+                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 skip_reason = _extract_marker_skip_reason(results)
                 if skip_reason:
                     return (Constants.STATUS_SKIPPED, skip_reason)
@@ -930,6 +969,9 @@ def search_in_archive_special(
                     else (search_string == s_comp or search_string == t_comp)
                 ):
                     count += 1
+                    if is_boolean:
+                        # [Boolean] 일치 항목 발견 시 즉시 반환
+                        return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                     matches.append((1, ns, child.get("Key", ""), s, t))
         if count > 0:
             return (file_path, count, matches)
@@ -968,21 +1010,27 @@ def search_in_file(
             return (Constants.STATUS_SKIPPED, AppStrings.ERROR_SEARCH_EXCEL.format(file_path, e))
     if special_mode:
         is_exact = Constants.MODE_EXACT in special_mode
+        is_boolean = bool(kwargs.get(Constants.PAYLOAD_IS_BOOLEAN, False))
         if Constants.MODE_XML in special_mode:
             return search_in_xml_special(
-                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event
+                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event, is_boolean=is_boolean
             )
         elif Constants.MODE_JSON in special_mode:
             return search_in_json_special(
-                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event
+                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event, is_boolean=is_boolean
             )
         elif Constants.MODE_ARCHIVE in special_mode:
             return search_in_archive_special(
-                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event
+                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event, is_boolean=is_boolean
             )
         elif Constants.MODE_EXCEL in special_mode:
             return search_in_excel_special(
-                file_path, search_string_nfc, is_exact, use_complex_search=use_complex_search, stop_event=stop_event
+                file_path,
+                search_string_nfc,
+                is_exact,
+                use_complex_search=use_complex_search,
+                stop_event=stop_event,
+                is_boolean=is_boolean,
             )
     try:
         if file_size is None:
@@ -1002,7 +1050,8 @@ def search_in_file(
     if HAS_RUST_ENGINE and not use_complex_search and not force_python:
         try:
             exclude_binary = bool(kwargs.get("exclude_binary", False))
-            mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary)
+            is_boolean = bool(kwargs.get(Constants.PAYLOAD_IS_BOOLEAN, False))
+            mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, is_boolean=is_boolean)
             # search_file API 호출 (stop_event는 지원 여부에 따라 선택적 전달 필요할 수 있음)
             rust_results = sf_engine.search_file(str(file_path), search_string_nfc, mode_bits)
             if rust_results:
@@ -1023,16 +1072,34 @@ def search_in_file(
                     return (Constants.STATUS_SKIPPED, skip_reason)
 
             # [무결성 정책] Rust가 결과를 찾지 못했을 때 Python 폴백으로 재시도합니다.
-            return None
+            # 단, use_complex_search가 False이고 일반적인 UTF-8 텍스트라면 고립 정책을 따릅니다.
+            if not use_complex_search and not force_python:
+                try:
+                    with open(file_path, "rb") as f_chk:
+                        chk_data = f_chk.read(4)
+                        # UTF-16(BOM)이나 다른 특수 인코딩이 아닌 일반 텍스트일 경우에만 폴백 차단
+                        if not chk_data.startswith((b"\xff\xfe", b"\xfe\xff", b"\xef\xbb\xbf")):
+                            return None
+                except Exception:
+                    return None
         except BaseException as e:
-            # 상세 에러 로깅 (포맷 수정 반영: {path}: {error})
             logger.error(AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format(file_path, e), exc_info=True)
-            # [Policy] 자동 폴백 중단: 오류 발생 시 해당 파일은 스킵됨
             return (Constants.STATUS_SKIPPED, AppStrings.ERROR_UNEXPECTED_FILE.format(file_path, e))
 
-    # [Policy] Python 엔진 진입 제한: '특별한 문자열 검색' 옵션이 켜져 있을 때만 Python 구동
-    if not use_complex_search:
-        return None
+    # [무결성 정책] 여기서부터는 Python 폴백 엔진입니다.
+    # use_complex_search가 False이고 force_python도 False인 경우, 정책적으로 Python 엔진 구동을 차단할 수 있지만
+    # HAS_RUST_ENGINE이 False인 상황(또는 Mock된 상황)에서의 일관성을 위해 텍스트 인코딩 체크를 거친 뒤 허용 여부를 결정합니다.
+    if not use_complex_search and not force_python:
+        try:
+            with open(file_path, "rb") as f_chk:
+                chk_data = f_chk.read(4)
+                # UTF-16 BOM이 있으면 무결성을 위해 Python 폴백 허용, 그 외(일반 UTF-8 등)는 차단
+                if not chk_data.startswith((b"\xff\xfe", b"\xfe\xff", b"\xef\xbb\xbf")):
+                    return None
+        except Exception:
+            return None
+
+    is_boolean = bool(kwargs.get(Constants.PAYLOAD_IS_BOOLEAN, False))
 
     try:
         if file_size is None:
@@ -1043,12 +1110,18 @@ def search_in_file(
                 with open(file_path, "rb") as f_head:
                     head_data = f_head.read(65536)
                     encoding = detect_encoding_quickly(head_data)
+                    if not encoding and len(head_data) > 0:
+                        # 데이터가 작아 감지가 안 된 경우 BOM 재확인
+                        encoding = detect_encoding_quickly(head_data[:4])
             with open(file_path, "r", encoding=encoding, errors="replace") as f_text:
                 content = f_text.read()
             processed_content = content  # 주석 제거 기능 없음
             if not use_complex_search:
                 if search_string_nfc.casefold() not in normalize_unicode(processed_content).casefold():
                     return None
+                if is_boolean:
+                    # [Boolean] 첫 번째 일치 항목 발견 시 즉시 반환
+                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
             matches = []
             count = 0
             lines = processed_content.splitlines()
@@ -1061,11 +1134,18 @@ def search_in_file(
                 if is_exact:
                     if line_trimmed.casefold() == search_fold:
                         count += 1
+                        if is_boolean:
+                            return (file_path, 1, [(i + 1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                         matches.append((i + 1, line_trimmed))
                 elif search_fold in line.casefold():
                     count += 1
+                    if is_boolean:
+                        return (file_path, 1, [(i + 1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                     matches.append((i + 1, line_trimmed))
             if count > 0:
+                if is_boolean:
+                    # [Boolean] 일치 항목 발견 시 Boolean 전용 메시지 반환
+                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 if is_binary:
                     return (file_path, count, [(1, AppStrings.MSG_BINARY_MATCH.format(count), None, None)])
                 return (file_path, count, matches)
@@ -1078,6 +1158,7 @@ def search_in_file(
             detected_enc = detect_encoding_quickly(head)
             if not detected_enc:
                 detected_enc = "utf-8"
+
             current_line = 0
             matches = []
             count = 0
@@ -1093,14 +1174,29 @@ def search_in_file(
                         if is_exact:
                             if line_trimmed.casefold() == search_fold:
                                 count += 1
+                                if is_boolean:
+                                    return (
+                                        file_path,
+                                        1,
+                                        [(current_line, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)],
+                                    )
                                 matches.append((current_line, line_trimmed))
                         elif search_fold in line.casefold():
                             count += 1
+                            if is_boolean:
+                                return (
+                                    file_path,
+                                    1,
+                                    [(current_line, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)],
+                                )
                             matches.append((current_line, line_trimmed))
             except Exception as e:
                 logger.debug(AppStrings.LOG_SCH_STREAM_ERROR.format(e))
                 return (Constants.STATUS_SKIPPED, AppStrings.ERROR_IO_DURING_SEARCH.format(e))
+
             if count > 0:
+                if is_boolean:
+                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 if is_binary:
                     return (file_path, count, [(1, AppStrings.MSG_BINARY_MATCH.format(count), None, None)])
                 return (file_path, count, matches)

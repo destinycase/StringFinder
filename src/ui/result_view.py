@@ -112,12 +112,12 @@ class ResultView(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # 매치 수
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 파일명
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # 폴더
-        header.sectionResized.connect(lambda i, o, n: self._save_column_widths(Constants.VIEW_RESULT))
+        header.sectionResized.connect(lambda i, _o, _n: self._save_column_widths(Constants.VIEW_RESULT))
         self.result_view.setSortingEnabled(True)
         self.result_view.customContextMenuRequested.connect(self._show_result_context_menu)
         self.result_view.clicked.connect(self._on_result_clicked)
         # [UX] 키보드 위/아래 이동 시에도 즉시 데이터 로드
-        self.result_view.selectionModel().currentRowChanged.connect(lambda curr, prev: self._on_result_clicked(curr))
+        self.result_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._on_result_clicked(curr))
         self.result_view.doubleClicked.connect(self._on_result_double_clicked)
         result_list_layout.addWidget(self.result_view)
         self.pagination_widget = self._create_pagination_widget()
@@ -167,7 +167,7 @@ class ResultView(QWidget):
         m_header.setStretchLastSection(True)
         m_header.sectionResized.connect(self._on_match_column_resized)
         self.match_view.clicked.connect(self._on_match_clicked)
-        self.match_view.selectionModel().currentRowChanged.connect(lambda curr, prev: self._on_match_clicked(curr))
+        self.match_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._on_match_clicked(curr))
         self.match_view.doubleClicked.connect(self._on_match_double_clicked)
         self.match_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.match_view.customContextMenuRequested.connect(self._show_match_context_menu)
@@ -203,7 +203,7 @@ class ResultView(QWidget):
         self._setup_copy_shortcuts()
 
     def _apply_theme_style(self):
-        '''현재 테마에 맞게 테이블 스타일을 적용합니다.'''
+        """현재 테마에 맞게 테이블 스타일을 적용합니다."""
         theme = self.config_manager.get_theme()
         is_dark = theme.lower() in [AppStrings.THEME_DARK.lower(), "dark", "auto"]
         style = UIStyles.get_table_style(is_dark)
@@ -400,7 +400,7 @@ class ResultView(QWidget):
             if self.match_model.match_count > 0:
                 QTimer.singleShot(0, lambda: self.match_view.selectRow(0))
 
-    def _on_match_column_resized(self, index, old_width, new_width):
+    def _on_match_column_resized(self, index, _old_width, _new_width):
         """상세 뷰의 컬럼 크기가 변경될 때 호출되는 로그 핸들러"""
         # Stretch 모드는 레이아웃 엔진에 의해 폭이 자동 결정되므로 저장 대상에서 제외 (진동 루프 방지)
         header = self.match_view.horizontalHeader()
@@ -469,7 +469,7 @@ class ResultView(QWidget):
                 if selection_model:
                     selection_model.clearSelection()
                 self.result_view.selectRow(0)
-                
+
                 # currentRowChanged만으로는 충분치 않을 수 있어 클릭 이벤트를 직접 트리거
                 index = self.proxy_model.index(0, 0)
                 if index.isValid():
@@ -501,8 +501,9 @@ class ResultView(QWidget):
             self.summary_label.setVisible(False)
 
     def set_searching_state(self, is_searching: bool):
-        """검색 상태에 따른 UI 제어를 수행합니다. (내보내기 버튼 제거로 현재는 확장용으로 유지)"""
-        pass
+        """검색 상태에 따른 UI 제어를 수행합니다. (검색 중에는 실시간 정렬 오버헤드를 막기 위해 정렬을 끕니다)"""
+        # [UX/Perf] 검색 중에는 모델 정렬을 꺼서 데이터 추가 시 UI 프리징 및 목록 흔들림 바운스 현상 방지
+        self.result_view.setSortingEnabled(not is_searching)
 
     def clear(self):
         # [UI/UX] 검색 시작 시 이전 검색의 요약 정보를 숨깁니다.

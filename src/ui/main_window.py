@@ -391,7 +391,7 @@ class MainWindow(QMainWindow):
             try:
                 stylesheet = qdarktheme.load_stylesheet(theme)
                 app.setStyleSheet(stylesheet + UIStyles.STYLE_SCROLLBAR)
-                
+
                 # 열려있는 탭들에게 테마 변경 사항 반영
                 if hasattr(self, "tab_widget"):
                     for i in range(self.tab_widget.count()):

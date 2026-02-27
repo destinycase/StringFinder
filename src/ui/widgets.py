@@ -33,14 +33,14 @@ class HtmlDelegate(QStyledItemDelegate):
         painter.save()
         doc = QTextDocument()
         doc.setDefaultFont(options.font)  # type: ignore
-        
+
         # 선택된 상태인지 확인하여 적절한 텍스트 색상 적용
         is_selected = bool(options.state & QStyle.StateFlag.State_Selected)  # type: ignore
         if is_selected:
             text_color = options.palette.color(QPalette.ColorRole.HighlightedText).name()  # type: ignore
         else:
             text_color = options.palette.color(QPalette.ColorRole.Text).name()  # type: ignore
-            
+
         html_content = f"<div style='color: {text_color};'>{options.text}</div>"  # type: ignore
         doc.setHtml(html_content)
         options.text = ""  # type: ignore

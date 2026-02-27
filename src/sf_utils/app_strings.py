@@ -67,6 +67,7 @@ class AppStrings:
     TAB_RESULTS = "검색 결과"
     TAB_LOGS = "로그"
     SETTINGS_TITLE = "설정"
+    SETTINGS_GROUP_GENERAL = "일반"
     SETTINGS_GROUP_APPEARANCE = "화면"
     SETTINGS_GROUP_OPERATION = "동작"
     SETTINGS_GROUP_LOG = "로그"
@@ -112,6 +113,12 @@ class AppStrings:
     EXCLUDE_BINARY_TOOLTIP = (
         "이미지, 실행 파일(exe, dll) 등 바이너리 파일을 검색 대상에서 제외합니다.\n"
         "항상 검색이 필요한 특수 모드(Excel 등)나 직접 지정한 확장자는 제외 대상에서 보호됩니다."
+    )
+    BOOLEAN_SEARCH_LABEL = "존재 여부만 확인 (고속)"
+    BOOLEAN_SEARCH_TOOLTIP = (
+        "파일 내에 해당 텍스트가 존재하는지만 빠르게 확인합니다.\n"
+        "첫 번째 일치 항목을 찾으면 즉시 다음 파일로 넘어가므로 매우 빠릅니다.\n"
+        "상세 매치(줄 번호 등)는 제공되지 않습니다."
     )
     SPECIAL_SEARCH_LABEL = "특수 검색:"
     SPECIAL_SEARCH_OFF = "끄기"
@@ -204,6 +211,7 @@ class AppStrings:
     SKIP_EMPTY_FILE = "빈 파일"
     SEARCH_MODE_EXACT = "정확히 일치"
     SEARCH_MODE_COMPLEX = "정밀 검색"
+    BOOLEAN_SEARCH_MATCH_CONTENT = "[파일 내 일치하는 항목 존재]"
     # =========================================================================
     # [7] 내보내기 (Export)
     # =========================================================================

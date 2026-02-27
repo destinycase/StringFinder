@@ -97,14 +97,13 @@ class SearchOptionsPanel(QWidget):
         self.complex_search_check = QCheckBox(Constants.MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
         self.complex_search_check.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
         self.exclude_hidden_check = QCheckBox(AppStrings.EXCLUDE_HIDDEN_LABEL)
-        self.exclude_hidden_check.setToolTip(AppStrings.EXCLUDE_HIDDEN_TOOLTIP)
         self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
-        self.exclude_binary_check = QCheckBox(AppStrings.EXCLUDE_BINARY_LABEL)
-        self.exclude_binary_check.setToolTip(AppStrings.EXCLUDE_BINARY_TOOLTIP)
-        self.exclude_binary_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
+        self.boolean_search_check = QCheckBox(AppStrings.BOOLEAN_SEARCH_LABEL)
+        self.boolean_search_check.setToolTip(AppStrings.BOOLEAN_SEARCH_TOOLTIP)
+        self.boolean_search_check.setChecked(False)  # [REQ] 기본값 False
         options_layout.addWidget(self.complex_search_check)
         options_layout.addWidget(self.exclude_hidden_check)
-        options_layout.addWidget(self.exclude_binary_check)
+        options_layout.addWidget(self.boolean_search_check)
         options_layout.addStretch()
         layout.addLayout(options_layout)
 
@@ -114,7 +113,7 @@ class SearchOptionsPanel(QWidget):
         self.search_combo.setEnabled(not searching)
         self.complex_search_check.setEnabled(not searching)
         self.exclude_hidden_check.setEnabled(not searching)
-        self.exclude_binary_check.setEnabled(not searching)
+        self.boolean_search_check.setEnabled(not searching)
         self.search_btn.setEnabled(True)
         self.search_btn.setText(AppStrings.SEARCH_BTN)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)
@@ -140,8 +139,8 @@ class SearchOptionsPanel(QWidget):
     def is_exclude_hidden(self) -> bool:
         return self.exclude_hidden_check.isChecked()
 
-    def is_exclude_binary(self) -> bool:
-        return self.exclude_binary_check.isChecked()
+    def is_boolean_search(self) -> bool:
+        return self.boolean_search_check.isChecked()
 
     def set_search_history(self, items: List[str]):
         self.search_combo.addItems(items)
@@ -156,14 +155,14 @@ class SearchOptionsPanel(QWidget):
             Constants.STATE_KEY_SEARCH: self.search_combo.currentText(),
             Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.complex_search_check.isChecked(),
             Constants.PAYLOAD_EXCLUDE_HIDDEN: self.exclude_hidden_check.isChecked(),
-            Constants.PAYLOAD_EXCLUDE_BINARY: self.exclude_binary_check.isChecked(),
+            Constants.PAYLOAD_IS_BOOLEAN: self.boolean_search_check.isChecked(),
         }
 
     def load_state(self, state: dict):
         self.search_combo.set_current_text(state.get(Constants.STATE_KEY_SEARCH, ""))
         self.complex_search_check.setChecked(state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH, False))
         self.exclude_hidden_check.setChecked(state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True))
-        self.exclude_binary_check.setChecked(state.get(Constants.PAYLOAD_EXCLUDE_BINARY, True))
+        self.boolean_search_check.setChecked(state.get(Constants.PAYLOAD_IS_BOOLEAN, False))
 
 
 class FolderFilterPanel(QWidget):

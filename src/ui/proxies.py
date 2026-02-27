@@ -23,7 +23,7 @@ class ResultProxyModel(QSortFilterProxyModel):
             sm.set_filters(self.file_filter, self.folder_filter)
         self.invalidate()
 
-    def filterAcceptsRow(self, source_row, source_parent):
+    def filterAcceptsRow(self, _source_row, _source_parent):
         """필터링은 소스 모델(SearchResultModel)에서 직접 처리합니다."""
         return True
 
@@ -80,6 +80,6 @@ class MatchProxyModel(QSortFilterProxyModel):
                 sm.set_column_filter(col, "")
         self.invalidate()
 
-    def filterAcceptsRow(self, source_row, source_parent):
+    def filterAcceptsRow(self, _source_row, _source_parent):
         """필터링은 소스 모델에서 직접 처리하므로 항상 True를 반환합니다."""
         return True

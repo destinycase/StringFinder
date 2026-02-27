@@ -589,6 +589,7 @@ class SearchTab(QMainWindow):
             # 결과 뷰 파일명 강조 필터 동기화
             self.current_filename_filters = self.filename_panel.get_selected_filenames()
             self.result_view_panel.set_filename_filters(self.current_filename_filters)
+            self.result_view_panel.clear()
             self._clear_logs()
             self._set_inputs_enabled(False)
             self.search_status_changed.emit(True)
@@ -619,7 +620,7 @@ class SearchTab(QMainWindow):
             logger.info(AppStrings.LOG_SCH_COND_EXT.format(exts_str, display_mode))
 
             exclude_hidden = self.search_panel.is_exclude_hidden()
-            exclude_binary = self.search_panel.is_exclude_binary()
+            exclude_binary = self.config_manager.get_exclude_binary()
             self.result_view_panel.clear()
             self.result_view_panel.set_searching_state(True)  # 검색 중 버튼 비활성화
             self.result_view_panel.show_empty_message(AppStrings.RESULT_SEARCHING_MSG.format(search_text))
@@ -636,6 +637,7 @@ class SearchTab(QMainWindow):
                 Constants.PAYLOAD_EXCLUDE_HIDDEN: exclude_hidden,
                 Constants.PAYLOAD_EXCLUDE_BINARY: exclude_binary,
                 Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.search_panel.is_complex_search(),
+                Constants.PAYLOAD_IS_BOOLEAN: self.search_panel.is_boolean_search(),
             }
             self._setup_search_worker(params)
             self.scan_start_time = time.time()
@@ -742,27 +744,24 @@ class SearchTab(QMainWindow):
         if hasattr(self, "scan_start_time"):
             total_elapsed = now - self.scan_start_time
             total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
+            self.last_search_duration = total_elapsed
 
-            # 검색 결과가 하나라도 있거나 스킵된 파일이 있는 경우에만 표시
-            if self.total_files > 0 or total_skipped > 0:
-                self.last_search_duration = total_elapsed
+            if status_text is None:
+                if self.search_state in (Constants.SearchState.SCANNING, Constants.SearchState.SEARCHING):
+                    status_text = AppStrings.SUMMARY_PREFIX_SEARCHING
+                elif self.search_state == Constants.SearchState.STOPPING:
+                    status_text = AppStrings.SUMMARY_PREFIX_STOPPED
+                else:
+                    status_text = AppStrings.SUMMARY_PREFIX_FINISHED
 
-                if status_text is None:
-                    if self.search_state in (Constants.SearchState.SCANNING, Constants.SearchState.SEARCHING):
-                        status_text = AppStrings.SUMMARY_PREFIX_SEARCHING
-                    elif self.search_state == Constants.SearchState.STOPPING:
-                        status_text = AppStrings.SUMMARY_PREFIX_STOPPED
-                    else:
-                        status_text = AppStrings.SUMMARY_PREFIX_FINISHED
-
-                self.result_view_panel.set_summary_info(
-                    self.total_files,
-                    self.total_matches,
-                    total_elapsed,
-                    skip_count=total_skipped,
-                    state_prefix=status_text,
-                )
-                self.last_summary_update_time = now
+            self.result_view_panel.set_summary_info(
+                self.total_files,
+                self.total_matches,
+                total_elapsed,
+                skip_count=total_skipped,
+                state_prefix=status_text,
+            )
+            self.last_summary_update_time = now
 
     def _on_skipped_found(self, file_paths):
         """스킵된 파일 목록을 누적합니다."""

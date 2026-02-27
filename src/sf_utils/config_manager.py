@@ -661,3 +661,14 @@ class ConfigManager:
         with self._config_lock:
             self.config[Constants.CONFIG_KEY_CLOSE_TO_TRAY] = value
         self.save()
+
+    def get_exclude_binary(self) -> bool:
+        """바이너리 파일 제외 옵션 값을 반환한다."""
+        with self._config_lock:
+            return bool(self.config.get(Constants.CONFIG_KEY_EXCLUDE_BINARY, True))
+
+    def set_exclude_binary(self, value: bool):
+        """바이너리 파일 제외 옵션 값을 설정하고 저장한다."""
+        with self._config_lock:
+            self.config[Constants.CONFIG_KEY_EXCLUDE_BINARY] = value
+        self.save()

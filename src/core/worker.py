@@ -132,10 +132,9 @@ class SearchWorker(QRunnable):
 
             self.extensions = [ext.lstrip(".") for ext in EXCEL_EXTS]
             logger.debug(AppStrings.LOG_WKR_EXCEL_SCAN)
-        # 비원자적인 bool 대신 threading.Event를 사용하여 스레드 안전성 확보
         self.is_running = threading.Event()
         self.is_running.set()
-        self.is_boolean = params.get("is_boolean", False)
+        self.is_boolean = params.get(Constants.PAYLOAD_IS_BOOLEAN, False)
         self.config_manager: ConfigManager = ConfigManager()
         self._total_matches_accumulated = 0
 
@@ -181,7 +180,7 @@ class SearchWorker(QRunnable):
         finally:
             try:
                 self.signals.finished.emit()
-            except RuntimeError:
+            except (RuntimeError, BaseException):
                 logger.debug(AppStrings.LOG_WORKER_FINISH_SIGNAL_FAIL)
 
     def _run_rust_search(self, exclude_hidden: bool = True, exclude_binary: bool = True):
@@ -198,7 +197,7 @@ class SearchWorker(QRunnable):
                 # 진행률이 100%를 넘지 않도록 가드하고, total_files가 0인 경우 방어
                 actual_total = max(total_files, count, 1)
                 self.signals.progress_updated.emit(count, actual_total)
-            except RuntimeError:
+            except (RuntimeError, BaseException):
                 pass
 
         def results_callback(batch):
@@ -271,13 +270,13 @@ class SearchWorker(QRunnable):
                     # [Memory] 스트리밍 시에도 전체 결과 수집은 유지 (최종 통계 및 정렬용)
                     if hasattr(self, "all_results"):
                         self.all_results.extend(formatted_batch)
-                except RuntimeError:
+                except (RuntimeError, BaseException):
                     pass
 
             if skipped_batch:
                 try:
                     self.signals.skipped_found.emit(skipped_batch)
-                except RuntimeError:
+                except (RuntimeError, BaseException):
                     pass
 
         # Removed no-op callback assignments (Item 7 from audit)
@@ -321,9 +320,12 @@ class SearchWorker(QRunnable):
             logger.error(error_msg, exc_info=True)
             try:
                 self.signals.error.emit(error_msg)
-            except RuntimeError:
+            except (RuntimeError, BaseException):
                 pass
-            self.signals.search_finished.emit(0, 0, 0)
+            try:
+                self.signals.search_finished.emit(0, 0, 0)
+            except (RuntimeError, BaseException):
+                pass
             return
         # [Optimization] Streaming search might return empty results in search_res
         # because results were already sent via callback. Use our accumulated stats.
@@ -349,14 +351,23 @@ class SearchWorker(QRunnable):
 
         # [상] H-03: Rust 경로에서도 상세 skipped 항목 발행
         if skipped_list:
-            self.signals.skipped_found.emit(skipped_list)
+            try:
+                self.signals.skipped_found.emit(skipped_list)
+            except (RuntimeError, BaseException):
+                pass
 
         if not self.is_running.is_set():
             logger.info(AppStrings.LOG_WKR_STOPPED)
         else:
-            self.signals.progress_updated.emit(100, 100)
+            try:
+                self.signals.progress_updated.emit(100, 100)
+            except (RuntimeError, BaseException):
+                pass
 
-        self.signals.search_finished.emit(total_found, total_matches, skipped_count)
+        try:
+            self.signals.search_finished.emit(total_found, total_matches, skipped_count)
+        except (RuntimeError, BaseException):
+            pass
         elapsed = time.time() - self.worker_start_time
         logger.info(AppStrings.LOG_WKR_DONE.format(total_found, total_matches, elapsed))
         return total_found, total_matches, skipped_count
@@ -389,9 +400,7 @@ class SearchWorker(QRunnable):
         logger.info(AppStrings.LOG_WKR_RUNNING.format(len(self.file_list)))
         found_count = 0
         total_matches = 0
-        found_count, total_matches, skipped_count = self._run_batch_search(
-            self.file_list, is_excel_fallback=False, force_python=force_python
-        )
+        found_count, total_matches, skipped_count = self._run_batch_search(self.file_list, force_python=force_python)
         if not self.is_running.is_set():
             logger.info(AppStrings.LOG_WKR_STOPPED)
         elapsed = time.time() - self.worker_start_time
@@ -407,7 +416,7 @@ class SearchWorker(QRunnable):
                 logger.debug(AppStrings.LOG_PERF_FUTURE_CANCEL_ERROR.format(e))
                 # 작업 취소 실패는 무시 가능하나 로깅 수준을 유지함
 
-    def _run_batch_search(self, files, is_excel_fallback=False, force_python=False):
+    def _run_batch_search(self, files, force_python=False):
         total = len(files)
         if total == 0:
             return (0, 0, 0)
@@ -442,6 +451,8 @@ class SearchWorker(QRunnable):
                     self.use_complex_search,
                     self.stop_event,
                     force_python,
+                    exclude_binary=self.exclude_binary,
+                    is_boolean=self.is_boolean,
                 ): b
                 for b in batches
             }
@@ -473,13 +484,19 @@ class SearchWorker(QRunnable):
                             if batch_res.get(Constants.PAYLOAD_RESULTS):
                                 res_list = batch_res[Constants.PAYLOAD_RESULTS]
                                 found_count += len(res_list)
-                                self.signals.results_found.emit(res_list)
+                                try:
+                                    self.signals.results_found.emit(res_list)
+                                except (RuntimeError, BaseException):
+                                    pass
                                 total_matches += sum(cnt for _, cnt, _ in res_list)
                                 if hasattr(self, "all_results"):
                                     self.all_results.extend(res_list)
                             if batch_res.get(Constants.PAYLOAD_SKIPPED):
                                 skip_list = batch_res[Constants.PAYLOAD_SKIPPED]
-                                self.signals.skipped_found.emit(skip_list)
+                                try:
+                                    self.signals.skipped_found.emit(skip_list)
+                                except (RuntimeError, BaseException):
+                                    pass
                                 skipped_count += len(skip_list)
                                 if hasattr(self, "all_skipped"):
                                     self.all_skipped.extend(skip_list)
@@ -501,13 +518,19 @@ class SearchWorker(QRunnable):
                                     if batch_res.get(Constants.PAYLOAD_RESULTS):
                                         res_list = batch_res[Constants.PAYLOAD_RESULTS]
                                         found_count += len(res_list)
-                                        self.signals.results_found.emit(res_list)
+                                        try:
+                                            self.signals.results_found.emit(res_list)
+                                        except (RuntimeError, BaseException):
+                                            pass
                                         total_matches += sum(cnt for _, cnt, _ in res_list)
                                         if hasattr(self, "all_results"):
                                             self.all_results.extend(res_list)
                                     if batch_res.get(Constants.PAYLOAD_SKIPPED):
                                         skip_list = batch_res[Constants.PAYLOAD_SKIPPED]
-                                        self.signals.skipped_found.emit(skip_list)
+                                        try:
+                                            self.signals.skipped_found.emit(skip_list)
+                                        except (RuntimeError, BaseException):
+                                            pass
                                         skipped_count += len(skip_list)
                                         if hasattr(self, "all_skipped"):
                                             self.all_skipped.extend(skip_list)
@@ -519,14 +542,20 @@ class SearchWorker(QRunnable):
                             logger.error(AppStrings.LOG_WKR_BATCH_FAILED_DETAIL.format(len(failed_batch), failed_files))
                             error_msg = AppStrings.LOG_WKR_BATCH_ERROR_DETAIL.format(len(failed_batch), e)
                             failed_skips = [(file_path, error_msg) for file_path, _ in failed_batch]
-                            self.signals.skipped_found.emit(failed_skips)
+                            try:
+                                self.signals.skipped_found.emit(failed_skips)
+                            except (RuntimeError, BaseException):
+                                pass
                             skipped_count += len(failed_skips)
                             if hasattr(self, "all_skipped"):
                                 self.all_skipped.extend(failed_skips)
                     batch = future_to_batch.get(future, [])
                     completed += len(batch)
                     percent = (completed * 100) // total
-                    self.signals.progress_updated.emit(completed, total)
+                    try:
+                        self.signals.progress_updated.emit(completed, total)
+                    except (RuntimeError, BaseException):
+                        pass
                     if total >= 1000:
                         current_decile = percent // 10
                         if current_decile > last_logged_percent:

@@ -53,12 +53,10 @@ def build_rust_engine(clean_target=False):
 
         retry_count = 0
         max_retries = 5
-        success = False
 
         while retry_count < max_retries:
             try:
                 subprocess.check_call(cargo_cmd, cwd=rust_dir, env=env)
-                success = True
                 break
             except subprocess.CalledProcessError as e:
                 retry_count += 1

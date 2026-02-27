@@ -6,6 +6,7 @@ import statistics
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QEventLoop
+import datetime
 
 # 프로젝트 경로 설정
 project_root = Path(__file__).parent.parent
@@ -72,21 +73,21 @@ def create_dataset():
     # Set D: Boolean Early Exit (500MB, Match at Start)
     with open(set_de / "boolean_early.txt", "wb") as f:
         f.write(b"target_keyword_d\n")
-        content = b"Regular noise line for padding.\n" * 1000
+        content_bytes = b"Regular noise line for padding.\n" * 1000
         target = 500 * 1024 * 1024
         written = 0
         while written < target:
-            f.write(content)
-            written += len(content)
+            f.write(content_bytes)
+            written += len(content_bytes)
 
     # Set E: ASCII Fast-Path (100MB ASCII)
     with open(set_de / "ascii_fast.txt", "w", encoding="ascii") as f:
-        content = "Standard ASCII line for fast-path testing.\n" * 1000
+        content_str = "Standard ASCII line for fast-path testing.\n" * 1000
         target = 100 * 1024 * 1024
         written = 0
         while written < target:
-            f.write(content)
-            written += len(content)
+            f.write(content_str)
+            written += len(content_str)
         f.write("target_keyword_e\n")
 
 
@@ -110,35 +111,36 @@ def run_benchmark(dataset_name, path, keyword, is_boolean=False):
     worker = SearchWorker(params)
     loop = QEventLoop()
 
-    results = {
-        "start_time": time.time(),
-        "first_result_time": None,
-        "finish_time": None,
-        "progress_intervals": [],
-        "last_progress_time": time.time(),
-        "total_results": 0,
-    }
+    from typing import Optional, Any
+    
+    start_time: float = time.time()
+    first_result_time: Optional[float] = None
+    finish_time: Optional[float] = None
+    progress_intervals: list[float] = []
+    last_progress_time: float = time.time()
+    total_results: int = 0
 
-    def on_results(formatted_batch):
-        if results["first_result_time"] is None:
-            results["first_result_time"] = time.time()
-        # formatted_batch: List[Tuple[path, count, matches]]
+    def on_results(formatted_batch: list[Any]) -> None:
+        nonlocal first_result_time, total_results
+        if first_result_time is None:
+            first_result_time = time.time()
         for item in formatted_batch:
             try:
-                # item can be (path, count, matches)
-                results["total_results"] += item[1]
+                total_results += item[1]
             except (IndexError, TypeError):
                 pass
 
-    def on_progress(count, total):
+    def on_progress(count: int, total: int) -> None:
+        nonlocal last_progress_time
         now = time.time()
-        interval = now - results["last_progress_time"]
+        interval = now - last_progress_time
         if interval > 0:
-            results["progress_intervals"].append(interval)
-        results["last_progress_time"] = now
+            progress_intervals.append(interval)
+        last_progress_time = now
 
-    def on_finished():
-        results["finish_time"] = time.time()
+    def on_finished() -> None:
+        nonlocal finish_time
+        finish_time = time.time()
         loop.quit()
 
     from PySide6.QtCore import QThreadPool
@@ -150,17 +152,19 @@ def run_benchmark(dataset_name, path, keyword, is_boolean=False):
     QThreadPool.globalInstance().start(worker)
     loop.exec()
 
+    assert finish_time is not None
+
     # 지표 계산
-    total_time = results["finish_time"] - results["start_time"]
-    latency = (results["first_result_time"] - results["start_time"]) if results["first_result_time"] else total_time
-    jitter = statistics.stdev(results["progress_intervals"]) if len(results["progress_intervals"]) > 1 else 0
+    total_time = finish_time - start_time
+    latency = (first_result_time - start_time) if first_result_time else total_time
+    jitter = float(statistics.stdev(progress_intervals)) if len(progress_intervals) > 1 else 0.0
 
     return {
         "dataset": dataset_name,
         "total_time": total_time,
         "latency": latency,
         "jitter": jitter,
-        "results_count": results["total_results"],
+        "results_count": total_results,
     }
 
 
@@ -175,6 +179,26 @@ def print_result_table(bench_results):
             f"| {res['dataset']:<25} | {res['total_time']:>10.3f}s | {res['latency']:>10.3f}s | {res['jitter']:>10.4f} | {res['results_count']:>8} |"
         )
     print("=" * 90)
+
+
+def save_benchmark_history(bench_results, tag="Current"):
+    """벤치마크 결과를 benchmark_history.md 파일에 누적 기록"""
+    history_file = project_root / "benchmark_history.md"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    header_exists = history_file.exists()
+    
+    with open(history_file, "a", encoding="utf-8") as f:
+        if not header_exists:
+            f.write("# StringFinder 성능 벤치마크 기록\n\n")
+            f.write("| 시간 | 버전/태그 | 데이터셋 | 전체 시간 | Latency | Jitter | 결과 수 |\n")
+            f.write("| --- | --- | --- | --- | --- | --- | --- |\n")
+        
+        for res in bench_results:
+            f.write(f"| {now} | {tag} | {res['dataset']} | {res['total_time']:.3f}s | {res['latency']:.3f}s | {res['jitter']:.4f} | {res['results_count']} |\n")
+        f.write("| " + "---" * 15 + " |\n") # 구분선 추가
+
+    print(f"\n[Info] Benchmark results accumulated in: {history_file}")
 
 
 def check_thresholds(results):
@@ -230,6 +254,13 @@ if __name__ == "__main__":
         )
 
         print_result_table(results)
+        
+        # 벤치마크 결과 저장 (v1.0.4 - Before)
+        tag = "v1.0.4 - Before Batch 1"
+        if len(sys.argv) > 1 and not sys.argv[1].startswith("--"):
+            tag = sys.argv[1]
+        save_benchmark_history(results, tag=tag)
+
         check_thresholds(results)
     except Exception as e:
         print(f"\n[Error] Benchmark failed: {e}")

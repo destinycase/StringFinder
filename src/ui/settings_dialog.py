@@ -3,6 +3,7 @@ import subprocess
 import sys
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QGroupBox,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QVBoxLayout,
 )
+
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.logger import logger
@@ -30,6 +32,16 @@ class SettingsDialog(QDialog):
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
+
+        # [일반] 그룹 추가
+        general_group = QGroupBox(AppStrings.SETTINGS_GROUP_GENERAL)
+        general_layout = QVBoxLayout(general_group)
+        self.exclude_binary_check = QCheckBox(AppStrings.EXCLUDE_BINARY_LABEL)
+        self.exclude_binary_check.setToolTip(AppStrings.EXCLUDE_BINARY_TOOLTIP)
+        self.exclude_binary_check.setChecked(self.config_manager.get_exclude_binary())
+        self.exclude_binary_check.stateChanged.connect(self._on_exclude_binary_changed)
+        general_layout.addWidget(self.exclude_binary_check)
+        main_layout.addWidget(general_group)
         appearance_group = QGroupBox(AppStrings.SETTINGS_GROUP_APPEARANCE)
         appearance_layout = QVBoxLayout(appearance_group)
         theme_row = QHBoxLayout()
@@ -259,3 +271,7 @@ class SettingsDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             self.config_manager.clear_all_logs()
             QMessageBox.information(self, AppStrings.SUCCESS_TITLE, AppStrings.INFO_LOGS_DELETED)
+
+    def _on_exclude_binary_changed(self, state):
+        enabled = state == 2  # Qt.CheckState.Checked
+        self.config_manager.set_exclude_binary(enabled)
