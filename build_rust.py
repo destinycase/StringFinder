@@ -5,11 +5,48 @@ import sys
 import time
 import argparse
 
+SSOT_ENGINE_PYD = os.path.join("src", "rust_engine", "sf_engine.pyd")
+SSOT_ENGINE_SO = os.path.join("src", "rust_engine", "sf_engine.so")
+
+
+def _is_target_artifact(path: str) -> bool:
+    parts = {p.lower() for p in os.path.normpath(path).split(os.sep)}
+    return "target" in parts
+
+
+def clean_non_ssot_engine_binaries():
+    """Remove duplicate Rust engine binaries outside the SSOT location."""
+    src_dir = "src"
+    if not os.path.isdir(src_dir):
+        return
+
+    keep_paths = {
+        os.path.normcase(os.path.abspath(SSOT_ENGINE_PYD)),
+        os.path.normcase(os.path.abspath(SSOT_ENGINE_SO)),
+    }
+
+    for root, _, files in os.walk(src_dir):
+        for file in files:
+            if not (file.startswith("sf_engine.pyd") or file.startswith("sf_engine.so")):
+                continue
+            path = os.path.join(root, file)
+            if _is_target_artifact(path):
+                continue
+            norm_path = os.path.normcase(os.path.abspath(path))
+            if file in {"sf_engine.pyd", "sf_engine.so"} and norm_path in keep_paths:
+                continue
+            try:
+                os.remove(path)
+                print(f"Removed non-SSOT engine binary: {path}")
+            except Exception as e:
+                print(f"Debug: Non-SSOT engine cleanup skipped for {path}: {e}")
+
 
 def build_rust_engine(clean_target=False):
     """Rust 엔진(sf_engine) 컴파일 및 배포"""
     # 빌드 시작 시 기존 부산물(.old_*) 선제적 정리
     clean_old_binaries()
+    clean_non_ssot_engine_binaries()
 
     rust_dir = os.path.join("src", "rust_engine")
     if clean_target:
@@ -69,7 +106,7 @@ def build_rust_engine(clean_target=False):
 
         # 2. 생성된 dll을 .pyd로 변경하여 단일 경로(src/rust_engine)로 복사 (SSOT)
         src_dll = os.path.join(rust_dir, "target", "release", "sf_engine.dll")
-        dst_pyd = os.path.join("src", "rust_engine", "sf_engine.pyd")
+        dst_pyd = SSOT_ENGINE_PYD
 
         if os.path.exists(src_dll):
             # 윈도우에서 사용 중인 .pyd 파일 교체 문제 해결
@@ -88,6 +125,7 @@ def build_rust_engine(clean_target=False):
 
             # 복사 완료 후 잠기지 않은 .old 파일들이 있다면 한 번 더 정리 시도
             clean_old_binaries()
+            clean_non_ssot_engine_binaries()
 
             print("Now you can use high-speed Rust engine in development mode (run.py).")
             return dst_pyd
@@ -120,7 +158,7 @@ def clean_old_binaries():
 
 def clean_binary(clean_all=False):
     """배포된 바이너리 및 빌드 산출물 정리"""
-    dst_pyd = os.path.join("src", "rust_engine", "sf_engine.pyd")
+    dst_pyd = SSOT_ENGINE_PYD
     if os.path.exists(dst_pyd):
         try:
             os.remove(dst_pyd)
@@ -130,6 +168,7 @@ def clean_binary(clean_all=False):
 
     # .old 파일 정리 호출
     clean_old_binaries()
+    clean_non_ssot_engine_binaries()
 
     if clean_all:
         target_dir = os.path.join("src", "rust_engine", "target")
