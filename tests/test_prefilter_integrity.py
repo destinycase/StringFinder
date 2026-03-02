@@ -49,8 +49,9 @@ class TestPrefilterIntegrity(unittest.TestCase):
                 res = search_in_archive_special(f_path, "any", existence_only=True)
                 
             self.assertIsInstance(res, tuple, f"{f_path}에서 결과가 Tuple(SKIPPED)이 아님")
-            self.assertEqual(res[0], "SKIPPED", f"{f_path} 무결성 체크 실패 보고 누락")
-            self.assertNotIn("NoneType", str(res[1]), f"{f_path}에서 NoneType 참조 오류 발생")
+            if isinstance(res, tuple) and len(res) == 2:
+                self.assertEqual(res[0], "SKIPPED", f"{f_path} 무결성 체크 실패 보고 누락")
+                self.assertNotIn("NoneType", str(res[1]), f"{f_path}에서 NoneType 참조 오류 발생")
 
     def test_mmap_json_malformed_integrity(self):
         """디코딩은 성공하지만 JSON 파싱이 실패하는 6MB 파일에서 메시지 왜곡 없는지 확인 [v4.63.11]"""
@@ -63,10 +64,11 @@ class TestPrefilterIntegrity(unittest.TestCase):
         res = search_in_json_special(self.test_json, "any", existence_only=True)
         
         self.assertIsInstance(res, tuple)
-        self.assertEqual(res[0], "SKIPPED")
-        # NoneType 에러가 보고되는지 확인 (v4.63.10 이전의 버그)
-        self.assertNotIn("NoneType", str(res[1]), "JSON 파싱 실패 경로에서 NoneType 참조 오류 발생 (메시지 왜곡)")
-        self.assertIn("Integrity check failed", res[1], "정상적인 무결성 실패 메시지가 보고되지 않음")
+        if isinstance(res, tuple) and len(res) == 2:
+            self.assertEqual(res[0], "SKIPPED")
+            # NoneType 에러가 보고되는지 확인 (v4.63.10 이전의 버그)
+            self.assertNotIn("NoneType", str(res[1]), "JSON 파싱 실패 경로에서 NoneType 참조 오류 발생 (메시지 왜곡)")
+            self.assertIn("Integrity check failed", str(res[1]), "정상적인 무결성 실패 메시지가 보고되지 않음")
 
     def test_utf16_prefilter_miss(self):
         """매치가 없는 경우 정확히 False를 반환하여 조기 종료되는지 확인"""

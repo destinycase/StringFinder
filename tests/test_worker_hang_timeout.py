@@ -31,7 +31,7 @@ def mock_worker():
         Constants.PAYLOAD_USE_COMPLEX_SEARCH: True  # Python/Batch 경로 강제 진입
     }
     worker = SearchWorker(params)
-    worker.signals = MockSignals()
+    worker.signals = MockSignals()  # type: ignore
     return worker
 
 def test_worker_hang_timeout_resource_cleanup(mock_worker):

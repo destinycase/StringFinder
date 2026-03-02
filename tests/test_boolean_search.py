@@ -22,13 +22,13 @@ def test_boolean_search_basic(tmp_path):
     
     # 일반 검색 (매치 1개)
     res = search_in_file(str(f_path), "python", existence_only=False)
-    assert res is not None
+    assert isinstance(res, tuple) and len(res) == 3
     assert res[1] == 1
     assert res[2][0][1] == "python is great"
     
     # Boolean 검색 (매치 1개 이상 존재 시 즉시 종료)
     res_bool = search_in_file(str(f_path), "python", existence_only=True)
-    assert res_bool is not None
+    assert isinstance(res_bool, tuple) and len(res_bool) == 3
     assert res_bool[1] == 1
     assert res_bool[2][0][1] == AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT
 
@@ -46,7 +46,7 @@ def test_boolean_search_bom_utf8(tmp_path):
     f_path.write_bytes(b'\xef\xbb\xbf' + content.encode('utf-8'))
     
     res = search_in_file(str(f_path), "안녕하세요", existence_only=True)
-    assert res is not None
+    assert isinstance(res, tuple) and len(res) == 3
     assert res[2][0][1] == AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT
 
 def test_boolean_search_bom_utf16le(tmp_path):

@@ -90,9 +90,9 @@ def test_malformed_large_json_existence_only_integrity(tmp_path):
     
     # existence_only=True일 때 필터는 False(미매치)를 반환하겠지만, loads에서 SKIPPED가 터져야 함
     result = search_in_json_special(str(file_path), "needle", existence_only=True)
-    assert result is not None
+    assert isinstance(result, tuple) and len(result) == 2
     assert result[0] == Constants.STATUS_SKIPPED
-    assert AppStrings.ERROR_JSON_PARSE in result[1]
+    assert AppStrings.ERROR_JSON_PARSE in str(result[1])
 
 def test_utf16_bom_json_search(tmp_path):
     # [v4.57.0] UTF-16 BOM이 포함된 JSON 파일 검색 성공 여부 확인
@@ -105,7 +105,11 @@ def test_utf16_bom_json_search(tmp_path):
         f.write(json.dumps(content).encode("utf-16-le"))
         
     result = search_in_json_special(str(file_path), "안녕하세요")
-    assert result is not None
+    assert isinstance(result, tuple) and len(result) == 3
     assert result[1] == 1
     # [v5.0.0] SearchMatch가 튜플로 통일됨에 따라 인덱스(2: Value)로 접근합니다.
-    assert "안녕하세요" in result[2][0][2]
+    # result[2]는 List[SearchMatch]이며 result[2][0]은 첫 번째 매치 튜플입니다.
+    matches = result[2]
+    first_match = matches[0]
+    assert len(first_match) >= 3
+    assert "안녕하세요" in str(first_match[2])
