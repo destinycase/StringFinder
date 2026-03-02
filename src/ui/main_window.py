@@ -14,8 +14,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QStatusBar,
-    QStyle,
-    QSystemTrayIcon,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -56,7 +54,6 @@ class MainWindow(QMainWindow):
             self.resize(1200, 800)
         self.setMinimumSize(600, 400)
         self.system_manager = SystemManager()
-        self.system_manager.hotkey_pressed.connect(self.toggle_visibility)
 
         self._init_ui()
         from sf_utils.logger import qt_log_handler
@@ -65,18 +62,13 @@ class MainWindow(QMainWindow):
         self._last_error_time = 0.0
         self._last_error_msg = ""
 
-        if "PYTEST_CURRENT_TEST" not in os.environ:
-            self._init_tray()
-        else:
-            self.tray_icon = None
-            logger.debug(AppStrings.LOG_SYS_TRAY_DISABLED_TEST)
+        self.tray_icon = None
         icon_path = get_resource_path(os.path.join("assets", "icon.svg"))
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         # 타이틀 표시 시에도 v 접두사 포함
         self.setWindowTitle(f"{Constants.APP_NAME} v{Constants.APP_VERSION}")
         self._apply_theme()
-        self._setup_system_configs()
         self.new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
         self.new_tab_shortcut.activated.connect(lambda: self.add_new_tab())
         from core.search_engine import HAS_RUST_ENGINE
@@ -97,18 +89,14 @@ class MainWindow(QMainWindow):
                         msg.setText(AppStrings.MSG_RUST_LOAD_FAIL_GUIDE)
                         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                         msg.show()
-                except (RuntimeError, AttributeError):
-                    pass
+                except (RuntimeError, AttributeError) as e:
+                    logger.debug(AppStrings.LOG_SYS_RUST_FAIL_MSG_UI_MISSING.format(e))
 
             QTimer.singleShot(1000, show_rust_fail_msg)
 
     def closeEvent(self, event):
-        """closeEvent 함수."""
-        if self.config_manager.get_close_to_tray() and self.tray_icon and self.tray_icon.isVisible():
-            self.hide()
-            event.ignore()
-        else:
-            self._quit_application()
+        """창을 닫을 때 호출되어 애플리케이션 종료 절차를 수행합니다."""
+        self._quit_application()
 
     def _quit_application(self):
         """애플리케이션을 안전하게 종료하고 현재 상태를 저장합니다."""
@@ -132,7 +120,6 @@ class MainWindow(QMainWindow):
                 current_tab.save_splitter_states()
             self._save_tab(i)
         self._save_tab_order()
-        self.system_manager.unregister_hotkey()
 
         # [무결성 강화] 종료 직전 모든 설정이 디스크에 물리적으로 기록되는지 확인
         if not self.config_manager.stop():
@@ -141,7 +128,7 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
     def _init_ui(self):
-        """_init_ui 함수."""
+        """메인 인터페이스 구성 요소(탭 위젯, 상태 표시줄 등)를 초기화합니다."""
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -176,7 +163,7 @@ class MainWindow(QMainWindow):
         self.status_timer_label.setStyleSheet("padding-right: 10px;")
         sb.addPermanentWidget(self.status_timer_label)
 
-        # [REQ] 선형 진행바 대신 회전하는 스피너 도입
+        # 검색 중임을 나타내는 회전하는 스피너 위젯을 추가합니다.
         self.status_spinner = LoadingSpinner(self, size=18)
         sb.addPermanentWidget(self.status_spinner)
 
@@ -209,7 +196,7 @@ class MainWindow(QMainWindow):
             self._save_tab_order()
 
     def _set_ui_locked(self, locked):
-        """_set_ui_locked 함수."""
+        """검색 중 UI 상호작용을 제한하거나 해제합니다."""
         self.tab_widget.tabBar().setEnabled(not locked)
         self.tab_widget.setTabsClosable(not locked)
         if hasattr(self, "add_button"):
@@ -320,50 +307,11 @@ class MainWindow(QMainWindow):
         if self.tab_widget.count() == 0:
             self.add_new_tab()
 
-    def _init_tray(self):
-        """시스템 트레이 아이콘 및 우클릭 메뉴를 초기화합니다."""
-        self.tray_icon = QSystemTrayIcon(self)
-        if not QSystemTrayIcon.isSystemTrayAvailable():
-            logger.error(AppStrings.LOG_SYS_TRAY_UNAVAILABLE)
-        icon_path = get_resource_path(os.path.join("assets", "icon.svg"))
-        if os.path.exists(icon_path):
-            self.tray_icon.setIcon(QIcon(icon_path))
-        else:
-            self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
-            logger.warning(AppStrings.LOG_RES_NOT_FOUND.format(icon_path))
-        self.tray_icon.setToolTip(AppStrings.APP_TITLE)
-        tray_menu = QMenu(self)
-        show_action = QAction(AppStrings.TRAY_OPEN, self)
-        show_action.triggered.connect(self.show_normal_and_activate)
-        quit_action = QAction(AppStrings.TRAY_QUIT, self)
-        quit_action.triggered.connect(self._quit_application)
-        tray_menu.addAction(show_action)
-        tray_menu.addSeparator()
-        tray_menu.addAction(quit_action)
-        self.tray_icon.setContextMenu(tray_menu)
-        self.tray_icon.activated.connect(self._on_tray_activated)
-        self.tray_icon.show()
-
-    def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.toggle_visibility()
 
     def show_normal_and_activate(self):
         self.showNormal()
         self.activateWindow()
 
-    def toggle_visibility(self):
-        if self.isVisible() and not self.isMinimized():
-            self.hide()
-        else:
-            self.show_normal_and_activate()
-
-    def _setup_system_configs(self):
-        """사용자 정의 설정에 따라 전역 단축키 및 시작프로그램 등록을 수행합니다."""
-        hotkey = self.config_manager.get_global_hotkey()
-        self.system_manager.register_hotkey(hotkey)
-        should_run = self.config_manager.get_run_at_startup()
-        self.system_manager.set_run_at_startup(should_run)
 
     def _show_settings(self):
         """설정 다이얼로그를 모달 형식으로 띄우고 변경 사항을 반영합니다."""
@@ -372,11 +320,11 @@ class MainWindow(QMainWindow):
             self._apply_theme()
 
     def _apply_theme(self):
-        """_apply_theme 함수."""
+        """설정된 테마(Dark/Light)를 애플리케이션에 적용합니다."""
         if "PYTEST_CURRENT_TEST" in os.environ:
             return
         theme_raw = self.config_manager.get_theme()
-        # [고도화] 한국어 테마 명칭 및 대소문자 매핑 (qdarktheme 호환성 확보)
+        # 테마 명칭의 대소문자 및 한국어 호환성을 보장하기 위한 매핑을 수행합니다.
         theme_map = {
             AppStrings.THEME_DARK.lower(): "dark",
             AppStrings.THEME_LIGHT.lower(): "light",
@@ -418,7 +366,7 @@ class MainWindow(QMainWindow):
                 tab.deleteLater()
             self._save_tab_order()
         else:
-            pass
+            logger.debug(AppStrings.LOG_SYS_NO_TABS_TO_REMOVE)
 
     def cleanup(self):
         """테스트 또는 종료 시 리소스를 정리합니다."""
@@ -426,17 +374,14 @@ class MainWindow(QMainWindow):
 
         try:
             qt_log_handler.signaler.level_message_logged.disconnect(self._on_global_error_logged)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(AppStrings.LOG_SYS_CLEANUP_SIGNALER_FAIL.format(e))
         tray = getattr(self, "tray_icon", None)
         if tray:
             tray.hide()
             tray.deleteLater()
         if hasattr(self, "system_manager"):
-            try:
-                self.system_manager.unregister_hotkey()
-            except Exception:
-                pass
+            logger.debug(AppStrings.LOG_SYS_CLEANUP_DEFERRED)
         # 탭들 정리
         for i in range(self.tab_widget.count()):
             tab = self.tab_widget.widget(i)
@@ -444,8 +389,8 @@ class MainWindow(QMainWindow):
                 tab.cleanup()
 
     def _on_global_error_logged(self, level, message):
-        """전역 로그에서 ERROR 레벨 이상 감지 시 모든 작업을 중단하고 사용자에게 팝업으로 알립니다."""
-        if level != "CRITICAL":  # SF Logger에서 ERROR는 CRITICAL로 정규화됨
+        """전역 로그에서 CRITICAL 레벨 이상 감지 시 모든 작업을 중단하고 사용자에게 팝업으로 알립니다."""
+        if level not in {"CRITICAL", "FATAL"}:
             return
 
         # [Safety] 테스트 중에는 팝업을 띄우지 않음 (크래시 및 중단 방지)
@@ -467,14 +412,14 @@ class MainWindow(QMainWindow):
         self._last_error_msg = message
 
         # 1. 모든 탭의 검색을 강제로 중단
-        logger.info("[시스템] 치명적 오류 감지로 인해 모든 검색 작업을 강제 중지합니다.")
+        logger.info(AppStrings.LOG_SYS_CRITICAL_STOP_ALL)
         for i in range(self.tab_widget.count()):
             tab = self.tab_widget.widget(i)
             if isinstance(tab, SearchTab):
                 try:
                     tab.stop()
                 except Exception as e:
-                    logger.debug(f"탭 중지 실패: {e}")
+                    logger.debug(AppStrings.LOG_SYS_TAB_STOP_FAIL.format(e))
 
         # 2. 팝업 표시
         from PySide6.QtWidgets import QMessageBox

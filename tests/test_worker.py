@@ -70,10 +70,14 @@ def test_worker_stop_logic():
         mock_get.return_value = mock_executor
 
         mock_future = MagicMock()
-        mock_executor.submit.return_value = mock_future
+        
+        # [v5.0.0 Fix] 제출 루프 중간에 stop()이 호출되도록 모킹하여 cancel() 호출 여부 검증
+        def side_effect(*args, **kwargs):
+            worker.stop()
+            return mock_future
+        mock_executor.submit.side_effect = side_effect
 
         with patch("core.worker.wait", return_value=([mock_future], [])):
-            worker.stop()
             worker.run()
 
     assert mock_future.cancel.called

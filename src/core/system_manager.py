@@ -1,8 +1,7 @@
 import os
-import sys
-import winreg
-
-import keyboard
+import glob
+import time
+import logging
 from PySide6.QtCore import QObject, Signal
 
 from sf_utils.app_strings import AppStrings
@@ -10,112 +9,26 @@ from sf_utils.logger import logger
 
 
 class SystemManager(QObject):
-    """SystemManager 클래스."""
+    """시작 프로그램 설정 및 로그 파일 정리 등 시스템 관리 기능을 담당하는 클래스입니다."""
 
     hotkey_pressed = Signal()
 
     def __init__(self, app_name="StringFinder"):
-        """__init__ 함수."""
+        """객체를 초기화합니다."""
         super().__init__()
         self.app_name = app_name
-        self.exe_path = os.path.abspath(sys.argv[0])
-        self.current_hotkey = None
-        self.hotkey_registered = False
-
-    def set_run_at_startup(self, enable=True):
-        """set_run_at_startup 함수."""
-        if os.name != "nt":
-            return False
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
-            if enable:
-                winreg.SetValueEx(key, self.app_name, 0, winreg.REG_SZ, f'"{self.exe_path}"')
-            else:
-                try:
-                    winreg.DeleteValue(key, self.app_name)
-                except FileNotFoundError:
-                    pass
-            winreg.CloseKey(key)
-            return True
-        except PermissionError as e:
-            logger.error(AppStrings.LOG_SYS_REGISTRY_ERROR.format(f"Permission denied: {e}"))
-            return False
-        except FileNotFoundError as e:
-            logger.warning(AppStrings.LOG_SYS_REGISTRY_ERROR.format(f"Key not found: {e}"))
-            return False
-        except (OSError, Exception) as e:
-            logger.error(AppStrings.LOG_SYS_REGISTRY_ERROR.format(str(e)))
-            return False
 
     def is_run_at_startup(self):
-        """시작 프로그램 등록 여부 확인"""
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        key = None
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
-            winreg.QueryValueEx(key, self.app_name)
-            return True
-        except FileNotFoundError:
-            return False
-        except Exception as e:
-            logger.debug(AppStrings.LOG_SYS_DATA_DIR_CHECK_FAIL.format(e))
-            return False
-        finally:
-            # 레지스트리 키는 예외 발생 여부와 무관하게 항상 닫아야 함.
-            if key is not None:
-                winreg.CloseKey(key)
+        """[Deprecated] 시작 프로그램 등록 여부를 확인합니다. (기능 제거됨)"""
+        return False
 
-    def register_hotkey(self, hotkey_str):
-        """register_hotkey 함수."""
-        if not hotkey_str:
-            return False
-        try:
-            if self.current_hotkey:
-                try:
-                    keyboard.remove_hotkey(self.current_hotkey)
-                except Exception as e:
-                    logger.debug(AppStrings.LOG_SYS_HOTKEY_REMOVE_FAIL.format(e))
-            self.current_hotkey = hotkey_str
-            keyboard.add_hotkey(hotkey_str, self._on_hotkey)
-            self.hotkey_registered = True
-            return True
-        except Exception as e:
-            self.hotkey_registered = False
-            self.current_hotkey = None
-            logger.error(AppStrings.LOG_SYS_HOTKEY_ERROR.format(str(e)))
-            return False
+    def set_run_at_startup(self, _=True):
+        """[Deprecated] 시작 프로그램 등록 상태를 변경합니다. (기능 제거됨)"""
+        logger.debug(AppStrings.LOG_SYS_CLEANUP_DEFERRED)
 
-    def unregister_hotkey(self):
-        """등록된 전역 단축키를 해제하고 자원을 반납합니다."""
-        if self.current_hotkey:
-            try:
-                keyboard.remove_hotkey(self.current_hotkey)
-                # unhook_all() 은 타 프로그램 훅까지 제거하는 부작용이 있음.
-                # unhook_all_hotkeys() 로 StringFinder 가 등록한 hotkey 훅만 해제.
-                keyboard.unhook_all_hotkeys()
-            except Exception as e:
-                logger.debug(AppStrings.LOG_SYS_HOTKEY_REMOVE_FAIL.format(e))
-            self.current_hotkey = None
-            self.hotkey_registered = False
-
-    @staticmethod
-    def force_cleanup():
-        """모든 전역 키보드 후킹을 강제 해제합니다. (테스트/긴급용)"""
-        try:
-            keyboard.unhook_all()
-        except Exception as e:
-            logger.debug(AppStrings.LOG_SYS_LOG_CLEANUP_FAILURE.format(e))
-
-    def _on_hotkey(self):
-        """단축키 입력 시 시그널 발생"""
-        self.hotkey_pressed.emit()
 
     def cleanup_logs(self, log_dir, retention_config):
         """오래된 로그 파일을 정리합니다."""
-        import glob
-        import time
-        import logging
 
         try:
             if not os.path.exists(log_dir):
@@ -132,7 +45,7 @@ class SystemManager(QObject):
                 max_files = retention_config.get("max_files", 5)
                 max_days = retention_config.get("max_days", 7)
 
-            # [일관성] 수정일(mtime) 기준으로 정렬하여 보관 정책 유지
+            # 수정일(mtime) 기준으로 정렬하여 보관 정책을 유지합니다.
             log_files = sorted(all_log_files, key=os.path.getmtime, reverse=True)
             cutoff_time = time.time() - (max_days * 86400)
             

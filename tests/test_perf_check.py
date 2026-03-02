@@ -34,7 +34,10 @@ def test_performance_many_matches_on_one_line(tmp_path):
     # 3. 검증
     assert result is not None
     assert isinstance(result[1], int)
-    assert result[1] > 0
+    # Rust 엔진은 이제 5,001건에서 캡핑하므로, 10,000개가 아닌 5,001개가 오거나 
+    # Python 측 마커 포함 최대 5,001개가 와야 함
+    assert result[1] >= 5001
+    assert len(result[2]) <= 5001
     # 최적화 전에는 O(Matches * LineLength)로 수 초가 걸릴 수 있음
     # 최적화 후에는 0.1s 이내여야 함
     assert duration < 0.5, f"Performance regression detected: {duration:.4f}s"

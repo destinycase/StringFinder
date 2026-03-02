@@ -1,4 +1,5 @@
 use encoding_rs::{Encoding, EUC_KR, UTF_16BE, UTF_16LE, UTF_8};
+use std::collections::HashSet;
 use simdutf8::basic::from_utf8 as simd_from_utf8;
 use unicode_normalization::UnicodeNormalization;
 
@@ -17,7 +18,7 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         return UTF_8;
     }
 
-    // [Optimization] 파일 전체가 아닌 최대 64KB 샘플만 사용하여 인코딩 판별
+    // 성능 최적화: 파일 전체가 아닌 최대 64KB 샘플만 사용하여 인코딩을 판별합니다.
     let sample_len = data.len().min(64 * 1024);
     let sample = &data[..sample_len];
 
@@ -25,7 +26,7 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         return UTF_8;
     }
 
-    // [v4.62.0] No-BOM UTF-16 휴리스틱 감지 (Python의 detect_encoding_quickly와 동기화)
+    // No-BOM UTF-16 휴리스틱 감지 (Python의 detect_encoding_quickly와 동기화)
     // 짝수/홀수 오프셋의 NUL 바이트 분포를 분석하여 UTF-16LE/BE 여부를 추정합니다.
     if sample.len() >= 4 {
         let mut zero_even = 0;
@@ -87,7 +88,7 @@ pub fn build_glob_set(filters: &[String]) -> Option<GlobSet> {
         } else {
             filter.clone()
         };
-        // [Optimization] GlobBuilder를 사용하여 대소문자 무시 속성을 직접 부여 (힙 할당 감소)
+        // GlobBuilder를 사용하여 대소문자 무시 속성을 직접 부여하여 힙 할당을 줄입니다.
         if let Ok(glob) = globset::GlobBuilder::new(&pattern)
             .case_insensitive(true)
             .build() 
@@ -100,7 +101,7 @@ pub fn build_glob_set(filters: &[String]) -> Option<GlobSet> {
 
 pub fn match_filename_glob(filename: &str, glob_set: &Option<GlobSet>) -> bool {
     match glob_set {
-        // [Optimization] GlobSetBuilder에서 case_insensitive(true)를 설정했으므로
+        // GlobSetBuilder에서 case_insensitive(true)를 설정했으므로 추가적인 소문자 변환이 필요 없습니다.
         // 여기서 더 이상 filename.to_lowercase()를 호출할 필요가 없음 (할당 제거)
         Some(set) => set.is_match(filename),
         None => true,
@@ -113,51 +114,50 @@ pub fn generate_search_patterns(
     is_json: bool,
     is_archive: bool,
 ) -> Vec<String> {
-    let mut patterns = Vec::new();
-    patterns.push(keyword.to_string()); // Raw match
+    let mut patterns = HashSet::new();
+    patterns.insert(keyword.to_string());
+    
+    // Unicode Casefold 정합성을 위해 다양한 변형을 추가하여 검색 누락을 방지합니다.
+    let lower = keyword.to_lowercase();
+    let upper = keyword.to_uppercase();
+    let lower_upper = lower.to_uppercase();
+    
+    patterns.insert(lower);
+    patterns.insert(upper);
+    patterns.insert(lower_upper);
 
     if is_xml || is_json || is_archive {
-        if is_xml {
-            let mut encoded = String::new();
-            for c in keyword.chars() {
-                let mut buf = [0; 4];
-                let s = c.encode_utf8(&mut buf);
-                if s == "<" {
-                    encoded.push_str("&lt;");
-                } else if s == ">" {
-                    encoded.push_str("&gt;");
-                } else if s == "&" {
-                    encoded.push_str("&amp;");
-                } else if s == "\"" {
-                    encoded.push_str("&quot;");
-                } else if s == "'" {
-                    encoded.push_str("&apos;");
-                } else if c.is_ascii() {
-                    encoded.push_str(s);
-                } else {
-                    encoded.push_str(&format!("&#{};", c as u32));
+        let mut variants = Vec::new();
+        for p in patterns.iter() {
+            if is_xml {
+                let mut encoded = String::new();
+                for c in p.chars() {
+                    let mut buf = [0; 4];
+                    let s = c.encode_utf8(&mut buf);
+                    if s == "<" { encoded.push_str("&lt;"); }
+                    else if s == ">" { encoded.push_str("&gt;"); }
+                    else if s == "&" { encoded.push_str("&amp;"); }
+                    else if s == "\"" { encoded.push_str("&quot;"); }
+                    else if s == "'" { encoded.push_str("&apos;"); }
+                    else if c.is_ascii() { encoded.push_str(s); }
+                    else { encoded.push_str(&format!("&#{};", c as u32)); }
                 }
+                if encoded != *p { variants.push(encoded); }
             }
-            if encoded != keyword {
-                patterns.push(encoded);
+            if is_json || is_archive {
+                let mut encoded = String::new();
+                for c in p.chars() {
+                    if c.is_ascii() { encoded.push(c); }
+                    else { encoded.push_str(&format!("\\u{:04X}", c as u32)); }
+                }
+                if encoded != *p { variants.push(encoded); }
             }
         }
-
-        if is_json || is_archive {
-            let mut encoded = String::new();
-            for c in keyword.chars() {
-                if c.is_ascii() {
-                    encoded.push(c);
-                } else {
-                    encoded.push_str(&format!("\\u{:04X}", c as u32));
-                }
-            }
-            if encoded != keyword {
-                patterns.push(encoded);
-            }
+        for v in variants {
+            patterns.insert(v);
         }
     }
-    patterns
+    patterns.into_iter().collect()
 }
 pub fn is_binary(data: &[u8]) -> bool {
     if data.len() >= 2 && (data.starts_with(b"\xff\xfe") || data.starts_with(b"\xfe\xff")) {

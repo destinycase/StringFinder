@@ -20,8 +20,8 @@ class ConfigManager:
 
     def __new__(cls, *_, **kwargs):
         with cls._lock:
-            # _instance는 클래스 속성입니다. hasattr 가드를 유지하여
-            # _instance가 삭제될 수 있는 테스트 환경에서의 안정성을 확보합니다.
+            # _instance는 클래스 속성입니다. hasattr 가드를 통해
+            # 테스트 환경 등에서 _instance가 삭제될 경우에도 안정성을 확보합니다.
             if not hasattr(cls, "_instance") or cls._instance is None:
                 cls._instance = super(ConfigManager, cls).__new__(cls)
                 cls._instance._initialized = False
@@ -31,8 +31,7 @@ class ConfigManager:
         """설정 경로, 기본값, 저장 타이머를 초기화한다."""
         if getattr(self, "_initialized", False):
             return
-        # __init__에서 예외 발생 시 _instance를 초기화하여 다음 호출에서
-        # 완전하게 초기화된 싱글턴을 새로 생성할 수 있게 합니다.
+        # 초기화 중 예외가 발생하면 차후 재시도가 가능하도록 인스턴스를 초기화합니다.
         try:
             self._init_body()
         except Exception:
@@ -40,7 +39,7 @@ class ConfigManager:
             raise
 
     def _init_body(self):
-        """H-01 가드를 위해 실제 초기화 로직을 분리했습니다."""
+        """실제 초기화를 담당하는 내부 로직입니다."""
         app_data = os.getenv(Constants.ENV_APPDATA)
         if not app_data:
             app_data = os.path.join(os.path.expanduser("~"), Constants.APPDATA_FALLBACK_DIR)
@@ -73,9 +72,6 @@ class ConfigManager:
             Constants.CONFIG_KEY_RESULT_SPLITTER_STATE: None,
             Constants.CONFIG_KEY_FILTER_SPLITTER_STATE: None,
             Constants.CONFIG_KEY_THEME: Constants.DEFAULT_THEME,
-            Constants.CONFIG_KEY_GLOBAL_HOTKEY: Constants.DEFAULT_GLOBAL_HOTKEY,
-            Constants.CONFIG_KEY_RUN_AT_STARTUP: False,
-            Constants.CONFIG_KEY_CLOSE_TO_TRAY: False,
             Constants.CONFIG_KEY_CASE_INSENSITIVE: False,
             Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS: [60, 400, 100, 60],
             Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS: [60, 400, 400],
@@ -95,8 +91,7 @@ class ConfigManager:
         self.config: Dict[str, Any] = self._load()
         self.sessions_dir: str = os.path.join(self.config_dir, Constants.SESSIONS_DIRNAME)
         os.makedirs(self.sessions_dir, exist_ok=True)
-        # 반드시 _config_lock 전에 _save_lock을 획득해야 함.
-        # 이 순서를 어기면 데드락 위험이 있음 if both are held concurrently.
+        # 교착 상태를 방지하기 위해 반드시 _config_lock보다 _save_lock을 먼저 획득해야 합니다.
         self._save_timer = None
         self._save_debounce_time = 0.5
         if not hasattr(self, "config"):
@@ -202,8 +197,8 @@ class ConfigManager:
         temp_path = self.config_path + Constants.TEMP_FILE_SUFFIX
         old_path = self.config_path + Constants.BACKUP_FILE_SUFFIX
         
-        # [데드락 방지] 반드시 _save_lock을 먼저 잡고 그 안에서 _config_lock을 잡아야 함.
-        # 다른 메서드(set, save 등)와의 획득 순차를 일원화하여 교착 상태를 방지함.
+        # 교착 상태 방지: _save_lock을 먼저 획득한 후 내부에서 _config_lock을 잡습니다.
+        # 다른 메서드들과의 획득 순서를 일원화합니다.
         with self._save_lock:
             if self._save_timer is not None:
                 self._save_timer.cancel()
@@ -234,7 +229,7 @@ class ConfigManager:
                             try:
                                 os.remove(old_path)
                             except OSError as e:
-                                logger.debug(f"[Config] Backup file cleanup failed: {e}")
+                                logger.debug(AppStrings.LOG_CFG_BACKUP_CLEANUP_FAIL.format(e))
                     self.last_save_error = None  # 성공 시 에러 상태 초기화
                     return True
                 except (IOError, OSError) as e:
@@ -253,7 +248,7 @@ class ConfigManager:
                         try:
                             os.remove(temp_path)
                         except OSError as e:
-                            logger.debug(f"[Config] Temp file remove failed: {e}")
+                            logger.debug(AppStrings.LOG_CFG_TEMP_REMOVE_FAIL.format(e))
             # 루프 종료 후 성공하지 못했음이 명시적임
             return False
 
@@ -347,6 +342,7 @@ class ConfigManager:
         return copy.deepcopy(fallback)
 
     def _ensure_filters_dict(self):
+        # 경쟁 조건을 방지하기 위해 단일 설정 잠금 블록 내에서 처리합니다.
         default_filters = copy.deepcopy(self.defaults.get(Constants.CONFIG_KEY_FILTERS, {}))
         with self._config_lock:
             filters = self.config.get(Constants.CONFIG_KEY_FILTERS)
@@ -354,21 +350,21 @@ class ConfigManager:
                 filters = default_filters
             else:
                 filters = copy.deepcopy(filters)
-        folders_default = default_filters.get(Constants.CONFIG_KEY_FOLDERS, [])
-        extensions_default = default_filters.get(Constants.CONFIG_KEY_EXTENSIONS, [])
-        filenames_default = default_filters.get(Constants.CONFIG_KEY_FILENAMES, [])
-        filters[Constants.CONFIG_KEY_FOLDERS] = self._normalize_filter_container(
-            filters.get(Constants.CONFIG_KEY_FOLDERS), folders_default
-        )
-        filters[Constants.CONFIG_KEY_EXTENSIONS] = self._normalize_filter_container(
-            filters.get(Constants.CONFIG_KEY_EXTENSIONS), extensions_default
-        )
-        filters[Constants.CONFIG_KEY_FILENAMES] = self._normalize_filter_container(
-            filters.get(Constants.CONFIG_KEY_FILENAMES), filenames_default
-        )
-        with self._config_lock:
+            folders_default = default_filters.get(Constants.CONFIG_KEY_FOLDERS, [])
+            extensions_default = default_filters.get(Constants.CONFIG_KEY_EXTENSIONS, [])
+            filenames_default = default_filters.get(Constants.CONFIG_KEY_FILENAMES, [])
+            filters[Constants.CONFIG_KEY_FOLDERS] = self._normalize_filter_container(
+                filters.get(Constants.CONFIG_KEY_FOLDERS), folders_default
+            )
+            filters[Constants.CONFIG_KEY_EXTENSIONS] = self._normalize_filter_container(
+                filters.get(Constants.CONFIG_KEY_EXTENSIONS), extensions_default
+            )
+            filters[Constants.CONFIG_KEY_FILENAMES] = self._normalize_filter_container(
+                filters.get(Constants.CONFIG_KEY_FILENAMES), filenames_default
+            )
             self.config[Constants.CONFIG_KEY_FILTERS] = filters
         return filters
+
 
     def update_filters(self, folders, extensions, filenames=None):
         filters = self._ensure_filters_dict()
@@ -537,7 +533,7 @@ class ConfigManager:
                 try:
                     os.remove(temp_path)
                 except OSError as ee:
-                    logger.debug(f"[Session] Temp file cleanup failed: {ee}")
+                    logger.debug(AppStrings.LOG_SES_TEMP_CLEANUP_FAIL.format(ee))
             logger.error(AppStrings.LOG_SES_SAVE_FAIL.format(name, e))
             return False
 
@@ -617,7 +613,7 @@ class ConfigManager:
                 os.remove(f)
                 deleted_count += 1
             except (PermissionError, OSError) as e:
-                logger.debug(f"[Config] Log file cleanup failed for {f}: {e}")
+                logger.debug(AppStrings.LOG_CFG_LOG_FILE_CLEANUP_FAIL.format(f, e))
         logger.info(AppStrings.LOG_CFG_LOG_CLEANUP_DONE_MSG.format(deleted_count))
 
     def clear_all_data(self):
@@ -641,33 +637,6 @@ class ConfigManager:
         self.save()
         logger.info(AppStrings.LOG_CFG_ALL_DATA_CLEARED)
 
-    def get_global_hotkey(self):
-        with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_GLOBAL_HOTKEY, Constants.DEFAULT_GLOBAL_HOTKEY)
-
-    def set_global_hotkey(self, hotkey):
-        with self._config_lock:
-            self.config[Constants.CONFIG_KEY_GLOBAL_HOTKEY] = hotkey
-        self.save()
-
-    def get_run_at_startup(self):
-        with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_RUN_AT_STARTUP, False)
-
-    def set_run_at_startup(self, run):
-        with self._config_lock:
-            self.config[Constants.CONFIG_KEY_RUN_AT_STARTUP] = run
-        self.save()
-
-    def get_close_to_tray(self):
-        """트레이로 닫기 옵션 값을 반환한다."""
-        with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_CLOSE_TO_TRAY, False)
-
-    def set_close_to_tray(self, value):
-        with self._config_lock:
-            self.config[Constants.CONFIG_KEY_CLOSE_TO_TRAY] = value
-        self.save()
 
     def get_exclude_binary(self) -> bool:
         """바이너리 파일 제외 옵션 값을 반환한다."""

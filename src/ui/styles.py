@@ -1,4 +1,5 @@
 class UIStyles:
+    """애플리케이션 내에서 공통으로 사용되는 CSS 스타일시트와 동적 스타일 로직을 정의합니다."""
     STYLE_SCROLLBAR = """
         QScrollBar:vertical { width: 16px; }
         QScrollBar:horizontal { height: 16px; }

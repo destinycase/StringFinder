@@ -64,29 +64,7 @@ def test_splitter_states(temp_dir):
         assert states[0] == "aabbcc"
 
 
-def test_background_settings(temp_dir):
-    """test_background_settings 함수."""
-    from sf_utils.config_manager import ConfigManager
 
-    ConfigManager._instance = None
-    with patch("os.getenv", return_value=temp_dir):
-        cm = ConfigManager()
-        cm.defaults = {"global_hotkey": "alt+shift+space", "run_at_startup": False, "theme": "Dark"}
-        if not cm.config:
-            cm.config = cm.defaults.copy()
-
-        assert cm.get_global_hotkey() == "alt+shift+space"
-        assert cm.get_run_at_startup() is False
-
-        cm.set_global_hotkey("ctrl+f12")
-        cm.set_run_at_startup(True)
-        cm.save_immediately()
-
-        ConfigManager._instance = None
-        cm2 = ConfigManager()
-
-        assert cm2.get_global_hotkey() == "ctrl+f12"
-        assert cm2.get_run_at_startup() is True
 
 
 def test_history_bubble_up(temp_dir):

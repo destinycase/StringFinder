@@ -11,7 +11,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
-    QLineEdit,
     QSizePolicy,
     QStyle,
     QStyledItemDelegate,
@@ -21,11 +20,10 @@ from PySide6.QtWidgets import (
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
-from ui.styles import UIStyles
 
 
 class HtmlDelegate(QStyledItemDelegate):
-    """HtmlDelegate 클래스."""
+    """텍스트 내 HTML 태그를 해석하여 하이라이팅된 결과를 렌더링하는 델리게이트입니다."""
 
     def paint(self, painter, option, index):
         options = QStyleOptionViewItem(option)
@@ -34,7 +32,7 @@ class HtmlDelegate(QStyledItemDelegate):
         doc = QTextDocument()
         doc.setDefaultFont(options.font)  # type: ignore
 
-        # 선택된 상태인지 확인하여 적절한 텍스트 색상 적용
+        # 현재 셀이 선택되었는지 확인하여 테마에 맞는 하이라이트 색상을 적용합니다.
         is_selected = bool(options.state & QStyle.StateFlag.State_Selected)  # type: ignore
         if is_selected:
             text_color = options.palette.color(QPalette.ColorRole.HighlightedText).name()  # type: ignore
@@ -45,7 +43,7 @@ class HtmlDelegate(QStyledItemDelegate):
         doc.setHtml(html_content)
         options.text = ""  # type: ignore
         option.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, options, painter)
-        painter.translate(options.rect.left(), options.rect.top())  # type: ignore
+        painter.translate(options.rect.left(), options.rect.top())  # HTML 렌더링을 위해 좌표계를 셀 위치로 이동합니다.
         clip = QRectF(0, 0, options.rect.width(), options.rect.height())  # type: ignore
         painter.setClipRect(clip)
         ctx = QAbstractTextDocumentLayout.PaintContext()
@@ -62,12 +60,12 @@ class HtmlDelegate(QStyledItemDelegate):
 
 
 class HistoryItemDelegate(QStyledItemDelegate):
-    """HistoryItemDelegate 클래스."""
+    """콤보박스 목록 우측에 삭제 버튼(X)을 표시하고 이벤트를 처리하는 델리게이트입니다."""
 
     item_delete_requested = Signal(str)
 
     def paint(self, painter, option, index):
-        """paint 함수."""
+        """항목이 선택된 상태일 때 우측에 삭제 버튼을 그립니다."""
         super().paint(painter, option, index)
         if not (option.state & QStyle.StateFlag.State_Selected):
             return
@@ -123,7 +121,7 @@ class HistoryComboBox(QComboBox):
         self.activated.connect(self._on_activated)
 
     def setPlaceholderText(self, text):
-        """setPlaceholderText 함수."""
+        """콤보박스의 입력 줄에 안내 문구(Placeholder)를 설정합니다."""
         line_edit = self.lineEdit()
         if line_edit:
             line_edit.setPlaceholderText(text)
@@ -149,7 +147,7 @@ class HistoryComboBox(QComboBox):
         return super().eventFilter(source, event)
 
     def _on_activated(self, index):
-        """'전체 삭제' 항목 선택 시 처리"""
+        """목록 하단의 '전체 삭제' 항목을 클릭했을 때의 동작을 정의합니다."""
         if self.itemData(index, Qt.ItemDataRole.UserRole) == Constants.HISTORY_ACTION_CLEAR:
             self.history_cleared.emit()
             self.clear()
@@ -175,99 +173,7 @@ class HistoryComboBox(QComboBox):
             line_edit.setText(text)
 
 
-class HotkeyLineEdit(QLineEdit):
-    """HotkeyLineEdit 클래스."""
 
-    hotkey_changed = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setReadOnly(True)
-        self.setPlaceholderText(AppStrings.HOTKEY_EDIT_PLACEHOLDER)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._saved_hotkey = ""
-        self._key_map = {
-            Qt.Key.Key_Control: Constants.KEY_CTRL,
-            Qt.Key.Key_Shift: Constants.KEY_SHIFT,
-            Qt.Key.Key_Alt: Constants.KEY_ALT,
-            Qt.Key.Key_Meta: Constants.KEY_META,
-            Qt.Key.Key_Space: Constants.KEY_SPACE,
-            Qt.Key.Key_Escape: Constants.KEY_ESC,
-            Qt.Key.Key_Delete: Constants.KEY_DELETE,
-            Qt.Key.Key_Backspace: Constants.KEY_BACKSPACE,
-            Qt.Key.Key_Enter: Constants.KEY_ENTER,
-            Qt.Key.Key_Return: Constants.KEY_ENTER,
-            Qt.Key.Key_Tab: Constants.KEY_TAB,
-            Qt.Key.Key_Up: Constants.KEY_UP,
-            Qt.Key.Key_Down: Constants.KEY_DOWN,
-            Qt.Key.Key_Left: Constants.KEY_LEFT,
-            Qt.Key.Key_Right: Constants.KEY_RIGHT,
-            Qt.Key.Key_F1: "f1",
-            Qt.Key.Key_F2: "f2",
-            Qt.Key.Key_F3: "f3",
-            Qt.Key.Key_F4: "f4",
-            Qt.Key.Key_F5: "f5",
-            Qt.Key.Key_F6: "f6",
-            Qt.Key.Key_F7: "f7",
-            Qt.Key.Key_F8: "f8",
-            Qt.Key.Key_F9: "f9",
-            Qt.Key.Key_F10: "f10",
-            Qt.Key.Key_F11: "f11",
-            Qt.Key.Key_F12: "f12",
-        }
-
-    def keyPressEvent(self, event):
-        """키보드 입력을 가로채어 단축키 텍스트 조합을 생성합니다."""
-        key = event.key()
-        if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
-            self.clear()
-            self.hotkey_changed.emit("")
-            return
-        modifiers = event.modifiers()
-        parts = []
-        if modifiers & Qt.KeyboardModifier.ControlModifier:
-            parts.append(Constants.KEY_CTRL)
-        if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            parts.append(Constants.KEY_SHIFT)
-        if modifiers & Qt.KeyboardModifier.AltModifier:
-            parts.append(Constants.KEY_ALT)
-        if modifiers & Qt.KeyboardModifier.MetaModifier:
-            parts.append(Constants.KEY_META)
-        if key not in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt, Qt.Key.Key_Meta):
-            key_name = self._key_map.get(key)
-            if not key_name:
-                key_name = event.text().lower()
-                if not key_name:
-                    key_name = event.keyCombination().key().name.lower()
-            if key_name:
-                parts.append(key_name)
-                hotkey_str = "+".join(parts)
-                self.setText(hotkey_str)
-                self.hotkey_changed.emit(hotkey_str)
-                self.clearFocus()
-        else:
-            if parts:
-                self.setText("+".join(parts) + "+...")
-            else:
-                self.setText(AppStrings.HOTKEY_RECORDING)
-
-    def focusInEvent(self, event):
-        self.setText(AppStrings.HOTKEY_RECORDING)
-        self.setStyleSheet(UIStyles.STYLE_SETTINGS_RECORDING)
-        super().focusInEvent(event)
-
-    def focusOutEvent(self, event):
-        self.setStyleSheet("")
-        if "+" in self.text() and self.text().endswith("..."):
-            self.setText(self._saved_hotkey)
-        elif self.text() == AppStrings.HOTKEY_RECORDING:
-            self.setText(self._saved_hotkey)
-        super().focusOutEvent(event)
-
-    def setText(self, text):
-        super().setText(text)
-        if text and not text.endswith("...") and text != AppStrings.HOTKEY_RECORDING:
-            self._saved_hotkey = text
 
 
 class LoadingSpinner(QWidget):
@@ -310,14 +216,14 @@ class LoadingSpinner(QWidget):
         pen.setWidth(2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
 
-        # 지원되는 테마 색상 사용
+        # 시스템 테마에 정의된 강조 색상(Highlight)을 기본값으로 사용합니다.
         color = self._color
         if color is None:
             color = self.palette().color(QPalette.ColorRole.Highlight)
 
-        # 꼬리 효과를 위해 그라데이션 대신 회전하는 원호(arc) 사용
+        # 부드러운 회전 효과를 위해 일정 각도의 원호를 그립니다.
         pen.setColor(color)
         painter.setPen(pen)
 
-        # 270도 정도의 원호를 그림
+        # 약 270도 길이의 원호를 그려 스피너 형태를 구현합니다.
         painter.drawArc(rect, self._angle * 16, 270 * 16)

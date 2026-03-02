@@ -40,11 +40,11 @@ class SearchTab(QMainWindow):
     liveliness_updated = Signal(bool, int)  # (작동여부, 경과초)
     search_finished_with_data = Signal()
     search_status_changed = Signal(bool)
-    LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "CRITICAL")
+    LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
     _LOG_LEVEL_PATTERN = re.compile(r"\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]")
 
     def __init__(self, config_manager):
-        """__init__ 함수."""
+        """검색 탭 객체를 초기화하고 기본 변수들을 설정합니다."""
         super().__init__()
         self.config_manager = config_manager
         self.worker: Optional[SearchWorker] = None
@@ -54,8 +54,8 @@ class SearchTab(QMainWindow):
         self.scanned_count = 0
         self.results_buffer = []
         self.last_ui_update_time = 0.0
-        self.last_summary_update_time = 0.0  # [REQ] 실시간 요약 업데이트용
-        self.last_search_duration = 0.0  # [REQ] 세션 저장용 검색 시간
+        self.last_summary_update_time = 0.0  # 실시간 요약 업데이트를 위한 시간 기록입니다.
+        self.last_search_duration = 0.0  # 검색에 소요된 총 시간을 저장합니다.
         self._liveliness_seconds = 0
         self._liveliness_timer = QTimer(self)
         self._liveliness_timer.setInterval(1000)
@@ -75,7 +75,7 @@ class SearchTab(QMainWindow):
         self._init_ui()
 
     def _init_ui(self):
-        """_init_ui 함수."""
+        """검색 옵션 패널, 결과 뷰, 로그 출력창 등 탭 내부 UI를 배치합니다."""
         self.setDockOptions(
             QMainWindow.DockOption.AllowNestedDocks
             | QMainWindow.DockOption.AllowTabbedDocks
@@ -321,7 +321,7 @@ class SearchTab(QMainWindow):
         self.filename_panel.filename_combo.setEditText(current_filename)
 
     def _remove_history_item(self, text, history_type):
-        """_remove_history_item 함수."""
+        """검색어나 파일명 필터의 특정 히스토리 항목을 삭제합니다."""
         if history_type == Constants.TYPE_SEARCH:
             self.config_manager.remove_history_item(text)
         else:
@@ -373,7 +373,7 @@ class SearchTab(QMainWindow):
         self.liveliness_updated.emit(False, self._liveliness_seconds)
 
     def save_splitter_states(self):
-        """save_splitter_states 함수."""
+        """결과 뷰 내 스플리터(구분선)의 위치 상태를 저장합니다."""
         if hasattr(self, "result_view_panel"):
             self.result_view_panel.save_state()
 
@@ -466,7 +466,7 @@ class SearchTab(QMainWindow):
         self.liveliness_updated.emit(True, self._liveliness_seconds)
 
     def load_state(self, state):
-        """load_state 함수."""
+        """저장된 세션 상태를 불러와 UI 항목들을 복원합니다."""
         if not state:
             return
         inputs = state.get(Constants.PAYLOAD_INPUTS, {})
@@ -478,7 +478,7 @@ class SearchTab(QMainWindow):
         self.filename_panel.load_state(inputs)
         self.folder_panel.load_state(inputs.get(Constants.CONFIG_KEY_FOLDERS, {}))
 
-        # [REQ 1.1] 세션 로드 시 검색 문맥 및 파일명 필터 복원 (미리보기/하이라이팅 연동)
+        # 세션 복원 시 검색어와 필터를 동기화하여 결과 뷰의 하이라이팅이 즉시 반영되도록 합니다.
         search_text = inputs.get(Constants.STATE_KEY_SEARCH, "")
         search_mode = inputs.get(Constants.PAYLOAD_SPECIAL_MODE, Constants.MODE_NORMAL)
         filename_filters = inputs.get(Constants.PAYLOAD_FILENAME_FILTER, [])
@@ -520,14 +520,14 @@ class SearchTab(QMainWindow):
             self._clear_logs()
 
     def _sync_filters_to_config(self):
-        """_sync_filters_to_config 함수."""
+        """현 설정된 필터 값들을 설정 관리자(ConfigManager)에 동기화합니다."""
         folders = self.folder_panel.get_state()
         extensions = self.ext_panel.get_state()
         filenames = self.filename_panel.get_state()
         self.config_manager.update_filters(folders, extensions, filenames)
 
     def _stop_existing_search(self):
-        """_stop_existing_search 함수."""
+        """현재 진행 중인 검색 워커를 중단시키고 상태를 STOPPING으로 변경합니다."""
         if self.search_state == Constants.SearchState.IDLE:
             return True
         logger.info(AppStrings.LOG_SCH_STOP_REQUESTED)
@@ -668,7 +668,7 @@ class SearchTab(QMainWindow):
                 self.liveliness_updated.emit(False, self._liveliness_seconds)
 
     def _setup_search_worker(self, params):
-        """_setup_search_worker 함수."""
+        """검색을 수행할 워커 객체를 생성하고 필요한 시그널들을 연결합니다."""
         if self.worker is not None:
             try:
                 self.worker.signals.progress_updated.disconnect()
@@ -772,14 +772,14 @@ class SearchTab(QMainWindow):
         self._update_realtime_summary()
 
     def _on_progress(self, current, total):
-        """_on_progress 함수."""
+        """워커로부터 진행 상황을 전달받아 UI 가로바와 상태 메시지를 갱신합니다."""
         # [중] 진행률 무결성 보정: 수신된 현재 값을 scanned_count에 동기화
         self.scanned_count = current
         self.progress_update_requested.emit(current, total, True)
         self.status_message_requested.emit(AppStrings.STATUS_SEARCHING, 0)
 
     def _on_results_found(self, results):
-        """_on_results_found 함수."""
+        """새로운 검색 결과들을 전달받아 버퍼에 쌓고 수치를 갱신합니다."""
         if results:
             # [Optim] 즉시 add_results를 호출하지 않고 버퍼에 누적하여 메인 스레드 부하 감소
             self.results_buffer.extend(results)

@@ -66,8 +66,8 @@ class SearchResultModel(QAbstractTableModel):
         self._filtered_buffer = []  # 필터링된 데이터
         self._limit_signal_sent = False
         self._current_page = 1
-        self.has_truncated_results = False  # [v4.58.0] 매치 상한(5k) 도달 파일 존재 여부
-        self._page_size = 1000  # [REQ 2.4] 기본 페이지 크기 1000건
+        self.has_truncated_results = False  # 매치 상한에 도달한 파일이 있는지 여부를 저장합니다.
+        self._page_size = 1000  # 기본 페이지 크기를 1000건으로 설정합니다.
         self._pagination_enabled = True
         self._is_sorting = False
         self._file_filter = ""
@@ -145,7 +145,7 @@ class SearchResultModel(QAbstractTableModel):
             
             if item_data:
                 new_items.append(item_data)
-                # [v4.58.0] 개별 파일 매치 상한(-1 마커) 확인
+                # 개별 파일의 매치 수 상한(-1 마커) 도달 여부를 확인합니다.
                 matches_list = item_data[4]
                 if any(str(m[0]) == "-1" for m in matches_list):
                     self.has_truncated_results = True
@@ -215,7 +215,7 @@ class SearchResultModel(QAbstractTableModel):
         """전체 데이터를 전역 규칙에 따라 정렬합니다 (비동기)."""
         if not self._result_buffer or self._is_sorting:
             return
-        # [M-03] 동기 정렬 대신 이미 구현된 비동기 전역 정렬 메서드 호출
+        # 동기 정렬 대신 성능을 위해 비동기 전역 정렬 메서드를 호출합니다.
         self.sort_globally()
 
     def rowCount(self, parent=QModelIndex()):
@@ -270,7 +270,7 @@ class SearchResultModel(QAbstractTableModel):
         return None
 
     def get_all_results(self):
-        """get_all_results 함수."""
+        """저장된 모든 결과 데이터를 반환합니다."""
         return self._result_buffer
 
     def clear(self):
@@ -279,21 +279,21 @@ class SearchResultModel(QAbstractTableModel):
         self._filtered_buffer = []
         self._current_page = 1
         self._limit_signal_sent = False
-        self.has_truncated_results = False  # [v4.58.0] 초기화
+        self.has_truncated_results = False  # 상태를 초기화합니다.
         self._apply_filters()  # 내부적으로 리셋 신호 발생
 
     def get_total_pages(self) -> int:
-        """get_total_pages 함수."""
+        """전체 페이지 수를 계산하여 반환합니다."""
         if not self._pagination_enabled or not self._filtered_buffer:
             return 1
         return (len(self._filtered_buffer) + self._page_size - 1) // self._page_size
 
     def get_current_page(self) -> int:
-        """get_current_page 함수."""
+        """현재 페이지 번호를 반환합니다."""
         return self._current_page
 
     def go_to_page(self, page_number: int):
-        """go_to_page 함수."""
+        """지정된 페이지 번호로 이동합니다."""
         if not self._pagination_enabled:
             return
         total_pages = self.get_total_pages()
@@ -508,7 +508,7 @@ class MatchDetailModel(QAbstractTableModel):
                     # 텍스트: 줄 번호 | [하이라이팅된내용]
                     val = str(row_data.content)
                     if row_data.position == "-1":
-                        # [v4.58.0] 상한 도달 메시지는 특수 스타일 적용 (Icon + Bold Red)
+                        # 상한 도달 메시지는 굵은 빨간색으로 강조 표시합니다.
                         return f"<html><span style='color: #d9534f; font-weight: bold;'>⚠️ {escape(val)}</span></html>"
                         
                     if val == "None":
@@ -617,9 +617,31 @@ class MatchDetailModel(QAbstractTableModel):
         if search_mode == AppStrings.SPECIAL_SEARCH_OFF or not search_mode:
             search_mode = Constants.MODE_NORMAL
 
+        # 모델 리셋 전 헤더 정보를 미리 갱신하여 UI 캐시가 올바르게 반영되도록 합니다.
+        self.search_mode = search_mode
+        if Constants.MODE_JSON in search_mode:
+            self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_JSON_KEY, AppStrings.HEADER_JSON_VALUE]
+        elif Constants.MODE_XML in search_mode:
+            self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_XML_NAME, AppStrings.HEADER_XML_VALUE]
+        elif Constants.MODE_ARCHIVE in search_mode:
+            self._headers = [
+                AppStrings.HEADER_POSITION,
+                AppStrings.HEADER_ARCHIVE_NAMESPACE,
+                AppStrings.HEADER_ARCHIVE_KEY,
+                AppStrings.HEADER_ARCHIVE_SOURCE,
+                AppStrings.HEADER_ARCHIVE_TRANSLATION,
+            ]
+        elif Constants.MODE_EXCEL in search_mode:
+            self._headers = [
+                AppStrings.HEADER_EXCEL_SHEET,
+                AppStrings.HEADER_EXCEL_CELL,
+                AppStrings.HEADER_EXCEL_VALUE,
+            ]
+        else:
+            self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_CONTENT]
+
         self.current_file_path = file_path
         self.search_text = search_text
-        self.search_mode = search_mode
         self._all_data_buffer = []
         self._data = []
         self._current_page = 1
@@ -650,37 +672,84 @@ class MatchDetailModel(QAbstractTableModel):
                     )
                     continue
 
-                # Case 2: XML/JSON 모드 (Line, Name/Path, Value, [Offset, Length])
-                elif (Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper) and len(
-                    m
-                ) >= 5:
-                    normalized_matches.append(
-                        SearchMatchSchema(
-                            position=str(m[0]),
-                            content=str(m[1]),
-                            extra_1=str(m[2]),
-                            offset=m[3],
-                            length=m[4],
+                # Case 2: XML/JSON 모드
+                # 5-tuple: search_engine에서 이미 key/value 분리 (line, path, val, offset, length)
+                # 4-tuple: Rust 엔진 원시값 — m[1]에 "key\tvalue" 형태 (분리 안됨)
+                elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
+                    if len(m) >= 5:
+                        # 이미 분리된 5-tuple
+                        normalized_matches.append(
+                            SearchMatchSchema(
+                                position=str(m[0]),
+                                content=str(m[1]),
+                                extra_1=str(m[2]),
+                                offset=m[3],
+                                length=m[4],
+                            )
                         )
-                    )
+                    elif len(m) >= 4 and isinstance(m[1], str):
+                        # Rust 엔진 원시 4-tuple: m[1] = "path\tvalue"
+                        raw = str(m[1])
+                        if "\t" in raw:
+                            key_part, val_part = raw.split("\t", 1)
+                        elif " | " in raw:
+                            parts_raw = raw.split(" | ", 1)
+                            key_part, val_part = parts_raw[0], parts_raw[1] if len(parts_raw) > 1 else ""
+                        else:
+                            key_part, val_part = raw, ""
+                        # XML은 '/' 태그 경로 표기, JSON은 '.' 경로 표기
+                        if Constants.MODE_XML.upper() in mode_upper:
+                            key_part = key_part.lstrip("/").replace("/", " > ")
+                        else:
+                            key_part = key_part.lstrip("/").replace("/", ".")
+                        normalized_matches.append(
+                            SearchMatchSchema(
+                                position=str(m[0]),
+                                content=key_part,
+                                extra_1=val_part,
+                                offset=m[2] if len(m) > 2 else None,
+                                length=m[3] if len(m) > 3 else None,
+                            )
+                        )
                     continue
 
-                # Case 2: Archive 모드 (Line, NS, Key, Src, Trans, [Offset, Length])
-                if Constants.MODE_ARCHIVE.upper() in mode_upper and len(m) >= 5:
-                    normalized_matches.append(
-                        SearchMatchSchema(
-                            position=str(m[0]),
-                            content=str(m[1]),
-                            extra_1=str(m[2]),
-                            extra_2=str(m[3]),
-                            extra_3=str(m[4]),
-                            offset=m[5] if len(m) > 5 else None,
-                            length=m[6] if len(m) > 6 else None,
+                # Case 3: Archive 모드
+                # 5-tuple: search_engine에서 이미 필드 분리 (line, ns, key, src, trans, [offset, length])
+                # 4-tuple: Rust 엔진 원시값 — m[1]에 "NS\tKey\tS: src\tT: trans" 형태
+                if Constants.MODE_ARCHIVE.upper() in mode_upper:
+                    if len(m) >= 5:
+                        normalized_matches.append(
+                            SearchMatchSchema(
+                                position=str(m[0]),
+                                content=str(m[1]),
+                                extra_1=str(m[2]),
+                                extra_2=str(m[3]),
+                                extra_3=str(m[4]),
+                                offset=m[5] if len(m) > 5 else None,
+                                length=m[6] if len(m) > 6 else None,
+                            )
                         )
-                    )
+                    elif len(m) >= 4 and isinstance(m[1], str):
+                        # Rust 엔진 원시 4-tuple: m[1] = "NS\tKey\tS: src\tT: trans"
+                        parts_arc = str(m[1]).split("\t")
+                        ns = parts_arc[0].replace("NS: ", "") if len(parts_arc) > 0 else ""
+                        key = parts_arc[1].replace("Key: ", "") if len(parts_arc) > 1 else ""
+                        src = parts_arc[2].replace("S: ", "") if len(parts_arc) > 2 else ""
+                        trans = parts_arc[3].replace("T: ", "") if len(parts_arc) > 3 else ""
+                        normalized_matches.append(
+                            SearchMatchSchema(
+                                position=str(m[0]),
+                                content=ns,
+                                extra_1=key,
+                                extra_2=src,
+                                extra_3=trans,
+                                offset=m[2] if len(m) > 2 else None,
+                                length=m[3] if len(m) > 3 else None,
+                            )
+                        )
                     continue
 
-                # Case 3: 일반 텍스트 및 기타 특수 검색 (Line, Content, [Offset, Length])
+                # Case 4: 일반 텍스트 및 기타 특수 검색 (Line, Content, [Offset, Length])
                 # 엑셀 파일임에도 Normal 모드인 경우의 예외 처리 포함
                 if is_excel_file and search_mode == Constants.MODE_NORMAL and len(m) >= 4 and isinstance(m[1], str):
                     sheet_candidate = str(m[1]).strip()
@@ -708,9 +777,6 @@ class MatchDetailModel(QAbstractTableModel):
                 if is_excel_file and len(m) == 3 and isinstance(m[2], str):
                     pos = str(m[1])
                     content_val = str(m[2])
-                    # [H-02] 엑셀 결과가 'Sheet | Cell' 형태로 올 때의 파싱 강화
-                    if " | " in content_val and not is_excel_file:  # 일반 텍스트 모드인 경우
-                        pass  # 기본 로직 유지
 
                     if "!" in pos:
                         s, c = pos.split("!", 1)
@@ -734,64 +800,55 @@ class MatchDetailModel(QAbstractTableModel):
                     SearchMatchSchema(position=line_no, content=content, offset=offset, length=length)
                 )
 
-        # 헤더 설정 로직 복구
-        if Constants.MODE_JSON in search_mode:
-            self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_JSON_KEY, AppStrings.HEADER_JSON_VALUE]
-        elif Constants.MODE_XML in search_mode:
-            self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_XML_NAME, AppStrings.HEADER_XML_VALUE]
-        elif Constants.MODE_ARCHIVE in search_mode:
-            self._headers = [
-                AppStrings.HEADER_POSITION,
-                AppStrings.HEADER_ARCHIVE_NAMESPACE,
-                AppStrings.HEADER_ARCHIVE_KEY,
-                AppStrings.HEADER_ARCHIVE_SOURCE,
-                AppStrings.HEADER_ARCHIVE_TRANSLATION,
-            ]
-        elif Constants.MODE_EXCEL in search_mode:
-            self._headers = [
-                AppStrings.HEADER_EXCEL_SHEET,
-                AppStrings.HEADER_EXCEL_CELL,
-                AppStrings.HEADER_EXCEL_VALUE,
-            ]
-        else:
-            self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_CONTENT]
-
         self._all_data_buffer = normalized_matches
         self._apply_filters()
+
+        # [H-05 Fix] headerDataChanged 시그널을 명시적으로 발생시켜 QHeaderView 캐시를 강제 초기화.
+        # 모드 전환 시(예: NORMAL→JSON) 컬럼 수가 즉시 반영되도록 보장.
+        from PySide6.QtCore import Qt
+        self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, len(self._headers) - 1)
 
     def set_column_filter(self, column: int, text: str):
         """상세 목록의 특정 컬럼에 대한 필터를 설정합니다."""
         new_text = text.lower().strip()
-        if self._filters.get(column) == new_text:
-            return
+        
+        # [H-06 Fix] 인덱스 매핑 변경에 대응하기 위해, 
+        # 값이 없는 경우라도 dict에서 제거하여 이전 모드의 찌꺼기 필터가 영향 주지 않게 함
         if not new_text:
             self._filters.pop(column, None)
         else:
             self._filters[column] = new_text
+            
         self._apply_filters()
+
+    def _check_item_match(self, item: SearchMatchSchema, is_normal: bool) -> bool:
+        """단일 항목이 현재 모든 필터 조건을 만족하는지 확인합니다."""
+        for col, f_text in self._filters.items():
+            if is_normal:
+                # Normal 모드는 '위치 | 내용' 전체에서 검색
+                data = f"{item.position} | {item.content}".lower()
+            else:
+                # 특수 모드는 지정된 인덱스의 필드에서 검색
+                try:
+                    data = str(item[col]).lower()
+                except (IndexError, AttributeError):
+                    data = ""
+            
+            if f_text not in data:
+                return False
+        return True
 
     def _apply_filters(self):
         """전체 매치 히스토리에서 필터를 적용하여 _filtered_buffer를 생성합니다."""
         if not self._filters:
             self._filtered_buffer = list(self._all_data_buffer)
         else:
-            self._filtered_buffer = []
             cur_mode = str(self.search_mode or Constants.MODE_NORMAL)
             is_normal = cur_mode == Constants.MODE_NORMAL
-
-            for item in self._all_data_buffer:
-                match = True
-                for col, f_text in self._filters.items():
-                    if is_normal:
-                        data = f"{item.position} | {item.content}".lower()
-                    else:
-                        data = str(item[col]).lower() if col < len(item) else ""
-
-                    if f_text not in data:
-                        match = False
-                        break
-                if match:
-                    self._filtered_buffer.append(item)
+            self._filtered_buffer = [
+                item for item in self._all_data_buffer 
+                if self._check_item_match(item, is_normal)
+            ]
 
         self._current_page = 1
         self.go_to_page(1)
@@ -827,21 +884,12 @@ class MatchDetailModel(QAbstractTableModel):
         if not self._filters:
             self._filtered_buffer = list(self._all_data_buffer)
         else:
-            self._filtered_buffer = []
             cur_mode = str(self.search_mode or Constants.MODE_NORMAL)
             is_normal = cur_mode == Constants.MODE_NORMAL
-            for item in self._all_data_buffer:
-                match = True
-                for col, f_text in self._filters.items():
-                    if is_normal:
-                        data = f"{item.position} | {item.content}".lower()
-                    else:
-                        data = str(item[col]).lower() if col < len(item) else ""
-                    if f_text not in data:
-                        match = False
-                        break
-                if match:
-                    self._filtered_buffer.append(item)
+            self._filtered_buffer = [
+                item for item in self._all_data_buffer 
+                if self._check_item_match(item, is_normal)
+            ]
         self._load_current_page_data_no_reset()
 
     def clear(self):

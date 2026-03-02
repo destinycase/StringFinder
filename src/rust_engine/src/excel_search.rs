@@ -1,4 +1,4 @@
-use crate::types::SearchMatch;
+use crate::types::RawMatch;
 use calamine::{Data, Reader, Xls, Xlsb, Xlsx};
 use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
@@ -7,10 +7,10 @@ const EXCEL_MARKER_SHEET_ERROR_PREFIX: &str = "__SF_EXCEL_SHEET_ERR__|";
 const EXCEL_MARKER_PANIC_PREFIX: &str = "__SF_EXCEL_PANIC__|";
 
 struct ExcelSearchContext<'a> {
-    pat_lower: &'a str,
+    pat_upper: &'a str,
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
-    results: &'a mut Vec<SearchMatch>,
+    results: &'a mut Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -20,7 +20,7 @@ pub fn search_excel_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Vec<SearchMatch> {
+) -> Vec<RawMatch> {
     let mut results = Vec::new();
     let ext = path
         .extension()
@@ -29,14 +29,14 @@ pub fn search_excel_file(
         .to_lowercase();
 
     let pat_nfc: String = pattern.chars().nfc().collect();
-    let pat_lower = pat_nfc.to_lowercase();
+    let pat_upper = pat_nfc.to_lowercase().to_uppercase();
 
     match ext.as_str() {
         "xlsx" | "xlsm" => {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut matches = Vec::new();
                 let mut ctx = ExcelSearchContext {
-                    pat_lower: &pat_lower,
+                    pat_upper: &pat_upper,
                     ac,
                     is_exact,
                     results: &mut matches,
@@ -69,7 +69,7 @@ pub fn search_excel_file(
                                 }
                             }
                             Ok(Err(e)) => {
-                                ctx.results.push(SearchMatch::new(
+                                ctx.results.push((
                                     0,
                                     format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
                                     None,
@@ -84,7 +84,7 @@ pub fn search_excel_file(
                                 } else {
                                     "Unknown sheet panic".to_string()
                                 };
-                                ctx.results.push(SearchMatch::new(
+                                ctx.results.push((
                                     0,
                                     format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
                                     None,
@@ -110,7 +110,7 @@ pub fn search_excel_file(
                 } else {
                     "None".to_string()
                 };
-                results.push(SearchMatch::new(
+                results.push((
                     0,
                     format!("{}xlsx|{}", EXCEL_MARKER_PANIC_PREFIX, panic_msg),
                     None,
@@ -122,7 +122,7 @@ pub fn search_excel_file(
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut matches = Vec::new();
                 let mut ctx = ExcelSearchContext {
-                    pat_lower: &pat_lower,
+                    pat_upper: &pat_upper,
                     ac,
                     is_exact,
                     results: &mut matches,
@@ -155,7 +155,7 @@ pub fn search_excel_file(
                                 }
                             }
                             Ok(Err(e)) => {
-                                ctx.results.push(SearchMatch::new(
+                                ctx.results.push((
                                     0,
                                     format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
                                     None,
@@ -170,7 +170,7 @@ pub fn search_excel_file(
                                 } else {
                                     "Unknown sheet panic".to_string()
                                 };
-                                ctx.results.push(SearchMatch::new(
+                                ctx.results.push((
                                     0,
                                     format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
                                     None,
@@ -196,7 +196,7 @@ pub fn search_excel_file(
                 } else {
                     "None".to_string()
                 };
-                results.push(SearchMatch::new(
+                results.push((
                     0,
                     format!("{}xlsb|{}", EXCEL_MARKER_PANIC_PREFIX, panic_msg),
                     None,
@@ -208,7 +208,7 @@ pub fn search_excel_file(
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut matches = Vec::new();
                 let mut ctx = ExcelSearchContext {
-                    pat_lower: &pat_lower,
+                    pat_upper: &pat_upper,
                     ac,
                     is_exact,
                     results: &mut matches,
@@ -241,7 +241,7 @@ pub fn search_excel_file(
                                 }
                             }
                             Ok(Err(e)) => {
-                                ctx.results.push(SearchMatch::new(
+                                ctx.results.push((
                                     0,
                                     format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
                                     None,
@@ -256,7 +256,7 @@ pub fn search_excel_file(
                                 } else {
                                     "Unknown sheet panic".to_string()
                                 };
-                                ctx.results.push(SearchMatch::new(
+                                ctx.results.push((
                                     0,
                                     format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
                                     None,
@@ -282,7 +282,7 @@ pub fn search_excel_file(
                 } else {
                     "None".to_string()
                 };
-                results.push(SearchMatch::new(
+                results.push((
                     0,
                     format!("{}xls|{}", EXCEL_MARKER_PANIC_PREFIX, panic_msg),
                     None,
@@ -309,7 +309,7 @@ pub fn check_excel_file(
         .to_lowercase();
 
     let pat_nfc: String = pattern.chars().nfc().collect();
-    let pat_lower = pat_nfc.to_lowercase();
+    let pat_upper = pat_nfc.to_lowercase().to_uppercase();
 
     let check_range = |range: calamine::Range<Data>| -> bool {
         for row in range.rows() {
@@ -336,14 +336,14 @@ pub fn check_excel_file(
 
                 let found = if cell_val.is_ascii() {
                     if is_exact {
-                        cell_val.to_lowercase() == pat_lower
+                        cell_val.trim().to_lowercase().to_uppercase() == pat_upper
                     } else {
                         ac.find(&cell_val).is_some()
                     }
                 } else {
                     let cell_val_nfc: String = cell_val.chars().nfc().collect();
                     if is_exact {
-                        cell_val_nfc.to_lowercase() == pat_lower
+                        cell_val_nfc.trim().to_lowercase().to_uppercase() == pat_upper
                     } else {
                         ac.find(&cell_val_nfc).is_some()
                     }
@@ -437,14 +437,14 @@ fn process_cell(
     let is_match = if cell_val.is_ascii() {
         // ASCII는 NFC 정규화가 불필요함
         if ctx.is_exact {
-            cell_val.to_lowercase() == ctx.pat_lower
+            cell_val.trim().to_lowercase().to_uppercase() == ctx.pat_upper
         } else {
             ctx.ac.find(&cell_val).is_some()
         }
     } else {
         let cell_val_nfc: String = cell_val.chars().nfc().collect();
         if ctx.is_exact {
-            cell_val_nfc.to_lowercase() == ctx.pat_lower
+            cell_val_nfc.trim().to_lowercase().to_uppercase() == ctx.pat_upper
         } else {
             ctx.ac.find(&cell_val_nfc).is_some()
         }
@@ -464,6 +464,6 @@ fn process_cell(
             row_idx + 1,
             cell_val
         );
-        ctx.results.push(SearchMatch::new(row_idx + 1, location, None, None));
+        ctx.results.push((row_idx + 1, location, None, None));
     }
 }

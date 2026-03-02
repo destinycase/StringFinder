@@ -38,13 +38,20 @@ def test_log_filter_hides_and_shows_levels(qtbot, mock_config_manager):
     tab._on_log_message("DEBUG", "debug line")
     tab._on_log_message("ERROR", "error line")
 
-    visible_text = tab.logs_output.toPlainText()
-    assert "info line" in visible_text
-    assert "debug line" not in visible_text
-    assert "error line" not in visible_text
+    # 3. 'ERROR' 필터 활성화 (ERROR가 독자 레벨로 분리됨)
+    tab._log_level_checkboxes["INFO"].setChecked(False)
+    tab._log_level_checkboxes["ERROR"].setChecked(True)
+    tab._refresh_logs_output()
 
+    visible_text = tab.logs_output.toPlainText()
+    assert "error line" in visible_text
+    assert "info line" not in visible_text
+    assert "debug line" not in visible_text
+
+    # 4. 전체 활성화 확인
+    tab._log_level_checkboxes["INFO"].setChecked(True)
     tab._log_level_checkboxes["DEBUG"].setChecked(True)
-    tab._log_level_checkboxes["CRITICAL"].setChecked(True)
+    tab._refresh_logs_output()
 
     visible_text = tab.logs_output.toPlainText()
     assert "info line" in visible_text

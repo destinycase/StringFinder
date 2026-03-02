@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::types::SearchMatch;
+use crate::types::RawMatch;
 use serde_json::Value as JsonValue;
 
 pub fn check_archive_file(
@@ -21,7 +21,7 @@ pub fn check_archive_file(
         mmap
     };
 
-    let pat_lower = pattern.to_lowercase();
+    let pat_upper = pattern.to_lowercase().to_uppercase();
     let deserializer = serde_json::Deserializer::from_slice(parse_mmap);
     let iter = deserializer.into_iter::<JsonValue>();
 
@@ -31,15 +31,16 @@ pub fn check_archive_file(
         }
         if let Some(namespaces) = v.get("Subnamespaces").and_then(|v| v.as_array()) {
             for ns in namespaces {
+                
                 if let Some(children) = ns.get("Children").and_then(|v| v.as_array()) {
                     for child in children {
                         let s_text = child.get("Source").and_then(|v| v.get("Text")).and_then(|v| v.as_str()).unwrap_or("");
                         let t_text = child.get("Translation").and_then(|v| v.get("Text")).and_then(|v| v.as_str()).unwrap_or("");
                         
                         let is_match = if is_exact {
-                            s_text.eq_ignore_ascii_case(&pat_lower) || t_text.eq_ignore_ascii_case(&pat_lower)
+                            s_text.trim().to_lowercase().to_uppercase() == pat_upper || t_text.trim().to_lowercase().to_uppercase() == pat_upper
                         } else {
-                            // [Optimization] to_lowercase() 없이 ac.find(&str) 직접 수행
+                            // 소문자 변환 없이 Aho-Corasick 검색을 직접 수행합니다.
                             ac.find(s_text).is_some() || ac.find(t_text).is_some()
                         };
 
@@ -60,9 +61,9 @@ pub fn search_archive_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Vec<SearchMatch> {
+) -> Vec<RawMatch> {
     let mut results = Vec::new();
-    let pat_lower = pattern.to_lowercase();
+    let pat_upper = pattern.to_lowercase().to_uppercase();
     
     // UTF-8 BOM 스킵
     let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
@@ -84,6 +85,7 @@ pub fn search_archive_file(
         }
         if let Some(namespaces) = v.get("Subnamespaces").and_then(|v| v.as_array()) {
             for ns in namespaces {
+                
                 let ns_name = ns.get("Namespace").and_then(|v| v.as_str()).unwrap_or("unknown");
                 if let Some(children) = ns.get("Children").and_then(|v| v.as_array()) {
                     for child in children {
@@ -91,7 +93,7 @@ pub fn search_archive_file(
                         let raw_t = child.get("Translation").and_then(|v| v.get("Text")).and_then(|v| v.as_str()).unwrap_or("");
 
                         let is_match = if is_exact {
-                            raw_s.eq_ignore_ascii_case(&pat_lower) || raw_t.eq_ignore_ascii_case(&pat_lower)
+                            raw_s.trim().to_lowercase().to_uppercase() == pat_upper || raw_t.trim().to_lowercase().to_uppercase() == pat_upper
                         } else {
                             ac.find(raw_s).is_some() || ac.find(raw_t).is_some()
                         };
@@ -109,7 +111,7 @@ pub fn search_archive_file(
                                 if let Some(mat) = ac.find(&mmap[key_pos..]) {
                                     let pos = key_pos + mat.start();
                                     
-                                    // [Optimization] 누적 라인 카운팅 (매번 처음부터 세지 않음)
+                                    // 누적 라인 카운팅을 통해 매번 처음부터 세지 않도록 최적화합니다.
                                     if pos > last_counted_pos {
                                         current_line += memchr::memchr_iter(b'\n', &mmap[last_counted_pos..pos]).count();
                                         last_counted_pos = pos;
@@ -125,7 +127,7 @@ pub fn search_archive_file(
                                         raw_s,
                                         raw_t
                                     );
-                                    results.push(SearchMatch::new(current_line, content, Some(pos), None));
+                                    results.push((current_line, content, Some(pos), None));
                                     continue;
                                 }
                             }
@@ -147,7 +149,7 @@ pub fn search_archive_file(
                                     raw_s,
                                     raw_t
                                 );
-                                results.push(SearchMatch::new(current_line, content, Some(pos), None));
+                                results.push((current_line, content, Some(pos), None));
                             }
                         }
                     }

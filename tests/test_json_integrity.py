@@ -107,4 +107,4 @@ def test_utf16_bom_json_search(tmp_path):
     result = search_in_json_special(str(file_path), "안녕하세요")
     assert result is not None
     assert result[1] == 1
-    assert "message" in result[2][0][1]
+    assert "message" in result[2][0].content

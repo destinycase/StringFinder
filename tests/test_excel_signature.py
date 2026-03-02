@@ -73,7 +73,14 @@ def test_rust_excel_panic_marker_returns_skipped(tmp_path):
     class _FakeMatch:
         def __init__(self, content):
             self.content = content
-            self.line = 1  # 1-C 수정으로 m.line 참조 추가 -> mock 업데이트
+            self.line = 1
+
+        def __getitem__(self, item):
+            if item == 0:
+                return self.line
+            if item == 1:
+                return self.content
+            raise IndexError
 
     target = tmp_path / "panic.xlsx"
     with open(target, "wb") as f:
@@ -98,7 +105,14 @@ def test_rust_excel_sheet_error_marker_is_filtered(tmp_path):
     class _FakeMatch:
         def __init__(self, content):
             self.content = content
-            self.line = 1  # 1-C 수정으로 m.line 참조 추가 -> mock 업데이트
+            self.line = 1
+
+        def __getitem__(self, item):
+            if item == 0:
+                return self.line
+            if item == 1:
+                return self.content
+            raise IndexError
 
     target = tmp_path / "sheet_error.xlsx"
     with open(target, "wb") as f:

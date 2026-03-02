@@ -42,7 +42,7 @@ class ResultView(QWidget):
     status_message_requested = Signal(str, int)  # 메시지, 표시 시간(ms)
 
     def __init__(self, icon_provider, config_manager, parent=None):
-        """__init__ 함수."""
+        """결과 뷰 객체를 초기화하고 필요한 필터/리사이즈 타이머를 설정합니다."""
         super().__init__(parent)
         self.icon_provider = icon_provider
         self.config_manager = config_manager
@@ -51,10 +51,10 @@ class ResultView(QWidget):
         self.existence_only = False
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
-        self._resize_timer.setInterval(200)  # [REQ 2.2] 크기 변경 멈춘 후 200ms 뒤 실행
+        self._resize_timer.setInterval(200)  # 창 크기 변경이 멈춘 후 열 너비를 자동으로 조정하기 위한 디바운스 타이머입니다.
         self._resize_timer.timeout.connect(self._adjust_column_widths)
 
-        # [하] 필터 디바운스 타이머 추가
+        # 결과 목록 필터링 시 성능을 위해 입력 후 일정 시간 뒤에 검색을 수행하는 타이머입니다.
         self._filter_timer = QTimer(self)
         self._filter_timer.setSingleShot(True)
         self._filter_timer.setInterval(250)
@@ -65,7 +65,7 @@ class ResultView(QWidget):
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
-        # [UI/UX] 사용자 요청에 따라 레이아웃 밀도를 높이기 위해 간격을 5px로 재조정합니다.
+        # 레이아웃 밀도를 높여 더 많은 정보를 한 화면에 표시하도록 간격을 조정합니다.
         main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.setSpacing(5)
         self.result_list_container = QWidget()
@@ -79,7 +79,7 @@ class ResultView(QWidget):
         self.result_folder_filter_edit.setPlaceholderText(AppStrings.RESULT_FILTER_FOLDER_PLACEHOLDER)
         self.result_filter_layout.addWidget(self.result_file_filter_edit)
         self.result_filter_layout.addWidget(self.result_folder_filter_edit)
-        # [UX] 검색 요약 영역 (기본 스타일로 복구)
+        # 검색 결과 요약 정보를 표시하는 레이블입니다.
         self.summary_label = QLabel()
         self.summary_label.setStyleSheet(
             "font-weight: bold; color: #555; padding: 5px; background: #f0f0f0; border-radius: 4px; margin-bottom: 5px;"
@@ -96,14 +96,14 @@ class ResultView(QWidget):
         self.result_model.sort_completed.connect(self._select_first_row_safely)
         self.result_model.limit_reached.connect(self._on_limit_reached)
 
-        # [Bug Fix] 필터 디바운스 적용
+        # 텍스트 입력 시 즉시 필터링하지 않고 디바운스 타이머를 시작합니다.
         self.result_file_filter_edit.textChanged.connect(lambda: self._filter_timer.start())
         self.result_folder_filter_edit.textChanged.connect(lambda: self._filter_timer.start())
         self.result_view.setAlternatingRowColors(True)
         self.result_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.result_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.result_view.verticalHeader().hide()
-        # [Bug] 결과 목록 컨텍스트 메뉴 정책 설정 누락 수정
+        # 우클릭 메뉴가 동작하도록 컨텍스트 메뉴 정책을 설정합니다.
         self.result_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header = self.result_view.horizontalHeader()
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
@@ -117,7 +117,7 @@ class ResultView(QWidget):
         self.result_view.setSortingEnabled(True)
         self.result_view.customContextMenuRequested.connect(self._show_result_context_menu)
         self.result_view.clicked.connect(self._on_result_clicked)
-        # [UX] 키보드 위/아래 이동 시에도 즉시 데이터 로드
+        # 키보드 방향키로 항목 이동 시에도 상세 매치 정보가 즉시 업데이트되도록 연결합니다.
         self.result_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._on_result_clicked(curr))
         self.result_view.doubleClicked.connect(self._on_result_double_clicked)
         result_list_layout.addWidget(self.result_view)
@@ -145,7 +145,7 @@ class ResultView(QWidget):
         self.match_proxy_model.setSourceModel(self.match_model)
         self.match_view.setModel(self.match_proxy_model)
         self.match_view.setItemDelegate(HtmlDelegate(self.match_view))
-        self.match_view.setFrameShape(QFrame.Shape.NoFrame)  # [UI] 불필요한 테두리 제거
+        self.match_view.setFrameShape(QFrame.Shape.NoFrame)  # 디자인 일관성을 위해 매치 뷰의 프레임 테두리를 제거합니다.
         # 검색 모드에 따라 필터링 대상 컬럼이 달라지므로 전용 핸들러로 연결
         self.match_filter_1_edit.textChanged.connect(self._on_match_filter_1_changed)
         self.match_filter_2_edit.textChanged.connect(self._on_match_filter_2_changed)
@@ -157,15 +157,13 @@ class ResultView(QWidget):
         self.match_view.verticalHeader().hide()
         m_header = self.match_view.horizontalHeader()
         m_header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        m_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # 라인/위치 (내용에 맞춤)
-        m_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 내용 (남는 공간 채움)
-        # [Optimization] QHeaderView의 리사이즈 정밀도를 조정하여 성능 개선 (상위 50개 기준)
+        m_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # 위치/라인 번호
+        # 초기 Stretch 설정을 제거하여 특수 검색 모드에서도 컬럼 너비가 유연하게 조정되도록 합니다.
+        # 섹션 resize 정책은 _adjust_match_column_widths가 모드별로 동적으로 설정함.
+        # 대량 데이터 처리 시 성능 향상을 위해 리사이즈 계산 대상 항목 수를 제한합니다.
         if hasattr(m_header, "setResizeContentsPrecision"):
             m_header.setResizeContentsPrecision(50)
-        # 나머지 extra 컬럼들 (JSON/XML Key, Value 등)
-        for i in range(2, 9):
-            m_header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
-        m_header.setStretchLastSection(True)
+        m_header.setStretchLastSection(True)  # 마지막 컬럼이 남는 공간 채움
         m_header.sectionResized.connect(self._on_match_column_resized)
         self.match_view.clicked.connect(self._on_match_clicked)
         self.match_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._on_match_clicked(curr))
@@ -176,7 +174,7 @@ class ResultView(QWidget):
         match_area_layout.setSpacing(5)
         match_area_layout.addLayout(self.match_filter_layout)
         match_area_layout.addWidget(self.match_view)
-        # [UI/UX] 네비게이션 위젯을 테이블 하단으로 이동 (사용자 요청)
+        # 사용자 편의를 위해 페이지네이션 위젯을 테이블 하단에 배치합니다.
         self.match_pagination_widget = self._create_match_pagination_widget()
         match_area_layout.addWidget(self.match_pagination_widget)
 
@@ -244,7 +242,7 @@ class ResultView(QWidget):
         pagination_layout.addWidget(QLabel(AppStrings.PAGINATION_DISPLAY))
         pagination_layout.addWidget(self.page_size_combo)
         pagination_widget.setVisible(False)
-        pagination_widget.setContentsMargins(0, 0, 10, 0)  # [UI] 우측 여백 확보
+        pagination_widget.setContentsMargins(0, 0, 10, 0)  # UI 균형을 위해 우측에 약간의 여백을 둡니다.
         return pagination_widget
 
     def _create_match_pagination_widget(self):
@@ -327,10 +325,10 @@ class ResultView(QWidget):
         self.match_total_pages_label.setText(f"{AppStrings.PAGINATION_OF} {total}")
         self.match_prev_btn.setEnabled(curr > 1)
         self.match_next_btn.setEnabled(curr < total)
-        # [신규] 페이지가 2개 이상일 때만 표시 (요구사항 5.1 반영)
+        # 결과가 한 페이지 이내일 경우 페이지네이션 위젯을 숨깁니다.
         self.match_pagination_widget.setVisible(total > 1)
 
-        # [UI/UX] 페이지 이동 시 컬럼 폭 재조정
+        # 페이지 이동 후에도 내용에 맞춰 컬럼 폭을 최적화합니다.
         self._adjust_match_column_widths()
 
     def _on_prev_page(self):
@@ -368,7 +366,7 @@ class ResultView(QWidget):
             pass
 
     def _update_pagination_ui(self):
-        """_update_pagination_ui 함수."""
+        """결과 목록의 현재 페이지와 총 페이지 수를 UI에 갱신합니다."""
         self.result_view.setUpdatesEnabled(False)
         try:
             curr = self.result_model._current_page
@@ -377,7 +375,7 @@ class ResultView(QWidget):
             self.total_pages_label.setText(f"{AppStrings.PAGINATION_OF} {total}")
             self.prev_page_btn.setEnabled(curr > 1)
             self.next_page_btn.setEnabled(curr < total)
-            # [신규] 페이지가 2개 이상일 때만 표시 (요구사항 5.1 반영)
+            # 결과가 한 페이지를 초과할 때만 페이지네이션을 표시합니다.
             self.pagination_widget.setVisible(total > 1)
         finally:
             self.result_view.setUpdatesEnabled(True)
@@ -391,13 +389,19 @@ class ResultView(QWidget):
             path = item[0]
             matches = item[2]
             self.match_model.set_matches(path, matches, self.search_text, self.search_mode)
+
+            # 모델 데이터 변경 후 헤더 섹션 정보가 즉시 갱신되도록 뷰를 리셋합니다.
+            # (headerDataChanged 시그널만으로는 뷰가 갱신되지 않는 경우가 있음)
+            self.match_view.reset()
+
             self.update_match_filter_visibility(self.search_mode)
             self._update_match_pagination_ui()
 
-            # [UI/UX] 파일 선택 시 컬럼 폭 최적화 호출 (타이밍 이슈 해결을 위해 100ms 지연)
+            # 파일 선택 시 내용에 맞춰 상세 뷰의 컬럼 너비를 단계적으로 조정합니다.
+            self._adjust_match_column_widths()
             QTimer.singleShot(100, self._adjust_match_column_widths)
 
-            # [UI/UX] 첫 번째 매치 자동 선택 (상세 및 미리보기 즉시 반영)
+            # 상세 뷰 로드 시 첫 번째 행을 자동으로 선택하여 정보를 즉시 제공합니다.
             if self.match_model.match_count > 0:
                 QTimer.singleShot(0, lambda: self.match_view.selectRow(0))
 
@@ -423,7 +427,7 @@ class ResultView(QWidget):
     def _on_match_clicked(self, index):
         if not index.isValid():
             return
-        # [UI/UX] 미리보기 기능 제거로 인해 클릭 시 상태 업데이트 등만 수행
+        # 항목 선택 시 필요한 내부 상태 업데이트를 수행합니다.
         pass
 
         pass
@@ -453,8 +457,7 @@ class ResultView(QWidget):
         self.result_model.add_results(results)
         if was_empty and self.result_model.rowCount() > 0:
             self.update_ui_visibility()
-            # [UI/UX] 첫 검색 결과 도달 시 첫 번째 행을 명시적으로 선택
-            #         (검색 리스트 선택 하이라이팅 및 상세 뷰 동기화 강제)
+            # 첫 번째 검색 결과가 발견되면 자동으로 선택하여 상세 정보를 표시합니다.
             QTimer.singleShot(0, self._select_first_row_safely)
 
     def _select_first_row_safely(self, force=False):
@@ -483,7 +486,7 @@ class ResultView(QWidget):
         """결과 적재 한도 도달 시 팝업을 표시하고 검색을 중단합니다."""
         from PySide6.QtWidgets import QMessageBox
         
-        # [UX] 팝업 표시 전 즉시 검색 중단 시도 (부모 MainWindow에 시그널 또는 직접 호출)
+        # 결과 한도 초과 시 안내 문자열을 표시하기 전 검색을 즉시 중단합니다.
         # ResultView는 보통 Tab을 통해 MainWindow의 자식으로 존재
         main_win = self.window()
         if hasattr(main_win, "stop_search"):
@@ -498,7 +501,7 @@ class ResultView(QWidget):
     def sort_results(self):
         """검색 종료 시 호출되어 전체 결과를 정렬합니다 (비동기)."""
         self.result_model.sort_results()
-        # [중] 정렬 후 페이지네이션 중복 갱신 제거: 타이머 기반 지연 갱신 하나로 통합
+        # 정렬 완료 후 지연 타이머를 통해 페이지네이션 UI를 한 번만 갱신합니다.
         QTimer.singleShot(300, self._update_pagination_ui)
         self.update_ui_visibility()
 
@@ -511,7 +514,7 @@ class ResultView(QWidget):
                 skip_count=skip_count,
                 duration=f"{duration:.2f}",
             )
-            # [v4.58.0] 매치 상한(5k) 도달 파일이 있는 경우 안내 추가
+            # 개별 파일 내 매치 수가 너무 많아 일부가 생략된 경우 안내 메시지를 추가합니다.
             if self.result_model.has_truncated_results:
                 summary_text += f" {AppStrings.MSG_MATCH_TRUNCATION_NOTICE}"
                 
@@ -523,7 +526,7 @@ class ResultView(QWidget):
 
     def set_searching_state(self, is_searching: bool):
         """검색 상태에 따른 UI 제어를 수행합니다. (검색 중에는 실시간 정렬 오버헤드를 막기 위해 정렬을 끕니다)"""
-        # [UX/Perf] 검색 중에는 모델 정렬을 꺼서 데이터 추가 시 UI 프리징 및 목록 흔들림 바운스 현상 방지
+        # 검색 도중 데이터 유입으로 인한 UI 흔들림과 성능 저하를 방지하기 위해 정렬 기능을 일시적으로 끕니다.
         self.result_view.setSortingEnabled(not is_searching)
 
     def clear(self):
@@ -539,7 +542,7 @@ class ResultView(QWidget):
         self.empty_label.setVisible(not has_results)
         self.result_splitter.setVisible(has_results)
         
-        # [UI/UX] '존재 여부만 확인' 모드일 때는 상세 매치 영역을 숨겨 파일 목록을 넓게 표시
+        # 결과 존재 여부만 확인하는 모드에서는 상세 목록을 숨겨 화면을 효율적으로 사용합니다.
         if self.existence_only:
             self.match_area_widget.setVisible(False)
         else:
@@ -573,7 +576,7 @@ class ResultView(QWidget):
     def set_search_context(self, search_text, search_mode, existence_only=False):
         self.search_text = search_text
         self.existence_only = existence_only
-        # UI 콤보박스 값("끄기")을 내부 상수(Constants.MODE_NORMAL)로 정규화
+        # 특수 검색 비활성화 시 모드 값을 기본값으로 변환합니다.
         if search_mode == AppStrings.SPECIAL_SEARCH_OFF:
             self.search_mode = Constants.MODE_NORMAL
         else:
@@ -623,6 +626,22 @@ class ResultView(QWidget):
         for i, w in enumerate(widths):
             target_view.setColumnWidth(i, w)
 
+    def _get_match_filter_col(self, edit_idx: int) -> int:
+        """
+        현재 검색 모드에 따라 필터 입력 필드(0~3)가 대응되는 모델 컬럼 인덱스를 반환합니다.
+        
+        대부분의 특수 모드(XML, JSON, Archive)는 0번 컬럼이 '라인 번호'이므로 
+        필터 입력은 데이터 컬럼인 1번부터 매핑되어야 합니다.
+        """
+        mode = self.search_mode or Constants.MODE_NORMAL
+        
+        # Normal 모드와 Excel 모드는 0번 컬럼부터 데이터 필터링 대상
+        if mode == Constants.MODE_NORMAL or Constants.MODE_EXCEL in mode:
+            return edit_idx
+            
+        # XML, JSON, Archive 등은 0번이 '라인 번호'이므로 필터 n은 n+1번 컬럼 대응
+        return edit_idx + 1
+
     def update_match_filter_visibility(self, mode):
         # UI 콤보박스 값("끄기") 정규화
         mode = Constants.MODE_NORMAL if mode == AppStrings.SPECIAL_SEARCH_OFF else (mode or Constants.MODE_NORMAL)
@@ -664,6 +683,12 @@ class ResultView(QWidget):
             self.match_filter_4_edit.setVisible(False)
             self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_LIST_PLACEHOLDER)
 
+        # [H-06 Fix] 가시성 변경 후 현재 입력된 텍스트들을 모델의 정확한 컬럼 인덱스에 재전송
+        self.match_model.set_column_filter(self._get_match_filter_col(0), self.match_filter_1_edit.text())
+        self.match_model.set_column_filter(self._get_match_filter_col(1), self.match_filter_2_edit.text())
+        self.match_model.set_column_filter(self._get_match_filter_col(2), self.match_filter_3_edit.text())
+        self.match_model.set_column_filter(self._get_match_filter_col(3), self.match_filter_4_edit.text())
+
     def _on_result_filters_changed(self):
         """결과 목록 필터 변경 시 호출됩니다."""
         file_text = self.result_file_filter_edit.text()
@@ -672,19 +697,19 @@ class ResultView(QWidget):
 
     def _on_match_filter_1_changed(self, text):
         """첫 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(0, text)
+        self.match_model.set_column_filter(self._get_match_filter_col(0), text)
 
     def _on_match_filter_2_changed(self, text):
         """두 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(1, text)
+        self.match_model.set_column_filter(self._get_match_filter_col(1), text)
 
     def _on_match_filter_3_changed(self, text):
         """세 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(2, text)
+        self.match_model.set_column_filter(self._get_match_filter_col(2), text)
 
     def _on_match_filter_4_changed(self, text):
         """네 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(3, text)
+        self.match_model.set_column_filter(self._get_match_filter_col(3), text)
 
     def cleanup(self):
         self.clear()
@@ -964,9 +989,11 @@ class ResultView(QWidget):
         if not hasattr(self, "match_view"):
             return
 
-        # 뷰가 가시 상태가 아니더라도 폭 계산이 필요한 경우가 있으므로 체크 완화
-        # 단, 초기화 중이거나 위젯이 완전히 생성되지 않은 상태에서의 오류 방지
-        if self.match_view.width() <= 0:
+        # [Bug Fix] width() <= 0 guard 제거:
+        # 위젯이 Splitter 안에 있으면 표시 전에도 너비가 0이 될 수 있어
+        # 100ms 지연 후 재시도에서도 조정이 스킵되는 문제 해결.
+        # (match_model이 데이터를 가지고 있으면 너비 계산 수행)
+        if not self.match_model or self.match_model.rowCount() == 0:
             return
 
         header = self.match_view.horizontalHeader()

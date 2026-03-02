@@ -10,13 +10,13 @@ def open_file(file_path):
         elif os.name == "posix":
             subprocess.call(("open", file_path))
     except (OSError, PermissionError, FileNotFoundError, subprocess.SubprocessError):
-        # 파일 열기 실패: 권한 부족, 파일 없음, 시스템 오류
+        # 권한 부족, 파일 부재 등 다양한 시스템 오류로 인해 파일을 열 수 없는 경우 false를 반환합니다.
         return False
     return True
 
 
 def sanitize_filename(name: str, replacement: str = "_") -> str:
-    """sanitize_filename 함수."""
+    """파일명으로 사용할 수 없는 특수 문자나 예약어를 안전한 문자로 변환합니다."""
     # Windows 금지 문자: < > : " / \ | ? *
     invalid_chars = r'<>:"/\|?*'
     for char in invalid_chars:

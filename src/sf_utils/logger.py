@@ -11,7 +11,7 @@ class LogSignaler(QObject):
 
 
 class QtLogHandler(logging.Handler):
-    """QtLogHandler 클래스."""
+    """Python의 로깅 시스템과 Qt의 시그널 시스템을 연결하는 핸들러입니다."""
 
     def __init__(self):
         super().__init__()
@@ -26,10 +26,8 @@ class QtLogHandler(logging.Handler):
 
 def normalize_log_level(level_name: str) -> str:
     upper_level = str(level_name or "").upper()
-    if upper_level in {"DEBUG", "INFO", "WARNING", "CRITICAL"}:
+    if upper_level in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
         return upper_level
-    if upper_level == "ERROR":
-        return "CRITICAL"
     return "INFO"
 
 
@@ -44,12 +42,12 @@ def get_logger():
         _logger_instance = logging.getLogger("StringFinder")
         _logger_instance.setLevel(logging.DEBUG)
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-        # 콘솔 핸들러
+        # 표준 출력을 위한 콘솔 로그 핸들러를 추가합니다.
         if sys.stdout:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)
             _logger_instance.addHandler(console_handler)
-        # 파일 핸들러
+        # 로그 데이터를 파일로 저장하기 위한 핸들러를 구성합니다.
         app_data = os.getenv("APPDATA") or os.path.join(os.path.expanduser("~"), ".stringfinder")
         log_dir = os.path.join(app_data, "StringFinder")
         try:
@@ -73,7 +71,7 @@ def get_logger():
 
 
 def get_qt_log_handler():
-    """get_qt_log_handler 함수."""
+    """Qt 시그널 연동을 위한 전역 로그 핸들러 인스턴스를 반환합니다."""
     global _qt_log_handler_instance, _logger_instance
     if _qt_log_handler_instance is None:
         from PySide6.QtWidgets import QApplication
@@ -89,7 +87,7 @@ def get_qt_log_handler():
     return _qt_log_handler_instance
 
 
-# 전역적으로 임포트하여 사용 가능하도록 로거는 즉시 초기화 (표준 핸들러만)
+# 모든 모듈에서 즉시 로깅을 사용할 수 있도록 전역 로거를 초기화합니다.
 logger = get_logger()
 
 
@@ -105,7 +103,7 @@ qt_log_handler = QtLogHandlerProxy()
 
 
 def qt_message_handler(mode, _context, message):
-    """qt_message_handler 함수."""
+    """Qt 내부에서 발생하는 메시지를 Python 로깅 시스템으로 전달하는 핸들러입니다."""
     if mode == QtMsgType.QtInfoMsg:
         from sf_utils.app_strings import AppStrings
         logger.info(AppStrings.LOG_QT_INFO.format(message))

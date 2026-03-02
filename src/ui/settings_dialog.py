@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from sf_utils.app_strings import AppStrings
 from sf_utils.logger import logger
 from ui.styles import UIStyles
-from ui.widgets import HotkeyLineEdit
+
 
 
 class SettingsDialog(QDialog):
@@ -33,7 +33,7 @@ class SettingsDialog(QDialog):
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
 
-        # [일반] 그룹 추가
+        # 일반 설정 그룹 (바이너리 제외 여부 등)
         general_group = QGroupBox(AppStrings.SETTINGS_GROUP_GENERAL)
         general_layout = QVBoxLayout(general_group)
         self.exclude_binary_check = QCheckBox(AppStrings.EXCLUDE_BINARY_LABEL)
@@ -50,7 +50,7 @@ class SettingsDialog(QDialog):
         self.theme_combo.addItem(AppStrings.THEME_DARK, "dark")
         self.theme_combo.addItem(AppStrings.THEME_LIGHT, "light")
 
-        # 현재 설정된 테마가 내부 키일 수도 있고 한국어 명칭일 수도 있으므로 유연하게 처리
+        # 설정 파일에 저장된 테마 명칭을 UI 콤보박스 항목과 매칭합니다 (한국어/영문 모두 대응).
         current_theme = self.config_manager.get_theme()
         idx = self.theme_combo.findData(current_theme.lower())
         if idx == -1:
@@ -77,41 +77,6 @@ class SettingsDialog(QDialog):
         reset_layout_btn.clicked.connect(self._reset_layout)
         appearance_layout.addWidget(reset_layout_btn)
         main_layout.addWidget(appearance_group)
-        operation_group = QGroupBox(AppStrings.SETTINGS_GROUP_OPERATION)
-        operation_layout = QVBoxLayout(operation_group)
-        startup_row = QHBoxLayout()
-        startup_label = QLabel(AppStrings.STARTUP_LABEL)
-        self.startup_combo = QComboBox()
-        self.startup_combo.addItem(AppStrings.STARTUP_DISABLE, False)
-        self.startup_combo.addItem(AppStrings.STARTUP_ENABLE, True)
-        startup_idx = self.startup_combo.findData(self.config_manager.get_run_at_startup())
-        if startup_idx != -1:
-            self.startup_combo.setCurrentIndex(startup_idx)
-        self.startup_combo.currentIndexChanged.connect(self._on_startup_changed)
-        startup_row.addWidget(startup_label)
-        startup_row.addWidget(self.startup_combo, 1)
-        operation_layout.addLayout(startup_row)
-        close_row = QHBoxLayout()
-        close_label = QLabel(AppStrings.CLOSE_BEHAVIOR_LABEL)
-        self.close_behavior_combo = QComboBox()
-        self.close_behavior_combo.addItem(AppStrings.CLOSE_QUIT, False)
-        self.close_behavior_combo.addItem(AppStrings.CLOSE_TRAY, True)
-        close_idx = self.close_behavior_combo.findData(self.config_manager.get_close_to_tray())
-        if close_idx != -1:
-            self.close_behavior_combo.setCurrentIndex(close_idx)
-        self.close_behavior_combo.currentIndexChanged.connect(self._on_close_behavior_changed)
-        close_row.addWidget(close_label)
-        close_row.addWidget(self.close_behavior_combo, 1)
-        operation_layout.addLayout(close_row)
-        hotkey_row = QHBoxLayout()
-        hotkey_label = QLabel(AppStrings.HOTKEY_LABEL)
-        self.hotkey_edit = HotkeyLineEdit()
-        self.hotkey_edit.setText(self.config_manager.get_global_hotkey())
-        self.hotkey_edit.hotkey_changed.connect(self._on_hotkey_changed)
-        hotkey_row.addWidget(hotkey_label)
-        hotkey_row.addWidget(self.hotkey_edit, 1)
-        operation_layout.addLayout(hotkey_row)
-        main_layout.addWidget(operation_group)
         log_group = QGroupBox(AppStrings.SETTINGS_GROUP_LOG)
         log_layout = QVBoxLayout(log_group)
         log_retention_row = QHBoxLayout()
@@ -173,24 +138,8 @@ class SettingsDialog(QDialog):
             self.config_manager.set_theme(theme)
             parent = self.parent()
             if parent and hasattr(parent, "_apply_theme"):
-                parent._apply_theme()  # type: ignore
+                parent._apply_theme()  # 테마 변경 시 메인 윈도우의 스타일을 즉시 갱신합니다.
 
-    def _on_hotkey_changed(self, hotkey):
-        self.config_manager.set_global_hotkey(hotkey)
-        parent = self.parent()
-        if parent and hasattr(parent, "_setup_system_configs"):
-            parent._setup_system_configs()  # type: ignore
-
-    def _on_startup_changed(self, index):
-        enabled = self.startup_combo.itemData(index)
-        self.config_manager.set_run_at_startup(enabled)
-        parent = self.parent()
-        if parent and hasattr(parent, "_setup_system_configs"):
-            parent._setup_system_configs()  # type: ignore
-
-    def _on_close_behavior_changed(self, index):
-        to_tray = self.close_behavior_combo.itemData(index)
-        self.config_manager.set_close_to_tray(to_tray)
 
     def _on_log_retention_changed(self, index):
         enabled = self.log_retention_combo.itemData(index)
@@ -239,7 +188,7 @@ class SettingsDialog(QDialog):
             try:
                 if os.name == "nt":  # 윈도우
                     os.startfile(data_dir)
-                else:  # macOS/Linux 계열
+                else:  # 운영체제별 데이터 디렉터리 열기 명령 수행 (macOS/Linux)
                     subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", data_dir])
             except Exception as e:
                 logger.error(AppStrings.LOG_RES_DATA_DIR_FAIL.format(e))

@@ -11,6 +11,8 @@ pub const MODE_EXCEL: u32 = 1 << 4;
 pub const MODE_EXCLUDE_BINARY: u32 = 1 << 5;
 pub const MODE_EXISTENCE_ONLY: u32 = 1 << 6;
 
+pub type RawMatch = (usize, String, Option<usize>, Option<usize>);
+
 
 
 #[derive(Deserialize)]

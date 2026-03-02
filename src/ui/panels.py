@@ -89,7 +89,7 @@ class SearchOptionsPanel(QWidget):
         layout.addWidget(self.search_btn)
         self.stop_btn = QPushButton(AppStrings.SEARCH_BTN_STOP)
         self.stop_btn.setMinimumHeight(40)
-        self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_ACTIVE)  # [UX] 중지 버튼은 눈에 띄게 빨간색
+        self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_ACTIVE)  # 사용자가 쉽게 인지할 수 있도록 중지 버튼에 강조 색상을 적용합니다.
         self.stop_btn.clicked.connect(self.stop_requested.emit)
         self.stop_btn.setVisible(False)
         layout.addWidget(self.stop_btn)
@@ -100,7 +100,7 @@ class SearchOptionsPanel(QWidget):
         self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
         self.boolean_search_check = QCheckBox(AppStrings.BOOLEAN_SEARCH_LABEL)
         self.boolean_search_check.setToolTip(AppStrings.BOOLEAN_SEARCH_TOOLTIP)
-        self.boolean_search_check.setChecked(False)  # [REQ] 기본값 False
+        self.boolean_search_check.setChecked(False)  # 기본적으로 검색 결과 요약 확인 모드는 해제 상태로 시작합니다.
         options_layout.addWidget(self.complex_search_check)
         options_layout.addWidget(self.exclude_hidden_check)
         options_layout.addWidget(self.boolean_search_check)
@@ -122,10 +122,10 @@ class SearchOptionsPanel(QWidget):
         self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_ACTIVE)
 
     def set_stopping_state(self):
-        """set_stopping_state 함수."""
+        """검색 중단 중임을 나타내도록 버튼 상태와 텍스트를 변경합니다."""
         self.stop_btn.setEnabled(False)
         self.stop_btn.setText(AppStrings.SEARCH_BTN_STOPPING)
-        self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_WAIT)  # [UX] 중지 중일 때는 차분한 회색
+        self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_WAIT)  # 중단 절차 진행 중에는 버튼 색상을 변경하여 상태를 시각화합니다.
         self.search_btn.setEnabled(False)
         self.search_btn.setText(AppStrings.SEARCH_BTN_STOPPING)
         self.search_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_WAIT)
@@ -147,7 +147,7 @@ class SearchOptionsPanel(QWidget):
         self.search_combo.setCurrentIndex(-1)
 
     def add_history(self, text: str):
-        """[Cleanup] 미사용 메서드 본문 제거 (감사 이슈 대응)"""
+        """검색 히스토리 추가를 처리합니다 (현재 미사용)."""
         pass
 
     def get_state(self) -> dict:
@@ -176,7 +176,7 @@ class FolderFilterPanel(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         self.folder_list = QListWidget()
-        # QListWidget 자체 스크롤을 활용하기 위해 최소 높이 제거하거나 적절히 설정
+        # 폴더 목록의 가독성을 위해 적절한 최소 크기를 보장합니다.
         self.folder_list.setMinimumHeight(50)
         main_layout.addWidget(self.folder_list, 1)  # 1: Stretch 부여
 
@@ -294,7 +294,7 @@ class ExtensionFilterPanel(QWidget):
 
         self.ext_list = QListWidget()
         self.ext_list.setMinimumHeight(50)
-        main_layout.addWidget(self.ext_list, 1)  # 목록이 영역을 가득 채우고 스크롤 생성
+        main_layout.addWidget(self.ext_list, 1)  # 확장자 목록이 가용한 영역을 최대한 활용하도록 설정합니다.
 
         input_layout = QHBoxLayout()
         self.ext_edit = QLineEdit()
@@ -366,7 +366,7 @@ class ExtensionFilterPanel(QWidget):
                 if isinstance(widget, FilterItemWidget) and widget.isChecked():
                     exts.append(widget.text())
         else:
-            # 특수 모드 처리 시점은 여기 또는 컨트롤러 중 한 곳으로 일원화해야 합니다.
+            # 선택된 특수 검색 모드에 따라 처리 대상을 결정합니다.
             if Constants.MODE_XML in special_mode:
                 return [Constants.EXT_XML]
             elif Constants.MODE_JSON in special_mode:

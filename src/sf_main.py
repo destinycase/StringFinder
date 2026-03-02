@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from sf_utils.logger import logger
-from sf_utils.single_instance import SingleInstanceController
+from sf_utils.single_instance import ensure_single_instance
 from ui.main_window import MainWindow
 
 
@@ -23,14 +23,13 @@ def main():
         from PySide6.QtGui import QFont
 
         app.setFont(QFont("Segoe UI", 9))
-    instance_key = f"{Constants.APP_NAME}_SingleInstance_Lock"
-    controller = SingleInstanceController(instance_key)
-    if controller.check_and_start():
-        # 이미 실행 중이면 종료
-        return
+
+    # 애플리케이션의 중복 실행을 방지합니다 (QLockFile 사용).
+    # 이미 실행 중이면 경고 메시지 표시 후 sys.exit(0) 호출
+    ensure_single_instance()
 
     class QThreadWarningDetector:
-        """QThreadWarningDetector 클래스."""
+        """QThread 관련 경고 및 특정 폰트 관련 로그를 감지하고 필터링하는 핸들러입니다."""
 
         def __init__(self):
             from PySide6.QtCore import QTimer
@@ -47,7 +46,7 @@ def main():
                     self.original_stderr.write(text)
                     self.original_stderr.flush()
                 except Exception as e:
-                    # stderr가 이미 닫혔거나 fileno가 없는 특수 스트림(pytest, frozen EXE 등)인 경우 대응
+                    # 표준 에러 스트림이 닫혀있거나 파일 번호가 없는 경우(테스트 환경 등)에 대한 예외 처리입니다.
                     try:
                         logger.debug(AppStrings.LOG_SYS_STDERR_FLUSH_FAIL.format(e))
                     except Exception:
@@ -58,7 +57,7 @@ def main():
 
                 stack_trace = "".join(traceback.format_stack())
                 logger.warning(AppStrings.LOG_SYS_QT_THREAD_WARNING.format(text, stack_trace))
-                # 경고 발생 시 메인 스레드에서 팝업을 표시하도록 스케줄링
+                # 특정 경고 발생 시 사용자에게 알림 팝업을 표시하도록 메인 스레드에 예약합니다.
                 try:
 
                     def show_popup():
@@ -76,7 +75,7 @@ def main():
                 except Exception as e:
                     self.original_stderr.write(f"Failed to schedule warning popup: {e}\n")
             elif "DirectWrite: CreateFontFaceFromHDC() failed" in text:
-                # Windows DirectWrite 폰트 렌더링 경고 필터링 (로그 노이즈 제거)
+                # Windows 환경의 특정 폰트 렌더링 로그 노이즈를 필터링합니다.
                 return
 
         def flush(self):
@@ -86,8 +85,6 @@ def main():
     sys.stderr = QThreadWarningDetector()
     app.setStyleSheet(qdarktheme.load_stylesheet())
     window = MainWindow()
-    # 중복 실행 요청 시 기존 창 활성화 연결
-    controller.instance_requested.connect(window.show_normal_and_activate)
     # 앱 시작 시점에 로그 정리 수행 (종료 시뿐만 아니라 시작 시에도 공간 확보)
     try:
         from core.system_manager import SystemManager
@@ -117,7 +114,7 @@ def main():
             logger.info(AppStrings.LOG_SYS_WKR_SHUTDOWN_DONE)
         except Exception as e:
             logger.error(AppStrings.LOG_SYS_WKR_SHUTDOWN_FAIL.format(e))
-        # [성능] 전역 멀티프로세싱 매니저 종료
+        # 멀티프로세싱 자원을 안전하게 회수하고 매니저 프로세스를 종료합니다.
         try:
             shutdown_global_manager()
         except Exception as e:

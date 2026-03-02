@@ -1,14 +1,14 @@
 #![allow(dead_code)]
-use crate::types::SearchMatch;
+use crate::types::RawMatch;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader as XmlReader;
 
 struct XmlSearchContext<'a> {
-    pat_lower: &'a str,
+    pat_upper: &'a str,
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
     mmap: &'a [u8],
-    results: &'a mut Vec<SearchMatch>,
+    results: &'a mut Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     last_offset: usize,
     last_line: usize,
@@ -20,7 +20,7 @@ pub fn search_xml_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Vec<SearchMatch> {
+) -> Vec<RawMatch> {
     let mut results = Vec::new();
     
     // UTF-8 BOM 스킵
@@ -35,9 +35,9 @@ pub fn search_xml_file(
     let mut buf = Vec::new();
     let mut current_tags = Vec::new();
 
-    let pat_lower = pattern.to_lowercase();
+    let pat_upper = pattern.to_lowercase().to_uppercase();
     let mut ctx = XmlSearchContext {
-        pat_lower: &pat_lower,
+        pat_upper: &pat_upper,
         ac,
         is_exact,
         mmap,
@@ -100,7 +100,7 @@ fn process_xml_text_item(
     let trimmed = unescaped_text.trim();
     if !trimmed.is_empty() {
         let is_match = if ctx.is_exact {
-            trimmed.to_lowercase() == ctx.pat_lower
+            trimmed.to_lowercase().to_lowercase().to_uppercase() == ctx.pat_upper
         } else {
             ctx.ac.find(unescaped_text).is_some()
         };
@@ -124,7 +124,7 @@ fn process_xml_text_item(
                 ctx.last_offset = match_offset;
             }
             
-            ctx.results.push(SearchMatch::new(
+            ctx.results.push((
                 ctx.last_line,
                 format!("/{}\t{}", tag_path, trimmed),
                 Some(match_offset),
@@ -147,7 +147,7 @@ fn process_xml_attributes(
         let val = String::from_utf8_lossy(&attr.value).to_string();
 
         let is_match = if ctx.is_exact {
-            val.to_lowercase() == ctx.pat_lower
+            val.to_lowercase().to_lowercase().to_uppercase() == ctx.pat_upper
         } else {
             ctx.ac.find(&val).is_some()
         };
@@ -179,7 +179,7 @@ fn process_xml_attributes(
                 current_tags.join("/")
             };
 
-            ctx.results.push(SearchMatch::new(
+            ctx.results.push((
                 ctx.last_line,
                 format!("/{}/@{}\t{}", tag_path, key, val),
                 Some(match_offset),
@@ -206,7 +206,7 @@ pub fn check_xml_file(
     let mut reader = XmlReader::from_reader(parse_mmap);
     reader.trim_text(false);
     let mut buf = Vec::new();
-    let pat_lower = pattern.to_lowercase();
+    let pat_upper = pattern.to_lowercase().to_uppercase();
 
     loop {
         if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -216,12 +216,12 @@ pub fn check_xml_file(
             Err(_) => break,
             Ok(Event::Eof) => break,
             Ok(Event::Start(e)) => {
-                if check_xml_attributes(&e, &pat_lower, ac, is_exact) {
+                if check_xml_attributes(&e, &pat_upper, ac, is_exact) {
                     return true;
                 }
             }
             Ok(Event::Empty(e)) => {
-                if check_xml_attributes(&e, &pat_lower, ac, is_exact) {
+                if check_xml_attributes(&e, &pat_upper, ac, is_exact) {
                     return true;
                 }
             }
@@ -230,7 +230,7 @@ pub fn check_xml_file(
                     let trimmed = text.trim();
                     if !trimmed.is_empty() {
                         let is_match = if is_exact {
-                            trimmed.to_lowercase() == pat_lower
+                            trimmed.to_lowercase().to_lowercase().to_uppercase() == pat_upper
                         } else {
                             ac.find(text.as_ref()).is_some()
                         };
@@ -245,7 +245,7 @@ pub fn check_xml_file(
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
                     let is_match = if is_exact {
-                        trimmed.to_lowercase() == pat_lower
+                        trimmed.to_lowercase().to_uppercase() == pat_upper
                     } else {
                         ac.find(text.as_ref()).is_some()
                     };
@@ -263,14 +263,14 @@ pub fn check_xml_file(
 
 fn check_xml_attributes(
     e: &quick_xml::events::BytesStart,
-    pat_lower: &str,
+    pat_upper: &str,
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
 ) -> bool {
     for attr in e.attributes().flatten() {
         let val = String::from_utf8_lossy(&attr.value).to_string();
         let is_match = if is_exact {
-            val.to_lowercase() == pat_lower
+            val.to_lowercase().to_lowercase().to_uppercase() == pat_upper
         } else {
             ac.find(&val).is_some()
         };

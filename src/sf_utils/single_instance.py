@@ -1,65 +1,48 @@
-from typing import Optional
+"""
+동일 애플리케이션의 중복 실행을 방지하는 모듈입니다.
 
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
+PySide6의 QLockFile을 사용하여 안정적으로 중복 실행을 감지합니다.
+기존 QLocalServer/QLocalSocket 방식에 비해 구현이 단순하며,
+프로세스가 비정상 종료된 경우에도 운영체제에 의해 락이 자동으로 해제됩니다.
+"""
+
+import os
+import sys
+import logging
+
+from PySide6.QtCore import QDir, QLockFile
+from PySide6.QtWidgets import QMessageBox
 
 from sf_utils.app_strings import AppStrings
-from sf_utils.logger import logger
+
+logger = logging.getLogger("StringFinder.SingleInstance")
+
+# 락 파일 인스턴스를 전역으로 유지 (GC로 인한 조기 해제 방지)
+_lock_file: QLockFile | None = None
 
 
-class SingleInstanceController(QObject):
+def ensure_single_instance() -> None:
     """
-    애플리케이션의 단일 인스턴스 실행을 보장합니다.
-    이미 실행 중인 인스턴스가 있으면 통신을 통해 기존 창을 활성화하도록 요청합니다.
+    이미 실행 중인 인스턴스가 있으면 경고 메시지를 표시하고 프로세스를 종료합니다.
+
+    QLockFile은 시스템 임시 디렉토리에 .lock 파일을 생성합니다.
+    프로세스가 정상/비정상 종료 시 OS가 자동으로 락을 해제하므로
+    스테일 락 문제가 발생하지 않습니다.
     """
+    global _lock_file
 
-    instance_requested = Signal()
+    lock_path = os.path.join(QDir.tempPath(), "stringfinder.lock")
+    _lock_file = QLockFile(lock_path)
 
-    def __init__(self, key: str):
-        super().__init__()
-        self.key = key
-        self.server: Optional[QLocalServer] = None
+    # 100ms 동안 잠금 시도
+    # (기존 인스턴스가 비정상 종료된 경우 스테일 락을 자동으로 제거하고 재시도)
+    if not _lock_file.tryLock(100):
+        logger.warning(AppStrings.LOG_SYS_SINGLE_INSTANCE_DETECTED)
+        QMessageBox.warning(
+            None,
+            AppStrings.APP_TITLE,
+            AppStrings.MSG_ALREADY_RUNNING,
+        )
+        sys.exit(0)
 
-    def check_and_start(self) -> bool:
-        """check_and_start 함수."""
-        # 먼저 기존 서버에 연결 시도
-        socket = QLocalSocket()
-        socket.connectToServer(self.key)
-        if socket.waitForConnected(500):
-            # 연결 성공 -> 이미 다른 인스턴스가 실행 중임
-            logger.info(AppStrings.LOG_SYS_SINGLE_INSTANCE_DETECTED)
-            # 기존 인스턴스에 포커스 요청 메시지 전송
-            socket.write(b"focus")
-            socket.waitForBytesWritten(500)
-            socket.disconnectFromServer()
-            return True
-        # 연결 실패 -> 이 인스턴스가 첫 번째임. 서버를 열어 대기함.
-        # 이전 실행에서 남은 소켓 파일 정리
-        QLocalServer.removeServer(self.key)
-        self.server = QLocalServer()
-        if self.server.listen(self.key):
-            self.server.newConnection.connect(self._on_new_connection)
-            logger.debug(AppStrings.LOG_SYS_SINGLE_INSTANCE_SERVER_START.format(self.key))
-            return False
-        # 남아있는 소켓 흔적 가능성을 고려해 1회 재시도
-        QLocalServer.removeServer(self.key)
-        if self.server.listen(self.key):
-            self.server.newConnection.connect(self._on_new_connection)
-            logger.debug(AppStrings.LOG_SYS_SINGLE_INSTANCE_SERVER_START.format(self.key))
-            return False
-        logger.error(AppStrings.LOG_SYS_SINGLE_INSTANCE_SERVER_START_FAIL.format(self.server.errorString()))
-        # 단일 인스턴스 보장을 확보하지 못하면 안전하게 추가 실행을 차단
-        return True
-
-    def _on_new_connection(self):
-        """중복 실행 시도자가 보낸 메시지를 처리합니다."""
-        if not self.server:
-            return
-        socket = self.server.nextPendingConnection()
-        if socket.waitForReadyRead(500):
-            message = bytes(socket.readAll().data()).decode()
-            if message == "focus":
-                logger.info(AppStrings.LOG_SYS_SINGLE_INSTANCE_REQUEST)
-                self.instance_requested.emit()
-        socket.disconnectFromServer()
-        socket.deleteLater()
+    logger.debug(AppStrings.LOG_SYS_SINGLE_INSTANCE_LOCK_SUCCESS.format(lock_path))

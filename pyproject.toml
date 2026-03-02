@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "4.63.8"
+version = "5.0.1"
 authors = [{ name = "N2", email = "your@email.com" }]
 
 description = "Production-ready high-performance string search utility with Rust engine, multiprocessing, and smart file scanning. Features UTF-16LE support, robust session management, and comprehensive error handling."
@@ -28,6 +28,7 @@ dependencies = [
     "keyboard>=0.13.5",
     "openpyxl>=3.1.2",
     "Pillow>=10.0.0",
+    "psutil>=5.9.0",
 ]
 
 [project.gui-scripts]

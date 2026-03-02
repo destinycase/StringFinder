@@ -2,8 +2,9 @@ from sf_utils.app_strings import AppStrings
 
 
 class Constants:
+    """애플리케이션 전반에서 사용되는 설정 키, 임계값, 상수 값들을 정의합니다."""
     APP_NAME = "StringFinder"
-    APP_VERSION = AppStrings.APP_VERSION  # AppStrings에서 일원화 관리
+    APP_VERSION = AppStrings.APP_VERSION  # 애플리케이션 버전 정보를 통합 관리합니다.
     ENV_APPDATA = "APPDATA"
     APPDATA_FALLBACK_DIR = ".stringfinder"
     APPDATA_TEMP_DIR = "StringFinder_Temp"
@@ -43,7 +44,6 @@ class Constants:
     EXT_ARCHIVE = ".archive"
     EXT_EXCEL = ("xlsx", "xlsm", "xls", "xlsb")
     DEFAULT_THEME = "Dark"
-    DEFAULT_GLOBAL_HOTKEY = "alt+shift+space"
     RUST_MODE_NORMAL = 0
     RUST_MODE_JSON = 1 << 0
     RUST_MODE_XML = 1 << 1
@@ -52,20 +52,6 @@ class Constants:
     RUST_MODE_EXCEL = 1 << 4
     RUST_MODE_EXCLUDE_BINARY = 1 << 5
     RUST_MODE_EXISTENCE_ONLY = 1 << 6
-    KEY_CTRL = "ctrl"
-    KEY_SHIFT = "shift"
-    KEY_ALT = "alt"
-    KEY_META = "meta"
-    KEY_SPACE = "space"
-    KEY_ESC = "esc"
-    KEY_DELETE = "delete"
-    KEY_BACKSPACE = "backspace"
-    KEY_ENTER = "enter"
-    KEY_TAB = "tab"
-    KEY_UP = "up"
-    KEY_DOWN = "down"
-    KEY_LEFT = "left"
-    KEY_RIGHT = "right"
     SYMBOL_CLOSE = "×"
     YIELD_SLEEP_TIME = 0.001
     HISTORY_ACTION_CLEAR = "action_clear"
@@ -101,9 +87,6 @@ class Constants:
     CONFIG_KEY_RESULT_SPLITTER_STATE = "result_splitter_state"
     CONFIG_KEY_FILTER_SPLITTER_STATE = "filter_splitter_state"
     CONFIG_KEY_THEME = "theme"
-    CONFIG_KEY_GLOBAL_HOTKEY = "global_hotkey"
-    CONFIG_KEY_RUN_AT_STARTUP = "run_at_startup"
-    CONFIG_KEY_CLOSE_TO_TRAY = "close_to_tray"
     CONFIG_KEY_CASE_INSENSITIVE = "case_insensitive"
     CONFIG_KEY_EXCLUDE_BINARY = "exclude_binary"
     CONFIG_KEY_RESULT_COLUMN_WIDTHS = "result_column_widths"

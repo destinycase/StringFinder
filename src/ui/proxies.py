@@ -2,7 +2,7 @@ from PySide6.QtCore import QSortFilterProxyModel, Qt
 
 
 class ResultProxyModel(QSortFilterProxyModel):
-    """ResultProxyModel 클래스."""
+    """검색 결과 목록의 정렬 및 필터링을 담당하는 프록시 모델입니다."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,7 +28,7 @@ class ResultProxyModel(QSortFilterProxyModel):
         return True
 
     def lessThan(self, left, right):
-        """lessThan 함수."""
+        """두 항목의 크기를 비교하여 정렬 순서를 결정합니다."""
         left_data = self.sourceModel().data(left, Qt.ItemDataRole.EditRole)
         right_data = self.sourceModel().data(right, Qt.ItemDataRole.EditRole)
         if left_data is None:

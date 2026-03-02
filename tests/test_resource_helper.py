@@ -17,8 +17,9 @@ import sys
 from sf_utils.resource_helper import get_resource_path
 
 
-def test_get_resource_path_dev(patch_sys_meipass_missing):
+def test_get_resource_path_dev_mode(patch_sys_meipass_missing):
     """test_get_resource_path_dev 함수."""
+    _ = patch_sys_meipass_missing
     # 개발 환경에서는 프로젝트 루트를 기준으로 상대 리소스 경로를 계산한다.
     path = get_resource_path("assets/icon.svg")
 
@@ -27,8 +28,9 @@ def test_get_resource_path_dev(patch_sys_meipass_missing):
     assert os.path.isabs(path)
 
 
-def test_get_resource_path_build(patch_sys_meipass_present):
+def test_get_resource_path_frozen_mode(patch_sys_meipass_present):
     """test_get_resource_path_build 함수."""
+    _ = patch_sys_meipass_present
     meipass_path = "C:/Temp/_MEI1234"
     setattr(sys, "_MEIPASS", meipass_path)
 

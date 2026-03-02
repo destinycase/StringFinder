@@ -1,16 +1,16 @@
 #![allow(dead_code)]
-use crate::types::SearchMatch;
+use crate::types::RawMatch;
 use serde_json::Value as JsonValue;
 
 struct JsonSearchContext<'a> {
     pattern: &'a str,
-    pattern_lower: String,
+    pattern_upper: String,
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
     mmap: &'a [u8],
     last_offset: usize,
     last_line: usize,
-    results: Vec<SearchMatch>,
+    results: Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -20,10 +20,10 @@ pub fn search_json_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Vec<SearchMatch> {
+) -> Vec<RawMatch> {
     let mut ctx = JsonSearchContext {
         pattern,
-        pattern_lower: pattern.to_lowercase(),
+        pattern_upper: pattern.to_lowercase().to_uppercase(),
         ac,
         is_exact,
         mmap,
@@ -45,14 +45,17 @@ pub fn search_json_file(
         mmap
     };
 
-    // 스트리밍 데시리얼라이저를 사용하여 이터레이터 방식으로 접근 시도
+    // 스트리밍 데시리얼라이저를 사용하여 바이트 오프셋 기반으로 순차 접근
     let deserializer = serde_json::Deserializer::from_slice(parse_mmap);
-    let iter = deserializer.into_iter::<JsonValue>();
+    let mut stream = deserializer.into_iter::<JsonValue>();
 
-    for value_res in iter {
+    while let Some(value_res) = stream.next() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
+        
+        let byte_offset = stream.byte_offset(); // 현재까지 파싱된 바이트 오프셋 확보
+
         match value_res {
             Ok(v) => {
                 let mut stack = vec![(&v, String::new())];
@@ -75,32 +78,32 @@ pub fn search_json_file(
                         }
                         JsonValue::String(s) => {
                             let is_match = if ctx.is_exact {
-                                s.to_lowercase() == ctx.pattern_lower
+                                s.trim().to_lowercase().to_uppercase() == ctx.pattern_upper
                             } else {
                                 ctx.ac.find(s).is_some()
                             };
 
                             if is_match {
-                                // windows().position() 방식의 O(N*M) 검색은 대용량 파일에서 성능 트랩이 됨
-                                // mmap 상에서 직접적인 바이트 매칭이나 Aho-Corasick 재활용을 통해 정확한 오프셋 산출
+                                // 하이브리드 스트리밍: 현재 값의 대략적인 위치 주변에서 정밀 위치를 탐색합니다.
                                 let mut found_pos = None;
                                 let mut found_len = 0;
 
-                                if ctx.last_offset < ctx.mmap.len() {
-                                    // Aho-Corasick를 사용하여 mmap 내에서 해당 문자열의 물리적 위치를 고속 검색
-                                    if let Some(m) = ctx.ac.find(&ctx.mmap[ctx.last_offset..]) {
-                                        found_pos = Some(ctx.last_offset + m.start());
+                                let search_area_start = ctx.last_offset;
+                                let search_area_end = std::cmp::min(byte_offset + 1024, ctx.mmap.len());
+                                
+                                if search_area_start < search_area_end {
+                                    if let Some(m) = ctx.ac.find(&ctx.mmap[search_area_start..search_area_end]) {
+                                        found_pos = Some(search_area_start + m.start());
                                         found_len = m.len();
                                     }
                                 }
                                 
                                 if let Some(actual_pos) = found_pos {
-                                    let count = ctx.mmap[ctx.last_offset..actual_pos].iter().filter(|&&b| b == b'\n').count();
-                                    ctx.last_line += count;
-                                    ctx.results.push(SearchMatch::new(ctx.last_line, format!("{}\t{}", path, s), Some(actual_pos), Some(found_len)));
+                                    ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
+                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), Some(actual_pos), Some(found_len)));
                                     ctx.last_offset = actual_pos + found_len;
                                 } else {
-                                    ctx.results.push(SearchMatch::new(ctx.last_line, format!("{}\t{}", path, s), None, None));
+                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), None, None));
                                 }
                             }
                         }
@@ -109,18 +112,18 @@ pub fn search_json_file(
                             let is_match = if ctx.is_exact { s == *ctx.pattern } else { ctx.ac.find(&s).is_some() };
                             if is_match {
                                 let mut found_pos = None;
-                                if ctx.last_offset < ctx.mmap.len() {
-                                    if let Some(m) = ctx.ac.find(&ctx.mmap[ctx.last_offset..]) {
+                                let search_area_end = std::cmp::min(byte_offset + 512, ctx.mmap.len());
+                                if ctx.last_offset < search_area_end {
+                                    if let Some(m) = ctx.ac.find(&ctx.mmap[ctx.last_offset..search_area_end]) {
                                         found_pos = Some(ctx.last_offset + m.start());
                                     }
                                 }
                                 if let Some(actual_pos) = found_pos {
-                                    let count = ctx.mmap[ctx.last_offset..actual_pos].iter().filter(|&&b| b == b'\n').count();
-                                    ctx.last_line += count;
-                                    ctx.results.push(SearchMatch::new(ctx.last_line, format!("{}\t{}", path, s), Some(actual_pos), Some(s.len())));
+                                    ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
+                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), Some(actual_pos), Some(s.len())));
                                     ctx.last_offset = actual_pos + s.len();
                                 } else {
-                                    ctx.results.push(SearchMatch::new(ctx.last_line, format!("{}\t{}", path, s), None, None));
+                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), None, None));
                                 }
                             }
                         }
@@ -128,7 +131,7 @@ pub fn search_json_file(
                     }
                 }
             }
-            Err(_) => break, // 파싱 오류 시 중단 (또는 무시)
+            Err(_) => break, // 파싱 오류 시 중단
         }
     }
 
@@ -142,7 +145,7 @@ pub fn check_json_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> bool {
-    let pattern_lower = pattern.to_lowercase();
+    let pattern_upper = pattern.to_lowercase().to_uppercase();
     
     // 전체 바이트 스캔을 통한 선행 필터링 (파싱 오버헤드 방지)
     if !is_exact && ac.find(mmap).is_none() {
@@ -180,7 +183,7 @@ pub fn check_json_file(
                     }
                     JsonValue::String(s) => {
                         let is_match = if is_exact {
-                            s.to_lowercase() == pattern_lower
+                            s.to_lowercase().to_uppercase() == pattern_upper
                         } else {
                             ac.find(s).is_some()
                         };
