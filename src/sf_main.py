@@ -203,7 +203,23 @@ sys.excepthook = global_exception_handler
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     try:
+        # 앱 실행 및 종료 대기
         main()
+        
+        # [Fix] 애플리케이션 종료 시 명시적 리소스 해제 루틴
+        logger.info("Performing final resource cleanup and garbage collection...")
+        
+        # 1. 가비지 컬렉션 강제 수행 (순환 참조 해제)
+        import gc
+        gc.collect()
+        
+        # 2. 전역 매니저 및 실행기 최종 확인 및 종료
+        from core.worker import shutdown_global_manager, GlobalExecutor
+        GlobalExecutor.shutdown(wait=True)
+        shutdown_global_manager()
+        
+        logger.info(AppStrings.LOG_SYS_APP_CLOSED)
+        sys.exit(0)
     except Exception as e:
         global_exception_handler(type(e), e, e.__traceback__)
         sys.exit(1)

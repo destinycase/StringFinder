@@ -98,6 +98,7 @@ class Constants:
     OBJ_NAME_FOLDER_DOCK = "FolderDock"
     OBJ_NAME_EXT_DOCK = "ExtDock"
     OBJ_NAME_FILENAME_DOCK = "FilenameDock"
+    ADAPTIVE_BATCH_SIZE_THRESHOLD = 100 * 1024 * 1024  # 100MB (적응형 배치 임계치)
     COLOR_RED = "#FF5555"
     BATCH_SIZE_LARGE = 500
     BATCH_SIZE_NORMAL = 100

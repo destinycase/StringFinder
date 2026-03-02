@@ -81,10 +81,12 @@ class GlobalExecutor:
             return cls._executor
 
     @classmethod
-    def shutdown(cls, wait=False, cancel_futures=True):
+    def shutdown(cls, wait=True, cancel_futures=True):
+        """전역 실행기를 종료합니다. wait=True를 기본값으로 하여 서브 프로세스가 확실히 닫히게 합니다."""
         with cls._lock:
             if cls._executor:
                 try:
+                    logger.debug(f"Shutting down GlobalExecutor (wait={wait})")
                     cls._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
                 except Exception as e:
                     logger.error(AppStrings.LOG_EXECUTOR_SHUTDOWN_ERROR.format(e))
@@ -312,8 +314,33 @@ class SearchWorker(QRunnable):
                 self.stop_event = manager.Event()
                 if old_event and hasattr(old_event, "is_set") and old_event.is_set():
                     self.stop_event.set()
-        batch_size = Constants.BATCH_SIZE_LARGE if total > 10000 else Constants.BATCH_SIZE_NORMAL
-        batches = [files[i : i + batch_size] for i in range(0, total, batch_size)]
+        # 적응형 배치 전략 (Adaptive Batching): 파일 개수와 총 크기를 모두 고려합니다.
+        batches = []
+        current_batch: list[str] = []
+        current_batch_size = 0
+        max_batch_size = Constants.ADAPTIVE_BATCH_SIZE_THRESHOLD
+        # 개수 기반 상한선도 두어 오버헤드 방지 (기존 BATCH_SIZE_NORMAL 활용)
+        max_batch_count = getattr(Constants, "BATCH_SIZE_LARGE", 500) if total > 10000 else getattr(Constants, "BATCH_SIZE_NORMAL", 100)
+
+        for f_info in files:
+            f_path, f_size = f_info
+            # 개별 파일이 너무 크면 단독 배치로 처리
+            if f_size >= max_batch_size and not current_batch:
+                batches.append([f_info])
+                continue
+            
+            if len(current_batch) >= max_batch_count or (current_batch_size + f_size) > max_batch_size:
+                if current_batch:
+                    batches.append(current_batch)
+                current_batch = [f_info]
+                current_batch_size = f_size
+            else:
+                current_batch.append(f_info)
+                current_batch_size += f_size
+        
+        if current_batch:
+            batches.append(current_batch)
+
         self._executor = GlobalExecutor.get_executor(total_tasks=len(batches))
         executor = self._executor
         if not self.is_running.is_set():

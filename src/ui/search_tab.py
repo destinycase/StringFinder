@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from sf_utils.file_helper import open_file
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -870,6 +871,8 @@ class SearchTab(QMainWindow):
 
         open_file(file_path)
 
-    def stop_search(self):
-        """stop_search 함수."""
-        self._stop_existing_search()
+    def _run_open_file(self, file_path):
+        """파일 열기 실행."""
+        if not file_path:
+            return
+        open_file(file_path)

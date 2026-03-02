@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
             tab = self.tab_widget.widget(i)
             if isinstance(tab, SearchTab):
                 try:
-                    tab.stop_search()
+                    tab.stop()
                 except Exception as e:
                     logger.warning(AppStrings.LOG_WKR_BATCH_ERROR.format(e))
             elif hasattr(tab, "stop_search"):
@@ -124,6 +124,13 @@ class MainWindow(QMainWindow):
         # [무결성 강화] 종료 직전 모든 설정이 디스크에 물리적으로 기록되는지 확인
         if not self.config_manager.stop():
             logger.error(AppStrings.LOG_CFG_SAVE_SHUTDOWN_FAIL)
+
+        # [Fix] 명시적으로 리소스 정리 호출 (탭 워커, 전역 매니저 등)
+        self.cleanup()
+        
+        from core.worker import shutdown_global_manager, GlobalExecutor
+        GlobalExecutor.shutdown(wait=True)
+        shutdown_global_manager()
 
         QApplication.quit()
 

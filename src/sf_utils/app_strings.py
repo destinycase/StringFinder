@@ -201,8 +201,16 @@ class AppStrings:
     MSG_BINARY_FILE = "[이진 파일]"
     MSG_BINARY_MATCH = "[이진 파일에서 {}개 항목 발견]"
     MSG_LONG_LINE_PREVIEW = "{}... (긴 줄)"
-    SKIP_EMPTY_FILE = "빈 파일"
-    SEARCH_MODE_EXACT = "정확히 일치"
+    # [v5.1.0] Doctor Mode (자가 진단) 관련 문자열
+    BTN_SYSTEM_DOCTOR = "시스템 자가 진단 실행"
+    LOG_SYS_DOCTOR_TITLE = "시스템 자가 진단 보고서"
+    LOG_SYS_DOCTOR_RUNNING = "시스템 자가 진단이 실행 중입니다. 잠시만 기다려 주세요..."
+    LOG_SYS_DOCTOR_DONE = "자가 진단이 완료되었습니다. 보고서를 확인해 주세요."
+    LOG_SYS_DOCTOR_FAIL = "자가 진단 보고서 생성 중 오류가 발생했습니다: {}"
+    SKIP_EMPTY_FILE = "[건너뜀] 빈 파일"
+
+    # 기존 검색 모드명 (안전성 확보를 위해 확인)
+    SEARCH_MODE_EXACT = "내용 일치 검색"
     SEARCH_MODE_COMPLEX = "정밀 검색"
     BOOLEAN_SEARCH_MATCH_CONTENT = "[파일 내 일치하는 항목 존재]"
     # =========================================================================
@@ -222,6 +230,7 @@ class AppStrings:
     # [8] 시스템 로그 (System Logs) - 형식: [시스템] 메시지
     # =========================================================================
     LOG_SYS_APP_STARTED_DECO = "--- 애플리케이션 시작 ---"
+    LOG_SYS_APP_CLOSED = "--- 애플리케이션 종료 ---"
     LOG_SYS_SINGLE_INSTANCE_DETECTED = "[시스템] 중복 실행 시도 감지: 기존 창을 활성화합니다."
     LOG_SYS_SINGLE_INSTANCE_SERVER_START = "[시스템] 단일 인스턴스 서버 시작 완료: {}"
     LOG_SYS_SINGLE_INSTANCE_SERVER_START_FAIL = "[시스템] 단일 인스턴스 서버 시작 실패: {}"

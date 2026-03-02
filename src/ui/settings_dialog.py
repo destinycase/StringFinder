@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from PySide6.QtCore import Signal, Qt
 
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -23,11 +24,15 @@ from ui.styles import UIStyles
 
 
 class SettingsDialog(QDialog):
+    doctor_finished = Signal(bool)
+
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.config_manager = config_manager
         self.setWindowTitle(AppStrings.SETTINGS_TITLE)
         self.setMinimumWidth(300)
+        self._doctor_msg_box = None
+        self.doctor_finished.connect(self._on_doctor_finished)
         self._init_ui()
 
     def _init_ui(self):
@@ -118,6 +123,15 @@ class SettingsDialog(QDialog):
         delete_logs_btn.clicked.connect(self._clear_all_logs)
         log_layout.addWidget(delete_logs_btn)
         main_layout.addWidget(log_group)
+        
+        # 시스템 자가 진단 그룹 추가
+        doctor_group = QGroupBox(AppStrings.BTN_SYSTEM_DOCTOR)
+        doctor_layout = QVBoxLayout(doctor_group)
+        doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
+        doctor_btn.clicked.connect(self._run_system_doctor)
+        doctor_layout.addWidget(doctor_btn)
+        main_layout.addWidget(doctor_group)
+
         main_layout.addSpacing(10)
         open_dir_btn = QPushButton(AppStrings.OPEN_DATA_DIR_BTN)
         open_dir_btn.clicked.connect(self._open_data_dir)
@@ -127,10 +141,49 @@ class SettingsDialog(QDialog):
         clear_data_btn.clicked.connect(self._clear_all_data)
         main_layout.addWidget(clear_data_btn)
         main_layout.addStretch()
-        main_layout.addStretch()
         close_btn = QPushButton(AppStrings.BTN_CLOSE)
         close_btn.clicked.connect(self.accept)
         main_layout.addWidget(close_btn)
+
+    def _run_system_doctor(self):
+        """시스템 자가 진단을 실행하고 결과를 보여줍니다."""
+        from core.doctor import run_doctor_and_open
+        import threading
+        
+        # 진단 중임을 알리는 팝업 (버튼 없이 표시)
+        if self._doctor_msg_box:
+            self._doctor_msg_box.close()
+            self._doctor_msg_box.deleteLater()
+
+        self._doctor_msg_box = QMessageBox(self)
+        self._doctor_msg_box.setWindowTitle(AppStrings.INFO_TITLE)
+        self._doctor_msg_box.setText(AppStrings.LOG_SYS_DOCTOR_RUNNING)
+        self._doctor_msg_box.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        self._doctor_msg_box.setWindowModality(Qt.WindowModality.WindowModal)
+        self._doctor_msg_box.show()
+
+        def thread_target():
+            try:
+                success = run_doctor_and_open()
+                self.doctor_finished.emit(success)
+            except Exception as e:
+                logger.error(f"Doctor thread error: {e}")
+                self.doctor_finished.emit(False)
+        
+        threading.Thread(target=thread_target, daemon=True).start()
+
+    def _on_doctor_finished(self, success):
+        """자가 진단 완료 시 호출되는 슬롯."""
+        if self._doctor_msg_box:
+            logger.debug("Closing system doctor progress popup via signal.")
+            self._doctor_msg_box.accept()
+            self._doctor_msg_box.deleteLater()
+            self._doctor_msg_box = None
+        
+        if success:
+            QMessageBox.information(self, AppStrings.INFO_TITLE, AppStrings.LOG_SYS_DOCTOR_DONE)
+        else:
+            QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.LOG_SYS_DOCTOR_FAIL.format("Internal Error"))
 
     def _on_theme_changed(self, index):
         theme = self.theme_combo.itemData(index)
