@@ -14,7 +14,7 @@ pub fn check_archive_file(
         return false;
     }
 
-    // UTF-8 BOM 스킵
+    // UTF-8 BOM 스킵 (BOM이 있는 경우 3바이트를 건너뜁니다)
     let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
         &mmap[3..]
     } else {
@@ -66,7 +66,9 @@ pub fn search_archive_file(
     let pat_upper = pattern.to_lowercase().to_uppercase();
     
     // UTF-8 BOM 스킵
+    let mut offset_bonus = 0;
     let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
+        offset_bonus = 3;
         &mmap[3..]
     } else {
         mmap
@@ -75,7 +77,7 @@ pub fn search_archive_file(
     // 성능 최적화: line counting을 위한 상태 유지
     let mut last_counted_pos = 0usize;
     let mut current_line = 1usize;
-    let mut search_from = 0usize;
+    let mut search_from = offset_bonus;
 
     let deserializer = serde_json::Deserializer::from_slice(parse_mmap);
     let iter = deserializer.into_iter::<JsonValue>();

@@ -53,14 +53,12 @@ class SearchTab(QMainWindow):
         self.total_files = 0
         self.scanned_count = 0
         self.results_buffer = []
-        self.last_ui_update_time = 0.0
         self.last_summary_update_time = 0.0  # 실시간 요약 업데이트를 위한 시간 기록입니다.
         self.last_search_duration = 0.0  # 검색에 소요된 총 시간을 저장합니다.
         self._liveliness_seconds = 0
         self._liveliness_timer = QTimer(self)
         self._liveliness_timer.setInterval(1000)
         self._liveliness_timer.timeout.connect(self._on_liveliness_tick)
-        self.search_stage_start = time.time()
         self.search_state = Constants.SearchState.IDLE
         self.pending_restart = False
         self.current_filename_filters: List[str] = []
@@ -306,10 +304,6 @@ class SearchTab(QMainWindow):
         # 아직 버퍼가 남아있지 않으면 정지
         if not self._pending_logs:
             self._log_throttle_timer.stop()
-
-    def _on_log_message_plain(self, message: str):
-        inferred_level = self._extract_log_level_from_line(message)
-        self._append_log_entry(inferred_level, message)
 
     def _load_histories(self):
         """설정 파일에서 검색어 및 파일명 필터 히스토리를 불러와 콤보박스에 로드합니다."""
@@ -810,16 +804,36 @@ class SearchTab(QMainWindow):
 
         # Phase 1(스캔)과 Phase 2(검색) 단계의 모든 스킵 파일을 합산하여 요약에 표시
         total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
+        # 워커에서 수집한 시트 스킵 목록 참조 [(file_path, sheet_name)]
+        skipped_sheets = []
+        if hasattr(self, "_worker") and self._worker and hasattr(self._worker, "skipped_sheets_list"):
+            skipped_sheets = list(self._worker.skipped_sheets_list)
+        total_sheet_skipped = len(skipped_sheets)
 
-        if total_skipped > 0:
-            if hasattr(self, "skipped_files_list") and self.skipped_files_list:
-                len_skipped = len(self.skipped_files_list)
-                head = [str(f[0]) for f in self.skipped_files_list[:5]]
-                msg = AppStrings.RESULT_MSG_SKIPPED_DETAILS.format(found_count, len_skipped, ", ".join(head))
-            else:
-                msg = AppStrings.RESULT_MSG_SKIPPED_SIMPLE.format(found_count, total_skipped)
+        if total_skipped > 0 and total_sheet_skipped > 0:
+            msg = AppStrings.RESULT_MSG_SKIPPED_WITH_SHEETS.format(found_count, total_skipped, total_sheet_skipped)
+        elif total_skipped > 0:
+            msg = AppStrings.RESULT_MSG_SKIPPED_SIMPLE.format(found_count, total_skipped)
+        elif total_sheet_skipped > 0:
+            msg = AppStrings.RESULT_MSG_ONLY_SHEETS_SKIPPED.format(found_count, total_sheet_skipped)
+        else:
+            msg = None
+
+        if msg:
             self.status_message_requested.emit(msg, 5000)
             logger.info(msg)
+            # 스킵 된 파일 목록을 계층적으로 출력 (파일 경로 + 원인)
+            if hasattr(self, "skipped_files_list") and self.skipped_files_list:
+                for skipped_item in self.skipped_files_list:
+                    path_str = str(skipped_item[0])
+                    reason_str = str(skipped_item[1]) if len(skipped_item) > 1 else ""
+                    logger.info(AppStrings.LOG_SCH_SKIPPED_FILE_ITEM.format(path_str, reason_str))
+            # 스킵 된 시트 목록을 계층적으로 출력 (파일명 > 시트명 + 원인)
+            for sheet_item in skipped_sheets:
+                fp = str(sheet_item[0])
+                sn = str(sheet_item[1])
+                detail = str(sheet_item[2]) if len(sheet_item) > 2 else ""
+                logger.info(AppStrings.LOG_SCH_SKIPPED_SHEET_ITEM.format(fp, sn, detail))
         else:
             self.status_message_requested.emit(AppStrings.STATUS_FOUND_COUNT.format(found_count), 5000)
 
@@ -855,10 +869,6 @@ class SearchTab(QMainWindow):
         from sf_utils.file_helper import open_file
 
         open_file(file_path)
-
-    def _on_special_search_changed(self, mode_text):
-        if hasattr(self, "result_view_panel"):
-            self.result_view_panel.update_match_filter_visibility(mode_text)
 
     def stop_search(self):
         """stop_search 함수."""

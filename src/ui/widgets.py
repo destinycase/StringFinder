@@ -43,7 +43,7 @@ class HtmlDelegate(QStyledItemDelegate):
         doc.setHtml(html_content)
         options.text = ""  # type: ignore
         option.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, options, painter)
-        painter.translate(options.rect.left(), options.rect.top())  # HTML 렌더링을 위해 좌표계를 셀 위치로 이동합니다.
+        painter.translate(options.rect.left(), options.rect.top())  # HTML 렌더링을 위해 좌표계를 셀 위치로 이동합니다.  # type: ignore[attr-defined]
         clip = QRectF(0, 0, options.rect.width(), options.rect.height())  # type: ignore
         painter.setClipRect(clip)
         ctx = QAbstractTextDocumentLayout.PaintContext()

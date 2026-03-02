@@ -805,12 +805,11 @@ fn find_files_with_keyword(
 
 #[pymodule]
 fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    std::panic::set_hook(Box::new(|info| {
-        let payload = info.payload();
-        let msg = if let Some(s) = payload.downcast_ref::<&str>() { *s } 
-                  else if let Some(s) = payload.downcast_ref::<String>() { s.as_str() } 
-                  else { "unknown panic" };
-        eprintln!("Rust panic: {}", msg);
+    // [Stability] 커스텀 패닉 훅 설치:
+    // catch_unwind가 모든 패닉을 처리하므로, Rust 기본 훅의 stderr 출력은 불필요합니다.
+    // 훅을 no-op으로 교체하여 로그 창에 원시 패닉 메시지가 출력되는 현상을 방지합니다.
+    std::panic::set_hook(Box::new(|_info| {
+        // 의도적으로 비워둠: catch_unwind에서 패닉을 처리하므로 별도 출력 불필요
     }));
 
     m.add_function(wrap_pyfunction!(search_file, m)?)?;

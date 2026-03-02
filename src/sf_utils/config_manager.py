@@ -113,17 +113,6 @@ class ConfigManager:
         elif table_name == Constants.VIEW_MATCH:
             self.set(Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS, widths)
 
-    def get_case_insensitive(self):
-        """대소문자 구분 옵션 값을 반환한다."""
-        with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_CASE_INSENSITIVE, False)
-
-    def set_case_insensitive(self, value):
-        """대소문자 구분 옵션 값을 설정하고 저장한다."""
-        with self._config_lock:
-            self.config[Constants.CONFIG_KEY_CASE_INSENSITIVE] = value
-        self.save()
-
     def _load(self):
         """설정 파일을 로드하고 기본값과 병합해 반환한다."""
         if os.path.exists(self.config_path):
@@ -405,13 +394,6 @@ class ConfigManager:
             if filter_state:
                 self.config[Constants.CONFIG_KEY_FILTER_SPLITTER_STATE] = filter_state.toHex().data().decode()
         self.save()
-
-    def set_dock_state(self, state):
-        """도크 레이아웃 상태를 저장한다."""
-        if state:
-            with self._config_lock:
-                self.config[Constants.CONFIG_KEY_DOCK_LAYOUT_STATE] = state.toHex().data().decode()
-            self.save()
 
     def get_dock_state(self):
         """저장된 도크 레이아웃 상태를 반환한다."""

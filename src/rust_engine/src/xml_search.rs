@@ -10,6 +10,7 @@ struct XmlSearchContext<'a> {
     mmap: &'a [u8],
     results: &'a mut Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    offset_bonus: usize,
     last_offset: usize,
     last_line: usize,
 }
@@ -22,9 +23,11 @@ pub fn search_xml_file(
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Vec<RawMatch> {
     let mut results = Vec::new();
-    
+
     // UTF-8 BOM 스킵
+    let mut offset_bonus = 0;
     let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
+        offset_bonus = 3;
         &mmap[3..]
     } else {
         mmap
@@ -43,6 +46,7 @@ pub fn search_xml_file(
         mmap,
         results: &mut results,
         stop_flag,
+        offset_bonus,
         last_offset: 0,
         last_line: 1,
     };
@@ -106,13 +110,16 @@ fn process_xml_text_item(
         };
 
         if is_match {
-            let mut match_offset = start_pos;
+            let mut match_offset = start_pos + ctx.offset_bonus;
             let mut match_len = raw_bytes.len();
 
-            let range_end = end_pos.min(ctx.mmap.len());
-            if let Some(m) = ctx.ac.find(&ctx.mmap[start_pos..range_end]) {
-                match_offset = start_pos + m.start();
-                match_len = m.len();
+            let range_end = (end_pos + ctx.offset_bonus).min(ctx.mmap.len());
+            let search_start = start_pos + ctx.offset_bonus;
+            if search_start < range_end {
+                if let Some(m) = ctx.ac.find(&ctx.mmap[search_start..range_end]) {
+                    match_offset = search_start + m.start();
+                    match_len = m.len();
+                }
             }
 
             let tag_path = current_tags.join("/");
@@ -153,13 +160,16 @@ fn process_xml_attributes(
         };
 
         if is_match {
-            let mut match_offset = start_pos;
+            let mut match_offset = start_pos + ctx.offset_bonus;
             let mut match_len = attr.value.len();
 
-            let range_end = end_pos.min(ctx.mmap.len());
-            if let Some(m) = ctx.ac.find(&ctx.mmap[start_pos..range_end]) {
-                match_offset = start_pos + m.start();
-                match_len = m.len();
+            let range_end = (end_pos + ctx.offset_bonus).min(ctx.mmap.len());
+            let search_start = start_pos + ctx.offset_bonus;
+            if search_start < range_end {
+                if let Some(m) = ctx.ac.find(&ctx.mmap[search_start..range_end]) {
+                    match_offset = search_start + m.start();
+                    match_len = m.len();
+                }
             }
 
             // O(N*M) 방지: last_offset 이후부터 현재 매치 위치까지만 뉴라인 카운트

@@ -146,10 +146,11 @@ def _normalize_rust_matches(
     matches: List[Any], 
     special_mode: Optional[str] = None, 
     existence_only: bool = False
-) -> Tuple[List[Any], int]:
-    """Rust 엔진의 반환 결과를 정규화된 매니 튜플 리스트와 바이너리 매치 카운트로 변환합니다."""
+) -> Tuple[List[Any], int, List[Tuple[str, str]]]:
+    """Rust 엔진의 반환 결과를 정규화된 매치 튜플 리스트, 바이너리 매치 카운트, 시트 스킵 목록으로 변환합니다."""
     res: List[Any] = []
     bin_cnt = 0
+    sheet_skips: List[Tuple[str, str]] = []  # [(file_path, sheet_name), ...]
     last_c = ""
 
     for m in matches:
@@ -177,11 +178,20 @@ def _normalize_rust_matches(
                 continue
             elif c.startswith("ERR_") and "|" in c:
                 continue
+            # EXCEL_SHEET_ERR 마커: 시트 스킵 정보를 추출하여 반환 목록에 추가
+            elif c.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
+                payload = c[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):]
+                if "|" in payload:
+                    sheet_name, detail = payload.split("|", 1)
+                else:
+                    sheet_name, detail = payload, ""
+                sheet_skips.append((sheet_name.strip(), detail.strip()))
+                continue
             elif not (existence_only and c == "MATCH"):
                 continue
 
         if existence_only:
-            return [(m[0], AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, m[2] if len(m) > 2 else None, m[3] if len(m) > 3 else None)], 0
+            return [(m[0], AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, m[2] if len(m) > 2 else None, m[3] if len(m) > 3 else None)], 0, []
 
         try:
             line   = m[0]
@@ -239,7 +249,7 @@ def _normalize_rust_matches(
         except (IndexError, TypeError):
             res.append((getattr(m, "line", 1), c, getattr(m, "offset", None), getattr(m, "length", None)))
 
-    return res, bin_cnt
+    return res, bin_cnt, sheet_skips
 
 
 def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
@@ -720,6 +730,13 @@ def search_in_excel_special(
             try:
                 # [성능 최적화] to_python() 대신 상위 이너레이터를 사용하여 메모리 효율 향상
                 sheet = workbook.get_sheet_by_name(sheet_name)
+
+                # [Stability] 빈 시트 체크: python-calamine 0.1.x 버그 대응
+                # 시트가 비어있을 경우 iter_rows() 내부에서 .unwrap() 패닉이 발생하는 현상을 사전 차단합니다.
+                if hasattr(sheet, "total_height") and hasattr(sheet, "total_width"):
+                    if sheet.total_height == 0 or sheet.total_width == 0:
+                        continue
+
                 # iter_rows() 호출 후 회수 시점에서 발생하는 패닉 처리
                 rows_iter = sheet.iter_rows()
                 for row_idx, row in enumerate(rows_iter):
@@ -1408,7 +1425,7 @@ def search_in_file(
                     return (Constants.STATUS_SKIPPED, skip_reason)
 
                 t_n_start = time.time()
-                normalized, binary_count = _normalize_rust_matches(
+                normalized, binary_count, _ = _normalize_rust_matches(
                     rust_results, special_mode, existence_only=existence_only
                 )
                 t_norm = time.time() - t_n_start
@@ -1728,7 +1745,7 @@ def search_directory_fast(
         if raw_ret:
             matches_list, skipped_list = raw_ret
             for path, matches in matches_list:
-                match_tuples, marker_binary_count = _normalize_rust_matches(
+                match_tuples, marker_binary_count, _ = _normalize_rust_matches(
                     matches, kwargs.get("special_mode"), existence_only=existence_only
                 )
                 if marker_binary_count > 0:
@@ -1794,7 +1811,7 @@ def search_files_list_fast(
         if raw_ret:
             matches_list, skipped_list = raw_ret
             for path, matches in matches_list:
-                match_tuples, marker_binary_count = _normalize_rust_matches(
+                match_tuples, marker_binary_count, _ = _normalize_rust_matches(
                     matches, special_mode, existence_only=existence_only
                 )
                 if marker_binary_count > 0:

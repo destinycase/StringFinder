@@ -56,7 +56,6 @@ class UIStyles:
             background-color: #004E8C;
         }
     """
-    STYLE_SETTINGS_RECORDING = "QLineEdit { border: 2px solid #3498db; background-color: #2c3e50; }"
 
     @classmethod
     def get_table_style(cls, is_dark_mode: bool) -> str:

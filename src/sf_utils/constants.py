@@ -19,10 +19,6 @@ class Constants:
     JSON_MMAP_THRESHOLD = 5 * 1024 * 1024  # 5MB (mmap 사용 강제 임계치)
     TYPE_SEARCH = "search"
     TYPE_FILENAME = "filename"
-    TYPE_FOLDER = "folder"
-    TYPE_EXT = "ext"
-    TYPE_FILENAME_LIST = "filename_list"
-    TYPE_FILENAME_FILTER = "filename_filter"
     VIEW_RESULT = "result"
     VIEW_MATCH = "match"
     ENC_UTF8 = "utf-8"
@@ -103,7 +99,6 @@ class Constants:
     OBJ_NAME_EXT_DOCK = "ExtDock"
     OBJ_NAME_FILENAME_DOCK = "FilenameDock"
     COLOR_RED = "#FF5555"
-    THRESHOLD_LARGE_FILE = 100 * 1024 * 1024  # 대용량 기준(100MB)
     BATCH_SIZE_LARGE = 500
     BATCH_SIZE_NORMAL = 100
     TIMEOUT_WORKER_HANG = 600

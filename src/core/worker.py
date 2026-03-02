@@ -174,6 +174,7 @@ class SearchWorker(QRunnable):
             self.worker_start_time = time.time()
         self.all_results: List[Any] = []
         self.all_skipped: List[Any] = []
+        self.skipped_sheets_list: List[Any] = []  # [(file_path, sheet_name), ...] 시트 스킵 목록
         try:
             if self.use_complex_search:
                 logger.info(AppStrings.LOG_WKR_COMPLEX_ACT)
@@ -221,7 +222,11 @@ class SearchWorker(QRunnable):
                     if hasattr(self, "all_skipped"):
                         self.all_skipped.append((path, skip_reason))
                     continue
-                match_tuples, marker_binary_count = _normalize_rust_matches(matches, self.special_mode, existence_only=self.existence_only)
+                match_tuples, marker_binary_count, sheet_skips = _normalize_rust_matches(matches, self.special_mode, existence_only=self.existence_only)
+                # 시트 스킵 정보를 별도 목록에 수집 (파일 스킵과 구분)
+                if sheet_skips and hasattr(self, "skipped_sheets_list"):
+                    for sheet_name, detail in sheet_skips:
+                        self.skipped_sheets_list.append((path, sheet_name, detail))
                 if marker_binary_count > 0:
                     formatted_batch.append((path, marker_binary_count, [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)]))
                     current_batch_matches += marker_binary_count

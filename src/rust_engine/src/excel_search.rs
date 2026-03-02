@@ -86,7 +86,7 @@ pub fn search_excel_file(
                                 };
                                 ctx.results.push((
                                     0,
-                                    format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
+                                    format!("{}{}|[Library Panic] {}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
                                     None,
                                     None,
                                 ));
@@ -172,7 +172,7 @@ pub fn search_excel_file(
                                 };
                                 ctx.results.push((
                                     0,
-                                    format!("{}{}|{}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
+                                    format!("{}{}|[Library Panic] {}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, panic_msg),
                                     None,
                                     None,
                                 ));

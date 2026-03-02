@@ -57,8 +57,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 [[package]]
 name = "calamine"
 version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96ae094b353c7810cd5efd2e69413ebb9354816138a387c09f7b90d4e826a49f"
+source = "git+https://github.com/tafia/calamine?branch=master#ae85090461db2c6da0a32d04c30cfd70959d7888"
 dependencies = [
  "atoi_simd",
  "byteorder",
@@ -532,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "sf_engine"
-version = "5.0.1"
+version = "5.1.0"
 dependencies = [
  "aho-corasick",
  "calamine",

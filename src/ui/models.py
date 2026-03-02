@@ -114,10 +114,6 @@ class SearchResultModel(QAbstractTableModel):
         self.layoutChanged.emit()
         self.sort_completed.emit()
 
-    def add_result(self, result: list):
-        """단일 결과를 추가합니다."""
-        self.add_results([result])
-
     def add_results(self, results: list):
         """배치 단위로 결과를 일괄 추가하여 UI 갱신 빈도를 줄입니다."""
         if not results:
@@ -675,6 +671,7 @@ class MatchDetailModel(QAbstractTableModel):
                 # Case 2: XML/JSON 모드
                 # 5-tuple: search_engine에서 이미 key/value 분리 (line, path, val, offset, length)
                 # 4-tuple: Rust 엔진 원시값 — m[1]에 "key\tvalue" 형태 (분리 안됨)
+                # 3-tuple: Python 파서 반환값 — (line, key, value) 형태
                 elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
                     if len(m) >= 5:
                         # 이미 분리된 5-tuple
@@ -685,6 +682,23 @@ class MatchDetailModel(QAbstractTableModel):
                                 extra_1=str(m[2]),
                                 offset=m[3],
                                 length=m[4],
+                            )
+                        )
+                    elif len(m) == 3:
+                        # Python XML/JSON 파서가 반환하는 (line, key, value) 3-tuple
+                        key_part = str(m[1])
+                        val_part = str(m[2])
+                        if Constants.MODE_XML.upper() in mode_upper:
+                            key_part = key_part.lstrip("/").replace("/", " > ")
+                        else:
+                            key_part = key_part.lstrip("/").replace("/", ".")
+                        normalized_matches.append(
+                            SearchMatchSchema(
+                                position=str(m[0]),
+                                content=key_part,
+                                extra_1=val_part,
+                                offset=None,
+                                length=None,
                             )
                         )
                     elif len(m) >= 4 and isinstance(m[1], str):
