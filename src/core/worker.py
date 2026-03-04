@@ -15,6 +15,9 @@ from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
 from sf_utils.logger import logger
 
+def _get_adv_setting(key, default):
+    return ConfigManager().get_advanced_settings().get(key, default)
+
 _global_manager = None
 _manager_lock = threading.Lock()
 
@@ -62,7 +65,12 @@ class GlobalExecutor:
     def get_executor(cls, total_tasks: Optional[int] = None):
         with cls._lock:
             if cls._executor is not None:
-                if getattr(cls._executor, "_shutdown", False):
+                # [L-04 Fix] _shutdown 비공개 속성 대신 submit()으로 유효성 검증
+                # concurrent.futures의 공개 API를 사용하여 셧다운된 executor 감지
+                try:
+                    cls._executor.submit(lambda: None).cancel()
+                except RuntimeError:
+                    # RuntimeError: cannot schedule new futures after shutdown
                     cls._executor = None
             if cls._executor is None:
                 cpu_count = multiprocessing.cpu_count()
@@ -136,14 +144,18 @@ class SearchWorker(QRunnable):
     def _safe_emit(self, signal, *args):
         try:
             signal.emit(*args)
-        except Exception as e:
-            logger.debug(AppStrings.LOG_WKR_SIGNAL_EMIT_FAIL.format(signal, e))
+        except RuntimeError:
+            # Signal source has been deleted
+            pass
+        except Exception:
+            # 로깅 실패( closed stream 등)를 포함하여 어떤 예외도 워커를 멈추게 하지 않음
+            pass
 
     def _check_safety_limits(self, new_matches_count: int) -> bool:
         """전역 상한 및 메모리 가드 체크"""
         self._total_matches_accumulated += new_matches_count
-        if self._total_matches_accumulated > Constants.MAX_TOTAL_MATCHES:
-            err_msg = AppStrings.ERROR_LIMIT_REACHED.format(Constants.MAX_TOTAL_MATCHES)
+        if self._total_matches_accumulated > _get_adv_setting(Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, Constants.DEFAULT_MAX_TOTAL_MATCHES):
+            err_msg = AppStrings.ERROR_LIMIT_REACHED.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, Constants.DEFAULT_MAX_TOTAL_MATCHES))
             logger.warning(err_msg)
             self.stop_event.set()
             self.is_running.clear()
@@ -168,7 +180,6 @@ class SearchWorker(QRunnable):
 
     @Slot()
     def run(self):
-        from core.search_engine import HAS_RUST_ENGINE
         ext_info = ",".join(self.extensions) if self.extensions else "*"
         mode_info = self.special_mode if self.special_mode else Constants.MODE_NORMAL
         logger.info(AppStrings.LOG_WKR_STARTED.format(self.search_string, ext_info, mode_info))
@@ -181,19 +192,14 @@ class SearchWorker(QRunnable):
             if self.use_complex_search:
                 logger.info(AppStrings.LOG_WKR_COMPLEX_ACT)
                 self._run_python_search()
-            elif HAS_RUST_ENGINE and (self.search_paths or self.file_list):
-                exclude_hidden = getattr(self, Constants.PAYLOAD_EXCLUDE_HIDDEN, True)
-                exclude_binary = getattr(self, Constants.PAYLOAD_EXCLUDE_BINARY, True)
-                self._run_rust_search(exclude_hidden=exclude_hidden, exclude_binary=exclude_binary)
+            elif self.search_paths or self.file_list:
+                # [H-04 Fix] 하드코딩된 상수 문자열 대신 직접 속성 참조
+                self._run_rust_search(exclude_hidden=self.exclude_hidden, exclude_binary=self.exclude_binary)
             else:
-                if not HAS_RUST_ENGINE:
-                    err_msg = AppStrings.LOG_SYS_RUST_NO_FALLBACK
-                    logger.error(err_msg)
-                    self._safe_emit(self.signals.error, err_msg)
-                elif not self.search_paths and not self.file_list:
-                    logger.warning(AppStrings.LOG_SCH_NO_FILES)
+                logger.warning(AppStrings.LOG_SCH_NO_FILES)
                 self._safe_emit(self.signals.search_finished, 0, 0, 0)
                 return
+
         except Exception as e:
             logger.critical(AppStrings.LOG_WKR_BATCH_ERROR.format(e), exc_info=True)
             self._safe_emit(self.signals.error, AppStrings.ERR_CRITICAL_SYSTEM.format(e))
@@ -204,15 +210,33 @@ class SearchWorker(QRunnable):
         from core.search_engine import search_directory_fast, search_files_list_fast
         total_files = len(self.file_list) if self.file_list else 100
 
+        self._last_progress_count = -1
+        self._last_progress_emit_time = 0.0
+
         def progress_callback(count):
             if not self.is_running.is_set():
                 return
+            
+            now = time.time()
+            # [성능] 시그널 스패밍 방지: 동일 값은 500ms, 변화하는 값은 최소 100ms 간격으로 제한
+            if count == self._last_progress_count:
+                # 3초 이상 경과 시(하트비트 로그 목적) 가드 통과
+                if now - self._last_progress_emit_time < 0.5 and (now - self._last_progress_emit_time) < 3.0:
+                    return
+            else:
+                if now - self._last_progress_emit_time < 0.1:
+                    return
+
             actual_total = max(total_files, count, 1)
+
             self._safe_emit(self.signals.progress_updated, count, actual_total)
+            self._last_progress_count = count
+            self._last_progress_emit_time = now
 
         def results_callback(batch):
             if not self.is_running.is_set():
                 return
+            # logger.debug(f"[Worker] results_callback received batch of {len(batch)}")
             from core.search_engine import _normalize_rust_matches, _extract_marker_skip_reason
             formatted_batch = []
             skipped_batch = []
@@ -235,29 +259,32 @@ class SearchWorker(QRunnable):
                 elif match_tuples:
                     formatted_batch.append((path, len(match_tuples), match_tuples))
                     current_batch_matches += len(match_tuples)
+            
             if not formatted_batch and not skipped_batch:
                 return
             if formatted_batch and not self._check_safety_limits(current_batch_matches):
                 return
+
             if formatted_batch:
                 self._safe_emit(self.signals.results_found, formatted_batch)
                 if hasattr(self, "all_results"):
                     self.all_results.extend(formatted_batch)
             if skipped_batch:
                 self._safe_emit(self.signals.skipped_found, skipped_batch)
+            # logger.debug(f"[Worker] results_callback processing finished")
 
         try:
             if hasattr(self, Constants.PAYLOAD_FILE_LIST) and self.file_list:
                 paths_only = [f[0] for f in self.file_list]
                 search_res = search_files_list_fast(paths_only, self.search_string,
-                    special_mode=self.special_mode, exclude_hidden=exclude_hidden,
-                    exclude_binary=exclude_binary, stop_event=self.stop_event,
+                    special_mode=self.special_mode, exclude_hidden=self.exclude_hidden,
+                    exclude_binary=self.exclude_binary, stop_event=self.stop_event,
                     progress_callback=progress_callback, results_callback=results_callback)
             else:
                 logger.info(AppStrings.LOG_WKR_RUST_ACT.format(len(self.search_paths)))
                 search_res = search_directory_fast(self.search_paths, self.search_string, self.extensions,
                     filename_filter=self.filename_filter, special_mode=self.special_mode,
-                    exclude_hidden=exclude_hidden, exclude_binary=exclude_binary,
+                    exclude_hidden=self.exclude_hidden, exclude_binary=self.exclude_binary,
                     stop_event=self.stop_event, progress_callback=progress_callback,
                     results_callback=results_callback, existence_only=self.existence_only)
         except Exception as e:
@@ -275,8 +302,10 @@ class SearchWorker(QRunnable):
         skipped_count = len(skipped_list) + len(getattr(self, "all_skipped", []))
         if skipped_list:
             self._safe_emit(self.signals.skipped_found, skipped_list)
-        if self.is_running.is_set():
-            self._safe_emit(self.signals.progress_updated, 100, 100)
+        # [Cleanup] 강제 100% 방출은 실제 스캔 수와 불일치할 수 있으므로 제거합니다.
+        # 실제 진행률은 이미 Rust 콜백을 통해 정확한 숫자로 전달되었습니다.
+        pass
+        
         self._safe_emit(self.signals.search_finished, total_found, total_matches, skipped_count)
         elapsed = time.time() - self.worker_start_time
         logger.info(AppStrings.LOG_WKR_DONE.format(total_found, total_matches, elapsed))
@@ -373,9 +402,9 @@ class SearchWorker(QRunnable):
         try:
             while pending_futures:
                 # 작업 지연이 임계치를 초과할 경우 강제로 종료하여 시스템 응답성을 유지합니다.
-                if (time.time() - loop_start_time) > Constants.TIMEOUT_WORKER_HANG:
-                    err_msg = AppStrings.ERROR_LIMIT_REACHED.format(f"Timeout {Constants.TIMEOUT_WORKER_HANG}s")
-                    logger.error(AppStrings.LOG_WKR_HANG_TIMEOUT.format(Constants.TIMEOUT_WORKER_HANG))
+                if (time.time() - loop_start_time) > _get_adv_setting(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, Constants.DEFAULT_TIMEOUT_WORKER_HANG):
+                    err_msg = AppStrings.ERROR_LIMIT_REACHED.format(f"Timeout {_get_adv_setting(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, Constants.DEFAULT_TIMEOUT_WORKER_HANG)}s")
+                    logger.error(AppStrings.LOG_WKR_HANG_TIMEOUT.format(_get_adv_setting(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, Constants.DEFAULT_TIMEOUT_WORKER_HANG)))
                     
                     # 타임아웃 발생 시 모든 하위 프로세스에 즉시 중지 신호를 보냅니다.
                     if self.stop_event:

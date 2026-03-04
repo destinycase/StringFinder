@@ -589,9 +589,6 @@ class SearchTab(QMainWindow):
             self._set_inputs_enabled(False)
             self.search_status_changed.emit(True)
             self.search_state = Constants.SearchState.SCANNING
-            self.total_matches = 0
-            self.total_files = 0
-            self.scanned_count = 0
             self.results_buffer = []
             self.skipped_files_list = []
             self.scan_start_time = time.time()
@@ -699,16 +696,22 @@ class SearchTab(QMainWindow):
                 self.result_view_panel.update_ui_visibility()
             self._restore_search_button()
             self.status_message_requested.emit(AppStrings.STATUS_READY, 0)
-            # 중지 중이거나 검색 중일 때 모두 종료 시 IDLE 복구 보장
-            if self.search_state in (Constants.SearchState.SEARCHING, Constants.SearchState.STOPPING):
+            # [BugFix] SCANNING 상태에서 즉시 완료된 경우도 IDLE로 복구
+            # 검색이 매우 빠르게 끝나면 SCANNING → SEARCHING 전환 전에 finished 신호가 올 수 있음
+            if self.search_state in (
+                Constants.SearchState.SEARCHING,
+                Constants.SearchState.STOPPING,
+                Constants.SearchState.SCANNING,
+            ):
                 self.search_state = Constants.SearchState.IDLE
                 self._check_pending_restart()
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_SEARCH_THREAD_ERROR.format(e))
         finally:
-            # [Stability] 최후의 보루: 어떤 상황에서도 IDLE로의 회복 보장
+            # [Stability] 최후의 보루: 어떤 상황에서도 IDLE로의 회복 및 UI 버튼 복구 보장
             if self.search_state != Constants.SearchState.IDLE:
                 self.search_state = Constants.SearchState.IDLE
+            self._restore_search_button() # [Critical] UI 복구가 누락되지 않도록 finally에서 재호출
             self.worker = None
             self._liveliness_timer.stop()  # worker 종료 시 타이머 중지
             self.liveliness_updated.emit(False, self._liveliness_seconds)
@@ -725,23 +728,27 @@ class SearchTab(QMainWindow):
         self.ext_dock.setEnabled(enabled)
         self.filename_dock.setEnabled(enabled)
 
-    def _update_realtime_summary(self, force=False, status_text=None):
+    def _update_realtime_summary(self, force=False, status_text=None, skipped_count=0):
         """검색 진행률에 따라 상단 요약 정보와 결과 테이블을 실시간으로 업데이트합니다. (스로틀링 적용)"""
         now = time.time()
         # 1.0초 간격으로 업데이트 제한 (force=True인 경우 강제 업데이트)
         if not force and now - self.last_summary_update_time < 1.0:
             return
 
-        # [Optim] 결과 테이블 배치 업데이트 수행
+        # [Optim] 결과 테이블 배치 업데이트 수행 (버퍼가 있을 때만 테이블에 추가)
         if self.results_buffer:
             self.result_view_panel.add_results(self.results_buffer)
             self.results_buffer = []
 
+        # [Fix] 버퍼 유무와 상관없이 요약 정보(스캔 건수, 시간 등)는 주기적으로 갱신하여 
+        # 사용자가 진행 상황을 실시간으로 확인할 수 있게 합니다.
         if hasattr(self, "scan_start_time"):
             total_elapsed = now - self.scan_start_time
             total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
+            # [Fix] 수신된 카운트(검색 단계)를 리스트(스캔 단계)와 합산하여 최종 표시
+            total_skipped += skipped_count
             self.last_search_duration = total_elapsed
-
+            
             if status_text is None:
                 if self.search_state in (Constants.SearchState.SCANNING, Constants.SearchState.SEARCHING):
                     status_text = AppStrings.SUMMARY_PREFIX_SEARCHING
@@ -749,15 +756,21 @@ class SearchTab(QMainWindow):
                     status_text = AppStrings.SUMMARY_PREFIX_STOPPED
                 else:
                     status_text = AppStrings.SUMMARY_PREFIX_FINISHED
+            
+            # [Fix] 첫 매칭 전에는 요약을 그리지 않도록 제한 (사용자 요청 사항)
+            # 단, 검색이 명시적으로 종료/중단되었을 때는 결과를 보여줍니다.
+            if not force and self.total_files == 0:
+                return
 
             self.result_view_panel.set_summary_info(
-                self.total_files,
-                self.total_matches,
-                total_elapsed,
+                file_count=self.total_files,
+                match_count=self.total_matches,
+                duration=total_elapsed,
                 skip_count=total_skipped,
-                state_prefix=status_text,
+                state_prefix=status_text
             )
-            self.last_summary_update_time = now
+        
+        self.last_summary_update_time = now
 
     def _on_skipped_found(self, file_paths):
         """스킵된 파일 목록을 누적합니다."""
@@ -772,6 +785,11 @@ class SearchTab(QMainWindow):
         self.scanned_count = current
         self.progress_update_requested.emit(current, total, True)
         self.status_message_requested.emit(AppStrings.STATUS_SEARCHING, 0)
+        
+        # [Fix] 실시간성 강화: 결과가 있을 때만 1초 주기로 요약 정보 갱신을 시도합니다.
+        if self.total_files > 0:
+            # 진행 중일 때는 현재까지의 리스트 길이를 사용하므로 skipped_count=0 (기본값)
+            self._update_realtime_summary()
 
     def _on_results_found(self, results):
         """새로운 검색 결과들을 전달받아 버퍼에 쌓고 수치를 갱신합니다."""
@@ -781,79 +799,82 @@ class SearchTab(QMainWindow):
             self.total_files += len(results)
             for _, count, _ in results:
                 self.total_matches += count
+            
             self._update_realtime_summary()
 
     def _on_search_finished(self, found_count, total_matches, skipped_count):
         """문자열 검색이 완료되었을 때 실행 시간을 계산하고 UI를 초기화합니다."""
-        status_text = (
-            AppStrings.SUMMARY_PREFIX_STOPPED
-            if self.search_state == Constants.SearchState.STOPPING
-            else AppStrings.SUMMARY_PREFIX_FINISHED
-        )
-        self._update_realtime_summary(
-            force=True, status_text=status_text
-        )  # 종료 시 버퍼 플러시 및 최종 요약 강제 업데이트
-        self._liveliness_timer.stop()
-        self.liveliness_updated.emit(False, self._liveliness_seconds)
-        # [중] 진행률 무결성 보정: 종료 시 실제 처리량으로 100% 도달 보장 (0/0 방지)
-        final_total = max(self.scanned_count, 1)
-        self.progress_update_requested.emit(final_total, final_total, False)
-        self.result_view_panel.set_searching_state(False)  # 검색 완료/중지 시 버튼 활성화
-
-        # [신규] 검색 종료 시 전역 정렬 트리거 (매치 수 기준 등)
-        self.result_view_panel.sort_results()
-
-        # Phase 1(스캔)과 Phase 2(검색) 단계의 모든 스킵 파일을 합산하여 요약에 표시
-        total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
-        # 워커에서 수집한 시트 스킵 목록 참조 [(file_path, sheet_name)]
-        skipped_sheets = []
-        if hasattr(self, "_worker") and self._worker and hasattr(self._worker, "skipped_sheets_list"):
-            skipped_sheets = list(self._worker.skipped_sheets_list)
-        total_sheet_skipped = len(skipped_sheets)
-
-        if total_skipped > 0 and total_sheet_skipped > 0:
-            msg = AppStrings.RESULT_MSG_SKIPPED_WITH_SHEETS.format(found_count, total_skipped, total_sheet_skipped)
-        elif total_skipped > 0:
-            msg = AppStrings.RESULT_MSG_SKIPPED_SIMPLE.format(found_count, total_skipped)
-        elif total_sheet_skipped > 0:
-            msg = AppStrings.RESULT_MSG_ONLY_SHEETS_SKIPPED.format(found_count, total_sheet_skipped)
-        else:
-            msg = None
-
-        if msg:
-            self.status_message_requested.emit(msg, 5000)
-            logger.info(msg)
-            # 스킵 된 파일 목록을 계층적으로 출력 (파일 경로 + 원인)
-            if hasattr(self, "skipped_files_list") and self.skipped_files_list:
-                for skipped_item in self.skipped_files_list:
-                    path_str = str(skipped_item[0])
-                    reason_str = str(skipped_item[1]) if len(skipped_item) > 1 else ""
-                    logger.info(AppStrings.LOG_SCH_SKIPPED_FILE_ITEM.format(path_str, reason_str))
-            # 스킵 된 시트 목록을 계층적으로 출력 (파일명 > 시트명 + 원인)
-            for sheet_item in skipped_sheets:
-                fp = str(sheet_item[0])
-                sn = str(sheet_item[1])
-                detail = str(sheet_item[2]) if len(sheet_item) > 2 else ""
-                logger.info(AppStrings.LOG_SCH_SKIPPED_SHEET_ITEM.format(fp, sn, detail))
-        else:
-            self.status_message_requested.emit(AppStrings.STATUS_FOUND_COUNT.format(found_count), 5000)
-
-        self._set_inputs_enabled(True)
-        if hasattr(self, "scan_start_time"):
-            total_elapsed = time.time() - self.scan_start_time
-            logger.info(AppStrings.LOG_SCH_ALL_DONE.format(total_elapsed))
-        self._restore_search_button()
-        if found_count > 0:
-            self.result_view_panel.auto_select_first_result()
-        else:
-            # [Bug] 검색 결과가 0건일 때 "검색 중..." 메시지를 "결과 없음"으로 교체
-            self.result_view_panel.show_empty_message(
-                AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text())
+        try:
+            status_text = (
+                AppStrings.SUMMARY_PREFIX_STOPPED
+                if self.search_state == Constants.SearchState.STOPPING
+                else AppStrings.SUMMARY_PREFIX_FINISHED
             )
-        self.tab_widget.setCurrentIndex(0)
-        # Removed duplicate IDLE assignment here.
-        # _on_worker_finished() already guarantees state = IDLE in its finally block.
-        self.search_finished_with_data.emit()
+            self._update_realtime_summary(
+                force=True, status_text=status_text, skipped_count=skipped_count
+            )  # 종료 시 버퍼 플러시 및 최종 요약 강제 업데이트
+            self._liveliness_timer.stop()
+            self.liveliness_updated.emit(False, self._liveliness_seconds)
+            # [중] 진행률 무결성 보정: 종료 시 실제 처리량으로 100% 도달 보장 (0/0 방지)
+            final_total = max(self.scanned_count, 1)
+            self.progress_update_requested.emit(final_total, final_total, False)
+            self.result_view_panel.set_searching_state(False)  # 검색 완료/중지 시 버튼 활성화
+
+            # [신규] 검색 종료 시 전역 정렬 트리거 (매치 수 기준 등)
+            self.result_view_panel.sort_results()
+
+            # Phase 1(스캔)과 Phase 2(검색) 단계의 모든 스킵 파일을 합산하여 요약에 표시
+            total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
+            # 워커에서 수집한 시트 스킵 목록 참조 [(file_path, sheet_name)]
+            skipped_sheets = []
+            if hasattr(self, "worker") and self.worker and hasattr(self.worker, "skipped_sheets_list"):
+                skipped_sheets = list(self.worker.skipped_sheets_list)
+            total_sheet_skipped = len(skipped_sheets)
+
+            if total_skipped > 0 and total_sheet_skipped > 0:
+                msg = AppStrings.RESULT_MSG_SKIPPED_WITH_SHEETS.format(found_count, total_skipped, total_sheet_skipped)
+            elif total_skipped > 0:
+                msg = AppStrings.RESULT_MSG_SKIPPED_SIMPLE.format(found_count, total_skipped)
+            elif total_sheet_skipped > 0:
+                msg = AppStrings.RESULT_MSG_ONLY_SHEETS_SKIPPED.format(found_count, total_sheet_skipped)
+            else:
+                msg = None
+
+            if msg:
+                self.status_message_requested.emit(msg, 5000)
+                logger.info(msg)
+                # 스킵 된 파일 목록을 계층적으로 출력 (파일 경로 + 원인)
+                if hasattr(self, "skipped_files_list") and self.skipped_files_list:
+                    for skipped_item in self.skipped_files_list:
+                        path_str = str(skipped_item[0])
+                        reason_str = str(skipped_item[1]) if len(skipped_item) > 1 else ""
+                        logger.info(AppStrings.LOG_SCH_SKIPPED_FILE_ITEM.format(path_str, reason_str))
+                # 스킵 된 시트 목록을 계층적으로 출력 (파일명 > 시트명 + 원인)
+                for sheet_item in skipped_sheets:
+                    fp = str(sheet_item[0])
+                    sn = str(sheet_item[1])
+                    detail = str(sheet_item[2]) if len(sheet_item) > 2 else ""
+                    logger.info(AppStrings.LOG_SCH_SKIPPED_SHEET_ITEM.format(fp, sn, detail))
+            else:
+                self.status_message_requested.emit(AppStrings.STATUS_FOUND_COUNT.format(found_count), 5000)
+
+            if hasattr(self, "scan_start_time"):
+                total_elapsed = time.time() - self.scan_start_time
+                logger.info(AppStrings.LOG_SCH_ALL_DONE.format(total_elapsed))
+            
+            if found_count > 0:
+                self.result_view_panel.auto_select_first_result()
+            else:
+                self.result_view_panel.show_empty_message(
+                    AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text())
+                )
+            self.tab_widget.setCurrentIndex(0)
+            self.search_finished_with_data.emit()
+        except Exception as e:
+            logger.error(f"Error in _on_search_finished: {e}")
+        finally:
+            self._restore_search_button()
+            self._set_inputs_enabled(True)
 
     def _on_search_error(self, error_msg):
         """작업 도중 발생하는 치명적 오류를 처리하고 사용자에게 알립니다."""

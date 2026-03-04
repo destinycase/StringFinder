@@ -13,6 +13,9 @@ struct XmlSearchContext<'a> {
     offset_bonus: usize,
     last_offset: usize,
     last_line: usize,
+    // B5: current_tags.join("/") 매 매치마다 재계산하는 비용을 없애기 위해 캐시합니다.
+    tag_path_cache: String,
+    max_per_file: usize,
 }
 
 pub fn search_xml_file(
@@ -21,6 +24,7 @@ pub fn search_xml_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_per_file: usize,
 ) -> Vec<RawMatch> {
     let mut results = Vec::new();
 
@@ -49,6 +53,8 @@ pub fn search_xml_file(
         offset_bonus,
         last_offset: 0,
         last_line: 1,
+        tag_path_cache: String::new(),
+        max_per_file,
     };
 
     loop {
@@ -63,28 +69,32 @@ pub fn search_xml_file(
                 let end_pos = reader.buffer_position();
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 current_tags.push(name.clone());
-                process_xml_attributes(&e, &name, &current_tags, start_pos, end_pos, &mut ctx);
+                // B5: 태그 push 후 캐시 갱신
+                ctx.tag_path_cache = current_tags.join("/");
+                process_xml_attributes(&e, &name, start_pos, end_pos, &mut ctx);
             }
             Ok(Event::Empty(e)) => {
                 let end_pos = reader.buffer_position();
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                process_xml_attributes(&e, &name, &current_tags, start_pos, end_pos, &mut ctx);
+                process_xml_attributes(&e, &name, start_pos, end_pos, &mut ctx);
             }
             Ok(Event::End(_)) => {
                 current_tags.pop();
+                // B5: 태그 pop 후 캐시 갱신
+                ctx.tag_path_cache = current_tags.join("/");
             }
             Ok(Event::Text(e)) => {
                 let end_pos = reader.buffer_position();
                 let raw = e.as_ref();
                 if let Ok(text) = e.unescape() {
-                    process_xml_text_item(raw, &text, &current_tags, start_pos, end_pos, &mut ctx);
+                    process_xml_text_item(raw, &text, start_pos, end_pos, &mut ctx);
                 }
             }
             Ok(Event::CData(e)) => {
                 let end_pos = reader.buffer_position();
                 let raw = e.as_ref();
                 let text = String::from_utf8_lossy(raw);
-                process_xml_text_item(raw, &text, &current_tags, start_pos, end_pos, &mut ctx);
+                process_xml_text_item(raw, &text, start_pos, end_pos, &mut ctx);
             }
             _ => (),
         }
@@ -96,7 +106,6 @@ pub fn search_xml_file(
 fn process_xml_text_item(
     raw_bytes: &[u8],
     unescaped_text: &str,
-    current_tags: &[String],
     start_pos: usize,
     end_pos: usize,
     ctx: &mut XmlSearchContext<'_>,
@@ -104,12 +113,15 @@ fn process_xml_text_item(
     let trimmed = unescaped_text.trim();
     if !trimmed.is_empty() {
         let is_match = if ctx.is_exact {
-            trimmed.to_lowercase().to_lowercase().to_uppercase() == ctx.pat_upper
+            trimmed.to_lowercase().to_uppercase() == ctx.pat_upper
         } else {
             ctx.ac.find(unescaped_text).is_some()
         };
 
         if is_match {
+            if ctx.results.len() >= ctx.max_per_file + 1 {
+                return;
+            }
             let mut match_offset = start_pos + ctx.offset_bonus;
             let mut match_len = raw_bytes.len();
 
@@ -122,7 +134,8 @@ fn process_xml_text_item(
                 }
             }
 
-            let tag_path = current_tags.join("/");
+            // B5: 태그 경로는 이벤트 시 갱신된 캐시를 그대로 사용합니다.
+            let tag_path = &ctx.tag_path_cache;
             
             // O(N*M) 방지: last_offset 이후부터 현재 매치 위치까지만 뉴라인 카운트
             if match_offset > ctx.last_offset {
@@ -144,7 +157,6 @@ fn process_xml_text_item(
 fn process_xml_attributes(
     e: &quick_xml::events::BytesStart,
     tag_name: &str,
-    current_tags: &[String],
     start_pos: usize,
     end_pos: usize,
     ctx: &mut XmlSearchContext<'_>,
@@ -154,12 +166,15 @@ fn process_xml_attributes(
         let val = String::from_utf8_lossy(&attr.value).to_string();
 
         let is_match = if ctx.is_exact {
-            val.to_lowercase().to_lowercase().to_uppercase() == ctx.pat_upper
+            val.trim().to_lowercase().to_uppercase() == ctx.pat_upper
         } else {
             ctx.ac.find(&val).is_some()
         };
 
         if is_match {
+            if ctx.results.len() >= ctx.max_per_file + 1 {
+                return;
+            }
             let mut match_offset = start_pos + ctx.offset_bonus;
             let mut match_len = attr.value.len();
 
@@ -179,14 +194,13 @@ fn process_xml_attributes(
                 ctx.last_offset = match_offset;
             }
 
-            let tag_path = if current_tags.is_empty() || current_tags.last() != Some(&tag_name.to_string()) {
-                if current_tags.is_empty() {
-                    tag_name.to_string()
-                } else {
-                    format!("{}/{}", current_tags.join("/"), tag_name)
-                }
+            // B5: ctx.tag_path_cache가 비어있으면 Empty 요소(부모 없음), 아니면 캐시 사용.
+            let tag_path = if ctx.tag_path_cache.is_empty() {
+                tag_name.to_string()
+            } else if !ctx.tag_path_cache.ends_with(tag_name) {
+                format!("{}/{}", ctx.tag_path_cache, tag_name)
             } else {
-                current_tags.join("/")
+                ctx.tag_path_cache.clone()
             };
 
             ctx.results.push((
@@ -240,7 +254,7 @@ pub fn check_xml_file(
                     let trimmed = text.trim();
                     if !trimmed.is_empty() {
                         let is_match = if is_exact {
-                            trimmed.to_lowercase().to_lowercase().to_uppercase() == pat_upper
+                            trimmed.to_lowercase().to_uppercase() == pat_upper
                         } else {
                             ac.find(text.as_ref()).is_some()
                         };
@@ -280,7 +294,7 @@ fn check_xml_attributes(
     for attr in e.attributes().flatten() {
         let val = String::from_utf8_lossy(&attr.value).to_string();
         let is_match = if is_exact {
-            val.to_lowercase().to_lowercase().to_uppercase() == pat_upper
+            val.trim().to_lowercase().to_uppercase() == pat_upper
         } else {
             ac.find(&val).is_some()
         };

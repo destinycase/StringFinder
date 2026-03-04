@@ -11,6 +11,7 @@ from sf_utils.app_strings import AppStrings
 - 정책 1: Rust 엔진 오류 시 Python으로 자동 폴백하지 않음.
 - 정책 2: '특별한 문자열 검색' 옵션이 없을 경우 Python 엔진 구동 차단.
 - 정책 3: 엔진 오류 시 검색 중단 대신 해당 파일 '스킵' 처리.
+- 정책 4: Rust 엔진은 항상 존재한다. 없는 상태에서 실행하지 않는다.
 """
 
 
@@ -33,35 +34,19 @@ def test_policy_no_python_fallback_on_rust_error(tmp_path):
             assert AppStrings.ERROR_TITLE in result[1] or "오류" in result[1]
 
 
-def test_policy_python_restricted_to_complex_mode(tmp_path):
-    """정책 검증: use_complex_search=False 일 때 HAS_RUST_ENGINE=False 라면 None 반환 (자동 폴백 금지)"""
-    test_file = tmp_path / "policy_test.txt"
-    test_file.write_text("target keyword", encoding="utf-8")
-
-    # 1. Rust 엔진이 없는 환경 모킹
-    with patch("core.search_engine.HAS_RUST_ENGINE", False):
-        # 2. 복합 검색 옵션 없이 호출
-        result = search_in_file(str(test_file), "target", use_complex_search=False)
-
-        # 3. 정책에 따라 Python 엔진으로 넘어가지 않고 None 반환
-        assert result is None
-
-
 def test_policy_python_allowed_in_complex_mode(tmp_path):
     """정책 검증: use_complex_search=True 일 때는 Python 엔진 구동 허용"""
     test_file = tmp_path / "complex_mode.txt"
     test_file.write_text("Special Unicode: \u2122", encoding="utf-8")
 
-    # 1. Rust 엔진이 없는 환경 모킹
-    with patch("core.search_engine.HAS_RUST_ENGINE", False):
-        # 2. 복합 검색 옵션을 켜고 호출
-        result = search_in_file(str(test_file), "Special", use_complex_search=True)
+    # 복합 검색 옵션을 켜고 호출 (Rust 엔진 상태와 무관하게 Python 경로)
+    result = search_in_file(str(test_file), "Special", use_complex_search=True)
 
-        # 3. Python 엔진이 구동되어 결과를 찾아야 함
-        assert result is not None
-        assert isinstance(result, tuple)
-        assert len(result) == 3
-        assert result[1] == 1  # 매치 카운트
+    # Python 엔진이 구동되어 결과를 찾아야 함
+    assert result is not None
+    assert isinstance(result, tuple)
+    assert len(result) == 3
+    assert result[1] == 1  # 매치 카운트
 
 
 def test_policy_directory_scan_no_fallback(tmp_path):

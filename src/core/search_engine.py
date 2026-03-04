@@ -11,10 +11,16 @@ from os.path import splitext
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union, overload
 
 from sf_utils.app_strings import AppStrings
+from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
+
+def _get_adv_setting(key, default):
+    return ConfigManager().get_advanced_settings().get(key, default)
 
 EXCEL_EXTS = {".xlsx", ".xlsm", ".xls", ".xlsb"}
 logger = logging.getLogger("StringFinder.SearchEngine")
+_RUST_ENGINE_ERROR: str = ""  # 로드 실패 시 상세 사유를 보존합니다 (진입점 팝업용)
+sf_engine = None
 try:
     from rust_engine import sf_engine  # type: ignore
     import hashlib
@@ -22,7 +28,9 @@ try:
     REQUIRED_API_VERSION = 5
     engine_version = getattr(sf_engine, "API_VERSION", 0)
     if engine_version < REQUIRED_API_VERSION:
-        logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("Compatible API"))
+        _err_msg = f"API 버전 불일치: 필요={REQUIRED_API_VERSION}, 실제={engine_version}"
+        logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format(_err_msg))
+        _RUST_ENGINE_ERROR = _err_msg
         HAS_RUST_ENGINE = False
     else:
         HAS_RUST_ENGINE = True
@@ -44,9 +52,15 @@ try:
         logger.info(AppStrings.LOG_SYS_RUST_HASH.format(engine_hash))
         logger.info(AppStrings.LOG_SYS_RUST_SUCCESS)
 
-except ImportError:
+except ImportError as e:
     HAS_RUST_ENGINE = False
+    _RUST_ENGINE_ERROR = f"ImportError: {e}"
     logger.warning(AppStrings.LOG_SYS_RUST_FALLBACK)
+except Exception as e:
+    HAS_RUST_ENGINE = False
+    _RUST_ENGINE_ERROR = f"{type(e).__name__}: {e}"
+    logger.warning(AppStrings.LOG_SYS_RUST_FALLBACK)
+
 SearchMatch = Tuple[Any, ...]
 SearchResult = Tuple[str, int, List[SearchMatch]]
 SkippedResult = Tuple[str, str]
@@ -59,6 +73,15 @@ SKIP_CODE_TOO_LARGE = "ERR_TOO_LARGE"
 SKIP_CODE_MEMORY_GUARD = "ERR_MEMORY_GUARD"
 SKIP_CODE_PANIC = "ERR_PANIC"
 SKIP_CODE_CRITICAL = "ERR_CRITICAL"
+
+
+class _BooleanMatchFound(Exception):
+    """existence_only 모드에서 매치 발갬 시 XML 파서를 조기 중단하는 신호 예외.
+
+    StopIteration을 흐름 제어에 사용하는 패턴은 PEP 479 위반입니다.
+    이 커스텀 예외는 의도적 중단임을 명확히 나타냅니다. (M-02 Fix)
+    """
+    pass
 SKIP_CODE_UNKNOWN = "ERR_UNKNOWN"
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
 RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
@@ -363,13 +386,7 @@ def detect_encoding_quickly(data: bytes) -> str:
         return Constants.ENC_UTF8
     except UnicodeDecodeError:
         pass
-    # EUC-KR 오탐 방지: 단순 디코딩 성공 여부뿐만 아니라 실제 한글 범위(AC00-D7A3) 문자가 포함되었는지 확인합니다.
-    try:
-        decoded_euckr = data.decode(Constants.ENC_EUCKR)
-        if re.search("[\uac00-\ud7a3]", decoded_euckr):
-            return Constants.ENC_EUCKR
-    except UnicodeDecodeError:
-        pass
+    # [L-03 Fix] EUC-KR 검사 제거 — CP949가 EUC-KR의 상위집합이므로 중복 처리 불필요
     try:
         decoded_cp = data.decode(Constants.ENC_CP949)
         if re.search("[\uac00-\ud7a3]", decoded_cp):
@@ -377,6 +394,19 @@ def detect_encoding_quickly(data: bytes) -> str:
     except UnicodeDecodeError:
         pass
     return Constants.ENC_UTF8
+
+def _get_search_bytes_with_encoding(search_string: str, encoding: Optional[str], head: bytes) -> bytes:
+    """인코딩 방식(특히 UTF-16 BOM)을 고려하여 검색어를 바이트 배열로 변환합니다."""
+    try:
+        if encoding == "utf-16":
+            if head.startswith(b"\xff\xfe"):
+                return search_string.encode("utf-16-le", errors="ignore")
+            else:
+                return search_string.encode("utf-16-be", errors="ignore")
+        return search_string.encode(encoding or "utf-8", errors="ignore")
+    except (UnicodeEncodeError, LookupError):
+        return search_string.encode("utf-8", errors="ignore")
+
 
 def _fast_existence_check(
     file_path: str, search_string: str, exact_match: bool = False, raw_data: Optional[bytes] = None, encoding: Optional[str] = None
@@ -403,46 +433,24 @@ def _fast_existence_check(
                             encoding = detect_encoding_quickly(head)
                             
                             # 2. 인코딩을 고려한 바이트 검색(Negative Filter)
-                            # UTF-16인 경우 BOM 중복 포함으로 인한 매치 누락을 방지합니다.
-                            try:
-                                if encoding == "utf-16":
-                                    # 파일 헤드의 BOM에 따라 명시적 LE/BE 선택 (BOM 접두사 제거)
-                                    if head.startswith(b"\xff\xfe"):
-                                        search_bytes = search_string.encode("utf-16-le", errors="ignore")
-                                    else:
-                                        search_bytes = search_string.encode("utf-16-be", errors="ignore")
-                                else:
-                                    search_bytes = search_string.encode(encoding or "utf-8", errors="ignore")
-                            except (UnicodeEncodeError, LookupError):
-                                search_bytes = search_string.encode("utf-8", errors="ignore")
+                            search_bytes = _get_search_bytes_with_encoding(search_string, encoding, head)
                                 
                             if mm.find(search_bytes) == -1:
                                 return False
                         finally:
                             mm.close()
                     else:
+                        # [H-02 Fix] f.read() 전에 파일 크기 측정 — 포인터 이동 후 fstat 사용 시 오탐 방지
+                        f_size_pre = os.fstat(f.fileno()).st_size
                         head = f.read(65536)
                         encoding = detect_encoding_quickly(head)
                         
                         # 소형 파일에 대해서도 mmap 미사용 시 즉각적인 Negative Filter 수행
-                        # search_bytes 생성 (중복 인코딩 방지 로직 공유)
-                        search_bytes = None
-                        try:
-                            if encoding == "utf-16":
-                                if head.startswith(b"\xff\xfe"):
-                                    search_bytes = search_string.encode("utf-16-le", errors="ignore")
-                                else:
-                                    search_bytes = search_string.encode("utf-16-be", errors="ignore")
-                            else:
-                                search_bytes = search_string.encode(encoding or "utf-8", errors="ignore")
-                        except (UnicodeEncodeError, LookupError):
-                            search_bytes = search_string.encode("utf-8", errors="ignore")
+                        search_bytes = _get_search_bytes_with_encoding(search_string, encoding, head)
 
-                        # Negative Filter의 적용 범위를 보정합니다.
-                        # head가 파일 전체(65KB 이하)인 경우에만 필터링 적용.
-                        # 파일 크기 > 65KB 이면 head에 없어도 뒷부분에 검색어가 있을 수 있으므로 건너뜀.
-                        file_size_actual = os.fstat(f.fileno()).st_size
-                        if search_bytes and file_size_actual <= 65536:
+                        # Negative Filter: head가 파일 전체인 경우(≤65KB)에만 적용
+                        # 65KB 초과 파일은 head에 없어도 뒷부분에 검색어가 있을 수 있으므로 건너뜀
+                        if search_bytes and f_size_pre <= 65536:
                             if search_bytes not in head:
                                 return False
 
@@ -664,7 +672,7 @@ def search_in_excel_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)
+            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
             if results:
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
@@ -761,7 +769,7 @@ def search_in_excel_special(
                                     return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                                 
                                 # [상] Python 경로 매치 상한 적용
-                                if count <= Constants.MAX_PER_FILE_MATCHES:
+                                if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
                                     col_letter = ""
                                     temp_col = col_idx
                                     while temp_col >= 0:
@@ -772,15 +780,15 @@ def search_in_excel_special(
                                         row_idx + 1 + (sheet.start[0] if hasattr(sheet, "start") and sheet.start else 0)
                                     )
                                     matches.append((0, sheet_name, f"{col_letter}{abs_row}", val_str))
-                                elif count == Constants.MAX_PER_FILE_MATCHES + 1:
-                                    matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES), "", ""))
+                                elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                                    matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), "", ""))
             except BaseException as e:  # 특정 시트에서 패닉 발생 시 해당 시트만 스킵
                 sheet_err_msg = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, e)
                 logger.warning(f"[{file_path}] {sheet_err_msg}")
                 continue
 
         if count > 0:
-            final_count = min(count, Constants.MAX_PER_FILE_MATCHES + 1)
+            final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
             return (file_path, final_count, matches)
     except ImportError:
         return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_CALAMINE)
@@ -807,7 +815,7 @@ def search_in_json_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)
+            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
             if results:
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
@@ -838,7 +846,7 @@ def search_in_json_special(
         file_size = 0
         try:
             file_size = os.path.getsize(file_path)
-            if file_size > Constants.MAX_JSON_DOM_SIZE:
+            if file_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
                 logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
                 return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_TOO_LARGE.format(f"{file_size} bytes"))
         except (OSError, IOError):
@@ -865,7 +873,7 @@ def search_in_json_special(
             
             with open(file_path, "rb") as f_raw:
                 # 성능 최적화를 위해 일정 크기 이상의 파일은 mmap(메모리 매핑)을 사용합니다.
-                if f_size >= Constants.JSON_MMAP_THRESHOLD:
+                if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
                     mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
                     try:
                         # 1. 인코딩 감지 (최대 64KB 참조)
@@ -980,13 +988,13 @@ def search_in_json_special(
                         return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                     
                     # [상] Python 경로 매치 상한 적용
-                    if total_count <= Constants.MAX_PER_FILE_MATCHES:
+                    if total_count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
                         matches.append((1, path or "root", val_raw))
-                    elif total_count == Constants.MAX_PER_FILE_MATCHES + 1:
-                        matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES), ""))
+                    elif total_count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                        matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), ""))
 
         if total_count > 0:
-            final_count = min(total_count, Constants.MAX_PER_FILE_MATCHES + 1)
+            final_count = min(total_count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
             return (file_path, final_count, matches)
         return None
     except (json.JSONDecodeError, ValueError) as e:
@@ -1014,7 +1022,7 @@ def search_in_xml_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)
+            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
             if results:
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
@@ -1043,7 +1051,7 @@ def search_in_xml_special(
         # 이유: 크기 제한 없이 전체 파일을 메모리에 로드 -> 대용량 XML에서 OOM 위험
         try:
             file_size = os.path.getsize(file_path)
-            if file_size > Constants.MAX_JSON_DOM_SIZE:
+            if file_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
                 logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
                 return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_TOO_LARGE.format(f"{file_size} bytes"))
         except (OSError, IOError):
@@ -1077,14 +1085,14 @@ def search_in_xml_special(
                     if (search_string in val_comp) if not exact_match else (search_string == val_comp):
                         count += 1
                         if existence_only:
-                            # 일치 항목 발견 시 예외를 발생시켜 파싱을 즉시 중단합니다.
-                            raise StopIteration("BOOLEAN_MATCH")
+                            # [M-02 Fix] StopIteration 대신 커스텀 예외로 파싱을 즉시 중단
+                            raise _BooleanMatchFound()
                         
                         # [상] Python 경로 매치 상한 적용
-                        if count <= Constants.MAX_PER_FILE_MATCHES:
+                        if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
                             matches.append((self.parser.CurrentLineNumber, str(k), val))
-                        elif count == Constants.MAX_PER_FILE_MATCHES + 1:
-                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES), ""))
+                        elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), ""))
 
             def end_element(self, name):
                 if self.current_tags:
@@ -1098,11 +1106,11 @@ def search_in_xml_special(
                     if (search_string in text_comp) if not exact_match else (search_string == text_comp):
                         count += 1
                         if existence_only:
-                            # 일치 항목 발견 시 파싱을 중단합니다.
-                            raise StopIteration("BOOLEAN_MATCH")
+                            # [M-02 Fix] StopIteration 대신 커스텀 예외로 파싱을 즉시 중단
+                            raise _BooleanMatchFound()
                         
                         # Python 검색 경로에서 매치 결과 개수 상한을 적용합니다.
-                        if count <= Constants.MAX_PER_FILE_MATCHES:
+                        if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
                             matches.append(
                                 (
                                     self.parser.CurrentLineNumber,
@@ -1110,23 +1118,22 @@ def search_in_xml_special(
                                     text,
                                 )
                             )
-                        elif count == Constants.MAX_PER_FILE_MATCHES + 1:
-                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES), ""))
+                        elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), ""))
 
         searcher = XMLSearcher()
         try:
             searcher.parser.Parse(processed_content, True)
-        except (xml.parsers.expat.ExpatError, StopIteration) as xe:
-            # StopIteration은 Boolean 매칭 시 의도적인 중단임
-            if isinstance(xe, StopIteration) and str(xe) == "BOOLEAN_MATCH":
-                return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
-            
+        except _BooleanMatchFound:
+            # [M-02 Fix] Boolean 모드 매치 발견 시 의도적으로 파싱을 중단한 경우
+            return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
+        except xml.parsers.expat.ExpatError as xe:
             if _stop_event and _stop_event.is_set():
                 return (Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER)
             logger.warning(AppStrings.LOG_SCH_XML_FAIL.format(xe))
             return (Constants.STATUS_SKIPPED, str(xe))
         if count > 0:
-            final_count = min(count, Constants.MAX_PER_FILE_MATCHES + 1)
+            final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
             return (file_path, final_count, matches)
         return None
     except Exception as e:
@@ -1152,7 +1159,7 @@ def search_in_archive_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)
+            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
             if results:
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
@@ -1186,7 +1193,7 @@ def search_in_archive_special(
 
         try:
             f_size = os.path.getsize(file_path)
-            if f_size > Constants.MAX_JSON_DOM_SIZE:
+            if f_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
                 logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
                 return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_MEMORY_GUARD.format(f"{f_size} bytes"))
         except (OSError, IOError):
@@ -1207,7 +1214,7 @@ def search_in_archive_special(
             
             with open(file_path, "rb") as f_raw:
                 # 성능 최적화를 위해 mmap을 사용합니다.
-                if f_size >= Constants.JSON_MMAP_THRESHOLD:
+                if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
                     mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
                     try:
                         sample_len = min(f_size, 65536)
@@ -1299,12 +1306,12 @@ def search_in_archive_special(
                         return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                     
                     # [상] Python 경로 매치 상한 적용
-                    if count <= Constants.MAX_PER_FILE_MATCHES:
+                    if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
                         matches.append((1, ns, child.get("Key", ""), s, t))
-                    elif count == Constants.MAX_PER_FILE_MATCHES + 1:
-                        matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES), "", "", ""))
+                    elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                        matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), "", "", ""))
         if count > 0:
-            final_count = min(count, Constants.MAX_PER_FILE_MATCHES + 1)
+            final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
             return (file_path, final_count, matches)
         return None
     except Exception as e:
@@ -1407,7 +1414,7 @@ def search_in_file(
             t_start = time.time()
             # Rust 엔진 검색어에서 BOM이나 제어 문자를 제거하여 매칭 확률을 높입니다.
             clean_pattern = search_string_nfc.replace("\ufeff", "")
-            rust_results = sf_engine.search_file(str(file_path), clean_pattern, mode_bits, stop_event)
+            rust_results = sf_engine.search_file(str(file_path), clean_pattern, mode_bits, stop_event)  # type: ignore
             t_rust = time.time() - t_start
             if not rust_results:
                 # 인코딩 신뢰도 판단: UTF-8(및 SIG)인 경우 Rust 결과를 신뢰합니다.
@@ -1506,7 +1513,7 @@ def search_in_file(
         if file_size is None:
             file_size = os.path.getsize(file_path)
         encoding = None
-        if file_size < Constants.MAX_SMALL_FILE_SIZE:  # 10MB 상수 참조
+        if file_size < (_get_adv_setting(Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, Constants.DEFAULT_MAX_SMALL_FILE_SIZE_MB) * 1024 * 1024):  # 10MB 상수 참조
             if not encoding:
                 with open(file_path, "rb") as f_head:
                     head_data = f_head.read(65536)
@@ -1558,17 +1565,17 @@ def search_in_file(
                             return (file_path, 1, [(i + 1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                         
                         # Python 검색 경로에서 매치 결과 개수 상한을 적용합니다.
-                        if count <= Constants.MAX_PER_FILE_MATCHES:
+                        if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
                             matches.append((i + 1, line.strip()))
-                        elif count == Constants.MAX_PER_FILE_MATCHES + 1:
-                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES)))
+                        elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES))))
                         else:
                             # 상한 초과 시 더 이상 리스트에 추가하지 않음
                             pass
                 
                 if count > 0:
                     # UI 일관성을 위해 반환 카운트도 상한으로 캡핑
-                    final_count = min(count, Constants.MAX_PER_FILE_MATCHES + 1)
+                    final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
                     if is_binary:
                         return (file_path, final_count, [(1, AppStrings.MSG_BINARY_MATCH.format(final_count), None, None)])
                     return (file_path, final_count, matches)
@@ -1603,12 +1610,12 @@ def search_in_file(
                                         1,
                                         [(current_line, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)],
                                     )
-                            
-                            # Python 검색 경로에서 매치 결과 개수 상한을 적용합니다.
-                            if count <= Constants.MAX_PER_FILE_MATCHES:
-                                matches.append((current_line, line_trimmed))
-                            elif count == Constants.MAX_PER_FILE_MATCHES + 1:
-                                matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES)))
+                                # [H-01 Fix] matches.append()를 매치 조건 블록 내부로 이동
+                                # 수정 전: is_exact 블록 외부에 있어 미매칭 줄에도 실행됨
+                                if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
+                                    matches.append((current_line, line_trimmed))
+                                elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                                    matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES))))
                         elif search_fold in line.casefold():
                             count += 1
                             if existence_only:
@@ -1617,12 +1624,11 @@ def search_in_file(
                                     1,
                                     [(current_line, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)],
                                 )
-                            
-                            # [상] Python 경로 매치 상한 적용
-                            if count <= Constants.MAX_PER_FILE_MATCHES:
+                            # Python 경로 매치 상한 적용
+                            if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
                                 matches.append((current_line, line_trimmed))
-                            elif count == Constants.MAX_PER_FILE_MATCHES + 1:
-                                matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(Constants.MAX_PER_FILE_MATCHES)))
+                            elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
+                                matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES))))
             except Exception as e:
                 logger.debug(AppStrings.LOG_SCH_STREAM_ERROR.format(e))
                 return (Constants.STATUS_SKIPPED, AppStrings.ERROR_IO_DURING_SEARCH.format(e))
@@ -1635,7 +1641,7 @@ def search_in_file(
                 
                 # 카운트와 matches 길이 불일치를 보정합니다. (최대 상한 + 마커 1개로 제한)
                 # UI 데이터 일관성을 위해 튜플 구조를 정규화합니다.
-                final_count = min(count, Constants.MAX_PER_FILE_MATCHES + 1)
+                final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
                 normalized_matches = []
                 for m in matches:
                     if len(m) == 2:
@@ -1704,8 +1710,6 @@ def search_directory_fast(
     **kwargs,
 ) -> Dict[str, List]:
     """Rust 엔진을 사용하여 디렉토리를 고속으로 검색합니다."""
-    if not HAS_RUST_ENGINE:
-        return {"results": [], "skipped": []}
     try:
         rust_pattern = normalize_unicode(search_string)
         rust_exts = None
@@ -1721,10 +1725,10 @@ def search_directory_fast(
         exclude_hidden = bool(kwargs.get("exclude_hidden", False))
         search_dir_func = getattr(sf_engine, "search_dir", None)
         if not search_dir_func:
-            logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))
+            logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
             # 엔진 사용 중 예외 발생 시 Python 폴백을 통해 재검색을 시도합니다.
             # (위에서 HAS_RUST_ENGINE 체크가 통과했음에도 엔진이 없는 경우여서 이러한 처리)
-            raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))
+            raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(kwargs.get("special_mode"), exclude_binary=exclude_binary, existence_only=existence_only)
         raw_ret = search_dir_func(
@@ -1744,24 +1748,28 @@ def search_directory_fast(
         skipped_results = []
         if raw_ret:
             matches_list, skipped_list = raw_ret
-            for path, matches in matches_list:
-                match_tuples, marker_binary_count, _ = _normalize_rust_matches(
-                    matches, kwargs.get("special_mode"), existence_only=existence_only
-                )
-                if marker_binary_count > 0:
-                    formatted_results.append(
-                        (
-                            path,
-                            marker_binary_count,
-                            [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)],
-                        )
+            # [Optim] results_callback이 제공된 경우, 결과는 이미 실시간으로 처리되었으므로
+            # 여기서 전체 목록을 다시 정규화하는 중복 연산을 건너뜁니다.
+            if not kwargs.get("results_callback"):
+                for path, matches in matches_list:
+                    match_tuples, marker_binary_count, _ = _normalize_rust_matches(
+                        matches, kwargs.get("special_mode"), existence_only=existence_only
                     )
-                elif match_tuples:
-                    formatted_results.append((path, len(match_tuples), match_tuples))
-                else:
-                    skip_reason = _extract_marker_skip_reason(matches)
-                    if skip_reason:
-                        skipped_results.append((path, skip_reason))
+                    if marker_binary_count > 0:
+                        formatted_results.append(
+                            (
+                                path,
+                                marker_binary_count,
+                                [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)],
+                            )
+                        )
+                    elif match_tuples:
+                        formatted_results.append((path, len(match_tuples), match_tuples))
+                    else:
+                        skip_reason = _extract_marker_skip_reason(matches)
+                        if skip_reason:
+                            skipped_results.append((path, skip_reason))
+            
             for path, reason in skipped_list:
                 skipped_results.append((path, format_skip_reason(reason)))
         return {"results": formatted_results, "skipped": skipped_results}
@@ -1783,7 +1791,7 @@ def search_files_list_fast(
     **kwargs,
 ) -> Dict[str, List]:
     """Rust 엔진을 사용하여 파일 목록을 고속으로 검색합니다."""
-    if not HAS_RUST_ENGINE or not file_list:
+    if not file_list:
         return {"results": [], "skipped": []}
     try:
         rust_pattern = normalize_unicode(search_string)
@@ -1810,24 +1818,27 @@ def search_files_list_fast(
         skipped_results = []
         if raw_ret:
             matches_list, skipped_list = raw_ret
-            for path, matches in matches_list:
-                match_tuples, marker_binary_count, _ = _normalize_rust_matches(
-                    matches, special_mode, existence_only=existence_only
-                )
-                if marker_binary_count > 0:
-                    formatted_results.append(
-                        (
-                            path,
-                            marker_binary_count,
-                            [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)],
-                        )
+            # [Optim] results_callback이 제공된 경우 중복 처리 건너뜁니다.
+            if not kwargs.get("results_callback"):
+                for path, matches in matches_list:
+                    match_tuples, marker_binary_count, _ = _normalize_rust_matches(
+                        matches, special_mode, existence_only=existence_only
                     )
-                elif match_tuples:
-                    formatted_results.append((path, len(match_tuples), match_tuples))
-                else:
-                    skip_reason = _extract_marker_skip_reason(matches)
-                    if skip_reason:
-                        skipped_results.append((path, skip_reason))
+                    if marker_binary_count > 0:
+                        formatted_results.append(
+                            (
+                                path,
+                                marker_binary_count,
+                                [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)],
+                            )
+                        )
+                    elif match_tuples:
+                        formatted_results.append((path, len(match_tuples), match_tuples))
+                    else:
+                        skip_reason = _extract_marker_skip_reason(matches)
+                        if skip_reason:
+                            skipped_results.append((path, skip_reason))
+            
             for path, reason in skipped_list:
                 skipped_results.append((path, format_skip_reason(reason)))
         return {"results": formatted_results, "skipped": skipped_results}
@@ -1868,7 +1879,7 @@ def find_files_with_keyword_fast(
     **kwargs,
 ) -> Union[List[FileInfo], Tuple[List[FileInfo], List[SkippedResult]]]:
     """키워드가 포함된 파일 목록을 고속으로 찾아 반환합니다."""
-    if not HAS_RUST_ENGINE or not search_paths:
+    if not search_paths:
         return ([], []) if return_skipped else []
     try:
         rust_pattern = normalize_unicode(search_string)
@@ -1887,39 +1898,23 @@ def find_files_with_keyword_fast(
         stop_event = kwargs.get("stop_event")
         find_func = getattr(sf_engine, "find_files_with_keyword", None)
         if not find_func:
-            logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.find_files_with_keyword"))
+            logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.find_files_with_keyword"))  # type: ignore
             # 엔진에서 오류가 발생한 경우 무결성을 위해 Python 폴백을 시도합니다.
-            raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.find_files_with_keyword"))
+            raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.find_files_with_keyword"))  # type: ignore
         exclude_binary = bool(kwargs.get("exclude_binary", False))
         rust_mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
-        try:
-            found_ret = find_func(
-                search_paths,
-                rust_pattern,
-                rust_exts,
-                rust_mode_bits,
-                rust_fn_filters,
-                exclude_hidden,
-                stop_event,
-                kwargs.get("results_callback"),
-            )
-        except TypeError:
-            # Log warning to prevent silent failure.
-            # Older Rust engine builds may not accept stop_event argument.
-            # Check sf_engine.API_VERSION if this warning appears.
-            logger.warning(
-                "[M-06] Rust find_files API rejected stop_event (TypeError). "
-                "Check sf_engine API_VERSION. Retrying without stop_event."
-            )
-            found_ret = find_func(
-                search_paths,
-                rust_pattern,
-                rust_exts,
-                rust_mode_bits,
-                rust_fn_filters,
-                exclude_hidden,
-                kwargs.get("results_callback"),
-            )
+        # [M-06 Fix] TypeError fallback 제거: API_VERSION 5 미만은 로드 시 차단됨
+        # stop_event 없는 재시도는 사용자 중단 신호를 무력화하는 버그였음
+        found_ret = find_func(
+            search_paths,
+            rust_pattern,
+            rust_exts,
+            rust_mode_bits,
+            rust_fn_filters,
+            exclude_hidden,
+            stop_event,
+            kwargs.get("results_callback"),
+        )
         found_files: List[FileInfo] = []
         skipped_files: List[SkippedResult] = []
         if found_ret:

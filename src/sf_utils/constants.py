@@ -14,9 +14,22 @@ class Constants:
     LOG_FILE_GLOB = "*.log"
     TEMP_FILE_SUFFIX = ".tmp"
     BACKUP_FILE_SUFFIX = ".old"
-    MAX_JSON_DOM_SIZE = 80 * 1024 * 1024  # 80MB (Python DOM 파싱 임계치 하향 조정)
-    MAX_SMALL_FILE_SIZE = 10 * 1024 * 1024  # 10MB (소형 파일 전체 읽기 임계치)
-    JSON_MMAP_THRESHOLD = 5 * 1024 * 1024  # 5MB (mmap 사용 강제 임계치)
+    # 하드코딩되었던 상수들은 고급 설정의 '기본값'으로 사용되며, 
+    # UI 편집용 수치(MB 단위)와 내부 바이트 계산용 수치로 적절히 분리됩니다.
+    DEFAULT_MAX_JSON_DOM_SIZE_MB = 80
+    DEFAULT_MAX_SMALL_FILE_SIZE_MB = 10
+    DEFAULT_JSON_MMAP_THRESHOLD_MB = 5
+    DEFAULT_MAX_TOTAL_MATCHES = 500_000
+    DEFAULT_MAX_PER_FILE_MATCHES = 5_000
+    DEFAULT_TIMEOUT_WORKER_HANG = 600
+    DEFAULT_MAX_CHECK_CELLS = 500_000
+    DEFAULT_MAX_JSON_DEPTH = 20_000
+
+    # 유지보수 호환상 기존 상수를 기본값 기반 동적 연산 프로퍼티가 아닌 형태로 남길 경우:
+    MAX_JSON_DOM_SIZE = DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024
+    MAX_SMALL_FILE_SIZE = DEFAULT_MAX_SMALL_FILE_SIZE_MB * 1024 * 1024
+    JSON_MMAP_THRESHOLD = DEFAULT_JSON_MMAP_THRESHOLD_MB * 1024 * 1024
+    
     TYPE_SEARCH = "search"
     TYPE_FILENAME = "filename"
     VIEW_RESULT = "result"
@@ -98,13 +111,25 @@ class Constants:
     OBJ_NAME_FOLDER_DOCK = "FolderDock"
     OBJ_NAME_EXT_DOCK = "ExtDock"
     OBJ_NAME_FILENAME_DOCK = "FilenameDock"
+    
+    # 고급 설정용 키
+    CONFIG_KEY_ADVANCED = "advanced"
+    CONFIG_KEY_MAX_TOTAL_MATCHES = "max_total_matches"
+    CONFIG_KEY_MAX_PER_FILE_MATCHES = "max_per_file_matches"
+    CONFIG_KEY_MAX_JSON_DOM_SIZE = "max_json_dom_size"
+    CONFIG_KEY_MAX_SMALL_FILE_SIZE = "max_small_file_size"
+    CONFIG_KEY_JSON_MMAP_THRESHOLD = "json_mmap_threshold"
+    CONFIG_KEY_TIMEOUT_WORKER_HANG = "timeout_worker_hang"
+    CONFIG_KEY_MAX_CHECK_CELLS = "max_check_cells"
+    CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
+
     ADAPTIVE_BATCH_SIZE_THRESHOLD = 100 * 1024 * 1024  # 100MB (적응형 배치 임계치)
     COLOR_RED = "#FF5555"
     BATCH_SIZE_LARGE = 500
     BATCH_SIZE_NORMAL = 100
-    TIMEOUT_WORKER_HANG = 600
-    MAX_TOTAL_MATCHES = 500_000  # 글로벌 매치 상한 (50만 건)
-    MAX_PER_FILE_MATCHES = 5_000  # 파일당 매치 상한 (5천 명)
+    TIMEOUT_WORKER_HANG = DEFAULT_TIMEOUT_WORKER_HANG
+    MAX_TOTAL_MATCHES = DEFAULT_MAX_TOTAL_MATCHES  # 글로벌 매치 상한 (기본값 캐시)
+    MAX_PER_FILE_MATCHES = DEFAULT_MAX_PER_FILE_MATCHES  # 파일당 매치 상한 (기본값 캐시)
     MEMORY_THRESHOLD_PERCENT = 85  # 메모리 사용량 임계값 (%)
 
     # Rust 엔진 결과 배치 크기 및 지연 간격 (성능 튜닝용)

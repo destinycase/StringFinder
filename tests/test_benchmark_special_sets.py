@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from core.search_engine import HAS_RUST_ENGINE
 from sf_utils.constants import Constants
 
 
@@ -18,10 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import scripts.benchmark_performance as benchmark_performance  # noqa: E402
 
 
-@pytest.mark.skipif(
-    not HAS_RUST_ENGINE,
-    reason="Rust engine required",
-)
+@pytest.mark.stress
 def test_benchmark_special_dataset_generation_and_hits(tmp_path):
     set_special_dir = tmp_path / "set_special"
     excel_path = set_special_dir / "excel_mix.xlsx"

@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from core.search_engine import search_in_file
+from sf_utils.constants import Constants
 
 """
 [test_engine_policy_guide.py]
@@ -51,13 +52,19 @@ def test_python_integrity_policy_guide(german_content_file):
         assert "Straße" in result[2][0][1]
 
 
-def test_engine_isolation_policy_guide(tmp_path):
+def test_engine_isolation_policy_guide_rust_error(tmp_path):
     """
-    [안내] Rust 엔진이 없는 환경에서 일반 검색 시 Python으로 자동 폴백되지 않음을 확인합니다.
+    [안내] Rust 엔진 오류(예외 발생) 시 Python으로 자동 폴백되지 않음을 확인합니다.
+    Rust 엔진 미존재 시나리오는 진입점에서 앱이 종료되므로 테스트하지 않습니다.
     """
+    from unittest.mock import patch
     test_file = tmp_path / "iso_test.txt"
     test_file.write_text("keyword", encoding="utf-8")
 
-    with patch("core.search_engine.HAS_RUST_ENGINE", False):
-        result = search_in_file(str(test_file), "keyword", use_complex_search=False)
-        assert result is None, "정책상 Rust가 없고 복합 검색 모드가 아니면 Python이 구동되지 않아야 합니다."
+    with patch("core.search_engine.HAS_RUST_ENGINE", True):
+        with patch("core.search_engine.sf_engine.search_file", side_effect=RuntimeError("Crash")):
+            result = search_in_file(str(test_file), "keyword", use_complex_search=False)
+            # Rust 예외 → SKIPPED 반환 (Python 폴백 없음)
+            assert result is not None
+            assert result[0] == Constants.STATUS_SKIPPED or result is None
+

@@ -40,13 +40,14 @@ class SystemDoctor:
         status = "OK"
         details = "Rust engine loaded successfully."
         try:
-            from core.search_engine import HAS_RUST_ENGINE
+            from core.search_engine import HAS_RUST_ENGINE, _RUST_ENGINE_ERROR
             if not HAS_RUST_ENGINE:
-                status = "WARNING"
-                details = "Rust engine is NOT available. Falling back to Python engine."
+                status = "CRITICAL"
+                detail_reason = _RUST_ENGINE_ERROR if _RUST_ENGINE_ERROR else "Unknown error"
+                details = f"Rust engine FAILED to load. Application cannot run. Reason: {detail_reason}"
         except Exception as e:
-            status = "ERROR"
-            details = f"Failed to load search engine: {e}"
+            status = "CRITICAL"
+            details = f"Failed to check search engine state: {e}"
         
         self.results.append({
             "category": "Engine Integrity",

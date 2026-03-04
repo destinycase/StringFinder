@@ -80,6 +80,7 @@ class SearchResultModel(QAbstractTableModel):
     class SortWorker(QRunnable):
         def __init__(self, data, column, reverse, callback):
             super().__init__()
+            self.setAutoDelete(False)  # signals 소멸 방지 (autoDelete 시 소멸 레이스 차단)
             self.data = data
             self.column = column
             self.reverse = reverse
@@ -356,6 +357,7 @@ class SearchResultModel(QAbstractTableModel):
         class GlobalSortWorker(QRunnable):
             def __init__(self, data, key, callback):
                 super().__init__()
+                self.setAutoDelete(False)  # signals 소멸 방지 (autoDelete 시 소멸 레이스 차단)
                 self.data = data
                 self.key = key
                 self.callback = callback

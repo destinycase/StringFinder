@@ -24,9 +24,25 @@ def main():
 
         app.setFont(QFont("Segoe UI", 9))
 
+    # [필수] Rust 엔진 로드 상태 사전 확인 (QApplication 생성 후, MainWindow 생성 전)
+    # Rust 엔진이 없으면 애플리케이션을 실행할 수 없습니다.
+    from core.search_engine import HAS_RUST_ENGINE, _RUST_ENGINE_ERROR
+    if not HAS_RUST_ENGINE:
+        from PySide6.QtWidgets import QMessageBox
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle(AppStrings.TITLE_RUST_ENGINE_MISSING)
+        msg.setText(AppStrings.MSG_RUST_ENGINE_MISSING)
+        if _RUST_ENGINE_ERROR:
+            msg.setDetailedText(f"상세 오류:\n{_RUST_ENGINE_ERROR}")
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+        sys.exit(1)
+
     # 애플리케이션의 중복 실행을 방지합니다 (QLockFile 사용).
     # 이미 실행 중이면 경고 메시지 표시 후 sys.exit(0) 호출
     ensure_single_instance()
+
 
     class QThreadWarningDetector:
         """QThread 관련 경고 및 특정 폰트 관련 로그를 감지하고 필터링하는 핸들러입니다."""
@@ -44,7 +60,7 @@ def main():
             if self.original_stderr:
                 try:
                     self.original_stderr.write(text)
-                    self.original_stderr.flush()
+                    self.original_stderr.flush()  # C3: 로그가 버퍼에 남지 않도록 즉시 플러시합니다.
                 except Exception as e:
                     # 표준 에러 스트림이 닫혀있거나 파일 번호가 없는 경우(테스트 환경 등)에 대한 예외 처리입니다.
                     try:
@@ -73,7 +89,12 @@ def main():
 
                     self.QTimer.singleShot(0, show_popup)
                 except Exception as e:
-                    self.original_stderr.write(f"Failed to schedule warning popup: {e}\n")
+                    # original_stderr 직접 사용 — sys.stderr(QThreadWarningDetector) 재진입 차단
+                    if self.original_stderr:
+                        try:
+                            self.original_stderr.write(f"Failed to schedule warning popup: {e}\n")
+                        except Exception:
+                            pass
             elif "DirectWrite: CreateFontFaceFromHDC() failed" in text:
                 # Windows 환경의 특정 폰트 렌더링 로그 노이즈를 필터링합니다.
                 return
@@ -81,6 +102,12 @@ def main():
         def flush(self):
             if self.original_stderr:
                 self.original_stderr.flush()
+
+        def isatty(self):
+            """[L-01 Fix] pytest 등 일부 라이브러리의 isatty() 호출 시 AttributeError 방지."""
+            if self.original_stderr:
+                return getattr(self.original_stderr, "isatty", lambda: False)()
+            return False
 
     sys.stderr = QThreadWarningDetector()
     app.setStyleSheet(qdarktheme.load_stylesheet())
@@ -203,23 +230,9 @@ sys.excepthook = global_exception_handler
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     try:
-        # 앱 실행 및 종료 대기
+        # 앱 실행 — main() 내부에서 sys.exit()이 호출되어 이 줄 이후는 실행되지 않습니다.
+        # 리소스 정리는 app.aboutToQuit → cleanup_on_exit 콜백에서 처리됩니다.
         main()
-        
-        # [Fix] 애플리케이션 종료 시 명시적 리소스 해제 루틴
-        logger.info("Performing final resource cleanup and garbage collection...")
-        
-        # 1. 가비지 컬렉션 강제 수행 (순환 참조 해제)
-        import gc
-        gc.collect()
-        
-        # 2. 전역 매니저 및 실행기 최종 확인 및 종료
-        from core.worker import shutdown_global_manager, GlobalExecutor
-        GlobalExecutor.shutdown(wait=True)
-        shutdown_global_manager()
-        
-        logger.info(AppStrings.LOG_SYS_APP_CLOSED)
-        sys.exit(0)
     except Exception as e:
         global_exception_handler(type(e), e, e.__traceback__)
         sys.exit(1)

@@ -66,33 +66,22 @@ class MainWindow(QMainWindow):
         icon_path = get_resource_path(os.path.join("assets", "icon.svg"))
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        # 타이틀 표시 시에도 v 접두사 포함
-        self.setWindowTitle(f"{Constants.APP_NAME} v{Constants.APP_VERSION}")
+        # 타이틀에 Rust 엔진 버전을 함께 표시합니다.
+        # 버전 불일치 여부를 한눈에 확인할 수 있습니다.
+        try:
+            import sf_engine
+            engine_ver = getattr(sf_engine, "ENGINE_VERSION", None)
+        except Exception:
+            engine_ver = None
+
+        if engine_ver:
+            title = f"{Constants.APP_NAME} v{Constants.APP_VERSION}  (Rust {engine_ver})"
+        else:
+            title = f"{Constants.APP_NAME} v{Constants.APP_VERSION}"
+        self.setWindowTitle(title)
         self._apply_theme()
         self.new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
         self.new_tab_shortcut.activated.connect(lambda: self.add_new_tab())
-        from core.search_engine import HAS_RUST_ENGINE
-
-        if not HAS_RUST_ENGINE:
-
-            def show_rust_fail_msg():
-                try:
-                    # 윈도우 객체가 아직 유효한 경우에만 메시지 표시
-                    if not self.parent() and self.isVisible():
-                        self.statusBar().showMessage(AppStrings.MSG_RUST_LOAD_FAIL, 10000)
-                        # 경고 창을 통해 상세 해결 방법 안내
-                        from PySide6.QtWidgets import QMessageBox
-
-                        msg = QMessageBox(self)
-                        msg.setIcon(QMessageBox.Icon.Warning)
-                        msg.setWindowTitle(AppStrings.MSG_RUST_LOAD_FAIL)
-                        msg.setText(AppStrings.MSG_RUST_LOAD_FAIL_GUIDE)
-                        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-                        msg.show()
-                except (RuntimeError, AttributeError) as e:
-                    logger.debug(AppStrings.LOG_SYS_RUST_FAIL_MSG_UI_MISSING.format(e))
-
-            QTimer.singleShot(1000, show_rust_fail_msg)
 
     def closeEvent(self, event):
         """창을 닫을 때 호출되어 애플리케이션 종료 절차를 수행합니다."""

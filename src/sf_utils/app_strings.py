@@ -70,6 +70,33 @@ class AppStrings:
     SETTINGS_GROUP_APPEARANCE = "화면"
     SETTINGS_GROUP_LOG = "로그"
     SETTINGS_GROUP_DATA = "데이터"
+    SETTINGS_GROUP_ADVANCED = "고급"
+    
+    ADVANCED_MAX_TOTAL_MATCHES = "전체 최대 매치 수"
+    ADVANCED_MAX_PER_FILE_MATCHES = "파일당 최대 매치 수"
+    ADVANCED_MAX_JSON_DOM_SIZE = "JSON 최대 파싱 메모리 한계"
+    ADVANCED_MAX_SMALL_FILE_SIZE = "소형 파일 직접 읽기 임계치"
+    ADVANCED_JSON_MMAP_THRESHOLD = "JSON 스트리밍 Mmap 전환 기준"
+    ADVANCED_TIMEOUT_WORKER_HANG = "워커 무응답 강제 종료 타임아웃"
+    ADVANCED_MAX_CHECK_CELLS = "존재 여부 시 최대 검사 셀 (엑셀)"
+    ADVANCED_MAX_JSON_DEPTH = "JSON 노드 파싱 최대 깊이 제한"
+
+    TOOLTIP_MAX_TOTAL_MATCHES = "프로그램 전체에서 한 번의 검색에 표시할 수 있는 총 매치 허용 개수입니다."
+    TOOLTIP_MAX_PER_FILE_MATCHES = "하나의 파일 내에서 허용되는 최대 결과 수입니다. 초과 시 경고와 함께 스킵합니다."
+    TOOLTIP_MAX_JSON_DOM_SIZE = "JSON 파일 크기가 이 값을 넘으면 시스템 OOM 방지를 위해 정밀 파싱을 생략합니다."
+    TOOLTIP_MAX_SMALL_FILE_SIZE = "이 크기 미만의 작은 파일은 Mmap 대신 일반 파일 읽기로 통째로 올려 검색 속도를 높입니다."
+    TOOLTIP_JSON_MMAP_THRESHOLD = "이 크기를 넘는 JSON 파일은 RAM을 절약하기 위해 Mmap 기반의 스트리밍 파서로 처리됩니다."
+    TOOLTIP_TIMEOUT_WORKER_HANG = "단일 파일 검색 프로세스가 이 시간 동안 무응답일 경우 데드락으로 간주하고 죽입니다."
+    TOOLTIP_MAX_CHECK_CELLS = "결과를 담지 않는 '존재 여부 확인' 모드에서 무한 지연을 막기 위한 빈 셀 검사 한계점입니다."
+    TOOLTIP_MAX_JSON_DEPTH = "비정상적으로 깊은 JSON 트리를 만났을 때 스택 오버플로우를 막기 위한 계층 뎁스(Depth) 제한입니다."
+
+    UNIT_COUNT = "건"
+    UNIT_MB = "MB"
+    UNIT_SEC = "초"
+    UNIT_CELL = "셀"
+    UNIT_DEPTH = "단위(층)"
+
+    BTN_RESET_ADVANCED = "고급 설정 초기값으로 복원"
     THEME_LABEL = "테마:"
     THEME_DARK = "다크"
     THEME_LIGHT = "라이트"
@@ -238,8 +265,8 @@ class AppStrings:
     LOG_SYS_SHUTDOWN = "[시스템] 애플리케이션 종료 중..."
     LOG_SYS_LOG_CLEANUP_DONE = "[시스템] 로그 파일 정리 완료 ({}개 제거)."
     LOG_SYS_RUST_SUCCESS = "[시스템] Rust 가속 엔진 로딩 완료."
-    LOG_SYS_RUST_FALLBACK = "[시스템] Rust 엔진 로딩 실패: Python 대체 환경으로 구동합니다."
-    LOG_SYS_RUST_RUNTIME_FALLBACK = "[엔진] Rust 런타임 오류 발생: Python 엔진으로 즉시 대체합니다."
+    LOG_SYS_RUST_FALLBACK = "[시스템] Rust 엔진 로딩 실패: 애플리케이션을 시작할 수 없습니다."
+    LOG_SYS_RUST_RUNTIME_FALLBACK = "[엔진] Rust 런타임 오류 발생 (Python 폴백 정책 미적용)."
     LOG_SYS_SMART_SCAN_FALLBACK = "[스캔] 스마트 스캔 오류 감지: Python 범용 스캔으로 전환합니다."
     LOG_SYS_WKR_SHUTDOWN = "[시스템] 워커 프로세스 종료 중..."
     LOG_SYS_WKR_SHUTDOWN_DONE = "[시스템] 워커 프로세스 종료 완료."
@@ -253,13 +280,18 @@ class AppStrings:
     LOG_SYS_DATA_DIR_CHECK_FAIL = "[시스템] 데이터 폴더 접근 실패: {}"
     LOG_SYS_CLEANUP_SKIP = "[시스템] 로그 정리 중단 ({}): {}"
     LOG_SYS_CLEANUP_ERROR = "[시스템] 종료 정리 작업 중 오류 발생: {}"
-    MSG_RUST_LOAD_FAIL = "[시스템] Rust 엔진 로딩 실패."
-    MSG_RUST_LOAD_FAIL_GUIDE = (
-        "핵심 검색 엔진(Rust)을 불러올 수 없습니다.\n\n"
+    TITLE_RUST_ENGINE_MISSING = "StringFinder — 엔진 로드 실패"
+    MSG_RUST_ENGINE_MISSING = (
+        "핵심 검색 엔진(Rust)을 불러올 수 없어 프로그램을 시작할 수 없습니다.\n\n"
         "해결 방법:\n"
-        "1. Microsoft Visual C++ 재배포 가능 패키지(x64)를 설치하세요.\n"
-        "2. 백신이 'sf_engine.pyd' 파일을 차단하고 있는지 확인하세요."
+        "  1. 'sf_engine.pyd' 파일이 프로그램 폴더에 존재하는지 확인하세요.\n"
+        "  2. Microsoft Visual C++ 재배포 가능 패키지(x64)를 설치하세요.\n"
+        "  3. 백신 소프트웨어가 해당 파일을 차단하고 있는지 확인하세요.\n\n"
+        "문제가 지속되면 프로그램을 재설치하세요."
     )
+    # 하위 호환용 (기존 참조가 있을 경우를 위해 유지)
+    MSG_RUST_LOAD_FAIL = "[시스템] Rust 엔진 로딩 실패 (필수 요건 미충족)."
+    MSG_RUST_LOAD_FAIL_GUIDE = MSG_RUST_ENGINE_MISSING
     MSG_QT_THREAD_DESTROYED = "[시스템] 스레드가 정상 종료 전 파괴되었습니다."
     MSG_QT_RESOURCE_LEAK = "[시스템] 애플리케이션 종료 시 일부 리소스 해제 실패."
     MSG_CRITICAL_ERROR_POPUP = (

@@ -46,11 +46,14 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         }
     }
 
-    // EUC-KR과 CP949 판별
-    let (_res, _, has_error) = EUC_KR.decode(sample);
-    if !has_error {
-        return EUC_KR;
+    // B3: EUC-KR 오탐 방지 — 고바이트(0x80↑)가 없으면 ASCII-only 파일이므로 UTF-8 반환합니다.
+    // 한국어 EUC-KR 파일은 반드시 고바이트를 포함하므로 기존 동작에 영향 없습니다.
+    let has_high_bytes = sample.iter().any(|&b| b >= 0x80);
+    if !has_high_bytes {
+        return UTF_8;
     }
+    let (_res, _, has_error) = EUC_KR.decode(sample);
+    if !has_error { return EUC_KR; }
     
     // 기본값으로 UTF-8 반환
     UTF_8
@@ -148,7 +151,14 @@ pub fn generate_search_patterns(
                 let mut encoded = String::new();
                 for c in p.chars() {
                     if c.is_ascii() { encoded.push(c); }
-                    else { encoded.push_str(&format!("\\u{:04X}", c as u32)); }
+                    else {
+                        let code_point = c as u32;
+                        // 대문자(\uXXXX)와 소문자(\uxxxx) 양쪽 모두 추가합니다.
+                        variants.push(format!("\\u{:04X}", code_point));
+                        variants.push(format!("\\u{:04x}", code_point));
+                        // encoded는 소문자 패턴으로 기본 빌드
+                        encoded.push_str(&format!("\\u{:04x}", code_point));
+                    }
                 }
                 if encoded != *p { variants.push(encoded); }
             }
@@ -175,10 +185,6 @@ pub fn is_binary(data: &[u8]) -> bool {
 
 pub fn normalize_unicode(text: &str) -> String {
     text.nfc().collect::<String>()
-}
-
-pub fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    memchr::memmem::find(haystack, needle)
 }
 
 #[cfg(test)]
@@ -222,7 +228,7 @@ mod tests {
 
         assert!(patterns.iter().any(|p| p == keyword));
         assert!(patterns.iter().any(|p| p == "A&amp;B&#54620;"));
-        assert!(patterns.iter().any(|p| p == r"A&B\uD55C"));
+        assert!(patterns.iter().any(|p| p == r"A&B\ud55c"));
     }
 
     #[test]

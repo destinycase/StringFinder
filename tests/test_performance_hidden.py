@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from core.search_engine import HAS_RUST_ENGINE, FileScanner, find_files_with_keyword_fast, search_directory_fast
+from core.search_engine import FileScanner, find_files_with_keyword_fast, search_directory_fast
 
 
 def set_hidden(path):
@@ -65,7 +65,6 @@ def test_python_scanner_exclude_hidden(hidden_test_env):
     assert len(files) == 2
 
 
-@pytest.mark.skipif(not HAS_RUST_ENGINE, reason="Rust engine required")
 def test_rust_engine_exclude_hidden(hidden_test_env):
     """test_rust_engine_exclude_hidden ?⑥닔."""
     res = search_directory_fast([str(hidden_test_env)], "find", extensions=["txt"], exclude_hidden=True)
@@ -79,7 +78,6 @@ def test_rust_engine_exclude_hidden(hidden_test_env):
     assert len(results) == 2
 
 
-@pytest.mark.skipif(not HAS_RUST_ENGINE, reason="Rust engine required")
 def test_rust_smart_scan_exclude_hidden(hidden_test_env):
     """test_rust_smart_scan_exclude_hidden ?⑥닔."""
     found = find_files_with_keyword_fast([str(hidden_test_env)], "find", extensions=["txt"], exclude_hidden=True)
@@ -101,7 +99,6 @@ def test_rust_smart_scan_exclude_hidden(hidden_test_env):
     assert len(found_files) == 2
 
 
-@pytest.mark.skipif(not HAS_RUST_ENGINE, reason="Rust engine required")
 def test_rust_files_list_exclude_hidden(hidden_test_env):
     """Validate exclude_hidden behavior for explicit file list scans."""
     from core.search_engine import search_files_list_fast

@@ -8,6 +8,7 @@ pub fn check_archive_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _max_per_file: usize,
 ) -> bool {
     // 선행 필터링 (가장 빠른 바이트 레벨 체크)
     if !is_exact && ac.find(mmap).is_none() {
@@ -61,6 +62,7 @@ pub fn search_archive_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_per_file: usize,
 ) -> Vec<RawMatch> {
     let mut results = Vec::new();
     let pat_upper = pattern.to_lowercase().to_uppercase();
@@ -101,53 +103,30 @@ pub fn search_archive_file(
                         };
 
                         if is_match {
-                            let key = child.get("Key").and_then(|v| v.as_str()).unwrap_or("");
-                            // 성능 최적화: 캐시된 search_from 사용
-                            let key_pattern = format!("\"Key\": \"{}\"", key);
-                            let key_bytes = key_pattern.as_bytes();
-                            
-                            if let Some(key_pos_rel) = crate::utils::find_bytes(&mmap[search_from..], key_bytes) {
-                                let key_pos = search_from + key_pos_rel;
-                                
-                                // Key 위치 이후에서 실제 패턴 탐색
-                                if let Some(mat) = ac.find(&mmap[key_pos..]) {
-                                    let pos = key_pos + mat.start();
-                                    
-                                    // 누적 라인 카운팅을 통해 매번 처음부터 세지 않도록 최적화합니다.
-                                    if pos > last_counted_pos {
-                                        current_line += memchr::memchr_iter(b'\n', &mmap[last_counted_pos..pos]).count();
-                                        last_counted_pos = pos;
-                                    }
-                                    
-                                    // 다음 검색을 위해 search_from 업데이트
-                                    search_from = key_pos + key_pattern.len();
-                                    
-                                    let content = format!(
-                                        "{}\t{}\t{}\t{}",
-                                        ns_name, 
-                                        key,
-                                        raw_s,
-                                        raw_t
-                                    );
-                                    results.push((current_line, content, Some(pos), None));
-                                    continue;
-                                }
+                            if results.len() >= max_per_file + 1 {
+                                return results;
                             }
-
-                            // 앵커 탐색 실패 시 펄백
+                            let key = child.get("Key").and_then(|v| v.as_str()).unwrap_or("");
+                            
+                            // Key Block을 찾지 않고, 현재 search_from 오프셋에서 시작하여 실제 패턴 매치 위치를 직접 탐색합니다.
+                            // 매 텀마다 Key 포매팅(allocation) 및 이중 스캔(find_bytes)이 발생하던 O(N^2)성 오버헤드를 제거합니다.
                             if let Some(mat) = ac.find(&mmap[search_from..]) {
                                 let pos = search_from + mat.start();
+                                
+                                // 누적 라인 카운팅을 통해 매번 처음부터 세지 않도록 최적화합니다.
                                 if pos > last_counted_pos {
                                     current_line += memchr::memchr_iter(b'\n', &mmap[last_counted_pos..pos]).count();
                                     last_counted_pos = pos;
                                 }
-                                search_from = pos + 1;
+                                
+                                // N4: 실제 패턴 매치 끝 이후로 전진해 동일 위치 반복 매치를 방지합니다.
+                                search_from = pos + mat.len().max(1);
                                 if search_from > mmap.len() { search_from = mmap.len(); }
                                 
                                 let content = format!(
                                     "{}\t{}\t{}\t{}",
                                     ns_name, 
-                                    child.get("Key").and_then(|v| v.as_str()).unwrap_or("none"),
+                                    key,
                                     raw_s,
                                     raw_t
                                 );

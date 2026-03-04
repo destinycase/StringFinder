@@ -33,8 +33,6 @@ def test_memory_guard_handling_json(tmp_path, monkeypatch):
         return [MockMatch("ERR_MEMORY_GUARD|Size exceeds limit")]
 
     import core.search_engine
-
-    monkeypatch.setattr(core.search_engine, "HAS_RUST_ENGINE", True)
     monkeypatch.setattr(core.search_engine, "sf_engine", type("obj", (object,), {"search_file": mock_search_file}))
 
     result = search_in_json_special(str(file_path), "value")
@@ -64,8 +62,6 @@ def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch):
         return [MockMatch("ERR_PANIC|Simulated engine crash")]
 
     import core.search_engine
-
-    monkeypatch.setattr(core.search_engine, "HAS_RUST_ENGINE", True)
     monkeypatch.setattr(core.search_engine, "sf_engine", type("obj", (object,), {"search_file": mock_search_file}))
 
     result = core.search_engine.search_in_file(str(file_path), "query", use_complex_search=False)

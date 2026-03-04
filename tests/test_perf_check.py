@@ -14,10 +14,9 @@
 
 import time
 import pytest
-from core.search_engine import search_in_file, HAS_RUST_ENGINE
+from core.search_engine import search_in_file
 
 
-@pytest.mark.skipif(not HAS_RUST_ENGINE, reason="Rust 엔진 필요")
 def test_performance_many_matches_on_one_line(tmp_path):
     # 1. 1MB 크기의 단일 라인 파일 생성 (10,000개의 매치 포함)
     file_path = tmp_path / "long_line_many_matches.txt"
@@ -43,7 +42,6 @@ def test_performance_many_matches_on_one_line(tmp_path):
     assert duration < 0.5, f"Performance regression detected: {duration:.4f}s"
 
 
-@pytest.mark.skipif(not HAS_RUST_ENGINE, reason="Rust 엔진 필요")
 def test_panic_regression_check(tmp_path):
     # 패닉 재현 테스트와 동일한 레벨의 검증 (안전성 유지 확인)
     xml_path = tmp_path / "panic_check.xml"

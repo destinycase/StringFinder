@@ -17,17 +17,9 @@
 import json
 import pytest
 from core.search_engine import search_in_json_special, search_in_archive_special
-from core import search_engine
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
 
-@pytest.fixture(autouse=True)
-def disable_rust():
-    # Rust 엔진 비활성화하여 Python 폴백 경로 강제 테스트
-    old_has_rust = search_engine.HAS_RUST_ENGINE
-    search_engine.HAS_RUST_ENGINE = False
-    yield
-    search_engine.HAS_RUST_ENGINE = old_has_rust
 
 def test_json_key_only_match_integrity(tmp_path):
     # [1] JSON Key 검색 배제 (Value만 검색해야 함)

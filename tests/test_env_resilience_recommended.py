@@ -233,11 +233,6 @@ def test_mainwindow_qtimer_after_destroy(qtbot, mock_config_manager):
 
 
 def test_binary_placeholder_contract_rust_enabled(tmp_path):
-    from core.search_engine import HAS_RUST_ENGINE
-
-    if not HAS_RUST_ENGINE:
-        pytest.skip("Rust engine required for Rust placeholder contract test")
-
     p = tmp_path / "binary_placeholder_rust.bin"
     p.write_bytes(b"Some text\x00More binary data with KEYWORD here")
 

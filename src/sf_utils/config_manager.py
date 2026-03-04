@@ -84,6 +84,16 @@ class ConfigManager:
             Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT: False,
             Constants.CONFIG_KEY_EXCLUDE_BINARY: True,
             Constants.CONFIG_KEY_TABS: [],
+            Constants.CONFIG_KEY_ADVANCED: {
+                Constants.CONFIG_KEY_MAX_TOTAL_MATCHES: Constants.DEFAULT_MAX_TOTAL_MATCHES,
+                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+                Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB,
+                Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE: Constants.DEFAULT_MAX_SMALL_FILE_SIZE_MB,
+                Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD: Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB,
+                Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG: Constants.DEFAULT_TIMEOUT_WORKER_HANG,
+                Constants.CONFIG_KEY_MAX_CHECK_CELLS: Constants.DEFAULT_MAX_CHECK_CELLS,
+                Constants.CONFIG_KEY_MAX_JSON_DEPTH: Constants.DEFAULT_MAX_JSON_DEPTH,
+            },
         }
         self._config_lock = threading.RLock()
         self._save_lock = threading.Lock()
@@ -94,8 +104,6 @@ class ConfigManager:
         # 교착 상태를 방지하기 위해 반드시 _config_lock보다 _save_lock을 먼저 획득해야 합니다.
         self._save_timer = None
         self._save_debounce_time = 0.5
-        if not hasattr(self, "config"):
-            self.config = self._load()
         self._initialized = True
 
     def get_column_widths(self, table_name):
@@ -630,3 +638,30 @@ class ConfigManager:
         with self._config_lock:
             self.config[Constants.CONFIG_KEY_EXCLUDE_BINARY] = value
         self.save()
+
+    def get_advanced_settings(self) -> dict[str, Any]:
+        """고급 설정 딕셔너리를 반환한다. (누락된 키는 기본값으로 채운다)"""
+        with self._config_lock:
+            advanced = self.config.get(Constants.CONFIG_KEY_ADVANCED, {})
+            defaults = self.defaults.get(Constants.CONFIG_KEY_ADVANCED, {})
+            result = copy.deepcopy(defaults)
+            if isinstance(advanced, dict):
+                result.update(advanced)
+            return result  # type: ignore
+        
+    def set_advanced_settings(self, settings_dict: dict):
+        """고급 설정을 업데이트한다."""
+        with self._config_lock:
+            current = self.config.get(Constants.CONFIG_KEY_ADVANCED, {})
+            if not isinstance(current, dict):
+                current = copy.deepcopy(self.defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
+            current.update(settings_dict)
+            self.config[Constants.CONFIG_KEY_ADVANCED] = current
+        self.save()
+        
+    def reset_advanced_settings(self) -> dict[str, Any]:
+        """고급 설정을 초기화하고 반환한다."""
+        with self._config_lock:
+            defaults = copy.deepcopy(self.defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
+            self.config[Constants.CONFIG_KEY_ADVANCED] = defaults
+            return defaults  # type: ignore

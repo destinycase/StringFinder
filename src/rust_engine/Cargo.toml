@@ -1,6 +1,6 @@
 [package]
 name = "sf_engine"
-version = "5.1.1"
+version = "5.4.0"
 edition = "2021"
 
 [dependencies]
@@ -11,9 +11,8 @@ memmap2 = "0.9.0"
 encoding_rs = "0.8.33"
 ignore = "0.4"
 rayon = "1.8"
-num_cpus = "1.16"
 simdutf8 = "0.1"
-calamine = { git = "https://github.com/tafia/calamine", branch = "master" }
+calamine = "0.33"
 crossbeam-channel = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -21,7 +20,6 @@ quick-xml = "0.31"
 unicode-normalization = "0.1"
 fs2 = "0.4"
 globset = "0.4"
-regex = "1.10"
 
 [lib]
 name = "sf_engine"

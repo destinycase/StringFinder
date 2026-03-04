@@ -12,6 +12,8 @@ struct JsonSearchContext<'a> {
     last_line: usize,
     results: Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_per_file: usize,
+    max_json_depth: usize,
 }
 
 pub fn search_json_file(
@@ -20,6 +22,8 @@ pub fn search_json_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_per_file: usize,
+    max_json_depth: usize,
 ) -> Vec<RawMatch> {
     let mut ctx = JsonSearchContext {
         pattern,
@@ -31,6 +35,8 @@ pub fn search_json_file(
         last_line: 1,
         results: Vec::new(),
         stop_flag,
+        max_per_file,
+        max_json_depth,
     };
 
     let ac_precheck = ctx.ac.find(mmap);
@@ -58,76 +64,127 @@ pub fn search_json_file(
 
         match value_res {
             Ok(v) => {
-                let mut stack = vec![(&v, String::new())];
-                while let Some((val, path)) = stack.pop() {
+                enum PathComp<'a> {
+                    ObjKey(&'a str),
+                    ArrIdx(usize),
+                }
+                enum Task<'a> {
+                    Explore(&'a JsonValue, Option<PathComp<'a>>),
+                    PopPath,
+                }
+                let mut stack = vec![Task::Explore(&v, None)];
+                let mut current_path: Vec<PathComp> = Vec::new();
+
+                while let Some(task) = stack.pop() {
+                    // B4/N3: 깊이 방어 (루프 순회 방어용 2만)
+                    if stack.len() >= 20_000 { break; }
                     if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                         break;
                     }
-                    match val {
-                        JsonValue::Object(map) => {
-                            for (k, v) in map.iter().rev() {
-                                let new_path = if path.is_empty() { format!("/{}", k) } else { format!("{}/{}", path, k) };
-                                stack.push((v, new_path));
-                            }
+                    match task {
+                        Task::PopPath => {
+                            current_path.pop();
                         }
-                        JsonValue::Array(arr) => {
-                            for (i, v) in arr.iter().enumerate().rev() {
-                                let new_path = if path.is_empty() { format!("/{}", i) } else { format!("{}/{}", path, i) };
-                                stack.push((v, new_path));
+                        Task::Explore(val, comp) => {
+                            if let Some(c) = comp {
+                                current_path.push(c);
+                                stack.push(Task::PopPath);
                             }
-                        }
-                        JsonValue::String(s) => {
-                            let is_match = if ctx.is_exact {
-                                s.trim().to_lowercase().to_uppercase() == ctx.pattern_upper
-                            } else {
-                                ctx.ac.find(s).is_some()
-                            };
-
-                            if is_match {
-                                // 하이브리드 스트리밍: 현재 값의 대략적인 위치 주변에서 정밀 위치를 탐색합니다.
-                                let mut found_pos = None;
-                                let mut found_len = 0;
-
-                                let search_area_start = ctx.last_offset;
-                                let search_area_end = std::cmp::min(byte_offset + 1024, ctx.mmap.len());
-                                
-                                if search_area_start < search_area_end {
-                                    if let Some(m) = ctx.ac.find(&ctx.mmap[search_area_start..search_area_end]) {
-                                        found_pos = Some(search_area_start + m.start());
-                                        found_len = m.len();
+                            match val {
+                                JsonValue::Object(map) => {
+                                    for (k, v) in map.iter().rev() {
+                                        stack.push(Task::Explore(v, Some(PathComp::ObjKey(k))));
                                     }
                                 }
-                                
-                                if let Some(actual_pos) = found_pos {
-                                    ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
-                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), Some(actual_pos), Some(found_len)));
-                                    ctx.last_offset = actual_pos + found_len;
-                                } else {
-                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), None, None));
-                                }
-                            }
-                        }
-                        JsonValue::Number(n) => {
-                            let s = n.to_string();
-                            let is_match = if ctx.is_exact { s == *ctx.pattern } else { ctx.ac.find(&s).is_some() };
-                            if is_match {
-                                let mut found_pos = None;
-                                let search_area_end = std::cmp::min(byte_offset + 512, ctx.mmap.len());
-                                if ctx.last_offset < search_area_end {
-                                    if let Some(m) = ctx.ac.find(&ctx.mmap[ctx.last_offset..search_area_end]) {
-                                        found_pos = Some(ctx.last_offset + m.start());
+                                JsonValue::Array(arr) => {
+                                    for (i, v) in arr.iter().enumerate().rev() {
+                                        stack.push(Task::Explore(v, Some(PathComp::ArrIdx(i))));
                                     }
                                 }
-                                if let Some(actual_pos) = found_pos {
-                                    ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
-                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), Some(actual_pos), Some(s.len())));
-                                    ctx.last_offset = actual_pos + s.len();
-                                } else {
-                                    ctx.results.push((ctx.last_line, format!("{}\t{}", path, s), None, None));
+                                JsonValue::String(s) => {
+                                    let is_match = if ctx.is_exact {
+                                        s.trim().to_lowercase().to_uppercase() == ctx.pattern_upper
+                                    } else {
+                                        ctx.ac.find(s).is_some()
+                                    };
+
+                                    if is_match {
+                                        if ctx.results.len() >= ctx.max_per_file + 1 {
+                                            return ctx.results;
+                                        }
+                                        let mut path_str = String::new();
+                                        for comp in &current_path {
+                                            path_str.push('/');
+                                            match comp {
+                                                PathComp::ObjKey(k) => path_str.push_str(k),
+                                                PathComp::ArrIdx(idx) => {
+                                                    use std::fmt::Write;
+                                                    write!(&mut path_str, "{}", idx).unwrap();
+                                                }
+                                            }
+                                        }
+                                        
+                                        // 하이브리드 스트리밍: 현재 값의 대략적인 위치 주변에서 정밀 위치를 탐색합니다.
+                                        let mut found_pos = None;
+                                        let mut found_len = 0;
+
+                                        let search_area_start = ctx.last_offset;
+                                        let search_area_end = std::cmp::min(byte_offset + 4096, ctx.mmap.len());
+                                        
+                                        if search_area_start < search_area_end {
+                                            if let Some(m) = ctx.ac.find(&ctx.mmap[search_area_start..search_area_end]) {
+                                                found_pos = Some(search_area_start + m.start());
+                                                found_len = m.len();
+                                            }
+                                        }
+                                        
+                                        if let Some(actual_pos) = found_pos {
+                                            ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
+                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), Some(actual_pos), Some(found_len)));
+                                            ctx.last_offset = actual_pos + found_len;
+                                        } else {
+                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), None, None));
+                                        }
+                                    }
                                 }
+                                JsonValue::Number(n) => {
+                                    let s = n.to_string();
+                                    let is_match = if ctx.is_exact { s == *ctx.pattern } else { ctx.ac.find(&s).is_some() };
+                                    if is_match {
+                                        if ctx.results.len() >= ctx.max_per_file + 1 {
+                                            return ctx.results;
+                                        }
+                                        let mut path_str = String::new();
+                                        for comp in &current_path {
+                                            path_str.push('/');
+                                            match comp {
+                                                PathComp::ObjKey(k) => path_str.push_str(k),
+                                                PathComp::ArrIdx(idx) => {
+                                                    use std::fmt::Write;
+                                                    write!(&mut path_str, "{}", idx).unwrap();
+                                                }
+                                            }
+                                        }
+
+                                        let mut found_pos = None;
+                                        let search_area_end = std::cmp::min(byte_offset + 4096, ctx.mmap.len());
+                                        if ctx.last_offset < search_area_end {
+                                            if let Some(m) = ctx.ac.find(&ctx.mmap[ctx.last_offset..search_area_end]) {
+                                                found_pos = Some(ctx.last_offset + m.start());
+                                            }
+                                        }
+                                        if let Some(actual_pos) = found_pos {
+                                            ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
+                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), Some(actual_pos), Some(s.len())));
+                                            ctx.last_offset = actual_pos + s.len();
+                                        } else {
+                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), None, None));
+                                        }
+                                    }
+                                }
+                                _ => {}
                             }
                         }
-                        _ => {}
                     }
                 }
             }
@@ -144,6 +201,7 @@ pub fn check_json_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _max_json_depth: usize,
 ) -> bool {
     let pattern_upper = pattern.to_lowercase().to_uppercase();
     
@@ -183,7 +241,7 @@ pub fn check_json_file(
                     }
                     JsonValue::String(s) => {
                         let is_match = if is_exact {
-                            s.to_lowercase().to_uppercase() == pattern_upper
+                            s.trim().to_lowercase().to_uppercase() == pattern_upper
                         } else {
                             ac.find(s).is_some()
                         };

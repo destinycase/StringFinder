@@ -41,6 +41,11 @@ def get_logger():
     if _logger_instance is None:
         _logger_instance = logging.getLogger("StringFinder")
         _logger_instance.setLevel(logging.DEBUG)
+
+    # [H-03 Fix] 핸들러 중복 등록 방지 — 이미 핸들러가 있으면 추가하지 않음
+    # logging.getLogger()는 전역 레지스트리를 반환하므로 _logger_instance 리셋 후
+    # 재호출 시에도 기존 핸들러가 보존됩니다.
+    if not _logger_instance.handlers:
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         # 표준 출력을 위한 콘솔 로그 핸들러를 추가합니다.
         if sys.stdout:

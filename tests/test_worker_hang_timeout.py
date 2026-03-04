@@ -39,8 +39,8 @@ def test_worker_hang_timeout_resource_cleanup(mock_worker):
     
     from concurrent.futures import Future
 
-    # Constants.TIMEOUT_WORKER_HANG을 아주 짧게 모킹 (0.5초)
-    with patch("sf_utils.constants.Constants.TIMEOUT_WORKER_HANG", 0.5):
+    # _get_adv_setting을 모킹하여 TIMEOUT_WORKER_HANG 값을 0.5초로 강제함
+    with patch("core.worker._get_adv_setting", return_value=0.5):
         # GlobalExecutor.get_executor를 모킹하여 가짜 실행기 반환
         mock_executor = MagicMock()
         # submit 호출 시 완료되지 않는 Future 반환

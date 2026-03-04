@@ -56,13 +56,16 @@ fn encode_skip_reason<T: std::fmt::Display>(code: &str, detail: T) -> String {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None))]
+#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=5000, max_check_cells=500000, max_json_depth=20000))]
 fn search_file(
     py: Python,
     path: String,
     pattern: String,
     mode_bits: Option<u32>,
     stop_event: Option<pyo3::PyObject>,
+    max_per_file: usize,
+    max_check_cells: u64,
+    max_json_depth: usize,
 ) -> Result<Vec<RawMatch>, PyErr> {
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_archive, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
@@ -75,10 +78,11 @@ fn search_file(
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let done_flag = Arc::new(AtomicBool::new(false));
-    if let Some(evt) = stop_event {
+    // C2: JoinHandle을 보관하여 done_flag 설정 후 스레드가 완전히 종료됨을 보장합니다.
+    let monitor_handle = if let Some(evt) = stop_event {
         let flag_clone = stop_flag.clone();
         let done_clone = done_flag.clone();
-        std::thread::spawn(move || {
+        Some(std::thread::spawn(move || {
             loop {
                 if done_clone.load(Ordering::Relaxed) || flag_clone.load(Ordering::Relaxed) {
                     break;
@@ -98,8 +102,10 @@ fn search_file(
                 if done_clone.load(Ordering::Relaxed) { break; }
                 std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
             }
-        });
-    }
+        }))
+    } else {
+        None
+    };
 
     let pat_upper = norm_pattern.to_lowercase().to_uppercase();
     let pat_bytes = norm_pattern.to_lowercase().as_bytes().to_vec();
@@ -120,14 +126,18 @@ fn search_file(
             exclude_binary,
             existence_only,
             stop_flag,
+            max_per_file,
+            max_check_cells,
+            max_json_depth,
         })
     });
 
     done_flag.store(true, Ordering::SeqCst);
+    if let Some(h) = monitor_handle { let _ = h.join(); }
 
     match res {
         Some(Ok(mut m)) => {
-            if m.len() > 5001 { m.truncate(5001); }
+            if m.len() > max_per_file + 1 { m.truncate(max_per_file + 1); }
             Ok(m)
         },
         Some(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e)),
@@ -143,6 +153,7 @@ fn do_search_with_mmap(
     is_exact: bool,
     existence_only: bool,
     stop_flag: &Arc<AtomicBool>,
+    max_per_file: usize,
 ) -> Vec<RawMatch> {
     let mut results = Vec::new();
     let encoding = detect_encoding(mmap);
@@ -154,7 +165,7 @@ fn do_search_with_mmap(
             let mut line_number = 1usize;
             let mut last_start = 0usize;
             for nl_pos in memchr::memchr_iter(b'\n', mmap) {
-                if results.len() >= 5001 { break; }
+            if results.len() >= max_per_file + 1 { break; }
                 if line_number.is_multiple_of(1000) && stop_flag.load(Ordering::Relaxed) { return results; }
                 let mut line_bytes = &mmap[last_start..nl_pos];
                 if !line_bytes.is_empty() && line_bytes[line_bytes.len() - 1] == b'\r' {
@@ -177,7 +188,7 @@ fn do_search_with_mmap(
                 last_start = nl_pos + 1;
                 line_number += 1;
             }
-            if last_start < mmap.len() && results.len() < 5001 {
+            if last_start < mmap.len() && results.len() < max_per_file + 1 {
                 let line_bytes = &mmap[last_start..];
                 let is_match = if line_bytes.is_ascii() && pat_bytes.is_ascii() { line_bytes.eq_ignore_ascii_case(pat_bytes) }
                 else {
@@ -200,7 +211,7 @@ fn do_search_with_mmap(
         let mut last_returned_line = 0usize;
 
         for mat in ac.find_iter(mmap) {
-            if results.len() >= 5001 { break; }
+            if results.len() >= max_per_file + 1 { break; }
             if results.len() % 1000 == 0 && stop_flag.load(Ordering::Relaxed) { return results; }
             let m_start = mat.start();
             while m_start > next_nl_pos {
@@ -242,7 +253,7 @@ fn do_search_with_mmap(
         }
 
         for (i, line) in content_str.lines().enumerate() {
-            if results.len() >= 5001 { break; }
+            if results.len() >= max_per_file + 1 { break; }
             if i % 1000 == 0 && stop_flag.load(Ordering::Relaxed) { break; }
             let is_match = if is_exact { line.trim().to_lowercase().to_uppercase() == pat_upper }
                            else { ac.find(line).is_some() };
@@ -258,12 +269,14 @@ struct InternalSearchParams<'a> {
     path: &'a Path, pattern: &'a str, pat_upper: &'a str, pat_bytes: &'a [u8], ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool, is_json: bool, is_xml: bool, is_archive: bool, is_excel: bool,
     exclude_hidden: bool, exclude_binary: bool, existence_only: bool, stop_flag: Arc<AtomicBool>,
+    max_per_file: usize, max_check_cells: u64, max_json_depth: usize,
 }
 
 fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMatch>, String>> {
     let InternalSearchParams {
         path, pattern, pat_upper, pat_bytes, ac, is_exact, is_json, is_xml, is_archive, is_excel,
         exclude_hidden, exclude_binary, existence_only, stop_flag,
+        max_per_file, max_check_cells, max_json_depth,
     } = params;
     
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
@@ -271,12 +284,12 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
     if is_excel || ["xlsx", "xlsb", "xls", "xlsm"].contains(&ext.as_str()) {
         if existence_only {
-            if check_excel_file(path, pattern, ac, is_exact, stop_flag) {
+            if check_excel_file(path, pattern, ac, is_exact, stop_flag, max_check_cells) {
                 return Some(Ok(vec![(1, "MATCH".to_string(), None, None)]));
             }
             return None;
         }
-        let r_raw = search_excel_file(path, pattern, ac, is_exact, stop_flag);
+        let r_raw = search_excel_file(path, pattern, ac, is_exact, stop_flag, max_per_file, max_check_cells);
         let r = r_raw;
         return if r.is_empty() { None } else { Some(Ok(r)) };
     }
@@ -322,21 +335,21 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
     let res = if is_archive && (ext_l == ".archive" || ext_l == ".sf_archive") {
         if existence_only {
-            if check_archive_file(final_mmap, pattern, ac, is_exact, stop_flag.clone()) { vec![(1, "MATCH".to_string(), None, None)] }
+            if check_archive_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file) { vec![(1, "MATCH".to_string(), None, None)] }
             else { Vec::new() }
-        } else { search_archive_file(final_mmap, pattern, ac, is_exact, stop_flag.clone()) }
+        } else { search_archive_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file) }
     } else if is_json && ext_l == ".json" {
         if final_mmap.len() as u64 > MAX_JSON_SIZE {
             vec![(1, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON"), None, None)]
         } else if existence_only {
-            if check_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone()) { vec![(1, "MATCH".to_string(), None, None)] }
+            if check_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_json_depth) { vec![(1, "MATCH".to_string(), None, None)] }
             else { Vec::new() }
-        } else { search_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone()) }
+        } else { search_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file, max_json_depth) }
     } else if is_xml && (ext_l == ".xml" || ext_l == ".sf_xml") {
         if existence_only {
             if check_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone()) { vec![(1, "MATCH".to_string(), None, None)] }
             else { Vec::new() }
-        } else { search_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone()) }
+        } else { search_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file) }
     } else {
         let bin = is_binary(mmap_c);
         if exclude_binary && bin { return None; }
@@ -350,7 +363,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 else { Vec::new() }
             }
         } else {
-            do_search_with_mmap(final_mmap, pat_upper, pat_bytes, ac, is_exact, existence_only, &stop_flag)
+            do_search_with_mmap(final_mmap, pat_upper, pat_bytes, ac, is_exact, existence_only, &stop_flag, max_per_file)
         }
     };
 
@@ -360,7 +373,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
 
 #[pyfunction]
-#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, **_kwargs))]
+#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 pub fn search_dir(
     py: Python,
@@ -375,6 +388,9 @@ pub fn search_dir(
     results_callback: Option<pyo3::PyObject>,
     batch_size: Option<usize>,
     _flush_ms: Option<u64>,
+    max_per_file: Option<usize>,
+    max_check_cells: Option<u64>,
+    max_json_depth: Option<usize>,
     _kwargs: Option<pyo3::PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
@@ -396,14 +412,17 @@ pub fn search_dir(
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let done_flag = Arc::new(AtomicBool::new(false));
-    
-    if stop_event.is_some() || progress_callback.is_some() {
+    let processed_files = Arc::new(AtomicU64::new(0)); // M4: 실제 처리 파일 수 카운터
+
+    // N2: JoinHandle을 보관하여 done_flag 설정 후 모니터 스레드가 완전히 종료됨을 보장합니다.
+    let monitor_handle = if stop_event.is_some() || progress_callback.is_some() {
         let flag_clone = stop_flag.clone();
         let done_clone = done_flag.clone();
         let stop_evt_mon = stop_event.as_ref().map(|obj| obj.clone_ref(py));
         let progress_cb_mon = progress_callback.as_ref().map(|obj| obj.clone_ref(py));
+        let processed_files_mon = processed_files.clone();
         
-        std::thread::spawn(move || {
+        Some(std::thread::spawn(move || {
             while !done_clone.load(Ordering::Relaxed) && !flag_clone.load(Ordering::Relaxed) {
                 let is_stopped = Python::with_gil(|py| {
                     if done_clone.load(Ordering::Relaxed) { return false; }
@@ -413,15 +432,19 @@ pub fn search_dir(
                         }
                     }
                     if let Some(cb) = &progress_cb_mon {
-                        let _ = cb.bind(py).call1((1, 100)); 
+                        // M4: 하드코딩 대신 실제 처리 파일 수 전달
+                        let cnt = processed_files_mon.load(Ordering::Relaxed);
+                        let _ = cb.bind(py).call1((cnt,));
                     }
                     false
                 });
                 if is_stopped { flag_clone.store(true, Ordering::SeqCst); break; }
                 std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
             }
-        });
-    }
+        }))
+    } else {
+        None
+    };
 
     let results_dispatcher = results_callback.as_ref().map(|cb| {
         let (tx, rx) = crossbeam_channel::unbounded::<(String, Vec<RawMatch>)>();
@@ -471,6 +494,7 @@ pub fn search_dir(
                     let tx_worker = tx_main.clone();
                     let ext_s = extensions_set.as_ref();
                     let glob_s = filename_glob_set.clone();
+                    let file_counter = processed_files.clone(); // M4: 카운터 공유
 
                     Box::new(move |entry| {
                         if stop_ref.load(Ordering::Relaxed) { return ignore::WalkState::Quit; }
@@ -504,6 +528,9 @@ pub fn search_dir(
                             is_exact, is_json, is_xml, is_archive, is_excel,
                             exclude_hidden, exclude_binary, existence_only,
                             stop_flag: stop_ref.clone(),
+                            max_per_file: max_per_file.unwrap_or(5000),
+                            max_check_cells: max_check_cells.unwrap_or(500_000),
+                            max_json_depth: max_json_depth.unwrap_or(20_000),
                         });
 
                         if let Some(r) = res {
@@ -525,12 +552,15 @@ pub fn search_dir(
                                 }
                             }
                         }
+                        file_counter.fetch_add(1, Ordering::Relaxed); // M4: 파일 처리 완료 카운트
                         ignore::WalkState::Continue
                     })
                 });
         }
+        // A3: done_flag를 먼저 설정하여 dispatcher와 monitor 스레드가 종료 루프에 진입할 수 있도록 합니다.
         done_flag.store(true, Ordering::SeqCst);
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
+        if let Some(h) = monitor_handle { let _ = h.join(); }
     });
 
     let final_res = results.lock().map(|g| g.clone()).unwrap_or_default();
@@ -539,7 +569,7 @@ pub fn search_dir(
 }
 
 #[pyfunction]
-#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, **_kwargs))]
+#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn search_files_list(
     py: Python<'_>,
@@ -552,6 +582,9 @@ fn search_files_list(
     results_callback: Option<PyObject>,
     batch_size: Option<usize>,
     _flush_ms: Option<u64>,
+    max_per_file: Option<usize>,
+    max_check_cells: Option<u64>,
+    max_json_depth: Option<usize>,
     _kwargs: Option<PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -564,8 +597,9 @@ fn search_files_list(
     let progress_cb_mon = progress_callback.as_ref().map(|obj| obj.clone_ref(py));
     let progress_cnt_mon = progress_counter.clone();
 
-    if stop_event.is_some() || progress_callback.is_some() {
-        std::thread::spawn(move || {
+    // X1: search_dir(N2)와 동일하게 JoinHandle을 보관하여 done_flag 설정 후 join합니다.
+    let monitor_handle = if stop_event.is_some() || progress_callback.is_some() {
+        Some(std::thread::spawn(move || {
             while !done_mon.load(Ordering::Relaxed) {
                 let is_stopped = Python::with_gil(|py| {
                     if let Some(obj) = &stop_event_mon {
@@ -581,8 +615,10 @@ fn search_files_list(
                 if is_stopped { stop_flag_mon.store(true, Ordering::SeqCst); break; }
                 std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
             }
-        });
-    }
+        }))
+    } else {
+        None
+    };
 
     let results_dispatcher = results_callback.as_ref().map(|cb| {
         let (tx, rx) = crossbeam_channel::unbounded::<(String, Vec<RawMatch>)>();
@@ -636,6 +672,9 @@ fn search_files_list(
                 ac: &ac, is_exact, is_json, is_xml, is_archive, is_excel,
                 exclude_hidden, exclude_binary, existence_only,
                 stop_flag: stop_flag.clone(),
+                max_per_file: max_per_file.unwrap_or(5000),
+                max_check_cells: max_check_cells.unwrap_or(500_000),
+                max_json_depth: max_json_depth.unwrap_or(20_000),
             });
 
             if let Some(r) = res {
@@ -650,9 +689,10 @@ fn search_files_list(
             progress_counter.fetch_add(1, Ordering::Relaxed);
         });
 
+        // B1: done_flag를 먼저 설정하여 dispatcher와 monitor 스레드가 종료 루프에 진입할 수 있도록 합니다.
         done_flag.store(true, Ordering::SeqCst);
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
-        
+        if let Some(h) = monitor_handle { let _ = h.join(); }
         let final_res = results.lock().map(|g| g.clone()).unwrap_or_default();
         let final_skip = skipped.lock().map(|g| g.clone()).unwrap_or_default();
         Ok((final_res, final_skip))
@@ -696,7 +736,9 @@ fn find_files_with_keyword(
         });
     }
 
-    let _results_dispatcher = results_callback.as_ref().map(|cb| {
+    // M1: `_results_dispatcher` → `results_dispatcher` (언더스코어 제거)
+    // `_` prefix 변수는 Rust 컴파일러에 의해 즉시 drop되므로 tx도 함께 소멸되어 콜백 스레드가 동작하지 않았음.
+    let results_dispatcher = results_callback.as_ref().map(|cb| {
         let (tx, rx) = crossbeam_channel::unbounded::<(String, u64)>();
         let cb_clone = cb.clone_ref(py);
         let done_dispatcher = is_done.clone();
@@ -743,6 +785,8 @@ fn find_files_with_keyword(
             let kw_orig = keyword.clone();
             let ext_s = exts.clone();
             let glob_s = glob_set.clone();
+            // M1: results_dispatcher에서 tx 채널 추출
+            let tx_kw = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
 
             walker.run(move || {
                 let res_inner = Arc::clone(&res_ref);
@@ -751,6 +795,7 @@ fn find_files_with_keyword(
                 let kw_inner = kw_orig.clone();
                 let exts_inner = ext_s.clone();
                 let glob_inner = glob_s.clone();
+                let tx_inner = tx_kw.clone(); // M1: tx 채널 공유
 
                 Box::new(move |entry| {
                     if stop_inner.load(Ordering::Relaxed) { return ignore::WalkState::Quit; }
@@ -773,11 +818,11 @@ fn find_files_with_keyword(
                         
                         if let Ok(mmap) = unsafe { Mmap::map(&file) } {
                              let is_match = if is_json && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
-                                 check_json_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
+                                 check_json_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), 20_000)
                              } else if is_xml && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) {
                                  check_xml_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
                              } else if is_archive && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("archive")) {
-                                 check_archive_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
+                                 check_archive_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), 5000)
                              } else if exclude_binary && is_binary(&mmap) {
                                  false
                              } else {
@@ -785,8 +830,12 @@ fn find_files_with_keyword(
                              };
 
                             if is_match {
-                                if let Ok(mut g) = res_inner.lock() {
-                                    g.push((path.to_string_lossy().to_string(), f_size));
+                                let f_path = path.to_string_lossy().to_string();
+                                // M1: tx 채널이 있으면 스트리밍, 없으면 공유 벡터에 직접 저장
+                                if let Some(tx) = &tx_inner {
+                                    let _ = tx.send((f_path, f_size));
+                                } else if let Ok(mut g) = res_inner.lock() {
+                                    g.push((f_path, f_size));
                                 }
                             }
                         }
@@ -796,7 +845,9 @@ fn find_files_with_keyword(
             });
         });
 
+        // N1: is_done을 먼저 설정하여 dispatcher가 종료 루프에 진입할 수 있도록 합니다.
         is_done.store(true, Ordering::SeqCst);
+        if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
         let final_res = results.lock().map(|g| g.clone()).unwrap_or_default();
         let final_skipped = skipped.lock().map(|g| g.clone()).unwrap_or_default();
         Ok((final_res, final_skipped))
@@ -817,6 +868,8 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;
     m.add_function(wrap_pyfunction!(find_files_with_keyword, m)?)?;
     m.add("API_VERSION", 5)?;
+    // Cargo.toml version 필드를 빌드 시점에 자동으로 읽어 Python 측에 노출합니다.
+    m.add("ENGINE_VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
 
