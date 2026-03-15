@@ -18,13 +18,6 @@ class SystemManager(QObject):
         super().__init__()
         self.app_name = app_name
 
-    def is_run_at_startup(self):
-        """[Deprecated] 시작 프로그램 등록 여부를 확인합니다. (기능 제거됨)"""
-        return False
-
-    def set_run_at_startup(self, _=True):
-        """[Deprecated] 시작 프로그램 등록 상태를 변경합니다. (기능 제거됨)"""
-        logger.debug(AppStrings.LOG_SYS_CLEANUP_DEFERRED)
 
 
     def cleanup_logs(self, log_dir, retention_config):

@@ -146,10 +146,6 @@ class SearchOptionsPanel(QWidget):
         self.search_combo.addItems(items)
         self.search_combo.setCurrentIndex(-1)
 
-    def add_history(self, text: str):
-        """검색 히스토리 추가를 처리합니다 (현재 미사용)."""
-        pass
-
     def get_state(self) -> dict:
         return {
             Constants.STATE_KEY_SEARCH: self.search_combo.currentText(),

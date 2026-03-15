@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 sys.path.append(os.path.abspath("src"))
 
-from core.system_manager import SystemManager
+
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 
@@ -77,14 +77,6 @@ class TestRegressions(unittest.TestCase):
         self.config.save_session(unsafe_name, {"test": 1})
         expected = os.path.join(self.config.sessions_dir, f"{safe_name}.json")
         self.assertTrue(os.path.exists(expected))
-
-    def test_system_manager_safe_init(self):
-        """test_system_manager_safe_init 함수."""
-        sm = SystemManager()
-        try:
-            sm.is_run_at_startup()
-        except Exception as e:
-            self.fail(f"SystemManager encountered error: {e}")
 
     def test_config_copy_isolation(self):
         """test_config_copy_isolation 함수."""
