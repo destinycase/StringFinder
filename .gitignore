@@ -22,3 +22,6 @@ target/
 dist/
 build/
 *.egg-info/
+
+# Local data
+data/
