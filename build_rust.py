@@ -8,6 +8,82 @@ import argparse
 SSOT_ENGINE_PYD = os.path.join("src", "rust_engine", "sf_engine.pyd")
 SSOT_ENGINE_SO = os.path.join("src", "rust_engine", "sf_engine.so")
 
+def unlock_file_windows(file_path: str):
+    """Windows Restart Manager API를 사용하여 파일을 잠그고 있는 프로세스를 찾아 강제 종료합니다."""
+    if os.name != "nt":
+        return
+    
+    try:
+        import ctypes
+        from ctypes import wintypes
+        import psutil
+        
+        rstrtmgr = ctypes.windll.Rstrtmgr
+        kernel32 = ctypes.windll.kernel32
+        
+        class RM_UNIQUE_PROCESS(ctypes.Structure):
+            _fields_ = [
+                ("dwProcessId", wintypes.DWORD),
+                ("ProcessStartTime", wintypes.FILETIME)
+            ]
+
+        class RM_PROCESS_INFO(ctypes.Structure):
+            _fields_ = [
+                ("Process", RM_UNIQUE_PROCESS),
+                ("strAppName", wintypes.WCHAR * 256),
+                ("strServiceShortName", wintypes.WCHAR * 64),
+                ("ApplicationType", wintypes.DWORD),
+                ("AppStatus", wintypes.DWORD),
+                ("TSSessionId", wintypes.DWORD),
+                ("bRestartable", wintypes.BOOL)
+            ]
+            
+        session_handle = wintypes.DWORD()
+        session_key = (wintypes.WCHAR * 33)()
+        
+        res = rstrtmgr.RmStartSession(ctypes.byref(session_handle), 0, session_key)
+        if res != 0:
+            return
+            
+        try:
+            paths = (ctypes.c_wchar_p * 1)(os.path.abspath(file_path))
+            res = rstrtmgr.RmRegisterResources(session_handle.value, 1, paths, 0, None, 0, None)
+            if res != 0:
+                return
+                
+            n_proc_info_needed = wintypes.DWORD(0)
+            n_proc_info = wintypes.DWORD(0)
+            reboot_reasons = wintypes.DWORD(0)
+            
+            res = rstrtmgr.RmGetList(session_handle.value, ctypes.byref(n_proc_info_needed), ctypes.byref(n_proc_info), None, ctypes.byref(reboot_reasons))
+            
+            if res == 234: # ERROR_MORE_DATA
+                n_proc_info = n_proc_info_needed
+                proc_infos = (RM_PROCESS_INFO * n_proc_info.value)()
+                res = rstrtmgr.RmGetList(session_handle.value, ctypes.byref(n_proc_info_needed), ctypes.byref(n_proc_info), proc_infos, ctypes.byref(reboot_reasons))
+                if res == 0:
+                    my_pid = os.getpid()
+                    for i in range(n_proc_info.value):
+                        pid = proc_infos[i].Process.dwProcessId
+                        if pid != my_pid:
+                            try:
+                                proc = psutil.Process(pid)
+                                print(f"[Unlock] Terminating locking process: {proc.name()} (PID: {pid})")
+                                proc.terminate()
+                                proc.wait(timeout=2.0)
+                            except Exception as e:
+                                print(f"[Unlock] Failed to terminate PID {pid}: {e}")
+                                try:
+                                    proc.kill()
+                                    print(f"[Unlock] Force killed PID: {pid}")
+                                except:
+                                    pass
+        finally:
+            rstrtmgr.RmEndSession(session_handle.value)
+    except ImportError:
+        print("Debug: psutil is required for unlocking files but not installed.")
+    except Exception as e:
+        print(f"Debug: Unlock process failed: {e}")
 
 def _is_target_artifact(path: str) -> bool:
     parts = {p.lower() for p in os.path.normpath(path).split(os.sep)}
@@ -111,6 +187,7 @@ def build_rust_engine(clean_target=False):
         if os.path.exists(src_dll):
             # 윈도우에서 사용 중인 .pyd 파일 교체 문제 해결
             if os.path.exists(dst_pyd):
+                unlock_file_windows(dst_pyd)
                 try:
                     os.remove(dst_pyd)
                 except (PermissionError, OSError):

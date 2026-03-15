@@ -25,3 +25,7 @@ build/
 
 # Local data
 data/
+
+# Logs and History
+*.log
+benchmark_history.md
