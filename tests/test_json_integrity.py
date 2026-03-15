@@ -15,7 +15,6 @@
 """
 
 import json
-import pytest
 from core.search_engine import search_in_json_special, search_in_archive_special
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings

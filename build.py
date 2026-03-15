@@ -15,13 +15,17 @@ if not os.path.exists(os.path.join(PROJECT_ROOT, "pyproject.toml")) or not os.pa
     print("Please run this script from the StringFinder project root.")
     sys.exit(1)
 
-# [격리 강화] sys.path에서 외부 프로젝트 경로(N2_ 등)가 유입되었는지 검사하고 정화
-for path in list(sys.path):
-    # StringFinder 프로젝트 내부가 아니면서 다른 프로젝트(N2_)로 추정되는 경로 제거
-    norm_path = os.path.normpath(path)
-    if ("N2_" in norm_path or "Video_Player" in norm_path) and PROJECT_ROOT not in norm_path:
-        print(f"Purging suspicious external path from sys.path: {path}")
-        sys.path.remove(path)
+# [격리 강화] sys.path에서 현재 가상 환경 및 프로젝트 외부 경로 유입을 차단합니다.
+python_home_early = os.path.normpath(sys.prefix).lower()
+isolated_initial_path = []
+for path in sys.path:
+    norm_path = os.path.normpath(path).lower()
+    # 파이썬 홈이나 현재 프로젝트 경로 내부에 있는 것만 허용
+    if norm_path.startswith(python_home_early) or norm_path.startswith(PROJECT_ROOT.lower()):
+        isolated_initial_path.append(path)
+    else:
+        print(f"Purging external path from sys.path: {path}")
+sys.path = isolated_initial_path
 
 try:
     from PIL import Image
@@ -229,10 +233,6 @@ def build(clean_first=False):
         isolated_path = []
         for p in sys.path:
             norm_p = os.path.normpath(p).lower()
-
-            # [격리] 타 프로젝트 경로가 포함된 경우 강제 제외
-            if "n2_" in norm_p or "video_player" in norm_p or "comic_viewer" in norm_p:
-                continue
 
             # 화이트리스트: 현재 파이썬 환경(venv 포함) 내부이거나 프로젝트 소스 내부인 경우만 허용
             # 이를 통해 시스템 전역에 설치된 타 프로젝트의 site-packages나 사용자 레벨의 불필요한 경로를 차단합니다.

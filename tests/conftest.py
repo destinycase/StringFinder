@@ -54,29 +54,7 @@ def session_worker_cleanup():
 @pytest.fixture(autouse=True)
 def cleanup_qt_threads():
     """cleanup_qt_threads 함수."""
-    try:
-        from core.system_manager import SystemManager
-
-        # SystemManager.force_cleanup()는 더 이상 존재하지 않으므로 제거합니다.
-        # 대신, 필요한 경우 SystemManager의 인스턴스를 통해 정리 로직을 호출해야 합니다.
-        # 현재는 테스트 환경에서 SystemManager의 전역 상태를 직접 조작하는 대신
-        # 각 테스트에서 필요한 SystemManager 인스턴스를 생성하고 관리하는 방식으로 변경되었을 수 있습니다.
-        # 따라서 이 부분은 제거하거나, SystemManager의 새로운 정리 메서드를 호출하도록 수정해야 합니다.
-        # 여기서는 해당 메서드가 더 이상 존재하지 않는다는 가정하에
-        # SystemManager.force_cleanup() 호출 제거 (현재 사용되지 않음)
-        pass
-    except Exception:
-        pass
-
     yield
-
-    try:
-        from core.system_manager import SystemManager
-
-        # SystemManager.force_cleanup() 호출 제거 (현재 사용되지 않음)
-        pass
-    except Exception:
-        pass
 
     pool = QThreadPool.globalInstance()
     if pool:

@@ -1,31 +1,19 @@
-import pytest
-from core.worker import SearchWorker
-from sf_utils.constants import Constants
-from unittest.mock import MagicMock
+
 
 def test_adaptive_batching_logic():
     """적응형 배치 로직이 파일 크기 임계치에 따라 올바르게 분할되는지 검증"""
-    # 임계치 100MB 설정
     max_size = 100 * 1024 * 1024
     
-    # 테스트 데이터: 60MB, 50MB, 110MB, 10MB
     files = [
         ("file1.txt", 60 * 1024 * 1024),
         ("file2.txt", 50 * 1024 * 1024),
         ("file3.txt", 110 * 1024 * 1024),
         ("file4.txt", 10 * 1024 * 1024)
     ]
-    
-    worker = SearchWorker({
-        Constants.PAYLOAD_FILE_LIST: files,
-        Constants.PAYLOAD_SEARCH_STRING: "test",
-        Constants.PAYLOAD_USE_COMPLEX_SEARCH: True
-    })
-    
-    # _run_batch_search 내부의 배치 생성 로직만 검증하기 위해 리포지토리 로직 재현
+
     def simulate_batching(files, max_size):
         batches = []
-        curr = []
+        curr: list[tuple[str, int]] = []
         curr_size = 0
         for f_info in files:
             f_path, f_size = f_info
@@ -33,13 +21,15 @@ def test_adaptive_batching_logic():
                 batches.append([f_info])
                 continue
             if len(curr) >= 100 or (curr_size + f_size) > max_size:
-                if curr: batches.append(curr)
+                if curr:
+                    batches.append(curr)
                 curr = [f_info]
                 curr_size = f_size
             else:
                 curr.append(f_info)
                 curr_size += f_size
-        if curr: batches.append(curr)
+        if curr:
+            batches.append(curr)
         return batches
 
     res_batches = simulate_batching(files, max_size)

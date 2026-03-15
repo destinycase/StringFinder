@@ -6,7 +6,6 @@ import multiprocessing
 import os
 import re
 import unicodedata
-import warnings
 from os.path import splitext
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union, overload
 
@@ -617,17 +616,6 @@ class FileScanner:
             logger.warning(AppStrings.LOG_SCH_FOLDER_ACCESS_DENIED.format(folder, e))
         except OSError as e:
             logger.error(AppStrings.LOG_SCH_SCAN_OS_ERROR.format(folder, e))
-
-
-def strip_comments(content: str, ext: str) -> str:
-    """[DEPRECATED] 검색 무결성 보장을 위해 비활성화됨. 추후 제거 예정."""
-    # 기능 의도는 제거 전 유수하여 공개 호출 유지 -> deprecated 경고 발생으로 내부 사용 방지
-    warnings.warn(
-        "strip_comments는 비활성화되었습니다. 사용을 중단하세요.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return content  # 원본 반환 (실제 콘텐츠 수정 없음)
 
 
 def _check_excel_signature(file_path: str) -> Tuple[bool, Optional[str]]:

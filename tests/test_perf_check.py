@@ -13,7 +13,6 @@
 """
 
 import time
-import pytest
 from core.search_engine import search_in_file
 
 

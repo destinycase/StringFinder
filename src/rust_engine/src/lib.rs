@@ -91,15 +91,17 @@ fn search_file(
                     if done_clone.load(Ordering::Relaxed) {
                         return false;
                     }
-                    evt.call_method0(py, "is_set")
-                        .and_then(|r| r.is_truthy(py))
-                        .unwrap_or(false)
+                    if let Ok(res) = evt.bind(py).call_method0("is_set") {
+                        if let Ok(true) = res.extract::<bool>() {
+                            return true;
+                        }
+                    }
+                    false
                 });
                 if is_stopped {
                     flag_clone.store(true, Ordering::SeqCst);
                     break;
                 }
-                if done_clone.load(Ordering::Relaxed) { break; }
                 std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
             }
         }))
@@ -909,7 +911,7 @@ mod tests {
         let ac = build_test_ac("hello");
         let stop_flag = Arc::new(AtomicBool::new(false));
         let data = b"hello\nhello\nhello\n";
-        let matches = do_search_with_mmap(data, "hello", b"hello", &ac, false, true, &stop_flag);
+        let matches = do_search_with_mmap(data, "hello", b"hello", &ac, false, true, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
     }
 }
