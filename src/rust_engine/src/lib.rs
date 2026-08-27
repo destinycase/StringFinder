@@ -43,7 +43,7 @@ const REASON_ERR_METADATA: &str = "ERR_METADATA";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
 const REASON_ERR_MEMORY_GUARD: &str = "ERR_MEMORY_GUARD";
 
-const MAX_JSON_SIZE: u64 = 80 * 1024 * 1024;
+const MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
 const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
 // Python 측에서 문자열 비교에 사용되므로 유지합니다.
 #[allow(dead_code)]
@@ -57,6 +57,7 @@ fn encode_skip_reason<T: std::fmt::Display>(code: &str, detail: T) -> String {
 
 #[pyfunction]
 #[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=5000, max_check_cells=500000, max_json_depth=20000))]
+#[allow(clippy::too_many_arguments)]
 fn search_file(
     py: Python,
     path: String,
@@ -147,6 +148,7 @@ fn search_file(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn do_search_with_mmap(
     mmap: &[u8],
     pat_upper: &str,
@@ -167,7 +169,7 @@ fn do_search_with_mmap(
             let mut line_number = 1usize;
             let mut last_start = 0usize;
             for nl_pos in memchr::memchr_iter(b'\n', mmap) {
-            if results.len() >= max_per_file + 1 { break; }
+            if results.len() > max_per_file { break; }
                 if line_number.is_multiple_of(1000) && stop_flag.load(Ordering::Relaxed) { return results; }
                 let mut line_bytes = &mmap[last_start..nl_pos];
                 if !line_bytes.is_empty() && line_bytes[line_bytes.len() - 1] == b'\r' {
@@ -213,7 +215,7 @@ fn do_search_with_mmap(
         let mut last_returned_line = 0usize;
 
         for mat in ac.find_iter(mmap) {
-            if results.len() >= max_per_file + 1 { break; }
+            if results.len() > max_per_file { break; }
             if results.len() % 1000 == 0 && stop_flag.load(Ordering::Relaxed) { return results; }
             let m_start = mat.start();
             while m_start > next_nl_pos {
@@ -255,7 +257,7 @@ fn do_search_with_mmap(
         }
 
         for (i, line) in content_str.lines().enumerate() {
-            if results.len() >= max_per_file + 1 { break; }
+            if results.len() > max_per_file { break; }
             if i % 1000 == 0 && stop_flag.load(Ordering::Relaxed) { break; }
             let is_match = if is_exact { line.trim().to_lowercase().to_uppercase() == pat_upper }
                            else { ac.find(line).is_some() };

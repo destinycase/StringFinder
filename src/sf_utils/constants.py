@@ -16,7 +16,7 @@ class Constants:
     BACKUP_FILE_SUFFIX = ".old"
     # 하드코딩되었던 상수들은 고급 설정의 '기본값'으로 사용되며, 
     # UI 편집용 수치(MB 단위)와 내부 바이트 계산용 수치로 적절히 분리됩니다.
-    DEFAULT_MAX_JSON_DOM_SIZE_MB = 80
+    DEFAULT_MAX_JSON_DOM_SIZE_MB = 500
     DEFAULT_MAX_SMALL_FILE_SIZE_MB = 10
     DEFAULT_JSON_MMAP_THRESHOLD_MB = 5
     DEFAULT_MAX_TOTAL_MATCHES = 500_000

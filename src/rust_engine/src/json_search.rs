@@ -109,7 +109,7 @@ pub fn search_json_file(
                                     };
 
                                     if is_match {
-                                        if ctx.results.len() >= ctx.max_per_file + 1 {
+                                        if ctx.results.len() > ctx.max_per_file {
                                             return ctx.results;
                                         }
                                         let mut path_str = String::new();
@@ -151,7 +151,7 @@ pub fn search_json_file(
                                     let s = n.to_string();
                                     let is_match = if ctx.is_exact { s == *ctx.pattern } else { ctx.ac.find(&s).is_some() };
                                     if is_match {
-                                        if ctx.results.len() >= ctx.max_per_file + 1 {
+                                        if ctx.results.len() > ctx.max_per_file {
                                             return ctx.results;
                                         }
                                         let mut path_str = String::new();

@@ -18,6 +18,7 @@
 
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 from PySide6.QtCore import Qt
@@ -145,6 +146,28 @@ def test_search_state_reset_on_error(qtbot, search_tab_fixture):
     search_tab_fixture._on_search_error("Test Error")
 
     assert search_tab_fixture.search_state == Constants.SearchState.IDLE
+
+
+def test_memory_error_shows_user_popup(search_tab_fixture):
+    """시스템 메모리 보호로 검색이 중단되면 사용자 안내 팝업을 표시한다."""
+    from sf_utils.app_strings import AppStrings
+
+    with patch("ui.search_tab.QMessageBox.warning") as warning:
+        search_tab_fixture._on_search_error(AppStrings.ERROR_MEMORY_CRITICAL)
+
+    warning.assert_called_once_with(
+        search_tab_fixture,
+        AppStrings.ERROR_MEMORY_CRITICAL_TITLE,
+        AppStrings.ERROR_MEMORY_CRITICAL_DETAIL,
+    )
+
+
+def test_generic_search_error_does_not_show_memory_popup(search_tab_fixture):
+    """일반 검색 오류에는 메모리 부족 전용 팝업을 표시하지 않는다."""
+    with patch("ui.search_tab.QMessageBox.warning") as warning:
+        search_tab_fixture._on_search_error("Test Error")
+
+    warning.assert_not_called()
 
 
 def test_excel_location_in_normal_mode(qtbot, search_tab_fixture):

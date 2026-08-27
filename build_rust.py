@@ -19,7 +19,6 @@ def unlock_file_windows(file_path: str):
         import psutil
         
         rstrtmgr = ctypes.windll.Rstrtmgr
-        kernel32 = ctypes.windll.kernel32
         
         class RM_UNIQUE_PROCESS(ctypes.Structure):
             _fields_ = [
@@ -76,7 +75,7 @@ def unlock_file_windows(file_path: str):
                                 try:
                                     proc.kill()
                                     print(f"[Unlock] Force killed PID: {pid}")
-                                except:
+                                except Exception:
                                     pass
         finally:
             rstrtmgr.RmEndSession(session_handle.value)

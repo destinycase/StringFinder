@@ -16,6 +16,7 @@
 """
 
 import os
+import json
 from unittest.mock import patch
 
 from sf_utils.config_manager import ConfigManager
@@ -32,6 +33,28 @@ def test_config_initialization(temp_dir):
 
         assert os.path.exists(os.path.join(temp_dir, "StringFinder", "config.json"))
         assert cm.config["filters"]["extensions"] == ["xml", "json", "xlsx", "xlsm"]
+
+
+def test_json_dom_limit_migrates_previous_default(temp_dir):
+    """기존 기본값 80MB 설정은 새 기본값 500MB로 마이그레이션한다."""
+    config_dir = os.path.join(temp_dir, "StringFinder")
+    os.makedirs(config_dir, exist_ok=True)
+    config_path = os.path.join(config_dir, "config.json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "config_version": 1,
+                "advanced": {Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 80},
+            },
+            f,
+        )
+
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        cm = ConfigManager()
+
+    assert cm.get_advanced_settings()[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] == 500
+    assert cm.config[Constants.CONFIG_KEY_VERSION] == 2
 
 
 def test_history_management(temp_dir):

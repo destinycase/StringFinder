@@ -62,6 +62,7 @@ class SearchTab(QMainWindow):
         self._liveliness_timer.timeout.connect(self._on_liveliness_tick)
         self.search_state = Constants.SearchState.IDLE
         self.pending_restart = False
+        self._memory_alert_shown = False
         self.current_filename_filters: List[str] = []
         self._max_log_count = 5000  # QPlainTextEdit 표시 제한에 맞춤
         self._log_entries: collections.deque[Tuple[str, str]] = collections.deque(maxlen=self._max_log_count)
@@ -589,6 +590,7 @@ class SearchTab(QMainWindow):
             self._set_inputs_enabled(False)
             self.search_status_changed.emit(True)
             self.search_state = Constants.SearchState.SCANNING
+            self._memory_alert_shown = False
             self.results_buffer = []
             self.skipped_files_list = []
             self.scan_start_time = time.time()
@@ -879,8 +881,16 @@ class SearchTab(QMainWindow):
     def _on_search_error(self, error_msg):
         """작업 도중 발생하는 치명적 오류를 처리하고 사용자에게 알립니다."""
         try:
-            logger.error(AppStrings.LOG_SCH_ERROR.format(error_msg))
-            self.status_message_requested.emit(f"{AppStrings.STATUS_ERROR_PREFIX}{error_msg}", 5000)
+            error_text = str(error_msg)
+            logger.error(AppStrings.LOG_SCH_ERROR.format(error_text))
+            self.status_message_requested.emit(f"{AppStrings.STATUS_ERROR_PREFIX}{error_text}", 5000)
+            if AppStrings.ERROR_MEMORY_CRITICAL in error_text and not self._memory_alert_shown:
+                self._memory_alert_shown = True
+                QMessageBox.warning(
+                    self,
+                    AppStrings.ERROR_MEMORY_CRITICAL_TITLE,
+                    AppStrings.ERROR_MEMORY_CRITICAL_DETAIL,
+                )
         finally:
             self._restore_search_button()
             self.search_state = Constants.SearchState.IDLE

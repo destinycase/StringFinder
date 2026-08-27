@@ -448,6 +448,11 @@ class AppStrings:
     ERROR_SESSION_SAVE = "[오류] 세션 데이터 보존 실패: {}"
     ERROR_LIMIT_REACHED = "[안내] 결과 임계치 도달: 도구 안정성을 위해 검색을 자동 중지했습니다. (최대 {}건)"
     ERROR_MEMORY_CRITICAL = "[안내] 메모리 고갈 위기: 시스템 보호를 위해 검색 작업을 강제 종료했습니다."
+    ERROR_MEMORY_CRITICAL_TITLE = "메모리 부족으로 검색 중단"
+    ERROR_MEMORY_CRITICAL_DETAIL = (
+        "시스템 메모리 사용량이 높아 검색을 중단했습니다.\n\n"
+        "다른 프로그램을 종료한 후 다시 시도하거나, 검색 범위와 결과 수를 줄여주세요."
+    )
     TITLE_LIMIT_REACHED = "검색 제한 도달"
     MSG_RESULT_LIMIT_REACHED = "검색 결과가 도구 수용 범위를 초과하여(100,000건) 검색을 즉시 중지합니다.\n현재까지 발견된 결과만 표시됩니다."
     MSG_MATCH_LIMIT_PER_FILE = "(파일당 최대 매치 도달: {}건)"

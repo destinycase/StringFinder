@@ -81,7 +81,7 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 ### 2) 무결성(Integrity) 및 정규화
 - **유니코드 정규화**: 입력 검색어와 대상 텍스트의 NFC 정규화 및 Case Folding 일관성 유지.
 - **Excel/JSON/Archive 무결성**: 구조화된 파일의 형식이 손상되었을 경우(Malformed), 조기 종료하지 않고 반드시 `SKIPPED` 상태로 보고하여 데이터 누락 가능성을 차단합니다.
-- **메모리 보호 가드**: `MAX_JSON_DOM_SIZE` (80MB) 설정을 통해 초대형 파일로 인한 시스템 전체 OOM(Out of Memory)을 방지합니다.
+- **메모리 보호 가드**: `MAX_JSON_DOM_SIZE` (500MB) 설정을 통해 초대형 파일로 인한 시스템 전체 OOM(Out of Memory)을 방지합니다.
 
 ### 3) 운영 가시성(Observability)
 - 상세 로깅: 엔진 전환, 폴백 발생, 스킵 사유 등을 `stringfinder.log`에 명시적으로 기록합니다.

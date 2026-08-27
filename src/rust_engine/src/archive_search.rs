@@ -103,7 +103,7 @@ pub fn search_archive_file(
                         };
 
                         if is_match {
-                            if results.len() >= max_per_file + 1 {
+                            if results.len() > max_per_file {
                                 return results;
                             }
                             let key = child.get("Key").and_then(|v| v.as_str()).unwrap_or("");

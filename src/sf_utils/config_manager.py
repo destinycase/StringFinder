@@ -54,7 +54,7 @@ class ConfigManager:
             # AppData 접근이 실패하면 임시 폴더로 전환한다.
             logger.warning(AppStrings.LOG_CFG_APPDATA_FALLBACK.format(e, self.config_dir))
         self.config_path = os.path.join(self.config_dir, Constants.CONFIG_FILENAME)
-        self.CURRENT_CONFIG_VERSION = 1
+        self.CURRENT_CONFIG_VERSION = 2
         self.last_load_error: Optional[Exception] = None
         self.last_save_error: Optional[Exception] = None
         self.defaults: Dict[str, Any] = {
@@ -162,6 +162,13 @@ class ConfigManager:
         """구버전 설정을 현재 버전 스키마로 마이그레이션한다."""
         if from_version < 1:
             config[Constants.CONFIG_KEY_VERSION] = 1
+        if from_version < 2:
+            advanced = config.get(Constants.CONFIG_KEY_ADVANCED)
+            if isinstance(advanced, dict):
+                old_default = 80
+                if advanced.get(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE) == old_default:
+                    advanced[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] = Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB
+            config[Constants.CONFIG_KEY_VERSION] = 2
         return config
 
     def save(self):

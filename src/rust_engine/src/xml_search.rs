@@ -119,7 +119,7 @@ fn process_xml_text_item(
         };
 
         if is_match {
-            if ctx.results.len() >= ctx.max_per_file + 1 {
+            if ctx.results.len() > ctx.max_per_file {
                 return;
             }
             let mut match_offset = start_pos + ctx.offset_bonus;
@@ -172,7 +172,7 @@ fn process_xml_attributes(
         };
 
         if is_match {
-            if ctx.results.len() >= ctx.max_per_file + 1 {
+            if ctx.results.len() > ctx.max_per_file {
                 return;
             }
             let mut match_offset = start_pos + ctx.offset_bonus;

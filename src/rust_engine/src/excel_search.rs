@@ -39,7 +39,7 @@ where
                         break 'outer;
                     }
                     for (col_idx, cell) in row.iter().enumerate() {
-                        if results.len() >= ctx.max_per_file + 1 { break 'outer; } // H2: 결과 상한
+                        if results.len() > ctx.max_per_file { break 'outer; } // H2: 결과 상한
                         if let Some(m) = match_cell(
                             cell,
                             &sheet_name,
@@ -60,7 +60,7 @@ where
                 results.push((0, format!("{}{}|[Library Panic] {}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, msg), None, None));
             }
         }
-        if results.len() >= ctx.max_per_file + 1 { break; } // H2: 시트 간에도 확인
+        if results.len() > ctx.max_per_file { break; } // H2: 시트 간에도 확인
     }
     results
 }
