@@ -67,12 +67,11 @@ pub fn decode_bytes(bytes: &[u8], encoding: &'static Encoding) -> String {
 // get_line_number: 코드에서 미사용 -> clippy 정리를 위해 제거
 // 필요 시 lib.rs의 do_search_with_mmap나 search_file_internal에서 직접 코드 삽입
 
-pub fn parse_search_mode(mode_bits: Option<u32>) -> (bool, bool, bool, bool, bool, bool, bool) {
+pub fn parse_search_mode(mode_bits: Option<u32>) -> (bool, bool, bool, bool, bool, bool) {
     let bits = mode_bits.unwrap_or(crate::types::MODE_NORMAL);
     (
         (bits & crate::types::MODE_JSON) != 0,
         (bits & crate::types::MODE_XML) != 0,
-        (bits & crate::types::MODE_ARCHIVE) != 0,
         (bits & crate::types::MODE_EXACT) != 0,
         (bits & crate::types::MODE_EXCEL) != 0,
         (bits & crate::types::MODE_EXCLUDE_BINARY) != 0,
@@ -115,7 +114,6 @@ pub fn generate_search_patterns(
     keyword: &str,
     is_xml: bool,
     is_json: bool,
-    is_archive: bool,
 ) -> Vec<String> {
     let mut patterns = HashSet::new();
     patterns.insert(keyword.to_string());
@@ -129,7 +127,7 @@ pub fn generate_search_patterns(
     patterns.insert(upper);
     patterns.insert(lower_upper);
 
-    if is_xml || is_json || is_archive {
+    if is_xml || is_json {
         let mut variants = Vec::new();
         for p in patterns.iter() {
             if is_xml {
@@ -147,7 +145,7 @@ pub fn generate_search_patterns(
                 }
                 if encoded != *p { variants.push(encoded); }
             }
-            if is_json || is_archive {
+            if is_json {
                 let mut encoded = String::new();
                 for c in p.chars() {
                     if c.is_ascii() { encoded.push(c); }
@@ -193,12 +191,11 @@ mod tests {
 
     #[test]
     fn parse_search_mode_none_defaults_to_all_false() {
-        let (is_json, is_xml, is_archive, is_exact, is_excel, exclude_binary, existence_only) =
+        let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
             parse_search_mode(None);
 
         assert!(!is_json);
         assert!(!is_xml);
-        assert!(!is_archive);
         assert!(!is_exact);
         assert!(!is_excel);
         assert!(!exclude_binary);
@@ -209,12 +206,11 @@ mod tests {
     fn parse_search_mode_mixed_flags_are_decoded_correctly() {
         let bits =
             crate::types::MODE_JSON | crate::types::MODE_EXACT | crate::types::MODE_EXCLUDE_BINARY;
-        let (is_json, is_xml, is_archive, is_exact, is_excel, exclude_binary, existence_only) =
+        let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
             parse_search_mode(Some(bits));
 
         assert!(is_json);
         assert!(!is_xml);
-        assert!(!is_archive);
         assert!(is_exact);
         assert!(!is_excel);
         assert!(exclude_binary);
@@ -224,7 +220,7 @@ mod tests {
     #[test]
     fn generate_search_patterns_includes_raw_xml_and_json_variants() {
         let keyword = "A&B한";
-        let patterns = generate_search_patterns(keyword, true, true, false);
+        let patterns = generate_search_patterns(keyword, true, true);
 
         assert!(patterns.iter().any(|p| p == keyword));
         assert!(patterns.iter().any(|p| p == "A&amp;B&#54620;"));

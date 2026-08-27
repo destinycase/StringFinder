@@ -43,7 +43,6 @@ RUST_MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024
 SET_H_TARGET_FILE_SIZE_BYTES = 96 * 1024 * 1024
 SET_H_KEYWORD_BYTES = b"target_keyword_h\n"
 SET_J_KEYWORD = "target_keyword_j"
-SET_K_KEYWORD = "target_keyword_k"
 
 
 def _create_set_j_excel_file(file_path: Path) -> None:
@@ -76,33 +75,6 @@ def _create_set_j_excel_file(file_path: Path) -> None:
     wb.save(file_path)
 
 
-def _create_set_k_archive_file(file_path: Path) -> None:
-    """Create a .archive benchmark file with realistic namespace structure."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    children: List[Dict[str, Any]] = []
-    for i in range(1, 8001):
-        source_text = f"source line {i}"
-        trans_text = f"translated text {i}"
-        if i == 4321:
-            source_text = f"hello {SET_K_KEYWORD} world"
-        children.append(
-            {
-                "Key": f"KEY_{i:05d}",
-                "Source": {"Text": source_text},
-                "Translation": {"Text": trans_text},
-            }
-        )
-
-    payload = {
-        "Subnamespaces": [
-            {
-                "Namespace": "benchmark.namespace",
-                "Children": children,
-            }
-        ]
-    }
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False)
 
 
 def _create_set_h_sparse_file(file_path: Path) -> None:
@@ -122,8 +94,9 @@ def _create_set_h_sparse_file(file_path: Path) -> None:
         f.write(SET_H_KEYWORD_BYTES)
 
 
+
 def create_dataset():
-    """Create benchmark datasets A-K."""
+    """Create benchmark datasets A-J."""
     if BENCHMARK_DATA_DIR.exists():
         print(f"[Info] Cleaning existing benchmark data: {BENCHMARK_DATA_DIR}")
         shutil.rmtree(BENCHMARK_DATA_DIR)
@@ -233,13 +206,11 @@ def create_dataset():
         f.write(b"x" * (50 * 1024 * 1024))
         f.write(b"target_keyword_i")
 
-    print("[Step 6/6] Creating Set J-K: Excel & Archive Special Modes")
+    print("[Step 6/6] Creating Set J: Excel Special Mode")
     set_special = BENCHMARK_DATA_DIR / "set_special"
     set_special.mkdir()
     print(" - Generating Excel benchmark (Set J)...")
     _create_set_j_excel_file(set_special / "excel_mix.xlsx")
-    print(" - Generating Archive benchmark (Set K)...")
-    _create_set_k_archive_file(set_special / "archive_mix.archive")
 
 
 def ensure_dataset_within_limits() -> None:
@@ -269,18 +240,13 @@ def ensure_dataset_within_limits() -> None:
                     pass
                 _create_set_h_sparse_file(set_h_path)
 
-    # Ensure special-mode benchmark files exist for Excel/Archive performance checks.
+    # Ensure the Excel special-mode benchmark file exists.
     set_special_dir = BENCHMARK_DATA_DIR / "set_special"
     set_special_dir.mkdir(parents=True, exist_ok=True)
     set_j_path = set_special_dir / "excel_mix.xlsx"
     if not set_j_path.exists():
         print("[Fix] Set J missing. Creating Excel benchmark file...")
         _create_set_j_excel_file(set_j_path)
-
-    set_k_path = set_special_dir / "archive_mix.archive"
-    if not set_k_path.exists():
-        print("[Fix] Set K missing. Creating Archive benchmark file...")
-        _create_set_k_archive_file(set_k_path)
 
 
 def run_benchmark(
@@ -593,7 +559,6 @@ def check_thresholds(results: List[Dict[str, Any]]) -> None:
         "Set H: Sparse Stress": {"total_time": 1.5, "latency": 1.5, "jitter": 0.3, "peak_rss": 200.0},
         "Set I: No-Newline": {"total_time": 5.0, "latency": 2.0, "jitter": 0.5, "peak_rss": 500.0},
         "Set J: Excel Mixed": {"total_time": 3.0, "latency": 2.0, "jitter": 0.3, "peak_rss": 300.0},
-        "Set K: Archive Mixed": {"total_time": 3.0, "latency": 2.0, "jitter": 0.3, "peak_rss": 300.0},
     }
     EXPECTED_MIN_HITS = {
         "Set A: Small/Many": 100,
@@ -606,7 +571,6 @@ def check_thresholds(results: List[Dict[str, Any]]) -> None:
         "Set H: Sparse Stress": 1,
         "Set I: No-Newline": 1,
         "Set J: Excel Mixed": 1,
-        "Set K: Archive Mixed": 1,
     }
 
     failed = False
@@ -682,14 +646,6 @@ if __name__ == "__main__":
                 BENCHMARK_DATA_DIR / "set_special" / "excel_mix.xlsx",
                 SET_J_KEYWORD,
                 special_mode=Constants.MODE_EXCEL,
-            )
-        )
-        results.append(
-            run_benchmark(
-                "Set K: Archive Mixed",
-                BENCHMARK_DATA_DIR / "set_special" / "archive_mix.archive",
-                SET_K_KEYWORD,
-                special_mode=Constants.MODE_ARCHIVE,
             )
         )
 

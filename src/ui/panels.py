@@ -367,8 +367,6 @@ class ExtensionFilterPanel(QWidget):
                 return [Constants.EXT_XML]
             elif Constants.MODE_JSON in special_mode:
                 return [Constants.EXT_JSON]
-            elif Constants.MODE_ARCHIVE in special_mode:
-                return [Constants.EXT_ARCHIVE]
             elif Constants.MODE_EXCEL in special_mode:
                 return list(Constants.EXT_EXCEL)
             else:

@@ -144,7 +144,7 @@ class SearchTab(QMainWindow):
         log_filter_layout.addWidget(QLabel("로그 필터:"))
         for level in self.LOG_LEVELS:
             checkbox = QCheckBox(level)
-            checkbox.setChecked(level == "INFO")
+            checkbox.setChecked(True)
             checkbox.stateChanged.connect(self._refresh_logs_output)
             self._log_level_checkboxes[level] = checkbox
             log_filter_layout.addWidget(checkbox)

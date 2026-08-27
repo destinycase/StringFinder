@@ -5,17 +5,15 @@
 
 - 테스트 목적:
   1. 부분 일치(Partial)와 전체 일치(Exact) 모드 간의 명확한 검색 결과 차별화 보장.
-  2. JSON, XML, Excel, Archive 파일 등 구조화된 데이터 내의 키워드 추출 정확도 확인.
+  2. JSON, XML, Excel 파일 등 구조화된 데이터 내의 키워드 추출 정확도 확인.
 
 - 주요 검증 사항:
   1. 텍스트 파일 내 단어 경계 및 완전 일치 매칭 로직.
   2. JSON/XML 데이터 트리 순회 시 키/값 영역의 정밀한 키워드 필터링.
-  3. Archive 특수 포맷의 계층적 구조 내 검색 결과 위치 정보 정확도.
 """
 
 import json
 from typing import cast
-from unittest.mock import patch
 
 import openpyxl
 
@@ -95,31 +93,3 @@ def test_excel_precision(tmp_path):
     assert res_exact[1] == 1
     assert "A1" in str(res_exact[2][0][2])
 
-
-def test_archive_precision(tmp_path):
-    data = {
-        "Subnamespaces": [
-            {
-                "Namespace": "Game",
-                "Children": [
-                    {"Key": "K1", "Source": {"Text": "Start"}, "Translation": {"Text": "Begin"}},
-                    {"Key": "K2", "Source": {"Text": "Restart"}, "Translation": {"Text": "Again"}},
-                ],
-            }
-        ]
-    }
-    file_path = tmp_path / "test.archive"
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f)
-
-    with patch("core.search_engine.HAS_RUST_ENGINE", False):
-        res_partial = _require_search_result(
-            search_in_file(str(file_path), "Start", special_mode=Constants.MODE_ARCHIVE)
-        )
-        assert res_partial[1] == 2
-
-        res_exact = _require_search_result(
-            search_in_file(str(file_path), "Start", special_mode=f"{Constants.MODE_ARCHIVE} {Constants.MODE_EXACT}")
-        )
-        assert res_exact[1] == 1
-        assert res_exact[2][0][3] == "Start"

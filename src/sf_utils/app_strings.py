@@ -145,14 +145,11 @@ class AppStrings:
         "XML (정확히 일치)",
         "JSON (부분 일치)",
         "JSON (정확히 일치)",
-        "Archive (부분 일치)",
-        "Archive (정확히 일치)",
         "Excel (부분 일치)",
         "Excel (정확히 일치)",
     ]
     SPECIAL_SEARCH_XML = "XML (부분 일치)"
     SPECIAL_SEARCH_JSON = "JSON (부분 일치)"
-    SPECIAL_SEARCH_ARCHIVE = "Archive (부분 일치)"
     SPECIAL_SEARCH_EXCEL = "Excel (부분 일치)"
     # =========================================================================
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)
@@ -171,10 +168,6 @@ class AppStrings:
     MATCH_FILTER_NAME_PLACEHOLDER = "이름 필터..."
     MATCH_FILTER_KEY_PLACEHOLDER = "키 필터..."
     MATCH_FILTER_VALUE_PLACEHOLDER = "값 필터..."
-    MATCH_FILTER_ARCHIVE_NS_PLACEHOLDER = "네임스페이스 필터..."
-    MATCH_FILTER_ARCHIVE_KEY_PLACEHOLDER = "키 필터..."
-    MATCH_FILTER_ARCHIVE_SOURCE_PLACEHOLDER = "소스 필터..."
-    MATCH_FILTER_ARCHIVE_TRANS_PLACEHOLDER = "번역 필터..."
     MATCH_FILTER_EXCEL_SHEET_PLACEHOLDER = "시트 필터..."
     MATCH_FILTER_EXCEL_CELL_PLACEHOLDER = "셀 필터..."
     MATCH_FILTER_EXCEL_VAL_PLACEHOLDER = "값 필터..."
@@ -190,10 +183,6 @@ class AppStrings:
     HEADER_JSON_VALUE = "값"
     HEADER_XML_NAME = "키"  # 이름에서 키로 변경
     HEADER_XML_VALUE = "값"
-    HEADER_ARCHIVE_NAMESPACE = "네임스페이스"
-    HEADER_ARCHIVE_KEY = "키"
-    HEADER_ARCHIVE_SOURCE = "소스"
-    HEADER_ARCHIVE_TRANSLATION = "번역"
     HEADER_EXCEL_SHEET = "시트"
     HEADER_EXCEL_CELL = "셀"
     HEADER_EXCEL_VALUE = "값"
@@ -475,8 +464,6 @@ class AppStrings:
     LOG_SCH_JSON_FAIL = "[오류] Python 기반 JSON 검색 실패: {}"
     LOG_SCH_XML_FAIL = "[오류] Python 기반 XML 검색 실패: {}"
     LOG_SCH_RUST_XML_FAIL = "[오류] Rust 기반 XML 검색 실패 ('{}'): {}"
-    LOG_SCH_RUST_ARCHIVE_FAIL = "[오류] Rust 기반 Archive 검색 실패 ('{}'): {}"
-    LOG_SCH_ARCHIVE_FAIL = "[오류] Python 기반 Archive 검색 실패: {}"
     LOG_SCH_STREAM_ERROR = "[오류] 데이터 스트림 처리 흐름 중단: {}"
     LOG_SCH_STOP_THREAD_ERR = "[오류] 작업 스레드 중지 처리 실패: {}"
     LOG_SCH_SEARCH_THREAD_ERROR = "[오류] 검색 스레드 종료 절차 중 오류 수신: {}"

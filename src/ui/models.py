@@ -19,10 +19,10 @@ class SearchMatchSchema:
 
     position: str
     content: str  # 일반 텍스트 내용 또는 XML/JSON 경로 등
-    extra_1: Optional[str] = None  # XML/JSON 값, Archive Namespace 등
-    extra_2: Optional[str] = None  # Archive Key 등
-    extra_3: Optional[str] = None  # Archive Source
-    extra_4: Optional[str] = None  # Archive Translation
+    extra_1: Optional[str] = None  # XML/JSON 값 등
+    extra_2: Optional[str] = None  # 추가 구조화 데이터 등
+    extra_3: Optional[str] = None  # 추가 구조화 데이터
+    extra_4: Optional[str] = None  # 추가 구조화 데이터
     offset: Optional[Union[int, str]] = None
     length: Optional[int] = None
 
@@ -621,14 +621,6 @@ class MatchDetailModel(QAbstractTableModel):
             self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_JSON_KEY, AppStrings.HEADER_JSON_VALUE]
         elif Constants.MODE_XML in search_mode:
             self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_XML_NAME, AppStrings.HEADER_XML_VALUE]
-        elif Constants.MODE_ARCHIVE in search_mode:
-            self._headers = [
-                AppStrings.HEADER_POSITION,
-                AppStrings.HEADER_ARCHIVE_NAMESPACE,
-                AppStrings.HEADER_ARCHIVE_KEY,
-                AppStrings.HEADER_ARCHIVE_SOURCE,
-                AppStrings.HEADER_ARCHIVE_TRANSLATION,
-            ]
         elif Constants.MODE_EXCEL in search_mode:
             self._headers = [
                 AppStrings.HEADER_EXCEL_SHEET,
@@ -728,44 +720,7 @@ class MatchDetailModel(QAbstractTableModel):
                             )
                         )
                     continue
-
-                # Case 3: Archive 모드
-                # 5-tuple: search_engine에서 이미 필드 분리 (line, ns, key, src, trans, [offset, length])
-                # 4-tuple: Rust 엔진 원시값 — m[1]에 "NS\tKey\tS: src\tT: trans" 형태
-                if Constants.MODE_ARCHIVE.upper() in mode_upper:
-                    if len(m) >= 5:
-                        normalized_matches.append(
-                            SearchMatchSchema(
-                                position=str(m[0]),
-                                content=str(m[1]),
-                                extra_1=str(m[2]),
-                                extra_2=str(m[3]),
-                                extra_3=str(m[4]),
-                                offset=m[5] if len(m) > 5 else None,
-                                length=m[6] if len(m) > 6 else None,
-                            )
-                        )
-                    elif len(m) >= 4 and isinstance(m[1], str):
-                        # Rust 엔진 원시 4-tuple: m[1] = "NS\tKey\tS: src\tT: trans"
-                        parts_arc = str(m[1]).split("\t")
-                        ns = parts_arc[0].replace("NS: ", "") if len(parts_arc) > 0 else ""
-                        key = parts_arc[1].replace("Key: ", "") if len(parts_arc) > 1 else ""
-                        src = parts_arc[2].replace("S: ", "") if len(parts_arc) > 2 else ""
-                        trans = parts_arc[3].replace("T: ", "") if len(parts_arc) > 3 else ""
-                        normalized_matches.append(
-                            SearchMatchSchema(
-                                position=str(m[0]),
-                                content=ns,
-                                extra_1=key,
-                                extra_2=src,
-                                extra_3=trans,
-                                offset=m[2] if len(m) > 2 else None,
-                                length=m[3] if len(m) > 3 else None,
-                            )
-                        )
-                    continue
-
-                # Case 4: 일반 텍스트 및 기타 특수 검색 (Line, Content, [Offset, Length])
+                # 일반 텍스트 및 기타 특수 검색 (Line, Content, [Offset, Length])
                 # 엑셀 파일임에도 Normal 모드인 경우의 예외 처리 포함
                 if is_excel_file and search_mode == Constants.MODE_NORMAL and len(m) >= 4 and isinstance(m[1], str):
                     sheet_candidate = str(m[1]).strip()

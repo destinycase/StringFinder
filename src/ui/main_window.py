@@ -69,7 +69,9 @@ class MainWindow(QMainWindow):
         # 타이틀에 Rust 엔진 버전을 함께 표시합니다.
         # 버전 불일치 여부를 한눈에 확인할 수 있습니다.
         try:
-            import sf_engine
+            import importlib
+
+            sf_engine = importlib.import_module("rust_engine.sf_engine")
             engine_ver = getattr(sf_engine, "ENGINE_VERSION", None)
         except Exception:
             engine_ver = None

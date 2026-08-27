@@ -465,7 +465,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
- "serde_derive",
 ]
 
 [[package]]
@@ -504,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "sf_engine"
-version = "5.4.2"
+version = "5.5.1"
 dependencies = [
  "aho-corasick",
  "calamine",
@@ -518,7 +517,6 @@ dependencies = [
  "pyo3",
  "quick-xml 0.31.0",
  "rayon",
- "serde",
  "serde_json",
  "simdutf8",
  "unicode-normalization",

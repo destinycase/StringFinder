@@ -143,22 +143,6 @@ def build_rust_engine(clean_target=False):
     env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
     try:
-        # [OS Error 32 방어] 백그라운드 프로세스(rustc, rust-analyzer) 정리
-        try:
-            # sys.platform 확인 후 윈도우 환경인 경우만 실행
-            if sys.platform == "win32":
-                subprocess.call(
-                    [
-                        "powershell",
-                        "-Command",
-                        "Get-Process | Where-Object { $_.Path -match 'rustc|cargo|rust-analyzer' } | Stop-Process -Force",
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-        except Exception as e:
-            print(f"Debug: Failed to kill lock processes: {e}")
-
         # 1. Cargo를 사용하여 컴파일 실행 (단일 스레드 -j 1 및 5회 재시도 루프)
         cargo_cmd = ["cargo", "build", "--release", "-j", "1"]
         print(f"Running cargo: {' '.join(cargo_cmd)}")

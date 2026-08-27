@@ -1,5 +1,4 @@
 // 전역 allow 설정: 유지보수 시 미사용 코드가 CI를 통과하는 것을 방지합니다.
-mod archive_search;
 mod excel_search;
 mod json_search;
 mod types;
@@ -20,7 +19,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::archive_search::{check_archive_file, search_archive_file};
 use crate::excel_search::{check_excel_file, search_excel_file};
 use crate::json_search::{check_json_file, search_json_file};
 use crate::utils::{
@@ -69,8 +67,8 @@ fn search_file(
     max_json_depth: usize,
 ) -> Result<Vec<RawMatch>, PyErr> {
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
-    let (is_json, is_xml, is_archive, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
-    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json, is_archive);
+    let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
+    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
     let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
         .match_kind(MatchKind::LeftmostFirst)
@@ -123,7 +121,6 @@ fn search_file(
             is_exact,
             is_json,
             is_xml,
-            is_archive,
             is_excel,
             exclude_hidden: false,
             exclude_binary,
@@ -271,14 +268,14 @@ fn do_search_with_mmap(
 
 struct InternalSearchParams<'a> {
     path: &'a Path, pattern: &'a str, pat_upper: &'a str, pat_bytes: &'a [u8], ac: &'a aho_corasick::AhoCorasick,
-    is_exact: bool, is_json: bool, is_xml: bool, is_archive: bool, is_excel: bool,
+    is_exact: bool, is_json: bool, is_xml: bool, is_excel: bool,
     exclude_hidden: bool, exclude_binary: bool, existence_only: bool, stop_flag: Arc<AtomicBool>,
     max_per_file: usize, max_check_cells: u64, max_json_depth: usize,
 }
 
 fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMatch>, String>> {
     let InternalSearchParams {
-        path, pattern, pat_upper, pat_bytes, ac, is_exact, is_json, is_xml, is_archive, is_excel,
+        path, pattern, pat_upper, pat_bytes, ac, is_exact, is_json, is_xml, is_excel,
         exclude_hidden, exclude_binary, existence_only, stop_flag,
         max_per_file, max_check_cells, max_json_depth,
     } = params;
@@ -331,18 +328,13 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
     let enc = detect_encoding(mmap_c);
     let mut _dec_h;
-    let final_mmap = if is_json || is_xml || is_archive || enc != UTF_8 {
+    let final_mmap = if is_json || is_xml || enc != UTF_8 {
         let d = decode_bytes(mmap_c, enc);
         _dec_h = d.into_bytes();
         _dec_h.as_slice()
     } else { mmap_c };
 
-    let res = if is_archive && (ext_l == ".archive" || ext_l == ".sf_archive") {
-        if existence_only {
-            if check_archive_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file) { vec![(1, "MATCH".to_string(), None, None)] }
-            else { Vec::new() }
-        } else { search_archive_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file) }
-    } else if is_json && ext_l == ".json" {
+    let res = if is_json && ext_l == ".json" {
         if final_mmap.len() as u64 > MAX_JSON_SIZE {
             vec![(1, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON"), None, None)]
         } else if existence_only {
@@ -398,8 +390,8 @@ pub fn search_dir(
     _kwargs: Option<pyo3::PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
-    let (is_json, is_xml, is_archive, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
-    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json, is_archive);
+    let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
+    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
     let ac = Arc::new(AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
         .match_kind(MatchKind::LeftmostFirst)
@@ -529,7 +521,7 @@ pub fn search_dir(
                             pat_upper: &p_upper,
                             pat_bytes: &p_bytes,
                             ac: &ac_ref,
-                            is_exact, is_json, is_xml, is_archive, is_excel,
+                            is_exact, is_json, is_xml, is_excel,
                             exclude_hidden, exclude_binary, existence_only,
                             stop_flag: stop_ref.clone(),
                             max_per_file: max_per_file.unwrap_or(5000),
@@ -655,8 +647,8 @@ fn search_files_list(
         let norm_pattern = crate::utils::normalize_unicode(&search_string);
         let pat_upper = norm_pattern.to_lowercase().to_uppercase();
         let pat_bytes_v = norm_pattern.to_lowercase().as_bytes().to_vec();
-        let (is_json, is_xml, is_archive, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
-        let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json, is_archive);
+        let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
+        let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
 
         let ac = Arc::new(AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
@@ -673,7 +665,7 @@ fn search_files_list(
             let path = Path::new(&f_path);
             let res = search_file_internal(InternalSearchParams {
                 path, pattern: &search_string, pat_upper: &pat_upper, pat_bytes: &pat_bytes_v,
-                ac: &ac, is_exact, is_json, is_xml, is_archive, is_excel,
+                ac: &ac, is_exact, is_json, is_xml, is_excel,
                 exclude_hidden, exclude_binary, existence_only,
                 stop_flag: stop_flag.clone(),
                 max_per_file: max_per_file.unwrap_or(5000),
@@ -767,7 +759,7 @@ fn find_files_with_keyword(
     });
 
     py.allow_threads(|| {
-        let (is_json, is_xml, is_archive, is_exact, _is_excel, exclude_binary, _existence_only) = parse_search_mode(mode_bits);
+        let (is_json, is_xml, is_exact, _is_excel, exclude_binary, _existence_only) = parse_search_mode(mode_bits);
         let ac_shared = Arc::new(AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
             .match_kind(MatchKind::LeftmostFirst)
@@ -825,8 +817,6 @@ fn find_files_with_keyword(
                                  check_json_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), 20_000)
                              } else if is_xml && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) {
                                  check_xml_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
-                             } else if is_archive && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("archive")) {
-                                 check_archive_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), 5000)
                              } else if exclude_binary && is_binary(&mmap) {
                                  false
                              } else {

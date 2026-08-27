@@ -43,20 +43,17 @@ class Constants:
     ENC_CP949 = "cp949"
     MODE_XML = "XML"
     MODE_JSON = "JSON"
-    MODE_ARCHIVE = "Archive"
     MODE_EXCEL = "Excel"
     MODE_EXACT = AppStrings.SEARCH_MODE_EXACT
     MODE_COMPLEX = AppStrings.SEARCH_MODE_COMPLEX
     MODE_NORMAL = "Normal"
     EXT_XML = ".xml"
     EXT_JSON = ".json"
-    EXT_ARCHIVE = ".archive"
     EXT_EXCEL = ("xlsx", "xlsm", "xls", "xlsb")
     DEFAULT_THEME = "Dark"
     RUST_MODE_NORMAL = 0
     RUST_MODE_JSON = 1 << 0
     RUST_MODE_XML = 1 << 1
-    RUST_MODE_ARCHIVE = 1 << 2
     RUST_MODE_EXACT = 1 << 3
     RUST_MODE_EXCEL = 1 << 4
     RUST_MODE_EXCLUDE_BINARY = 1 << 5
@@ -127,10 +124,16 @@ class Constants:
     COLOR_RED = "#FF5555"
     BATCH_SIZE_LARGE = 500
     BATCH_SIZE_NORMAL = 100
+    # 워커 진단/호환용 최근 결과만 보관합니다. 전체 결과는 UI 시그널로 전달됩니다.
+    WORKER_RESULT_RETENTION = 2_048
     TIMEOUT_WORKER_HANG = DEFAULT_TIMEOUT_WORKER_HANG
     MAX_TOTAL_MATCHES = DEFAULT_MAX_TOTAL_MATCHES  # 글로벌 매치 상한 (기본값 캐시)
     MAX_PER_FILE_MATCHES = DEFAULT_MAX_PER_FILE_MATCHES  # 파일당 매치 상한 (기본값 캐시)
-    MEMORY_THRESHOLD_PERCENT = 85  # 메모리 사용량 임계값 (%)
+    # 검색 프로세스 트리 기준 보호값입니다. 시스템 전체 사용률만 보면
+    # 다른 애플리케이션의 메모리 사용 때문에 정상 검색이 중단될 수 있습니다.
+    PROCESS_MEMORY_THRESHOLD_PERCENT = 60
+    MIN_AVAILABLE_MEMORY_MB = 512
+    MIN_AVAILABLE_MEMORY_BYTES = MIN_AVAILABLE_MEMORY_MB * 1024 * 1024
 
     # Rust 엔진 결과 배치 크기 및 지연 간격 (성능 튜닝용)
     RUST_RESULT_BATCH_SIZE = 128

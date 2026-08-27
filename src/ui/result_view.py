@@ -630,7 +630,7 @@ class ResultView(QWidget):
         """
         현재 검색 모드에 따라 필터 입력 필드(0~3)가 대응되는 모델 컬럼 인덱스를 반환합니다.
         
-        대부분의 특수 모드(XML, JSON, Archive)는 0번 컬럼이 '라인 번호'이므로 
+        대부분의 특수 모드(XML, JSON)는 0번 컬럼이 '라인 번호'이므로 
         필터 입력은 데이터 컬럼인 1번부터 매핑되어야 합니다.
         """
         mode = self.search_mode or Constants.MODE_NORMAL
@@ -639,7 +639,7 @@ class ResultView(QWidget):
         if mode == Constants.MODE_NORMAL or Constants.MODE_EXCEL in mode:
             return edit_idx
             
-        # XML, JSON, Archive 등은 0번이 '라인 번호'이므로 필터 n은 n+1번 컬럼 대응
+        # XML, JSON 등은 0번이 '라인 번호'이므로 필터 n은 n+1번 컬럼 대응
         return edit_idx + 1
 
     def update_match_filter_visibility(self, mode):
@@ -658,15 +658,6 @@ class ResultView(QWidget):
             self.match_filter_3_edit.setVisible(False)
             self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_KEY_PLACEHOLDER)
             self.match_filter_2_edit.setPlaceholderText(AppStrings.MATCH_FILTER_VALUE_PLACEHOLDER)
-        elif Constants.MODE_ARCHIVE in mode:
-            self.match_filter_1_edit.setVisible(True)
-            self.match_filter_2_edit.setVisible(True)
-            self.match_filter_3_edit.setVisible(True)
-            self.match_filter_4_edit.setVisible(True)
-            self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_ARCHIVE_NS_PLACEHOLDER)
-            self.match_filter_2_edit.setPlaceholderText(AppStrings.MATCH_FILTER_ARCHIVE_KEY_PLACEHOLDER)
-            self.match_filter_3_edit.setPlaceholderText(AppStrings.MATCH_FILTER_ARCHIVE_SOURCE_PLACEHOLDER)
-            self.match_filter_4_edit.setPlaceholderText(AppStrings.MATCH_FILTER_ARCHIVE_TRANS_PLACEHOLDER)
         elif Constants.MODE_EXCEL in mode:
             self.match_filter_1_edit.setVisible(True)
             self.match_filter_2_edit.setVisible(True)
@@ -859,16 +850,7 @@ class ResultView(QWidget):
         # 모드별 헤더 설정
         mode = self.search_mode or Constants.MODE_NORMAL
         mode_upper = str(mode).upper()
-
-        if Constants.MODE_ARCHIVE.upper() in mode_upper:
-            headers = [
-                AppStrings.HEADER_FILE,
-                AppStrings.HEADER_ARCHIVE_NAMESPACE,
-                AppStrings.HEADER_ARCHIVE_KEY,
-                AppStrings.HEADER_ARCHIVE_SOURCE,
-                AppStrings.HEADER_ARCHIVE_TRANSLATION,
-            ]
-        elif Constants.MODE_EXCEL.upper() in mode_upper:
+        if Constants.MODE_EXCEL.upper() in mode_upper:
             headers = [
                 AppStrings.HEADER_FILE,
                 AppStrings.HEADER_EXCEL_SHEET,
@@ -907,9 +889,6 @@ class ResultView(QWidget):
                 if Constants.MODE_EXCEL.upper() in mode_upper:
                     # [Line, Sheet, Cell, Val, ...]
                     row.extend([str(m[1]), str(m[2]), str(m[3])])
-                elif Constants.MODE_ARCHIVE.upper() in mode_upper:
-                    # [Line, NS, Key, Src, Trans, ...]
-                    row.extend([str(m[1]), str(m[2]), str(m[3]), str(m[4])])
                 elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
                     # [Line, Name/Path, Value, ...]
                     row.extend([str(m[0]), str(m[1]), str(m[2])])

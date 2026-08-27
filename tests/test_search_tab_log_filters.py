@@ -20,14 +20,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from ui.search_tab import SearchTab
 
 
-def test_log_filter_defaults_info_only(qtbot, mock_config_manager):
+def test_log_filter_defaults_all_levels_enabled(qtbot, mock_config_manager):
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
 
     assert tab._log_level_checkboxes["INFO"].isChecked() is True
-    assert tab._log_level_checkboxes["DEBUG"].isChecked() is False
-    assert tab._log_level_checkboxes["WARNING"].isChecked() is False
-    assert tab._log_level_checkboxes["CRITICAL"].isChecked() is False
+    assert all(checkbox.isChecked() for checkbox in tab._log_level_checkboxes.values())
 
 
 def test_log_filter_hides_and_shows_levels(qtbot, mock_config_manager):
@@ -40,6 +38,7 @@ def test_log_filter_hides_and_shows_levels(qtbot, mock_config_manager):
 
     # 3. 'ERROR' 필터 활성화 (ERROR가 독자 레벨로 분리됨)
     tab._log_level_checkboxes["INFO"].setChecked(False)
+    tab._log_level_checkboxes["DEBUG"].setChecked(False)
     tab._log_level_checkboxes["ERROR"].setChecked(True)
     tab._refresh_logs_output()
 

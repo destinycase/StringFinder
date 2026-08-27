@@ -654,6 +654,16 @@ class ConfigManager:
             result = copy.deepcopy(defaults)
             if isinstance(advanced, dict):
                 result.update(advanced)
+            # Structured parsers have bounded safe limits. Clamp legacy or
+            # hand-edited settings so Python and Rust follow the same policy.
+            for key, minimum, maximum in (
+                (Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB),
+                (Constants.CONFIG_KEY_MAX_JSON_DEPTH, 1, Constants.DEFAULT_MAX_JSON_DEPTH),
+            ):
+                try:
+                    result[key] = min(max(int(result[key]), minimum), maximum)
+                except (KeyError, TypeError, ValueError):
+                    result[key] = maximum
             return result  # type: ignore
         
     def set_advanced_settings(self, settings_dict: dict):

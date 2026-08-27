@@ -49,21 +49,6 @@ def test_filter_json_xml_mode_mapping(match_model):
     match_model.set_column_filter(0, "key1") # 라인번호 '1', '2'가 아니므로 0건
     assert len(match_model._filtered_buffer) == 0
 
-def test_filter_archive_mode_mapping(match_model):
-    """Archive 모드: 필터 1~4 대응 확인"""
-    # Archive 필드 (line, ns, key, src, trans, offset, length)
-    matches = [
-        (1, "NS_UI", "KEY_CANCEL", "Cancel", "취소", 0, 0)
-    ]
-    match_model.set_matches("test.archive", matches, search_mode=Constants.MODE_ARCHIVE)
-    
-    # 가이드: UI 필터 n -> 모델 컬럼 n+1
-    # UI Filter 4 (Translation) -> 모델 Column 4 (extra_3)
-    match_model.set_column_filter(4, "취소")
-    assert len(match_model._filtered_buffer) == 1
-    
-    match_model.set_column_filter(4, "Cancel") # 소스 컬럼(3)이 아닌 번역 컬럼(4)에서 검색하므로 0건
-    assert len(match_model._filtered_buffer) == 0
 
 def test_filter_excel_mode_mapping(match_model):
     """Excel 모드: 필터 0~2 직접 매핑 확인 (라인번호 컬럼 없음)"""

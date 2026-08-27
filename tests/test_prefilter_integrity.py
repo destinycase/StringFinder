@@ -1,15 +1,14 @@
 import os
 import json
 import unittest
-from core.search_engine import _fast_existence_check, search_in_json_special, search_in_archive_special
+from core.search_engine import _fast_existence_check, search_in_json_special
 
 class TestPrefilterIntegrity(unittest.TestCase):
     def setUp(self):
         self.test_json = "test_corrupted.json"
-        self.test_archive = "test_corrupted.archive"
         
     def tearDown(self):
-        for f in [self.test_json, self.test_archive]:
+        for f in [self.test_json]:
             if os.path.exists(f):
                 os.remove(f)
 
@@ -38,15 +37,12 @@ class TestPrefilterIntegrity(unittest.TestCase):
         # 6MB의 0xFF (Invalid UTF-8/Any)
         corrupted_data = b"\xff" * 6 * 1024 * 1024
         
-        for f_path in [self.test_json, self.test_archive]:
+        for f_path in [self.test_json]:
             with open(f_path, "wb") as f:
                 f.write(corrupted_data)
             
             # JSON 경로 테스트
-            if f_path.endswith(".json"):
-                res = search_in_json_special(f_path, "any", existence_only=True)
-            else:
-                res = search_in_archive_special(f_path, "any", existence_only=True)
+            res = search_in_json_special(f_path, "any", existence_only=True)
                 
             self.assertIsInstance(res, tuple, f"{f_path}에서 결과가 Tuple(SKIPPED)이 아님")
             if isinstance(res, tuple) and len(res) == 2:

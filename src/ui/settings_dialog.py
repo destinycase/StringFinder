@@ -206,7 +206,7 @@ class SettingsDialog(QDialog):
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_JSON_DOM_SIZE, AppStrings.TOOLTIP_MAX_JSON_DOM_SIZE,
-            Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, 1024, AppStrings.UNIT_MB
+            Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB, AppStrings.UNIT_MB
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE, AppStrings.TOOLTIP_MAX_SMALL_FILE_SIZE,
@@ -226,7 +226,7 @@ class SettingsDialog(QDialog):
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DEPTH] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_JSON_DEPTH, AppStrings.TOOLTIP_MAX_JSON_DEPTH,
-            Constants.CONFIG_KEY_MAX_JSON_DEPTH, 10, 1_000_000, AppStrings.UNIT_DEPTH
+            Constants.CONFIG_KEY_MAX_JSON_DEPTH, 10, Constants.DEFAULT_MAX_JSON_DEPTH, AppStrings.UNIT_DEPTH
         )
 
         advanced_layout.addSpacing(10)

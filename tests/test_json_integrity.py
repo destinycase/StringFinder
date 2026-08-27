@@ -1,7 +1,7 @@
 """
 [test_json_integrity.py]
 
-이 테스트는 JSON 및 Archive 파일 검색 시의 데이터 추출 무결성을 검증합니다.
+이 테스트는 JSON 파일 검색 시의 데이터 추출 무결성을 검증합니다.
 
 - 테스트 목적:
   1. JSON 키(Key)가 아닌 값(Value) 영역에서만 정확한 검색이 이루어지는지 확인.
@@ -9,13 +9,13 @@
   3. UTF-16 및 BOM 환경에서의 JSON 파싱 안정성 확보.
 
 - 주요 검증 사항:
-  1. JSON/Archive Key 매칭 배제 여부.
+  1. JSON Key 매칭 배제 여부.
   2. 대용량 깨진 JSON 처리 시 `STATUS_SKIPPED` 반환 여부.
   3. UTF-16 LE BOM JSON 검색 성공 여부.
 """
 
 import json
-from core.search_engine import search_in_json_special, search_in_archive_special
+from core.search_engine import search_in_json_special
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
 
@@ -30,23 +30,6 @@ def test_json_key_only_match_integrity(tmp_path):
     result = search_in_json_special(str(file_path), "needle", existence_only=True)
     assert result is None, "Should not match JSON key"
 
-def test_archive_key_only_match_integrity(tmp_path):
-    # [2] Archive Key 검색 배제
-    file_path = tmp_path / "test.archive"
-    content = {
-        "Subnamespaces": [
-            {
-                "Namespace": "NS",
-                "Children": [
-                    {"Key": "needle_key", "Source": {"Text": "safe"}, "Translation": {"Text": "safe"}}
-                ]
-            }
-        ]
-    }
-    file_path.write_text(json.dumps(content), encoding="utf-8")
-    
-    result = search_in_archive_special(str(file_path), "needle", existence_only=True)
-    assert result is None, "Should not match Archive key"
 
 def test_malformed_json_integrity(tmp_path):
     # [3] 깨진 JSON 처리 (조기 성공 반환으로 파싱 에러 누락 방지)

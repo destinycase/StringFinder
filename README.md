@@ -3,6 +3,8 @@
 StringFinder는 대용량 파일에서 문자열을 빠르게 탐색하기 위한 Windows 데스크톱 도구입니다.
 UI는 Python(PySide6), 검색 코어는 Python + Rust(`sf_engine`) 하이브리드 구조를 사용합니다.
 
+현재 버전: **5.5.1**
+
 ---
 
 ## 요약
@@ -20,7 +22,7 @@ StringFinder는 "빠른 검색기"가 아니라 "운영 가능한 검색 시스�
 실무 검색 워크로드는 단일 형태가 아닙니다.
 
 - 수십만 파일 수준의 대규모 트리 검색
-- XML/JSON/Archive/Excel 같은 구조 파일 포함
+- XML/JSON/Excel 같은 구조 파일 포함
 - 권한 오류, 잠금 파일, 인코딩 혼재 같은 운영 노이즈
 - 바이너리 파일 혼재로 인한 스캔 오버헤드
 - "결과를 찾는 것" 이후의 확인/필터링/내보내기 단계
@@ -44,8 +46,8 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 - **기본 검색 경로**: Rust 엔진(`sf_engine`)
 - **안정성 레이어**: `std::panic::catch_unwind`를 통한 병렬 루프 보호 (특정 파일 오류가 시스템 전체로 파급되지 않음)
 - **고립 정책 (Isolation)**: 무결성과 성능을 위해 일반 워크로드의 불필요한 Python 폴백을 차단합니다. 
-- **선별적 폴백**: 구조화된 파일(JSON, Archive, Excel) 등은 Rust 엔진 내부 최적화 파서 계층을 1차로 통과하며, 필요시 Python 엔진을 선별 가동합니다.
-  - JSON 파싱 지연 최소화 및 Archive 내 이중 바이트 스캔 성능 극대화 채택
+- **선별적 폴백**: 구조화된 파일(JSON, Excel) 등은 Rust 엔진 내부 최적화 파서 계층을 1차로 통과하며, 필요시 Python 엔진을 선별 가동합니다.
+  - JSON 파싱 지연 최소화 및 구조화된 데이터 검색 성능 최적화 채택
 - **API 호환성 가드**: `sf_engine.API_VERSION >= 5` 확인 후 활성화
 
 ### 3) 동시성 모델
@@ -80,8 +82,9 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 
 ### 2) 무결성(Integrity) 및 정규화
 - **유니코드 정규화**: 입력 검색어와 대상 텍스트의 NFC 정규화 및 Case Folding 일관성 유지.
-- **Excel/JSON/Archive 무결성**: 구조화된 파일의 형식이 손상되었을 경우(Malformed), 조기 종료하지 않고 반드시 `SKIPPED` 상태로 보고하여 데이터 누락 가능성을 차단합니다.
-- **메모리 보호 가드**: `MAX_JSON_DOM_SIZE` (500MB) 설정을 통해 초대형 파일로 인한 시스템 전체 OOM(Out of Memory)을 방지합니다.
+- **Excel/JSON 무결성**: 구조화된 파일의 형식이 손상되었을 경우(Malformed), 조기 종료하지 않고 반드시 `SKIPPED` 상태로 보고하여 데이터 누락 가능성을 차단합니다.
+- **메모리 보호 가드**: `MAX_JSON_DOM_SIZE` (최대 500MB)와 프로세스 트리 RSS/가용 메모리 사전 점검을 함께 사용하여 초대형 파일로 인한 OOM 위험을 낮춥니다. 메모리 계측값을 사용할 수 없는 제한된 환경에서는 검색을 오탐 중단하지 않습니다.
+- **구조화 파일 안전 범위**: JSON 깊이 설정은 최대 20,000단계로 제한되며 Python/Rust 경로가 동일한 파일 크기 정책을 적용합니다.
 
 ### 3) 운영 가시성(Observability)
 - 상세 로깅: 엔진 전환, 폴백 발생, 스킵 사유 등을 `stringfinder.log`에 명시적으로 기록합니다.
@@ -95,7 +98,7 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 - 파일명 필터 검색 (`npc`, `data_*.json`, `*.txt, *.log` 형태 지원)
 - **바이너리 파일 제외** (설정 창에서 제어, 성능 향상 권장)
 - 특수 검색 모드:
-  - XML / JSON / Archive / Excel (구조 기반 정밀 검색)
+  - XML / JSON / Excel (구조 기반 정밀 검색)
 - 검색 결과/매치 상세/미리보기 분리 UI (**상세 뷰 페이지네이션 지원**)
 - 숨김 파일/폴더 제외 옵션
 - 결과 내보내기 (`.xlsx`, `.txt`)
@@ -166,10 +169,10 @@ StringFinder의 설계 목표는 단일 축 최적화가 아니라, 검색부터
 
 | 구분 | 기술 스택 및 라이브러리 |
 |---|---|
-| **Python (UI & Orch.)** | Python 3.12+, PySide6, pyqtdarktheme, chardet, python-calamine, openpyxl, Pillow |
+| **Python (UI & Orch.)** | Python 3.12+, PySide6, pyqtdarktheme, python-calamine, psutil |
 | **Rust (Engine Core)** | Rust 2021, sf_engine (PyO3), aho-corasick, memmap2, ignore, rayon, quick-xml |
 | **Concurrency** | QThreadPool, ProcessPoolExecutor, multiprocessing.Manager |
-| **Test & Quality** | pytest, pytest-qt, ruff, mypy, cargo clippy |
+| **Test & Quality** | pytest, pytest-qt, openpyxl, Pillow, ruff, mypy, cargo clippy |
 | **Build & Deploy** | PyInstaller API, cargo, maturin, build.py |
 
 ### 2. 개발 환경
@@ -267,6 +270,12 @@ StringFinder/
 - 종료 경로에서 워커/프로세스 정리를 수행하므로, 워커 로직 변경 시 종료 시나리오도 함께 검증해야 합니다.
 - 성능 경로 분리: 일반 워크로드는 Rust, 정밀 유니코드 검색은 Python
 ---
+
+## 5.5.1 변경 사항
+- 특수 검색에서 Archive 관련 항목과 전용 처리를 제거했습니다. `.archive` 파일은 일반 텍스트 검색 정책을 따릅니다.
+- JSON 최대 파싱 메모리 한도를 500MB로 통일했습니다.
+- 메모리 부족으로 검색이 중단될 때 로그 기록과 함께 사용자 안내 팝업을 표시합니다.
+- 로그 레벨 필터는 최초 실행 시 모든 항목이 활성화됩니다.
 
 ## 라이선스
 현재 저장소 정책(내부/비공개 배포 기준)을 따릅니다.

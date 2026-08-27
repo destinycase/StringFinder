@@ -237,34 +237,3 @@ def test_excel_rust_normal_tuple_highlight_in_normal_mode(search_tab_fixture):
     assert "증" in str(html)
 
 
-def test_archive_multi_column_mapping(qtbot, search_tab_fixture):
-    """Archive 모드에서 5-튜플 결과가 정확히 5개 컬럼으로 매핑되는지 확인."""
-    from sf_utils.app_strings import AppStrings
-
-    archive_path = "D:/test/lang.archive"
-    matches = [(10, "Common", "UI_OK", "OK", "확인"), (25, "System", "ERR_INVALID", "Invalid Input", "잘못된 입력")]
-
-    search_tab_fixture.ext_panel.special_combo.setCurrentText(AppStrings.SPECIAL_SEARCH_ARCHIVE)
-
-    # set_matches 호출 시 Archive 모드 명시
-    search_tab_fixture.result_view_panel.match_model.set_matches(
-        archive_path, matches, search_text="OK", search_mode=AppStrings.SPECIAL_SEARCH_ARCHIVE
-    )
-
-    # 헤더 검증
-    assert search_tab_fixture.result_view_panel.match_model._headers == [
-        AppStrings.HEADER_POSITION,
-        AppStrings.HEADER_ARCHIVE_NAMESPACE,
-        AppStrings.HEADER_ARCHIVE_KEY,
-        AppStrings.HEADER_ARCHIVE_SOURCE,
-        AppStrings.HEADER_ARCHIVE_TRANSLATION,
-    ]
-
-    # 데이터 매핑 검증 (첫 번째 행)
-    model = search_tab_fixture.result_view_panel.match_model
-    assert model.rowCount() == 2
-    assert model.data(model.index(0, 0), Qt.ItemDataRole.EditRole) == "10"  # 위치(줄)
-    assert model.data(model.index(0, 1), Qt.ItemDataRole.EditRole) == "Common"  # 네임스페이스
-    assert model.data(model.index(0, 2), Qt.ItemDataRole.EditRole) == "UI_OK"  # 키
-    assert model.data(model.index(0, 3), Qt.ItemDataRole.EditRole) == "OK"  # 소스
-    assert model.data(model.index(0, 4), Qt.ItemDataRole.EditRole) == "확인"  # 번역

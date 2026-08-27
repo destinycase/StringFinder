@@ -16,6 +16,25 @@ from sf_utils.constants import Constants
 def _get_adv_setting(key, default):
     return ConfigManager().get_advanced_settings().get(key, default)
 
+
+def _memory_guard_result(file_path: str) -> Optional[Tuple[str, str]]:
+    """Prevent a structured-file parse when the application is already under pressure."""
+    try:
+        from sf_utils.resource_guard import memory_pressure_detected, memory_pressure_message, memory_snapshot
+
+        snapshot = memory_snapshot()
+        if memory_pressure_detected(snapshot):
+            logger.warning(
+                "Structured search skipped for %s due to memory pressure (%s)",
+                file_path,
+                memory_pressure_message(snapshot),
+            )
+            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_MEMORY_CRITICAL)
+    except Exception as exc:
+        # Resource checks must never make an otherwise readable file fail.
+        logger.debug("Memory preflight check failed for %s: %s", file_path, exc)
+    return None
+
 EXCEL_EXTS = {".xlsx", ".xlsm", ".xls", ".xlsb"}
 logger = logging.getLogger("StringFinder.SearchEngine")
 _RUST_ENGINE_ERROR: str = ""  # 로드 실패 시 상세 사유를 보존합니다 (진입점 팝업용)
@@ -220,7 +239,7 @@ def _normalize_rust_matches(
             offset = m[2] if len(m) > 2 else None
             length = m[3] if len(m) > 3 else None
 
-            # Rust 엔진은 특수 모드(XML, JSON, Archive)에서
+            # Rust 엔진은 특수 모드(XML, JSON)에서
             # content 필드에 모든 필드를 \t로 합쳐서 반환함.
             # search_directory_fast 경로에서는 search_in_xml_special 등이
             # 호출되지 않으므로 이 함수에서 직접 분리해야 함.
@@ -241,16 +260,6 @@ def _normalize_rust_matches(
                     json_path = pts[0].lstrip("/").replace("/", ".")
                     val = pts[1] if len(pts) > 1 else ""
                     res.append((line, json_path, val, offset, length))
-                    continue
-
-                if "ARCHIVE" in mode_up:
-                    # 예) "NS: ns\tKey: key\tS: src\tT: trans" -> (line, ns, key, src, trans)
-                    pts = c.split("\t")
-                    ns    = pts[0].replace("NS: ", "")  if len(pts) > 0 else ""
-                    key   = pts[1].replace("Key: ", "") if len(pts) > 1 else ""
-                    src   = pts[2].replace("S: ", "")   if len(pts) > 2 else ""
-                    trans = pts[3].replace("T: ", "")   if len(pts) > 3 else ""
-                    res.append((line, ns, key, src, trans))
                     continue
 
                 if "EXCEL" in mode_up:
@@ -328,8 +337,7 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
         bits |= Constants.RUST_MODE_XML
     if Constants.MODE_JSON in special_mode:
         bits |= Constants.RUST_MODE_JSON
-    if Constants.MODE_ARCHIVE in special_mode:
-        bits |= Constants.RUST_MODE_ARCHIVE
+    
     if Constants.MODE_EXACT in special_mode:
         bits |= Constants.RUST_MODE_EXACT
     return bits
@@ -796,6 +804,9 @@ def search_in_json_special(
     """
     JSON 특수 검색을 수행합니다.
     """
+    memory_result = _memory_guard_result(file_path)
+    if memory_result:
+        return memory_result
     if HAS_RUST_ENGINE and not use_complex_search:
         try:
             mode_bits = Constants.RUST_MODE_JSON
@@ -942,7 +953,11 @@ def search_in_json_special(
         # 재귀 DFS 대신 명시적 일반 반복문 Stack-based DFS 사용
         # 깊은 중첩 구조에서 RecursionError 발생을 사전 차단합니다.
         stack = [(data, "", 0)]  # (obj, path, depth)
-        MAX_JSON_DEPTH = 2000
+        configured_depth = _get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DEPTH, Constants.DEFAULT_MAX_JSON_DEPTH)
+        try:
+            MAX_JSON_DEPTH = max(1, min(int(configured_depth), Constants.DEFAULT_MAX_JSON_DEPTH))
+        except (TypeError, ValueError):
+            MAX_JSON_DEPTH = Constants.DEFAULT_MAX_JSON_DEPTH
         total_count = 0
         _iter_count = 0  # independent iteration counter
 
@@ -1003,6 +1018,9 @@ def search_in_xml_special(
     """
     XML 특수 검색을 수행합니다.
     """
+    memory_result = _memory_guard_result(file_path)
+    if memory_result:
+        return memory_result
     if HAS_RUST_ENGINE and not use_complex_search:
         try:
             mode_bits = Constants.RUST_MODE_XML
@@ -1035,7 +1053,7 @@ def search_in_xml_special(
     try:
         import xml.parsers.expat
 
-        # XML DOM 로딩 전 크기 확인 (JSON/Archive와 동일한 패턴)
+        # XML DOM 로딩 전 크기 확인 (JSON과 동일한 패턴)
         # 이유: 크기 제한 없이 전체 파일을 메모리에 로드 -> 대용량 XML에서 OOM 위험
         try:
             file_size = os.path.getsize(file_path)
@@ -1129,184 +1147,6 @@ def search_in_xml_special(
         return (Constants.STATUS_SKIPPED, str(e))
 
 
-def search_in_archive_special(
-    file_path: str,
-    search_string: str,
-    exact_match: bool = False,
-    use_complex_search: bool = False,
-    stop_event=None,
-    existence_only: bool = False,
-) -> Optional[Union[SearchResult, SkippedResult]]:
-    """
-    Archive 특수 검색을 수행합니다.
-    """
-    if HAS_RUST_ENGINE and not use_complex_search:
-        try:
-            mode_bits = Constants.RUST_MODE_ARCHIVE
-            if exact_match:
-                mode_bits |= Constants.RUST_MODE_EXACT
-            if existence_only:
-                mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
-            if results:
-                if existence_only:
-                    # [Boolean] 일치 항목 발견 시 즉시 반환
-                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
-                skip_reason = _extract_marker_skip_reason(results)
-                if skip_reason:
-                    return (Constants.STATUS_SKIPPED, skip_reason)
-                processed = []
-                for m in results:
-                    parts = m[1].split("\t")
-                    ns = parts[0].replace("NS: ", "") if len(parts) > 0 else ""
-                    key = parts[1].replace("Key: ", "") if len(parts) > 1 else ""
-                    src = parts[2].replace("S: ", "") if len(parts) > 2 else ""
-                    trans = parts[3].replace("T: ", "") if len(parts) > 3 else ""
-                    processed.append((m[0], ns, key, src, trans))
-                return (file_path, len(processed), processed)
-            
-            # 탐지 누락 방지: Rust 엔진 실패 시 Python 엔진으로 폴백되도록 처리합니다.
-            pass
-        except Exception as e:
-            logger.error(AppStrings.LOG_SCH_RUST_ARCHIVE_FAIL.format(file_path, e))
-            # 자동 폴백을 중단하는 정책을 적용합니다.
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_IO_DURING_SEARCH.format(e))
-    try:
-        import json
-
-        # [v4.63.9 Defensive] 변수 초기화 강제 (UnboundLocalError 원천 차단)
-        raw_bytes = None
-        encoding = None
-        processed_content = None
-
-        try:
-            f_size = os.path.getsize(file_path)
-            if f_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
-                logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
-                return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_MEMORY_GUARD.format(f"{f_size} bytes"))
-        except (OSError, IOError):
-            pass
-
-        # [v4.63.2] Integrity Fix: existence_only 시에도 무결성 체크(loads)는 수행해야 함
-        skip_traversal = False
-        if existence_only:
-            if not _fast_existence_check(file_path, search_string, exact_match):
-                skip_traversal = True
-
-        # 정합성 보장을 위해 대용량 파일에서도 무결성 체크를 수행합니다.
-        # 미매치 힌트(skip_traversal)는 loads 통과 후에만 적용함 (아래로 이동)
-
-        try:
-            import mmap
-            f_size = os.path.getsize(file_path)
-            
-            with open(file_path, "rb") as f_raw:
-                # 성능 최적화를 위해 mmap을 사용합니다.
-                if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
-                    mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
-                    try:
-                        sample_len = min(f_size, 65536)
-                        encoding = detect_encoding_quickly(mm[:sample_len])
-                        
-                        # [v4.63.9 Performance Fix] mm[:] 전체 복사 대신 mmap 객체를 직접 디코딩에 활용
-                        try:
-                            # Archive loads를 위해 전체 텍스트 변환
-                            processed_content = mm.read().decode(encoding, errors="strict")
-                        except UnicodeDecodeError:
-                            processed_content = None
-                            # [v4.63.10 Integrity Fix] 디코딩 실패 시 폴백 게이트용 데이터 확보
-                            mm.seek(0)
-                            raw_bytes = mm.read()
-                    finally:
-                        mm.close()
-                else:
-                    raw_bytes = f_raw.read()
-                    encoding = detect_encoding_quickly(raw_bytes[:65536])
-        except (IOError, OSError) as e:
-            logger.debug(AppStrings.ERROR_READ_FILE.format(file_path, e))
-            raise
-
-        try:
-            # Archive 데이터 무 결성 강화: 손상된 바이트가 무음 치환되는 것을 방지합니다.
-            # mmap 분기에서 이미 디코딩을 시도했을 수 있음
-            if 'processed_content' not in locals() or processed_content is None:
-                if raw_bytes is not None:
-                    try:
-                        processed_content = raw_bytes.decode(encoding, errors="strict")
-                    except UnicodeDecodeError:
-                        processed_content = None
-                else:
-                    processed_content = None
-            
-            data = None
-            if processed_content:
-                try:
-                    data = json.loads(processed_content, strict=True)
-                except (json.JSONDecodeError, ValueError):
-                    pass
-
-            # Archive 파일도 No-BOM UTF-16 재시도 지원
-            if data is None:
-                # 데이터가 확보된 경우에만 재시도를 수행하여 무결성을 유지합니다.
-                if raw_bytes is not None and encoding not in ["utf-16-le", "utf-16-be", "utf-16"]:
-                    for alt_enc in ["utf-16-le", "utf-16-be"]:
-                        try:
-                            alt_content = raw_bytes.decode(alt_enc, errors="strict")
-                            data = json.loads(alt_content, strict=True)
-                            encoding = alt_enc
-                            processed_content = alt_content
-                            break
-                        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-                            continue
-                
-                if data is None:
-                    return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE + " (Archive Integrity Error)")
-
-            # existence_only 모드 최적화: 무결성 통과 후 매치가 없는 것이 확실하면 조기 종료합니다.
-            if skip_traversal:
-                return None
-
-        except Exception as e:
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE + f" (Archive Error: {e})")
-        if data is None or not isinstance(data, dict):
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE + " (Invalid Archive Format)")
-            
-        matches = []
-        count = 0
-        search_string = normalize_unicode(search_string).casefold()
-        for sn in data.get("Subnamespaces", []):
-            if stop_event and stop_event.is_set():
-                break
-            ns = sn.get("Namespace", "")
-            for child in sn.get("Children", []):
-                s = normalize_unicode(child.get("Source", {}).get("Text", ""))
-                t = normalize_unicode(child.get("Translation", {}).get("Text", ""))
-                s_comp = s.casefold()
-                t_comp = t.casefold()
-                if (
-                    (search_string in s_comp or search_string in t_comp)
-                    if not exact_match
-                    else (search_string == s_comp or search_string == t_comp)
-                ):
-                    count += 1
-                    if existence_only:
-                        # [Boolean] 일치 항목 발견 시 즉시 반환
-                        return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
-                    
-                    # [상] Python 경로 매치 상한 적용
-                    if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
-                        matches.append((1, ns, child.get("Key", ""), s, t))
-                    elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
-                        matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), "", "", ""))
-        if count > 0:
-            final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
-            return (file_path, final_count, matches)
-        return None
-    except Exception as e:
-        logger.error(AppStrings.LOG_SCH_ARCHIVE_FAIL.format(file_path, e))
-        return (Constants.STATUS_SKIPPED, f"Archive Search Error: {e}")
-
-
 def search_in_file(
     file_path: str,
     search_string: str,
@@ -1348,10 +1188,6 @@ def search_in_file(
             )
         elif Constants.MODE_JSON in special_mode:
             return search_in_json_special(
-                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event, existence_only=existence_only
-            )
-        elif Constants.MODE_ARCHIVE in special_mode:
-            return search_in_archive_special(
                 file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event, existence_only=existence_only
             )
         elif Constants.MODE_EXCEL in special_mode:
@@ -1478,9 +1314,9 @@ def search_in_file(
 
     if not use_complex_search and not force_python:
         try:
-            # JSON, Archive, Excel 등 Python 전용 파서가 필요한 파일은 폴백 허용
+            # JSON, Excel 등 Python 전용 파서가 필요한 파일은 폴백 허용
             ext = os.path.splitext(file_path)[1].lower()
-            if ext in [".json", ".archive", ".xlsx", ".xls"]:
+            if ext in [".json", ".xlsx", ".xls"]:
                 pass
             else:
                 with open(file_path, "rb") as f_chk:

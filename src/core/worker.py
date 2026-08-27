@@ -2,10 +2,9 @@ import multiprocessing
 import multiprocessing.managers
 import threading
 import time
+from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from typing import Any, List, Optional
-
-import psutil  # 성능을 위해 모듈 최상단에서 로드합니다.
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
@@ -140,6 +139,7 @@ class SearchWorker(QRunnable):
         self.config_manager: ConfigManager = ConfigManager()
         self._total_matches_accumulated = 0
         self._last_mem_check: Optional[float] = None
+        self._memory_alert_emitted = False
 
     def _safe_emit(self, signal, *args):
         try:
@@ -148,9 +148,23 @@ class SearchWorker(QRunnable):
             # Signal source has been deleted
             pass
         except Exception:
-            # 로깅 실패( closed stream 등)를 포함하여 어떤 예외도 워커를 멈추게 하지 않음
             pass
 
+    def _stop_for_memory_pressure(self, diagnostic: str = "") -> None:
+        """Stop the search and notify the UI once when memory pressure is detected."""
+        self.stop_event.set()
+        self.is_running.clear()
+        if not self._memory_alert_emitted:
+            self._memory_alert_emitted = True
+            logger.warning("%s%s", AppStrings.ERROR_MEMORY_CRITICAL, f" ({diagnostic})" if diagnostic else "")
+            self._safe_emit(self.signals.error, AppStrings.ERROR_MEMORY_CRITICAL)
+
+    @staticmethod
+    def _is_memory_skip(skip_list) -> bool:
+        return any(
+            "ERR_MEMORY_GUARD" in str(reason) or AppStrings.ERROR_MEMORY_CRITICAL in str(reason)
+            for _, reason in skip_list
+        )
     def _check_safety_limits(self, new_matches_count: int) -> bool:
         """전역 상한 및 메모리 가드 체크"""
         self._total_matches_accumulated += new_matches_count
@@ -165,13 +179,11 @@ class SearchWorker(QRunnable):
         now = time.time()
         if self._last_mem_check is None or (now - self._last_mem_check) > 1.0:
             try:
-                mem_percent = psutil.virtual_memory().percent
-                if mem_percent > Constants.MEMORY_THRESHOLD_PERCENT:
-                    err_msg = AppStrings.ERROR_MEMORY_CRITICAL
-                    logger.warning(AppStrings.LOG_SYS_MEMORY_WARNING.format(err_msg, mem_percent))
-                    self.stop_event.set()
-                    self.is_running.clear()
-                    self._safe_emit(self.signals.error, err_msg)
+                from sf_utils.resource_guard import memory_pressure_detected, memory_pressure_message, memory_snapshot
+
+                snapshot = memory_snapshot()
+                if memory_pressure_detected(snapshot):
+                    self._stop_for_memory_pressure(memory_pressure_message(snapshot))
                     return False
             except Exception as e:
                 logger.debug(AppStrings.LOG_SYS_MEMORY_CHECK_FAIL.format(e))
@@ -185,7 +197,9 @@ class SearchWorker(QRunnable):
         logger.info(AppStrings.LOG_WKR_STARTED.format(self.search_string, ext_info, mode_info))
         if not hasattr(self, "worker_start_time"):
             self.worker_start_time = time.time()
-        self.all_results: List[Any] = []
+        # Legacy diagnostics/tests access all_results. Keep only a bounded
+        # recent window; the complete result stream is delivered by signals.
+        self.all_results: deque[Any] = deque(maxlen=Constants.WORKER_RESULT_RETENTION)
         self.all_skipped: List[Any] = []
         self.skipped_sheets_list: List[Any] = []  # [(file_path, sheet_name), ...] 시트 스킵 목록
         try:
@@ -209,6 +223,8 @@ class SearchWorker(QRunnable):
     def _run_rust_search(self, exclude_hidden: bool = True, exclude_binary: bool = True):
         from core.search_engine import search_directory_fast, search_files_list_fast
         total_files = len(self.file_list) if self.file_list else 100
+        self._rust_found_files = 0
+        self._rust_total_matches = 0
 
         self._last_progress_count = -1
         self._last_progress_emit_time = 0.0
@@ -262,13 +278,15 @@ class SearchWorker(QRunnable):
             
             if not formatted_batch and not skipped_batch:
                 return
+            if skipped_batch and self._is_memory_skip(skipped_batch):
+                self._stop_for_memory_pressure()
             if formatted_batch and not self._check_safety_limits(current_batch_matches):
                 return
-
             if formatted_batch:
+                self._rust_found_files += len(formatted_batch)
+                self._rust_total_matches += current_batch_matches
+                self.all_results.extend(formatted_batch)
                 self._safe_emit(self.signals.results_found, formatted_batch)
-                if hasattr(self, "all_results"):
-                    self.all_results.extend(formatted_batch)
             if skipped_batch:
                 self._safe_emit(self.signals.skipped_found, skipped_batch)
             # logger.debug(f"[Worker] results_callback processing finished")
@@ -294,13 +312,15 @@ class SearchWorker(QRunnable):
             self._safe_emit(self.signals.search_finished, 0, 0, 0)
             return
 
-        total_found = len(self.all_results)
-        total_matches = sum(cnt for _, cnt, _ in self.all_results)
+        total_found = getattr(self, "_rust_found_files", 0)
+        total_matches = getattr(self, "_rust_total_matches", 0)
         skipped_list = []
         if isinstance(search_res, dict):
             skipped_list = search_res.get(Constants.PAYLOAD_SKIPPED, [])
         skipped_count = len(skipped_list) + len(getattr(self, "all_skipped", []))
         if skipped_list:
+            if self._is_memory_skip(skipped_list):
+                self._stop_for_memory_pressure()
             self._safe_emit(self.signals.skipped_found, skipped_list)
         # [Cleanup] 강제 100% 방출은 실제 스캔 수와 불일치할 수 있으므로 제거합니다.
         # 실제 진행률은 이미 Rust 콜백을 통해 정확한 숫자로 전달되었습니다.
@@ -379,12 +399,36 @@ class SearchWorker(QRunnable):
         from core.search_engine import search_in_files_batch as search_func
         
         future_to_batch = {}
+        batch_iter = iter(batches)
+        pending_futures = set()
+
+        def submit_next_batch() -> bool:
+            try:
+                batch = next(batch_iter)
+            except StopIteration:
+                return False
+            if not self.is_running.is_set():
+                return False
+            future = executor.submit(
+                search_func,
+                batch,
+                self.search_string,
+                self.special_mode,
+                self.use_complex_search,
+                self.stop_event,
+                force_python,
+                exclude_binary=self.exclude_binary,
+                existence_only=self.existence_only,
+            )
+            future_to_batch[future] = batch
+            pending_futures.add(future)
+            return True
+
         try:
-            for b in batches:
-                if not self.is_running.is_set():
+            max_in_flight = max(1, int(getattr(executor, "_max_workers", 1)))
+            for _ in range(min(max_in_flight, len(batches))):
+                if not submit_next_batch():
                     break
-                future = executor.submit(search_func, b, self.search_string, self.special_mode, self.use_complex_search, self.stop_event, force_python, exclude_binary=self.exclude_binary, existence_only=self.existence_only)
-                future_to_batch[future] = b
         except RuntimeError as e:
             # 시스템 종료 중에 작업이 제출될 경우 조용히 중단합니다. (사용자 명시적 중지 상황)
             if "after shutdown" in str(e):
@@ -395,7 +439,6 @@ class SearchWorker(QRunnable):
             logger.error(AppStrings.LOG_WKR_FUTURE_SUBMISSION_FAIL.format(e))
             raise
 
-        pending_futures = set(future_to_batch.keys())
         found_count = total_matches = skipped_count = completed = 0
         last_logged_percent = -1
         loop_start_time = time.time()
@@ -443,13 +486,17 @@ class SearchWorker(QRunnable):
                                     break
                                 found_count += len(res_list)
                                 total_matches += current_matches
+                                self.all_results.extend(res_list)
                                 self._safe_emit(self.signals.results_found, res_list)
-                                if hasattr(self, "all_results"):
-                                    self.all_results.extend(res_list)
                             if batch_res.get(Constants.PAYLOAD_SKIPPED):
                                 skip_list = batch_res[Constants.PAYLOAD_SKIPPED]
                                 self._safe_emit(self.signals.skipped_found, skip_list)
                                 skipped_count += len(skip_list)
+                                if self._is_memory_skip(skip_list):
+                                    self._stop_for_memory_pressure()
+                                    for pending in list(pending_futures):
+                                        pending.cancel()
+                                    pending_futures.clear()
                     except Exception as e:
                         logger.error(AppStrings.LOG_WKR_BATCH_FAILED.format(e))
                         # 배치 작업이 실패한 경우 해당 파일들을 검색 스킵으로 처리하여 보고합니다.
@@ -467,6 +514,11 @@ class SearchWorker(QRunnable):
                         if decile > last_logged_percent:
                             logger.info(AppStrings.LOG_WKR_PROGRESS.format(percent, completed, total))
                             last_logged_percent = decile
+                    if self.is_running.is_set():
+                        try:
+                            submit_next_batch()
+                        except RuntimeError as e:
+                            logger.debug(AppStrings.LOG_WKR_FUTURE_SCHEDULING_SKIPPED.format(e))
         finally:
             # 로컬 참조를 해제하고 실행기의 생명주기 관리는 전역적으로 관리됩니다.
             # 다음 검색 시 _run_batch_search에서 새 Executor 할당.
