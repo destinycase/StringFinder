@@ -97,6 +97,8 @@ class Constants:
     CONFIG_KEY_EXCLUDE_BINARY = "exclude_binary"
     CONFIG_KEY_RESULT_COLUMN_WIDTHS = "result_column_widths"
     CONFIG_KEY_MATCH_COLUMN_WIDTHS = "match_column_widths"
+    CONFIG_KEY_CONTEXT_BEFORE_LINES = "context_before_lines"
+    CONFIG_KEY_CONTEXT_AFTER_LINES = "context_after_lines"
     CONFIG_KEY_LOG_RETENTION = "log_retention"
     CONFIG_KEY_LOG_RETENTION_ENABLED = "enabled"
     CONFIG_KEY_LOG_RETENTION_MAX_FILES = "max_files"
@@ -119,6 +121,8 @@ class Constants:
     CONFIG_KEY_TIMEOUT_WORKER_HANG = "timeout_worker_hang"
     CONFIG_KEY_MAX_CHECK_CELLS = "max_check_cells"
     CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
+    DEFAULT_CONTEXT_PREVIEW_LINES = 5
+    MAX_CONTEXT_PREVIEW_LINES = 20
 
     ADAPTIVE_BATCH_SIZE_THRESHOLD = 100 * 1024 * 1024  # 100MB (적응형 배치 임계치)
     COLOR_RED = "#FF5555"

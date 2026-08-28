@@ -46,6 +46,6 @@ def test_doctor_report_generation():
     report = doctor.run_full_diagnosis()
     
     assert "# StringFinder" in report
-    assert "## Basic Info" in report
-    assert "## Engine Integrity" in report
-    assert "## Permissions & Paths" in report
+    assert "## 기본 시스템 정보" in report
+    assert "## 검색 코어 엔진 무결성" in report
+    assert "## 저장 경로 및 파일 권한" in report

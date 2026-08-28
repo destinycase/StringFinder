@@ -58,6 +58,47 @@ class UIStyles:
     """
 
     @classmethod
+    def get_summary_label_style(cls, is_dark_mode: bool) -> str:
+        """테마(다크/라이트)에 대응하는 검색 결과 요약 레이블 스타일을 반환합니다."""
+        if is_dark_mode:
+            return (
+                "font-weight: bold; color: #E0E0E0; padding: 6px 10px; "
+                "background-color: #2D2D2D; border: 1px solid #3E3E3E; "
+                "border-radius: 4px; margin-bottom: 4px;"
+            )
+        return (
+            "font-weight: bold; color: #333333; padding: 6px 10px; "
+            "background-color: #F0F4F8; border: 1px solid #D0D7DE; "
+            "border-radius: 4px; margin-bottom: 4px;"
+        )
+
+    @classmethod
+    def get_file_info_header_style(cls, is_dark_mode: bool) -> str:
+        """테마에 대응하는 선택 파일 정보 헤더 스타일을 반환합니다."""
+        if is_dark_mode:
+            return (
+                "font-weight: bold; color: #61AFEF; padding: 4px 8px; "
+                "background-color: #282C34; border: 1px solid #3E4451; border-radius: 4px;"
+            )
+        return (
+            "font-weight: bold; color: #145DA0; padding: 4px 8px; "
+            "background-color: #F1F3F4; border: 1px solid #DADCE0; border-radius: 4px;"
+        )
+
+    @classmethod
+    def get_context_preview_style(cls, is_dark_mode: bool) -> str:
+        """테마에 대응하는 문맥 미리보기 편집기 스타일을 반환합니다."""
+        if is_dark_mode:
+            return (
+                "QPlainTextEdit { background-color: #1E1E1E; color: #ABB2BF; "
+                "border: 1px solid #333333; border-radius: 4px; padding: 4px; }"
+            )
+        return (
+            "QPlainTextEdit { background-color: #FFFFFF; color: #202124; "
+            "border: 1px solid #DADCE0; border-radius: 4px; padding: 4px; }"
+        )
+
+    @classmethod
     def get_table_style(cls, is_dark_mode: bool) -> str:
         """
         테마(다크/라이트)에 따라 테이블 스타일을 반환합니다.

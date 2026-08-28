@@ -73,7 +73,6 @@ class SearchOptionsPanel(QWidget):
         label = QLabel(AppStrings.SEARCH_LABEL)
         self.search_combo = HistoryComboBox()
         self.search_combo.setPlaceholderText(AppStrings.SEARCH_EDIT_PLACEHOLDER)
-        self.search_combo.setToolTip(AppStrings.SEARCH_EDIT_PLACEHOLDER)
         le = self.search_combo.lineEdit()
         if le:
             le.returnPressed.connect(self.search_started.emit)
@@ -95,11 +94,9 @@ class SearchOptionsPanel(QWidget):
         layout.addWidget(self.stop_btn)
         options_layout = QHBoxLayout()
         self.complex_search_check = QCheckBox(Constants.MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
-        self.complex_search_check.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
         self.exclude_hidden_check = QCheckBox(AppStrings.EXCLUDE_HIDDEN_LABEL)
         self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
         self.boolean_search_check = QCheckBox(AppStrings.BOOLEAN_SEARCH_LABEL)
-        self.boolean_search_check.setToolTip(AppStrings.BOOLEAN_SEARCH_TOOLTIP)
         self.boolean_search_check.setChecked(False)  # 기본적으로 검색 결과 요약 확인 모드는 해제 상태로 시작합니다.
         options_layout.addWidget(self.complex_search_check)
         options_layout.addWidget(self.exclude_hidden_check)

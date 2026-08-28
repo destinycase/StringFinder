@@ -252,8 +252,6 @@ class SearchResultModel(QAbstractTableModel):
             if col == 0:
                 return Qt.AlignmentFlag.AlignCenter
             return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        elif role == Qt.ItemDataRole.ToolTipRole:
-            return row_data[3]  # 전체 경로
         elif role == Qt.ItemDataRole.UserRole:
             return row_data[3], row_data[4]  # 경로, 매치 상세
         return None

@@ -205,6 +205,10 @@ fn cell_to_string(cell: &Data) -> Option<String> {
         Data::Float(f)  => if (f - f.round()).abs() < 1e-10 { format!("{:.0}", f) } else { f.to_string() },
         Data::Int(i)    => i.to_string(),
         Data::Bool(b)   => b.to_string(),
+        // 날짜/기간/오류 셀도 사용자가 확인할 수 있는 값으로 변환하여 검색 대상에 포함합니다.
+        Data::DateTime(value) => value.to_string(),
+        Data::DateTimeIso(value) | Data::DurationIso(value) => value.to_string(),
+        Data::Error(value) => format!("{:?}", value),
         _               => return None,
     };
     if s.is_empty() { None } else { Some(s) }
@@ -215,4 +219,21 @@ fn panic_to_string(p: Box<dyn std::any::Any + Send>) -> String {
     if let Some(s) = p.downcast_ref::<&str>() { s.to_string() }
     else if let Some(s) = p.downcast_ref::<String>() { s.clone() }
     else { "Unknown panic".to_string() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_date_and_duration_cells_are_searchable() {
+        assert_eq!(
+            cell_to_string(&Data::DateTimeIso("2026-08-28T12:30:00".to_string())),
+            Some("2026-08-28T12:30:00".to_string())
+        );
+        assert_eq!(
+            cell_to_string(&Data::DurationIso("PT1H30M".to_string())),
+            Some("PT1H30M".to_string())
+        );
+    }
 }

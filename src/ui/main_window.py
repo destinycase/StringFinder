@@ -1,6 +1,7 @@
 import ctypes
 import os
 import time
+import warnings
 
 import qdarktheme
 from PySide6.QtCore import QByteArray, Qt, QThread, QTimer
@@ -160,6 +161,11 @@ class MainWindow(QMainWindow):
         self.status_timer_label = QLabel()
         self.status_timer_label.setStyleSheet("padding-right: 10px;")
         sb.addPermanentWidget(self.status_timer_label)
+        self.skip_badge_btn = QPushButton()
+        self.skip_badge_btn.setFlat(True)
+        self.skip_badge_btn.clicked.connect(self._on_skip_badge_clicked)
+        self.skip_badge_btn.hide()
+        sb.addPermanentWidget(self.skip_badge_btn)
 
         # 검색 중임을 나타내는 회전하는 스피너 위젯을 추가합니다.
         self.status_spinner = LoadingSpinner(self, size=18)
@@ -173,6 +179,7 @@ class MainWindow(QMainWindow):
         new_tab = SearchTab(self.config_manager)
         new_tab.status_message_requested.connect(self.statusBar().showMessage)
         new_tab.liveliness_updated.connect(lambda r, s: self._on_tab_liveliness_updated(new_tab, r, s))
+        new_tab.skipped_count_updated.connect(lambda count: self._on_tab_skip_count_updated(new_tab, count))
         new_tab.search_finished_with_data.connect(lambda: self._on_search_finished_in_tab(new_tab))
         new_tab.search_status_changed.connect(self._set_ui_locked)
         if state:
@@ -264,12 +271,35 @@ class MainWindow(QMainWindow):
         """탭 전환 시 상태 표시줄 인디케이터를 활성화된 탭의 상태와 동기화합니다."""
         tab = self.tab_widget.widget(index)
         if isinstance(tab, SearchTab):
+            self._update_skip_badge(tab.skipped_count)
             is_running = (
                 tab.search_state != Constants.SearchState.IDLE and tab.search_state != Constants.SearchState.STOPPING
             )
             self._update_status_bar_widgets(is_running, tab._liveliness_seconds)
         else:
+            self._update_skip_badge(0)
             self._update_status_bar_widgets(False, 0)
+
+    def _on_tab_skip_count_updated(self, tab, count):
+        """활성 탭의 건너뛴 파일 수가 바뀌면 상태 표시를 갱신합니다."""
+        if self.tab_widget.currentWidget() == tab:
+            self._update_skip_badge(count)
+
+    def _update_skip_badge(self, count):
+        """현재 탭의 건너뛴 파일 수를 클릭 가능한 상태 표시로 반영합니다."""
+        count = max(0, int(count or 0))
+        if count:
+            self.skip_badge_btn.setText(AppStrings.SKIP_BADGE_TEMPLATE.format(count))
+            self.skip_badge_btn.show()
+        else:
+            self.skip_badge_btn.setText("")
+            self.skip_badge_btn.hide()
+
+    def _on_skip_badge_clicked(self):
+        """상태 표시를 누르면 현재 검색 탭의 로그 화면으로 이동합니다."""
+        tab = self.tab_widget.currentWidget()
+        if isinstance(tab, SearchTab):
+            tab.tab_widget.setCurrentWidget(tab.logs_tab)
 
     def _update_status_bar_widgets(self, is_running, sec):
         """상태 표시줄의 진행바와 타이머 위젯의 상태를 실제 업데이트합니다."""
@@ -371,7 +401,13 @@ class MainWindow(QMainWindow):
         from sf_utils.logger import qt_log_handler
 
         try:
-            qt_log_handler.signaler.level_message_logged.disconnect(self._on_global_error_logged)
+            # 이미 해제된 연결에서 발생하는 PySide 경고까지 종료 로그를 오염시키지 않도록 방어합니다.
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Failed to disconnect.*", category=RuntimeWarning)
+                try:
+                    qt_log_handler.signaler.level_message_logged.disconnect(self._on_global_error_logged)
+                except (RuntimeError, TypeError):
+                    pass
         except Exception as e:
             logger.debug(AppStrings.LOG_SYS_CLEANUP_SIGNALER_FAIL.format(e))
         tray = getattr(self, "tray_icon", None)

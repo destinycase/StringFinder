@@ -161,9 +161,7 @@ class SettingsDialog(QDialog):
         
         eb_row = QHBoxLayout()
         eb_label = QLabel(AppStrings.EXCLUDE_BINARY_LABEL)
-        eb_label.setToolTip(AppStrings.EXCLUDE_BINARY_TOOLTIP)
         self.exclude_binary_check = QCheckBox()
-        self.exclude_binary_check.setToolTip(AppStrings.EXCLUDE_BINARY_TOOLTIP)
         self.exclude_binary_check.setChecked(self.config_manager.get_exclude_binary())
         self.exclude_binary_check.stateChanged.connect(self._on_exclude_binary_changed)
         self.exclude_binary_check.setFixedWidth(INPUT_WIDTH)
@@ -174,16 +172,14 @@ class SettingsDialog(QDialog):
 
         adv_settings = self.config_manager.get_advanced_settings()
         
-        def create_spinbox_row(label_text, tooltip, key_name, min_val, max_val, unit_text):
+        def create_spinbox_row(label_text, key_name, min_val, max_val, unit_text):
             row = QHBoxLayout()
             label = QLabel(label_text)
-            label.setToolTip(tooltip)
             
             spinbox = QSpinBox()
             spinbox.setRange(min_val, max_val)
             spinbox.setSuffix(f" {unit_text}")
             spinbox.setValue(adv_settings.get(key_name, 0))
-            spinbox.setToolTip(tooltip)
             spinbox.setFixedWidth(150)
             
             spinbox.valueChanged.connect(lambda v, k=key_name: self._on_advanced_setting_changed(k, v))
@@ -197,35 +193,35 @@ class SettingsDialog(QDialog):
         self.adv_spinboxes = {}
         from sf_utils.constants import Constants
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_TOTAL_MATCHES, AppStrings.TOOLTIP_MAX_TOTAL_MATCHES,
+            AppStrings.ADVANCED_MAX_TOTAL_MATCHES,
             Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, 1000, 10_000_000, AppStrings.UNIT_COUNT
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_PER_FILE_MATCHES, AppStrings.TOOLTIP_MAX_PER_FILE_MATCHES,
+            AppStrings.ADVANCED_MAX_PER_FILE_MATCHES,
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, 10, 1_000_000, AppStrings.UNIT_COUNT
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_JSON_DOM_SIZE, AppStrings.TOOLTIP_MAX_JSON_DOM_SIZE,
+            AppStrings.ADVANCED_MAX_JSON_DOM_SIZE,
             Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB, AppStrings.UNIT_MB
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE, AppStrings.TOOLTIP_MAX_SMALL_FILE_SIZE,
+            AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE,
             Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, 1, 100, AppStrings.UNIT_MB
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD] = create_spinbox_row(
-            AppStrings.ADVANCED_JSON_MMAP_THRESHOLD, AppStrings.TOOLTIP_JSON_MMAP_THRESHOLD,
+            AppStrings.ADVANCED_JSON_MMAP_THRESHOLD,
             Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, 1, 100, AppStrings.UNIT_MB
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG] = create_spinbox_row(
-            AppStrings.ADVANCED_TIMEOUT_WORKER_HANG, AppStrings.TOOLTIP_TIMEOUT_WORKER_HANG,
+            AppStrings.ADVANCED_TIMEOUT_WORKER_HANG,
             Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, 10, 3600, AppStrings.UNIT_SEC
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_CHECK_CELLS, AppStrings.TOOLTIP_MAX_CHECK_CELLS,
+            AppStrings.ADVANCED_MAX_CHECK_CELLS,
             Constants.CONFIG_KEY_MAX_CHECK_CELLS, 1000, 10_000_000, AppStrings.UNIT_CELL
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DEPTH] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_JSON_DEPTH, AppStrings.TOOLTIP_MAX_JSON_DEPTH,
+            AppStrings.ADVANCED_MAX_JSON_DEPTH,
             Constants.CONFIG_KEY_MAX_JSON_DEPTH, 10, Constants.DEFAULT_MAX_JSON_DEPTH, AppStrings.UNIT_DEPTH
         )
 

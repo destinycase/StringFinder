@@ -22,10 +22,6 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
     let sample_len = data.len().min(64 * 1024);
     let sample = &data[..sample_len];
 
-    if simd_from_utf8(sample).is_ok() {
-        return UTF_8;
-    }
-
     // No-BOM UTF-16 휴리스틱 감지 (Python의 detect_encoding_quickly와 동기화)
     // 짝수/홀수 오프셋의 NUL 바이트 분포를 분석하여 UTF-16LE/BE 여부를 추정합니다.
     if sample.len() >= 4 {
@@ -38,16 +34,22 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         }
         let half = (check_limit / 2) as f32;
         // 특정 오프셋에 NUL 바이트가 70% 이상 집중되어 있으면 UTF-16으로 간주
-        if zero_odd as f32 > half * 0.7 && zero_even < (half * 0.1) as usize {
+        if zero_odd as f32 > half * 0.7 && zero_even <= (half * 0.1) as usize {
             return UTF_16LE;
         }
-        if zero_even as f32 > half * 0.7 && zero_odd < (half * 0.1) as usize {
+        if zero_even as f32 > half * 0.7 && zero_odd <= (half * 0.1) as usize {
             return UTF_16BE;
         }
     }
 
     // B3: EUC-KR 오탐 방지 — 고바이트(0x80↑)가 없으면 ASCII-only 파일이므로 UTF-8 반환합니다.
     // 한국어 EUC-KR 파일은 반드시 고바이트를 포함하므로 기존 동작에 영향 없습니다.
+    // UTF-16 ASCII 데이터는 NUL 바이트가 포함되어도 UTF-8로 형식상 해석될 수
+    // 있으므로, UTF-16 휴리스틱을 먼저 적용한 뒤 UTF-8 판정을 수행합니다.
+    if simd_from_utf8(sample).is_ok() {
+        return UTF_8;
+    }
+
     let has_high_bytes = sample.iter().any(|&b| b >= 0x80);
     if !has_high_bytes {
         return UTF_8;

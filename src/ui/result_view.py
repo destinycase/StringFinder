@@ -1,9 +1,10 @@
 import os
 import subprocess
 import sys
+from typing import Any, cast
 
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -18,6 +19,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSplitter,
     QTableView,
+    QPlainTextEdit,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -32,6 +35,10 @@ from ui.widgets import HtmlDelegate
 
 
 class ResultView(QWidget):
+    CONTEXT_RADIUS = Constants.DEFAULT_CONTEXT_PREVIEW_LINES
+    CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
+    CONTEXT_MAX_SCAN_LINES = 200_000
+    CONTEXT_MAX_LINE_CHARS = 4_000
     """
     검색 결과 테이블, 상세 매치 테이블, 미리보기 패널을 관리하는 복합 뷰입니다.
     페이지네이션 기능도 포함합니다.
@@ -49,6 +56,8 @@ class ResultView(QWidget):
         self.search_text = ""
         self.search_mode = Constants.MODE_NORMAL
         self.existence_only = False
+        self.selected_file_path = ""
+        self._current_match_item = None
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
         self._resize_timer.setInterval(200)  # 창 크기 변경이 멈춘 후 열 너비를 자동으로 조정하기 위한 디바운스 타이머입니다.
@@ -81,9 +90,7 @@ class ResultView(QWidget):
         self.result_filter_layout.addWidget(self.result_folder_filter_edit)
         # 검색 결과 요약 정보를 표시하는 레이블입니다.
         self.summary_label = QLabel()
-        self.summary_label.setStyleSheet(
-            "font-weight: bold; color: #555; padding: 5px; background: #f0f0f0; border-radius: 4px; margin-bottom: 5px;"
-        )
+        self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(self._is_dark_theme()))
         self.summary_label.setVisible(False)
         result_list_layout.addWidget(self.summary_label)
         self.result_view = QTableView()
@@ -139,6 +146,21 @@ class ResultView(QWidget):
         self.match_filter_layout.addWidget(self.match_filter_2_edit)
         self.match_filter_layout.addWidget(self.match_filter_3_edit)
         self.match_filter_layout.addWidget(self.match_filter_4_edit)
+        self.file_info_header = QWidget()
+        file_info_layout = QHBoxLayout(self.file_info_header)
+        file_info_layout.setContentsMargins(0, 0, 0, 0)
+        self.file_info_label = QLabel()
+        self.file_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.open_file_btn = QPushButton(AppStrings.OPEN_FILE)
+        self.open_file_btn.clicked.connect(self._on_open_selected_file_clicked)
+        self.open_folder_btn = QPushButton(AppStrings.OPEN_FOLDER)
+        self.open_folder_btn.clicked.connect(self._on_open_selected_folder_clicked)
+        file_info_layout.addWidget(self.file_info_label, 1)
+        file_info_layout.addWidget(self.open_file_btn)
+        file_info_layout.addWidget(self.open_folder_btn)
+        # 선택 파일 정보는 한 줄 헤더이므로 세로 방향으로 확장되지 않게 제한합니다.
+        self.file_info_header.setFixedHeight(32)
+        self.file_info_header.setVisible(False)
         self.match_view = QTableView()
         self.match_model = MatchDetailModel()
         self.match_proxy_model = MatchProxyModel()
@@ -172,8 +194,37 @@ class ResultView(QWidget):
         self.match_view.customContextMenuRequested.connect(self._show_match_context_menu)
         match_area_layout.setContentsMargins(5, 5, 5, 5)
         match_area_layout.setSpacing(5)
+        match_area_layout.addWidget(self.file_info_header)
         match_area_layout.addLayout(self.match_filter_layout)
-        match_area_layout.addWidget(self.match_view)
+        self.match_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.match_splitter.addWidget(self.match_view)
+        self.context_preview_container = QWidget()
+        context_preview_layout = QVBoxLayout(self.context_preview_container)
+        context_preview_layout.setContentsMargins(0, 0, 0, 0)
+        context_preview_layout.setSpacing(3)
+        self.context_preview = QPlainTextEdit()
+        self.context_preview.setReadOnly(True)
+        self.context_preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.context_preview.setFont(QFont("Consolas", 10))
+        self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
+        context_preview_layout.addWidget(self.context_preview)
+        context_line_settings_layout = QHBoxLayout()
+        context_line_settings_layout.setContentsMargins(0, 0, 0, 0)
+        context_line_settings_layout.addStretch()
+        context_line_settings_layout.addWidget(QLabel(AppStrings.CONTEXT_PREVIEW_BEFORE_LABEL))
+        self.context_before_combo = self._create_context_line_combo(Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES)
+        context_line_settings_layout.addWidget(self.context_before_combo)
+        context_line_settings_layout.addWidget(QLabel(AppStrings.CONTEXT_PREVIEW_LINE_UNIT))
+        context_line_settings_layout.addSpacing(8)
+        context_line_settings_layout.addWidget(QLabel(AppStrings.CONTEXT_PREVIEW_AFTER_LABEL))
+        self.context_after_combo = self._create_context_line_combo(Constants.CONFIG_KEY_CONTEXT_AFTER_LINES)
+        context_line_settings_layout.addWidget(self.context_after_combo)
+        context_line_settings_layout.addWidget(QLabel(AppStrings.CONTEXT_PREVIEW_LINE_UNIT))
+        context_preview_layout.addLayout(context_line_settings_layout)
+        self.match_splitter.addWidget(self.context_preview_container)
+        self.match_splitter.setStretchFactor(0, 3)
+        self.match_splitter.setStretchFactor(1, 2)
+        match_area_layout.addWidget(self.match_splitter)
         # 사용자 편의를 위해 페이지네이션 위젯을 테이블 하단에 배치합니다.
         self.match_pagination_widget = self._create_match_pagination_widget()
         match_area_layout.addWidget(self.match_pagination_widget)
@@ -201,13 +252,45 @@ class ResultView(QWidget):
                     w.setVisible(False)
         self._setup_copy_shortcuts()
 
+    def _create_context_line_combo(self, config_key):
+        combo = QComboBox()
+        combo.addItems([str(value) for value in range(self.CONTEXT_MAX_RADIUS + 1)])
+        try:
+            saved_value = int(self.config_manager.get(config_key, self.CONTEXT_RADIUS))
+        except (AttributeError, TypeError, ValueError):
+            saved_value = self.CONTEXT_RADIUS
+        saved_value = min(max(saved_value, 0), self.CONTEXT_MAX_RADIUS)
+        combo.setCurrentIndex(saved_value)
+        combo.setMinimumContentsLength(2)
+        combo.setFixedWidth(70)
+        combo.currentTextChanged.connect(
+            lambda text, key=config_key: self._on_context_line_count_changed(key, text)
+        )
+        return combo
+
+    def _on_context_line_count_changed(self, config_key, text):
+        try:
+            value = min(max(int(text), 0), self.CONTEXT_MAX_RADIUS)
+        except (TypeError, ValueError):
+            return
+        self.config_manager.set(config_key, value)
+        if self._current_match_item is not None:
+            self._show_context_preview(self._current_match_item)
+
     def _apply_theme_style(self):
         """현재 테마에 맞게 테이블 스타일을 적용합니다."""
-        theme = self.config_manager.get_theme()
-        is_dark = theme.lower() in [AppStrings.THEME_DARK.lower(), "dark", "auto"]
+        is_dark = self._is_dark_theme()
         style = UIStyles.get_table_style(is_dark)
         self.result_view.setStyleSheet(style)
         self.match_view.setStyleSheet(style)
+        self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(is_dark))
+        self.file_info_label.setStyleSheet(UIStyles.get_file_info_header_style(is_dark))
+        self.context_preview.setStyleSheet(UIStyles.get_context_preview_style(is_dark))
+
+    def _is_dark_theme(self) -> bool:
+        """현재 설정된 테마가 다크 계열인지 반환합니다."""
+        theme = str(self.config_manager.get_theme()).lower()
+        return theme in [AppStrings.THEME_DARK.lower(), "dark", "auto"]
 
     def _create_pagination_widget(self):
         pagination_widget = QWidget()
@@ -242,6 +325,7 @@ class ResultView(QWidget):
         pagination_layout.addWidget(QLabel(AppStrings.PAGINATION_DISPLAY))
         pagination_layout.addWidget(self.page_size_combo)
         pagination_widget.setVisible(False)
+        pagination_widget.setFixedHeight(36)
         pagination_widget.setContentsMargins(0, 0, 10, 0)  # UI 균형을 위해 우측에 약간의 여백을 둡니다.
         return pagination_widget
 
@@ -282,6 +366,7 @@ class ResultView(QWidget):
         layout.addWidget(self.match_page_size_combo)
 
         widget.setVisible(False)
+        widget.setFixedHeight(36)
         return widget
 
     def _on_match_page_size_changed(self, index):
@@ -388,7 +473,13 @@ class ResultView(QWidget):
         if item:
             path = item[0]
             matches = item[2]
+            self.selected_file_path = path
             self.match_model.set_matches(path, matches, self.search_text, self.search_mode)
+            self.file_info_label.setText(
+                AppStrings.SELECTED_FILE_INFO_TEMPLATE.format(path, self.match_model.match_count)
+            )
+            self.file_info_header.setVisible(True)
+            self._clear_context_preview()
 
             # 모델 데이터 변경 후 헤더 섹션 정보가 즉시 갱신되도록 뷰를 리셋합니다.
             # (headerDataChanged 시그널만으로는 뷰가 갱신되지 않는 경우가 있음)
@@ -426,11 +517,124 @@ class ResultView(QWidget):
 
     def _on_match_clicked(self, index):
         if not index.isValid():
+            self._clear_context_preview()
             return
         # 항목 선택 시 필요한 내부 상태 업데이트를 수행합니다.
-        pass
+        real_index = self.match_proxy_model.mapToSource(index)
+        match_item = self.match_model.get_match(real_index.row())
+        if match_item is None:
+            self._clear_context_preview()
+            return
+        self._show_context_preview(match_item)
 
-        pass
+    def _clear_context_preview(self):
+        """문맥 미리보기 영역을 초기 상태로 되돌립니다."""
+        self._current_match_item = None
+        self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
+        self.context_preview.setExtraSelections([])
+
+    def _detect_text_encoding(self, file_path):
+        """BOM을 우선 확인하고 일반 텍스트는 UTF-8로 읽습니다."""
+        with open(file_path, "rb") as file:
+            prefix = file.read(4)
+        if prefix.startswith(b"\xff\xfe\x00\x00"):
+            return "utf-32-le"
+        if prefix.startswith(b"\x00\x00\xfe\xff"):
+            return "utf-32-be"
+        if prefix.startswith(b"\xff\xfe"):
+            return "utf-16-le"
+        if prefix.startswith(b"\xfe\xff"):
+            return "utf-16-be"
+        if prefix.startswith(b"\xef\xbb\xbf"):
+            return "utf-8-sig"
+        return "utf-8"
+
+    def _read_context_lines(self, file_path, target_line):
+        """대상 줄 주변만 스트리밍으로 읽어 메모리 사용량을 제한합니다."""
+        if target_line > self.CONTEXT_MAX_SCAN_LINES:
+            return None
+        try:
+            before_lines = min(max(int(self.context_before_combo.currentText()), 0), self.CONTEXT_MAX_RADIUS)
+        except (AttributeError, TypeError, ValueError):
+            before_lines = self.CONTEXT_RADIUS
+        try:
+            after_lines = min(max(int(self.context_after_combo.currentText()), 0), self.CONTEXT_MAX_RADIUS)
+        except (AttributeError, TypeError, ValueError):
+            after_lines = self.CONTEXT_RADIUS
+        first_line = max(1, target_line - before_lines)
+        last_line = target_line + after_lines
+        encoding = self._detect_text_encoding(file_path)
+        context = []
+        with open(file_path, "r", encoding=encoding, errors="replace") as file:
+            for line_number, line in enumerate(file, start=1):
+                if line_number >= first_line:
+                    context.append((line_number, line.rstrip("\r\n")))
+                if line_number >= last_line:
+                    break
+        return context
+
+    def _show_context_preview(self, match_item):
+        """선택된 매치의 일반 텍스트 문맥을 안전하게 표시합니다."""
+        self._current_match_item = match_item
+        position = str(getattr(match_item, "position", match_item[0]))
+        content = str(getattr(match_item, "content", match_item[1]))
+        try:
+            target_line = int(position)
+        except (TypeError, ValueError):
+            self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SPECIAL_MATCH.format(position, content))
+            self.context_preview.setExtraSelections([])
+            return
+        if target_line <= 0:
+            self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SPECIAL_MATCH.format(position, content))
+            self.context_preview.setExtraSelections([])
+            return
+
+        file_path = self.match_model.current_file_path
+        if not file_path or not os.path.isfile(file_path):
+            self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_FILE_UNAVAILABLE)
+            self.context_preview.setExtraSelections([])
+            return
+        try:
+            lines = self._read_context_lines(file_path, target_line)
+            if lines is None:
+                self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SCAN_LIMIT)
+                self.context_preview.setExtraSelections([])
+                return
+            rendered = []
+            target_block = 0
+            truncated = False
+            for block, (line_number, line) in enumerate(lines):
+                if len(line) > self.CONTEXT_MAX_LINE_CHARS:
+                    line = line[: self.CONTEXT_MAX_LINE_CHARS]
+                    truncated = True
+                marker = "▶ " if line_number == target_line else "  "
+                if line_number == target_line:
+                    target_block = block
+                rendered.append(f"{marker}{line_number:>6} | {line}")
+            text = "\n".join(rendered)
+            if truncated:
+                text += AppStrings.CONTEXT_PREVIEW_TRUNCATED
+            self.context_preview.setPlainText(text)
+            selection = cast(Any, QTextEdit.ExtraSelection())
+            selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))
+            selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
+            selection.format = QTextCharFormat()
+            selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))
+            selection.format.setForeground(QColor("#FFFFFF" if self._is_dark_theme() else "#202124"))
+            self.context_preview.setExtraSelections([selection])
+        except (OSError, UnicodeError) as error:
+            self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_READ_FAILED.format(error))
+            self.context_preview.setExtraSelections([])
+
+    def _on_open_selected_folder_clicked(self):
+        """선택된 파일의 위치를 운영체제 파일 탐색기에서 엽니다."""
+        if self.selected_file_path:
+            self._open_file_location(self.selected_file_path)
+
+    def _on_open_selected_file_clicked(self):
+        """선택된 파일을 운영체제의 기본 프로그램으로 엽니다."""
+        if self.selected_file_path:
+            self.file_double_clicked.emit(self.selected_file_path, 0)
 
     def _on_match_double_clicked(self, index):
         if not index.isValid():
@@ -533,6 +737,10 @@ class ResultView(QWidget):
         # [UI/UX] 검색 시작 시 이전 검색의 요약 정보를 숨깁니다.
         self.summary_label.setText("")
         self.summary_label.setVisible(False)
+        self.selected_file_path = ""
+        self.file_info_label.clear()
+        self.file_info_header.setVisible(False)
+        self._clear_context_preview()
         self.result_model.clear()
         self.match_model.clear()
         self.update_ui_visibility()
@@ -630,7 +838,7 @@ class ResultView(QWidget):
         """
         현재 검색 모드에 따라 필터 입력 필드(0~3)가 대응되는 모델 컬럼 인덱스를 반환합니다.
         
-        대부분의 특수 모드(XML, JSON)는 0번 컬럼이 '라인 번호'이므로 
+        대부분의 특수 모드(XML, JSON)는 0번 컬럼이 '라인 번호'이므로
         필터 입력은 데이터 컬럼인 1번부터 매핑되어야 합니다.
         """
         mode = self.search_mode or Constants.MODE_NORMAL

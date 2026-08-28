@@ -94,7 +94,7 @@ SKIP_CODE_CRITICAL = "ERR_CRITICAL"
 
 
 class _BooleanMatchFound(Exception):
-    """existence_only 모드에서 매치 발갬 시 XML 파서를 조기 중단하는 신호 예외.
+    """existence_only 모드에서 매치 발견 시 XML 파서를 조기 중단하는 신호 예외.
 
     StopIteration을 흐름 제어에 사용하는 패턴은 PEP 479 위반입니다.
     이 커스텀 예외는 의도적 중단임을 명확히 나타냅니다. (M-02 Fix)

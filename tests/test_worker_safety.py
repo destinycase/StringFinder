@@ -12,14 +12,31 @@
 """
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.worker import SearchWorker
+from core.worker import GlobalExecutor, SearchWorker
 
 
 class TestWorkerSafety(unittest.TestCase):
+    def test_executor_reuse_does_not_submit_probe_task(self):
+        """활성 실행기 재사용 시 검증용 더미 작업을 제출하지 않는지 확인합니다."""
+        executor = MagicMock()
+
+        with patch.object(GlobalExecutor, "_executor", executor), patch.object(GlobalExecutor, "_is_active", True):
+            assert GlobalExecutor.get_executor() is executor
+
+        executor.submit.assert_not_called()
+
+    def test_executor_invalidate_clears_stale_global_reference(self):
+        """외부 종료된 실행기를 무효화하면 다음 검색에서 재생성할 수 있는지 확인합니다."""
+        executor = MagicMock()
+        with patch.object(GlobalExecutor, "_executor", executor), patch.object(GlobalExecutor, "_is_active", True):
+            GlobalExecutor.invalidate(executor)
+            assert GlobalExecutor._executor is None
+            assert GlobalExecutor._is_active is False
+
     def test_stop_with_none_manager(self):
         """test_stop_with_none_manager 함수."""
         params = {"search_string": "test", "search_paths": ["."], "file_list": []}

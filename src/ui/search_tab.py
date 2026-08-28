@@ -41,6 +41,7 @@ class SearchTab(QMainWindow):
     liveliness_updated = Signal(bool, int)  # (작동여부, 경과초)
     search_finished_with_data = Signal()
     search_status_changed = Signal(bool)
+    skipped_count_updated = Signal(int)
     LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
     _LOG_LEVEL_PATTERN = re.compile(r"\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]")
 
@@ -52,6 +53,7 @@ class SearchTab(QMainWindow):
         self.icon_provider = QFileIconProvider()
         self.total_matches = 0
         self.total_files = 0
+        self.skipped_count = 0
         self.scanned_count = 0
         self.results_buffer = []
         self.last_summary_update_time = 0.0  # 실시간 요약 업데이트를 위한 시간 기록입니다.
@@ -141,7 +143,7 @@ class SearchTab(QMainWindow):
         self.logs_output.setMaximumBlockCount(5000)
         logs_tab_layout.addWidget(self.logs_output)
         log_filter_layout = QHBoxLayout()
-        log_filter_layout.addWidget(QLabel("로그 필터:"))
+        log_filter_layout.addWidget(QLabel(AppStrings.LOG_FILTER_LABEL))
         for level in self.LOG_LEVELS:
             checkbox = QCheckBox(level)
             checkbox.setChecked(True)
@@ -149,7 +151,7 @@ class SearchTab(QMainWindow):
             self._log_level_checkboxes[level] = checkbox
             log_filter_layout.addWidget(checkbox)
         log_filter_layout.addStretch()
-        clear_logs_btn = QPushButton("로그 지우기")
+        clear_logs_btn = QPushButton(AppStrings.LOG_CLEAR_BTN)
         clear_logs_btn.clicked.connect(self._clear_logs)
         log_filter_layout.addWidget(clear_logs_btn)
         logs_tab_layout.addLayout(log_filter_layout)
@@ -409,7 +411,7 @@ class SearchTab(QMainWindow):
         inputs[Constants.CONFIG_KEY_FOLDERS] = self.folder_panel.get_state()
         if Constants.PAYLOAD_FILENAME_FILTER in inputs:
             inputs[Constants.STATE_KEY_FILENAME] = inputs[Constants.PAYLOAD_FILENAME_FILTER]
-        total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
+        total_skipped = self.skipped_count
         return {
             Constants.PAYLOAD_INPUTS: inputs,
             Constants.PAYLOAD_RESULTS: self.result_view_panel.result_model.get_all_results()
@@ -484,6 +486,8 @@ class SearchTab(QMainWindow):
         results = self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
         self.total_matches = 0
         self.total_files = 0
+        self.skipped_count = 0
+        self.skipped_count_updated.emit(0)
         if results:
             self.result_view_panel.clear()  # clear stale results before loading
             self.result_view_panel.set_results(results)
@@ -499,6 +503,8 @@ class SearchTab(QMainWindow):
             if summary:
                 self.last_search_duration = summary.get("total_elapsed", 0.0)
                 skipped_count = summary.get("skip_count", 0)
+                self.skipped_count = max(0, int(skipped_count or 0))
+                self.skipped_count_updated.emit(self.skipped_count)
                 self.result_view_panel.set_summary_info(
                     self.total_files,
                     self.total_matches,
@@ -593,6 +599,8 @@ class SearchTab(QMainWindow):
             self._memory_alert_shown = False
             self.results_buffer = []
             self.skipped_files_list = []
+            self.skipped_count = 0
+            self.skipped_count_updated.emit(0)
             self.scan_start_time = time.time()
             self._liveliness_seconds = 0  # 검색 시작 시 타이머 초기화
             self._liveliness_timer.start()  # 타이머 시작
@@ -746,7 +754,7 @@ class SearchTab(QMainWindow):
         # 사용자가 진행 상황을 실시간으로 확인할 수 있게 합니다.
         if hasattr(self, "scan_start_time"):
             total_elapsed = now - self.scan_start_time
-            total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
+            total_skipped = self.skipped_count
             # [Fix] 수신된 카운트(검색 단계)를 리스트(스캔 단계)와 합산하여 최종 표시
             total_skipped += skipped_count
             self.last_search_duration = total_elapsed
@@ -779,6 +787,8 @@ class SearchTab(QMainWindow):
         if not hasattr(self, "skipped_files_list"):
             self.skipped_files_list = []
         self.skipped_files_list.extend(file_paths)
+        self.skipped_count = len(self.skipped_files_list)
+        self.skipped_count_updated.emit(self.skipped_count)
         self._update_realtime_summary()
 
     def _on_progress(self, current, total):
@@ -826,7 +836,9 @@ class SearchTab(QMainWindow):
             self.result_view_panel.sort_results()
 
             # Phase 1(스캔)과 Phase 2(검색) 단계의 모든 스킵 파일을 합산하여 요약에 표시
-            total_skipped = len(self.skipped_files_list) if hasattr(self, "skipped_files_list") else 0
+            self.skipped_count += max(0, int(skipped_count or 0))
+            self.skipped_count_updated.emit(self.skipped_count)
+            total_skipped = self.skipped_count
             # 워커에서 수집한 시트 스킵 목록 참조 [(file_path, sheet_name)]
             skipped_sheets = []
             if hasattr(self, "worker") and self.worker and hasattr(self.worker, "skipped_sheets_list"):

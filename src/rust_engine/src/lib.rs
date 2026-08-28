@@ -6,7 +6,7 @@ mod utils;
 mod xml_search;
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
-use encoding_rs::UTF_8;
+use encoding_rs::{Encoding, UTF_16BE, UTF_16LE, UTF_8};
 use ignore::WalkBuilder;
 use memmap2::Mmap;
 use pyo3::prelude::*;
@@ -148,8 +148,8 @@ fn search_file(
 #[allow(clippy::too_many_arguments)]
 fn do_search_with_mmap(
     mmap: &[u8],
+    encoding: &'static Encoding,
     pat_upper: &str,
-    pat_bytes: &[u8],
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     existence_only: bool,
@@ -157,8 +157,6 @@ fn do_search_with_mmap(
     max_per_file: usize,
 ) -> Vec<RawMatch> {
     let mut results = Vec::new();
-    let encoding = detect_encoding(mmap);
-
     if encoding == UTF_8 {
         if ac.find(mmap).is_none() { return results; }
 
@@ -173,16 +171,10 @@ fn do_search_with_mmap(
                     line_bytes = &line_bytes[..line_bytes.len() - 1];
                 }
                 
-                let is_match = if line_bytes.is_ascii() && pat_bytes.is_ascii() {
-                    line_bytes.eq_ignore_ascii_case(pat_bytes)
-                } else {
-                    let s = simdutf8::basic::from_utf8(line_bytes).unwrap_or("INVALID_UTF8");
-                    let s_norm = crate::utils::normalize_unicode(s);
-                    s_norm.trim().to_lowercase().to_uppercase() == pat_upper
-                };
+                let is_match = exact_line_matches(line_bytes, pat_upper);
 
                 if is_match {
-                    let content = extract_line_content_bytes(mmap, last_start, nl_pos);
+                    let content = extract_line_content_bytes(mmap, last_start, nl_pos, None, None);
                     results.push((line_number, content, None, None));
                     if existence_only { return results; }
                 }
@@ -190,15 +182,13 @@ fn do_search_with_mmap(
                 line_number += 1;
             }
             if last_start < mmap.len() && results.len() < max_per_file + 1 {
-                let line_bytes = &mmap[last_start..];
-                let is_match = if line_bytes.is_ascii() && pat_bytes.is_ascii() { line_bytes.eq_ignore_ascii_case(pat_bytes) }
-                else {
-                    let s = simdutf8::basic::from_utf8(line_bytes).unwrap_or("INVALID_UTF8");
-                    let s_norm = crate::utils::normalize_unicode(s);
-                    s_norm.trim().to_lowercase().to_uppercase() == pat_upper
-                };
+                let mut line_bytes = &mmap[last_start..];
+                if line_bytes.last() == Some(&b'\r') {
+                    line_bytes = &line_bytes[..line_bytes.len() - 1];
+                }
+                let is_match = exact_line_matches(line_bytes, pat_upper);
                 if is_match {
-                    let content = extract_line_content_bytes(mmap, last_start, mmap.len());
+                    let content = extract_line_content_bytes(mmap, last_start, mmap.len(), None, None);
                     results.push((line_number, content, None, None));
                 }
             }
@@ -229,12 +219,12 @@ fn do_search_with_mmap(
                 last_returned_line = current_line;
                 if let Some((l, ref s)) = cached_line {
                     if l == current_line { s.clone() } else {
-                        let ns = extract_line_content_bytes(mmap, last_nl_pos, next_nl_pos);
+                        let ns = extract_line_content_bytes(mmap, last_nl_pos, next_nl_pos, Some(m_start), Some(mat.len()));
                         cached_line = Some((current_line, ns.clone()));
                         ns
                     }
                 } else {
-                    let ns = extract_line_content_bytes(mmap, last_nl_pos, next_nl_pos);
+                    let ns = extract_line_content_bytes(mmap, last_nl_pos, next_nl_pos, Some(m_start), Some(mat.len()));
                     cached_line = Some((current_line, ns.clone()));
                     ns
                 }
@@ -243,27 +233,87 @@ fn do_search_with_mmap(
             if existence_only { return results; }
         }
     } else {
-        // Non-UTF-8 branch
-        let content_str = decode_bytes(mmap, encoding);
-        if existence_only {
-            if let Some(mat) = ac.find(&content_str) {
-                results.push((1, "MATCH".to_string(), Some(mat.start()), Some(mat.len())));
-                return results;
+        // Non-UTF8 일반 텍스트는 파일 전체를 String으로 복사하지 않고 청크 단위로 디코딩합니다.
+        search_non_utf8_chunks(mmap, encoding, pat_upper, ac, is_exact, existence_only, stop_flag, max_per_file, &mut results);
+    }
+    results
+}
+
+fn exact_line_matches(line: &[u8], pat_upper: &str) -> bool {
+    let s = simdutf8::basic::from_utf8(line).unwrap_or("INVALID_UTF8");
+    let s_norm = crate::utils::normalize_unicode(s);
+    s_norm.trim().to_lowercase().to_uppercase() == pat_upper
+}
+
+fn decoded_line_matches(line: &str, pat_upper: &str, ac: &aho_corasick::AhoCorasick, is_exact: bool) -> bool {
+    if is_exact {
+        let normalized = crate::utils::normalize_unicode(line);
+        normalized.trim().to_lowercase().to_uppercase() == pat_upper
+    } else {
+        ac.find(line).is_some()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_non_utf8_chunks(
+    mmap: &[u8],
+    encoding: &'static Encoding,
+    pat_upper: &str,
+    ac: &aho_corasick::AhoCorasick,
+    is_exact: bool,
+    existence_only: bool,
+    stop_flag: &Arc<AtomicBool>,
+    max_per_file: usize,
+    results: &mut Vec<RawMatch>,
+) {
+    const DECODE_CHUNK_SIZE: usize = 64 * 1024;
+    let mut decoder = encoding.new_decoder_without_bom_handling();
+    let mut pending = String::new();
+    let mut input_offset = 0usize;
+    let mut line_number = 1usize;
+
+    while input_offset < mmap.len() {
+        let end = (input_offset + DECODE_CHUNK_SIZE).min(mmap.len());
+        let last = end == mmap.len();
+        // encoding_rs는 출력 버퍼가 가득 차면 입력을 소비하지 않으므로 충분한
+        // 청크 출력 공간을 미리 확보합니다. 필요 시 내부적으로 더 작은 결과를 생성합니다.
+        let mut decoded = String::with_capacity((end - input_offset).saturating_mul(3));
+        let (_status, consumed, _had_errors) = decoder.decode_to_string(&mmap[input_offset..end], &mut decoded, last);
+        if consumed == 0 && end > input_offset {
+            // Decoder가 입력을 소비하지 못하는 경우 무한 루프를 방지합니다.
+            break;
+        }
+        input_offset += consumed;
+        pending.push_str(&decoded);
+
+        while let Some(newline) = pending.find('\n') {
+            if results.len() > max_per_file { return; }
+            if line_number.is_multiple_of(1000) && stop_flag.load(Ordering::Relaxed) { return; }
+            let line = pending[..newline].strip_suffix('\r').unwrap_or(&pending[..newline]);
+            if decoded_line_matches(line, pat_upper, ac, is_exact) {
+                if existence_only {
+                    results.push((line_number, "MATCH".to_string(), None, None));
+                    return;
+                }
+                results.push((line_number, line.to_string(), None, None));
             }
-            return results;
+            pending.drain(..newline + 1);
+            line_number += 1;
         }
 
-        for (i, line) in content_str.lines().enumerate() {
-            if results.len() > max_per_file { break; }
-            if i % 1000 == 0 && stop_flag.load(Ordering::Relaxed) { break; }
-            let is_match = if is_exact { line.trim().to_lowercase().to_uppercase() == pat_upper }
-                           else { ac.find(line).is_some() };
-            if is_match {
-                results.push((i + 1, line.to_string(), None, None));
+        if consumed == 0 { break; }
+    }
+
+    if !pending.is_empty() && results.len() <= max_per_file && !stop_flag.load(Ordering::Relaxed) {
+        let line = pending.strip_suffix('\r').unwrap_or(&pending);
+        if decoded_line_matches(line, pat_upper, ac, is_exact) {
+            if existence_only {
+                results.push((line_number, "MATCH".to_string(), None, None));
+            } else {
+                results.push((line_number, line.to_string(), None, None));
             }
         }
     }
-    results
 }
 
 struct InternalSearchParams<'a> {
@@ -275,7 +325,7 @@ struct InternalSearchParams<'a> {
 
 fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMatch>, String>> {
     let InternalSearchParams {
-        path, pattern, pat_upper, pat_bytes, ac, is_exact, is_json, is_xml, is_excel,
+        path, pattern, pat_upper, pat_bytes: _pat_bytes, ac, is_exact, is_json, is_xml, is_excel,
         exclude_hidden, exclude_binary, existence_only, stop_flag,
         max_per_file, max_check_cells, max_json_depth,
     } = params;
@@ -328,7 +378,9 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
     let enc = detect_encoding(mmap_c);
     let mut _dec_h;
-    let final_mmap = if is_json || is_xml || enc != UTF_8 {
+    // 구조화된 문서는 파서가 전체 버퍼를 요구하므로 기존 디코딩 경로를 유지합니다.
+    // 일반 Non-UTF8 텍스트는 아래의 청크 디코딩 경로에서 처리하여 파일 전체 String 복사를 피합니다.
+    let final_mmap = if is_json || is_xml {
         let d = decode_bytes(mmap_c, enc);
         _dec_h = d.into_bytes();
         _dec_h.as_slice()
@@ -347,7 +399,9 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             else { Vec::new() }
         } else { search_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file) }
     } else {
-        let bin = is_binary(mmap_c);
+        // 인코딩 감지에 성공한 텍스트(UTF-16/EUC-KR 등)는 NUL 바이트가 포함될 수
+        // 있으므로 원본 바이트만 보고 바이너리로 판정하지 않습니다.
+        let bin = enc == UTF_8 && is_binary(mmap_c);
         if exclude_binary && bin { return None; }
         if bin {
             if existence_only {
@@ -359,7 +413,17 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 else { Vec::new() }
             }
         } else {
-            do_search_with_mmap(final_mmap, pat_upper, pat_bytes, ac, is_exact, existence_only, &stop_flag, max_per_file)
+            let bom_len = if (enc == UTF_16LE && mmap_c.starts_with(b"\xff\xfe"))
+                || (enc == UTF_16BE && mmap_c.starts_with(b"\xfe\xff"))
+            {
+                2
+            } else if enc == UTF_8 && mmap_c.starts_with(b"\xef\xbb\xbf") {
+                3
+            } else {
+                0
+            };
+            let searchable_mmap = &mmap_c[bom_len..];
+            do_search_with_mmap(searchable_mmap, enc, pat_upper, ac, is_exact, existence_only, &stop_flag, max_per_file)
         }
     };
 
@@ -443,11 +507,12 @@ pub fn search_dir(
     };
 
     let results_dispatcher = results_callback.as_ref().map(|cb| {
-        let (tx, rx) = crossbeam_channel::unbounded::<(String, Vec<RawMatch>)>();
+        let batch_size_limit = batch_size.unwrap_or(100).max(1);
+        let queue_capacity = batch_size_limit.saturating_mul(4).max(1);
+        let (tx, rx) = crossbeam_channel::bounded::<(String, Vec<RawMatch>)>(queue_capacity);
         let cb_clone = cb.clone_ref(py);
         let done_dispatcher = done_flag.clone();
-        let stop_flag_dispatcher = stop_flag.clone();
-        let batch_size_limit = batch_size.unwrap_or(100);
+        let flush_interval_ms = _flush_ms.unwrap_or(20).clamp(1, 1_000);
         
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
@@ -461,9 +526,10 @@ pub fn search_dir(
                         let _ = cb_clone.bind(py).call1((std::mem::take(&mut batch),));
                     });
                 }
-                if stop_flag_dispatcher.load(Ordering::Relaxed) { break; }
+                // 중지 시에도 이미 채널에 들어온 결과는 모두 전달합니다.
+                // done 플래그는 walker와 모든 worker가 송신을 마친 뒤 설정됩니다.
                 if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
-                std::thread::sleep(std::time::Duration::from_millis(20));
+                std::thread::sleep(std::time::Duration::from_millis(flush_interval_ms));
             }
         });
         (tx, handle)
@@ -536,15 +602,15 @@ pub fn search_dir(
                                     if !matches.is_empty() {
                                         if let Some(tx) = &tx_worker {
                                             let _ = tx.send((f_path, matches));
-                                        } else if let Ok(mut g) = res_ref.lock() {
+                                        } else {
+                                            let mut g = res_ref.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                                             g.push((f_path, matches));
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    if let Ok(mut s) = skip_ref.lock() {
-                                        s.push((f_path, e));
-                                    }
+                                    let mut s = skip_ref.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                                    s.push((f_path, e));
                                 }
                             }
                         }
@@ -559,8 +625,8 @@ pub fn search_dir(
         if let Some(h) = monitor_handle { let _ = h.join(); }
     });
 
-    let final_res = results.lock().map(|g| g.clone()).unwrap_or_default();
-    let final_skip = skipped.lock().map(|g| g.clone()).unwrap_or_default();
+    let final_res = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+    let final_skip = skipped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
     Ok((final_res, final_skip))
 }
 
@@ -617,11 +683,12 @@ fn search_files_list(
     };
 
     let results_dispatcher = results_callback.as_ref().map(|cb| {
-        let (tx, rx) = crossbeam_channel::unbounded::<(String, Vec<RawMatch>)>();
+        let batch_size_limit = batch_size.unwrap_or(100).max(1);
+        let queue_capacity = batch_size_limit.saturating_mul(4).max(1);
+        let (tx, rx) = crossbeam_channel::bounded::<(String, Vec<RawMatch>)>(queue_capacity);
         let cb_clone = cb.clone_ref(py);
         let done_dispatcher = done_flag.clone();
-        let stop_flag_dispatcher = stop_flag.clone();
-        let batch_size_limit = batch_size.unwrap_or(100);
+        let flush_interval_ms = _flush_ms.unwrap_or(20).clamp(1, 1_000);
         
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
@@ -635,9 +702,9 @@ fn search_files_list(
                         let _ = cb_clone.bind(py).call1((std::mem::take(&mut batch),));
                     });
                 }
-                if stop_flag_dispatcher.load(Ordering::Relaxed) { break; }
+                // 중지된 검색도 이미 큐에 적재된 결과는 모두 전달합니다.
                 if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
-                std::thread::sleep(std::time::Duration::from_millis(20));
+                std::thread::sleep(std::time::Duration::from_millis(flush_interval_ms));
             }
         });
         (tx, handle)
@@ -677,9 +744,15 @@ fn search_files_list(
                 match r {
                     Ok(m) => {
                         if let Some(tx) = &tx_main { let _ = tx.send((f_path, m)); }
-                        else if let Ok(mut g) = results.lock() { g.push((f_path, m)); }
+                        else {
+                            let mut g = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                            g.push((f_path, m));
+                        }
                     }
-                    Err(e) => if let Ok(mut g) = skipped.lock() { g.push((f_path, e)); }
+                    Err(e) => {
+                        let mut g = skipped.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                        g.push((f_path, e));
+                    }
                 }
             }
             progress_counter.fetch_add(1, Ordering::Relaxed);
@@ -689,8 +762,8 @@ fn search_files_list(
         done_flag.store(true, Ordering::SeqCst);
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
         if let Some(h) = monitor_handle { let _ = h.join(); }
-        let final_res = results.lock().map(|g| g.clone()).unwrap_or_default();
-        let final_skip = skipped.lock().map(|g| g.clone()).unwrap_or_default();
+        let final_res = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        let final_skip = skipped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
         Ok((final_res, final_skip))
     })
 }
@@ -735,7 +808,9 @@ fn find_files_with_keyword(
     // M1: `_results_dispatcher` → `results_dispatcher` (언더스코어 제거)
     // `_` prefix 변수는 Rust 컴파일러에 의해 즉시 drop되므로 tx도 함께 소멸되어 콜백 스레드가 동작하지 않았음.
     let results_dispatcher = results_callback.as_ref().map(|cb| {
-        let (tx, rx) = crossbeam_channel::unbounded::<(String, u64)>();
+        let batch_size_limit = 100usize;
+        let queue_capacity = batch_size_limit.saturating_mul(4).max(1);
+        let (tx, rx) = crossbeam_channel::bounded::<(String, u64)>(queue_capacity);
         let cb_clone = cb.clone_ref(py);
         let done_dispatcher = is_done.clone();
         
@@ -744,7 +819,7 @@ fn find_files_with_keyword(
             loop {
                 while let Ok(res) = rx.try_recv() {
                     batch.push(res);
-                    if batch.len() >= 100 { break; }
+                    if batch.len() >= batch_size_limit { break; }
                 }
                 if !batch.is_empty() {
                     Python::with_gil(|py| {
@@ -828,7 +903,8 @@ fn find_files_with_keyword(
                                 // M1: tx 채널이 있으면 스트리밍, 없으면 공유 벡터에 직접 저장
                                 if let Some(tx) = &tx_inner {
                                     let _ = tx.send((f_path, f_size));
-                                } else if let Ok(mut g) = res_inner.lock() {
+                                } else {
+                                    let mut g = res_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                                     g.push((f_path, f_size));
                                 }
                             }
@@ -842,8 +918,8 @@ fn find_files_with_keyword(
         // N1: is_done을 먼저 설정하여 dispatcher가 종료 루프에 진입할 수 있도록 합니다.
         is_done.store(true, Ordering::SeqCst);
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
-        let final_res = results.lock().map(|g| g.clone()).unwrap_or_default();
-        let final_skipped = skipped.lock().map(|g| g.clone()).unwrap_or_default();
+        let final_res = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        let final_skipped = skipped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
         Ok((final_res, final_skipped))
     })
 }
@@ -868,20 +944,48 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 
-fn extract_line_content_bytes(mmap: &[u8], start: usize, end: usize) -> String {
+fn extract_line_content_bytes(
+    mmap: &[u8],
+    start: usize,
+    end: usize,
+    match_start: Option<usize>,
+    match_len: Option<usize>,
+) -> String {
     let mut line_end = end;
     if line_end > start && mmap[line_end - 1] == b'\r' {
         line_end -= 1;
     }
     let line_len = line_end - start;
     if line_len > 4096 {
-        let preview_len = 1024.min(line_len);
-        let preview_bytes = &mmap[start..start + preview_len];
+        const PREVIEW_MAX_BYTES: usize = 1024;
+        let mut preview_start = start;
+        let mut preview_end = (start + PREVIEW_MAX_BYTES).min(line_end);
+
+        // 긴 줄은 매치 위치 주변을 우선 표시하여 검색어가 미리보기에서 사라지지 않게 합니다.
+        if let Some(hit_start) = match_start {
+            let hit_start = hit_start.clamp(start, line_end);
+            let hit_len = match_len.unwrap_or(0).min(line_end.saturating_sub(hit_start));
+            let desired_start = hit_start.saturating_sub(PREVIEW_MAX_BYTES / 2);
+            preview_start = desired_start.max(start);
+            preview_end = (preview_start + PREVIEW_MAX_BYTES).min(line_end);
+            if preview_end < hit_start.saturating_add(hit_len) {
+                preview_end = (hit_start.saturating_add(hit_len)).min(line_end);
+                preview_start = preview_end.saturating_sub(PREVIEW_MAX_BYTES).max(start);
+            }
+        }
+
+        // UTF-8 문자의 중간을 자르지 않도록 경계를 보정합니다.
+        while preview_start > start && (mmap[preview_start] & 0xC0) == 0x80 { preview_start -= 1; }
+        while preview_end < line_end && (mmap[preview_end] & 0xC0) == 0x80 { preview_end += 1; }
+
+        let preview_bytes = &mmap[preview_start..preview_end];
         let preview_text = match simdutf8::basic::from_utf8(preview_bytes) {
             Ok(s) => s.trim().to_string(),
             Err(_) => String::from_utf8_lossy(preview_bytes).trim().to_string(),
         };
-        return format!("__SF_LONG_LINE__|{}", preview_text);
+        let prefix = if preview_start > start { "..." } else { "" };
+        let suffix = if preview_end < line_end { "..." } else { "" };
+        return format!("__SF_LONG_LINE__|{}{}{}", prefix, preview_text, suffix);
     }
     let line_bytes = &mmap[start..line_end];
     match simdutf8::basic::from_utf8(line_bytes) {
@@ -903,7 +1007,46 @@ mod tests {
         let ac = build_test_ac("hello");
         let stop_flag = Arc::new(AtomicBool::new(false));
         let data = b"hello\nhello\nhello\n";
-        let matches = do_search_with_mmap(data, "hello", b"hello", &ac, false, true, &stop_flag, 5000);
+        let matches = do_search_with_mmap(data, UTF_8, "hello", &ac, false, true, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
+    }
+
+    #[test]
+    fn long_line_preview_includes_match_region() {
+        let ac = build_test_ac("needle");
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let mut data = vec![b'A'; 12_000];
+        data[8_000..8_006].copy_from_slice(b"needle");
+        let matches = do_search_with_mmap(&data, UTF_8, "needle", &ac, false, false, &stop_flag, 5000);
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].1.contains("needle"));
+    }
+
+    #[test]
+    fn exact_match_handles_final_carriage_return() {
+        let ac = build_test_ac("needle");
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let data = b"prefix\nneedle\r";
+        let matches = do_search_with_mmap(data, UTF_8, "NEEDLE", &ac, true, false, &stop_flag, 5000);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, 2);
+    }
+
+    #[test]
+    fn no_bom_utf16_is_treated_as_text_not_binary() {
+        let mut data = Vec::new();
+        for unit in "needle".encode_utf16() {
+            data.extend_from_slice(&unit.to_le_bytes());
+        }
+        let encoding = detect_encoding(&data);
+        assert!(encoding != UTF_8);
+        assert_eq!(encoding, UTF_16LE);
+        assert!(!(encoding == UTF_8 && is_binary(&data)));
+
+        let ac = build_test_ac("needle");
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let matches = do_search_with_mmap(&data, encoding, "NEEDLE", &ac, false, false, &stop_flag, 5000);
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].1.contains("needle"));
     }
 }

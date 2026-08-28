@@ -58,20 +58,15 @@ def shutdown_global_manager():
 class GlobalExecutor:
     _instance = None
     _executor = None
+    _is_active = False
     _lock = threading.Lock()
 
     @classmethod
     def get_executor(cls, total_tasks: Optional[int] = None):
         with cls._lock:
-            if cls._executor is not None:
-                # [L-04 Fix] _shutdown 비공개 속성 대신 submit()으로 유효성 검증
-                # concurrent.futures의 공개 API를 사용하여 셧다운된 executor 감지
-                try:
-                    cls._executor.submit(lambda: None).cancel()
-                except RuntimeError:
-                    # RuntimeError: cannot schedule new futures after shutdown
-                    cls._executor = None
-            if cls._executor is None:
+            # 실행기 상태 확인을 위해 피클링 불가능한 더미 작업을 제출하지 않습니다.
+            # 실행기 생명주기는 이 클래스가 관리하므로 명시적인 상태 플래그로 추적합니다.
+            if cls._executor is None or not cls._is_active:
                 cpu_count = multiprocessing.cpu_count()
                 if cpu_count <= 4:
                     max_workers = max(1, cpu_count - 1)
@@ -85,7 +80,16 @@ class GlobalExecutor:
 
                 logger.debug(AppStrings.LOG_WKR_ADAPTIVE_POLICY_INFO.format(cpu_count, max_workers))
                 cls._executor = ProcessPoolExecutor(max_workers=max_workers)
+                cls._is_active = True
             return cls._executor
+
+    @classmethod
+    def invalidate(cls, executor) -> None:
+        """외부에서 종료된 실행기를 전역 상태에서도 무효화합니다."""
+        with cls._lock:
+            if cls._executor is executor:
+                cls._executor = None
+                cls._is_active = False
 
     @classmethod
     def shutdown(cls, wait=True, cancel_futures=True):
@@ -99,6 +103,7 @@ class GlobalExecutor:
                     logger.error(AppStrings.LOG_EXECUTOR_SHUTDOWN_ERROR.format(e))
                 finally:
                     cls._executor = None
+                    cls._is_active = False
 
 
 class WorkerSignals(QObject):
@@ -250,8 +255,8 @@ class SearchWorker(QRunnable):
             self._last_progress_emit_time = now
 
         def results_callback(batch):
-            if not self.is_running.is_set():
-                return
+            # 검색 중지 직후에도 Rust 디스패처가 이미 발견한 마지막 배치를 전달할 수 있습니다.
+            # 중지 플래그만으로 이 배치를 버리면 사용자에게 부분 검색 결과가 유실됩니다.
             # logger.debug(f"[Worker] results_callback received batch of {len(batch)}")
             from core.search_engine import _normalize_rust_matches, _extract_marker_skip_reason
             formatted_batch = []
@@ -455,8 +460,12 @@ class SearchWorker(QRunnable):
                     
                     # 실행기를 즉시 종료하여 좀비 프로세스가 남지 않도록 합니다.
                     if self._executor:
-                        self._executor.shutdown(wait=False, cancel_futures=True)
-                        self._executor = None
+                        executor = self._executor
+                        try:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                        finally:
+                            GlobalExecutor.invalidate(executor)
+                            self._executor = None
                     
                     for f in list(pending_futures):
                         f.cancel()
@@ -530,9 +539,11 @@ class SearchWorker(QRunnable):
         if self.stop_event is not None:
             self.stop_event.set()
         if hasattr(self, "_executor") and self._executor:
+            executor = self._executor
             try:
-                self._executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=False, cancel_futures=True)
             except Exception as e:
                 logger.debug(AppStrings.LOG_WKR_EXECUTOR_SHUTDOWN_ERROR.format(e))
             finally:
+                GlobalExecutor.invalidate(executor)
                 self._executor = None
