@@ -1,7 +1,9 @@
 import os
 import subprocess
 import sys
+import threading
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -33,6 +35,75 @@ from ui.syntax_highlighter import LightweightSyntaxHighlighter
 from ui.widgets import HtmlDelegate
 
 
+def _detect_text_encoding(file_path):
+    """BOM을 우선 확인하고 일반 텍스트는 UTF-8로 읽습니다."""
+    with open(file_path, "rb") as file:
+        prefix = file.read(4)
+    if prefix.startswith(b"\xff\xfe\x00\x00"):
+        return "utf-32-le"
+    if prefix.startswith(b"\x00\x00\xfe\xff"):
+        return "utf-32-be"
+    if prefix.startswith(b"\xff\xfe"):
+        return "utf-16-le"
+    if prefix.startswith(b"\xfe\xff"):
+        return "utf-16-be"
+    if prefix.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    return "utf-8"
+
+
+def _read_context_lines_from_file(file_path, target_line, before_lines, after_lines, cancel_event=None):
+    """파일에서 필요한 문맥만 읽습니다. UI 객체에는 접근하지 않습니다."""
+    if target_line > ResultView.CONTEXT_MAX_SCAN_LINES:
+        return None
+    first_line = max(1, target_line - before_lines)
+    last_line = target_line + after_lines
+    encoding = _detect_text_encoding(file_path)
+    context = []
+    with open(file_path, "r", encoding=encoding, errors="replace") as file:
+        for line_number, line in enumerate(file, start=1):
+            if cancel_event is not None and cancel_event.is_set():
+                return []
+            if line_number >= first_line:
+                context.append((line_number, line.rstrip("\r\n")))
+            if line_number >= last_line:
+                break
+    return context
+
+
+class ContextPreviewSignals(QObject):
+    finished = Signal(int, object, object, bool)
+
+
+class ContextPreviewWorker(QRunnable):
+    """문맥 미리보기용 파일 읽기를 UI 스레드 밖에서 수행합니다."""
+
+    def __init__(self, request_id, file_path, target_line, before_lines, after_lines, cancel_event):
+        super().__init__()
+        self.setAutoDelete(False)
+        self.request_id = request_id
+        self.file_path = file_path
+        self.target_line = target_line
+        self.before_lines = before_lines
+        self.after_lines = after_lines
+        self.cancel_event = cancel_event
+        self.signals = ContextPreviewSignals()
+
+    def run(self):
+        try:
+            lines = _read_context_lines_from_file(
+                self.file_path,
+                self.target_line,
+                self.before_lines,
+                self.after_lines,
+                self.cancel_event,
+            )
+            cancelled = self.cancel_event.is_set()
+            self.signals.finished.emit(self.request_id, lines, None, cancelled)
+        except Exception as error:  # 파일/인코딩/예상하지 못한 읽기 오류를 UI로 전달
+            self.signals.finished.emit(self.request_id, None, error, self.cancel_event.is_set())
+
+
 class ResultView(QWidget):
     CONTEXT_RADIUS = Constants.DEFAULT_CONTEXT_PREVIEW_LINES
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
@@ -57,6 +128,11 @@ class ResultView(QWidget):
         self.existence_only = False
         self.selected_file_path = ""
         self._current_match_item = None
+        self._context_request_id = 0
+        self._context_cancel_event = None
+        self._context_workers = []
+        self._context_thread_pool = QThreadPool(self)
+        self._context_thread_pool.setMaxThreadCount(1)
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
         self._resize_timer.setInterval(200)  # 창 크기 변경이 멈춘 후 열 너비를 자동으로 조정하기 위한 디바운스 타이머입니다.
@@ -533,6 +609,7 @@ class ResultView(QWidget):
 
     def _clear_context_preview(self):
         """문맥 미리보기 영역을 초기 상태로 되돌립니다."""
+        self._cancel_context_preview()
         self._current_match_item = None
         self.context_highlighter.set_language("text")
         self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
@@ -540,19 +617,7 @@ class ResultView(QWidget):
 
     def _detect_text_encoding(self, file_path):
         """BOM을 우선 확인하고 일반 텍스트는 UTF-8로 읽습니다."""
-        with open(file_path, "rb") as file:
-            prefix = file.read(4)
-        if prefix.startswith(b"\xff\xfe\x00\x00"):
-            return "utf-32-le"
-        if prefix.startswith(b"\x00\x00\xfe\xff"):
-            return "utf-32-be"
-        if prefix.startswith(b"\xff\xfe"):
-            return "utf-16-le"
-        if prefix.startswith(b"\xfe\xff"):
-            return "utf-16-be"
-        if prefix.startswith(b"\xef\xbb\xbf"):
-            return "utf-8-sig"
-        return "utf-8"
+        return _detect_text_encoding(file_path)
 
     def _read_context_lines(self, file_path, target_line):
         """대상 줄 주변만 스트리밍으로 읽어 메모리 사용량을 제한합니다."""
@@ -566,20 +631,62 @@ class ResultView(QWidget):
             after_lines = min(max(int(self.context_after_combo.currentText()), 0), self.CONTEXT_MAX_RADIUS)
         except (AttributeError, TypeError, ValueError):
             after_lines = self.CONTEXT_RADIUS
-        first_line = max(1, target_line - before_lines)
-        last_line = target_line + after_lines
-        encoding = self._detect_text_encoding(file_path)
-        context = []
-        with open(file_path, "r", encoding=encoding, errors="replace") as file:
-            for line_number, line in enumerate(file, start=1):
-                if line_number >= first_line:
-                    context.append((line_number, line.rstrip("\r\n")))
-                if line_number >= last_line:
-                    break
-        return context
+        return _read_context_lines_from_file(file_path, target_line, before_lines, after_lines)
+
+    def _cancel_context_preview(self):
+        if self._context_cancel_event is not None:
+            self._context_cancel_event.set()
+        self._context_request_id += 1
+
+    def _on_context_preview_finished(self, request_id, lines, error, cancelled):
+        worker = next((item for item in self._context_workers if item.request_id == request_id), None)
+        if worker is not None:
+            self._context_workers.remove(worker)
+        if request_id != self._context_request_id or cancelled:
+            return
+
+        if error is not None:
+            self.context_highlighter.set_language("text")
+            if isinstance(error, FileNotFoundError):
+                message = AppStrings.CONTEXT_PREVIEW_FILE_UNAVAILABLE
+            else:
+                message = AppStrings.CONTEXT_PREVIEW_READ_FAILED.format(error)
+            self.context_preview.setPlainText(message)
+            self.context_preview.setExtraSelections([])
+            return
+        if lines is None:
+            self.context_highlighter.set_language("text")
+            self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SCAN_LIMIT)
+            self.context_preview.setExtraSelections([])
+            return
+
+        self.context_highlighter.set_file_path(self.match_model.current_file_path)
+        rendered = []
+        target_block = 0
+        truncated = False
+        target_line = int(self._context_target_line)
+        for block, (line_number, line) in enumerate(lines):
+            if len(line) > self.CONTEXT_MAX_LINE_CHARS:
+                line = line[: self.CONTEXT_MAX_LINE_CHARS]
+                truncated = True
+            marker = "▶ " if line_number == target_line else "  "
+            if line_number == target_line:
+                target_block = block
+            rendered.append(f"{marker}{line_number:>6} | {line}")
+        text = "\n".join(rendered)
+        if truncated:
+            text += AppStrings.CONTEXT_PREVIEW_TRUNCATED
+        self.context_preview.setPlainText(text)
+        selection = QTextEdit.ExtraSelection()
+        selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))
+        selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
+        selection.format = QTextCharFormat()
+        selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))
+        self.context_preview.setExtraSelections([selection])
 
     def _show_context_preview(self, match_item):
         """선택된 매치의 일반 텍스트 문맥을 안전하게 표시합니다."""
+        self._cancel_context_preview()
         self._current_match_item = match_item
         position = str(getattr(match_item, "position", match_item[0]))
         content = str(getattr(match_item, "content", match_item[1]))
@@ -597,44 +704,31 @@ class ResultView(QWidget):
             return
 
         file_path = self.match_model.current_file_path
-        if not file_path or not os.path.isfile(file_path):
+        if not file_path:
             self.context_highlighter.set_language("text")
             self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_FILE_UNAVAILABLE)
             self.context_preview.setExtraSelections([])
             return
         try:
-            self.context_highlighter.set_file_path(file_path)
-            lines = self._read_context_lines(file_path, target_line)
-            if lines is None:
-                self.context_highlighter.set_language("text")
-                self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SCAN_LIMIT)
-                self.context_preview.setExtraSelections([])
-                return
-            rendered = []
-            target_block = 0
-            truncated = False
-            for block, (line_number, line) in enumerate(lines):
-                if len(line) > self.CONTEXT_MAX_LINE_CHARS:
-                    line = line[: self.CONTEXT_MAX_LINE_CHARS]
-                    truncated = True
-                marker = "▶ " if line_number == target_line else "  "
-                if line_number == target_line:
-                    target_block = block
-                rendered.append(f"{marker}{line_number:>6} | {line}")
-            text = "\n".join(rendered)
-            if truncated:
-                text += AppStrings.CONTEXT_PREVIEW_TRUNCATED
-            self.context_preview.setPlainText(text)
-            selection = QTextEdit.ExtraSelection()
-            selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))
-            selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
-            selection.format = QTextCharFormat()
-            selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))
-            self.context_preview.setExtraSelections([selection])
-        except (OSError, UnicodeError) as error:
-            self.context_highlighter.set_language("text")
-            self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_READ_FAILED.format(error))
-            self.context_preview.setExtraSelections([])
+            before_lines = min(max(int(self.context_before_combo.currentText()), 0), self.CONTEXT_MAX_RADIUS)
+        except (AttributeError, TypeError, ValueError):
+            before_lines = self.CONTEXT_RADIUS
+        try:
+            after_lines = min(max(int(self.context_after_combo.currentText()), 0), self.CONTEXT_MAX_RADIUS)
+        except (AttributeError, TypeError, ValueError):
+            after_lines = self.CONTEXT_RADIUS
+
+        self._context_target_line = target_line
+        self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_LOADING)
+        cancel_event = threading.Event()
+        self._context_cancel_event = cancel_event
+        request_id = self._context_request_id
+        worker = ContextPreviewWorker(
+            request_id, file_path, target_line, before_lines, after_lines, cancel_event
+        )
+        worker.signals.finished.connect(self._on_context_preview_finished)
+        self._context_workers.append(worker)
+        self._context_thread_pool.start(worker)
 
     def _on_open_selected_folder_clicked(self):
         """선택된 파일의 위치를 운영체제 파일 탐색기에서 엽니다."""
@@ -927,6 +1021,8 @@ class ResultView(QWidget):
         self.match_model.set_column_filter(self._get_match_filter_col(3), text)
 
     def cleanup(self):
+        self._cancel_context_preview()
+        self._context_workers.clear()
         self.clear()
         self.result_model._data = []
         self.match_model._data = []

@@ -1,5 +1,6 @@
 """외부 편집기 연결과 문맥 미리보기 구문 강조 회귀 테스트."""
 
+import os
 from unittest.mock import patch
 
 import pytest
@@ -48,6 +49,38 @@ def test_external_editor_missing_program_falls_back_to_system_default(tmp_path):
     open_file.assert_called_once_with(file_path)
 
 
+def test_external_editor_custom_template_preserves_windows_paths(tmp_path):
+    file_path = str(tmp_path / "folder with spaces" / "sample.py")
+    with (
+        patch("sf_utils.file_helper.os.path.isfile", return_value=True),
+        patch("sf_utils.file_helper.subprocess.Popen") as popen,
+    ):
+        assert open_in_external_editor(
+            file_path,
+            12,
+            {"editor_type": "custom", "custom_path": "C:/Tools/editor.exe", "custom_args": "--line {line} {file}"},
+        ) is True
+    popen.assert_called_once_with(
+        [os.path.abspath("C:/Tools/editor.exe"), "--line", "12", file_path],
+        shell=False,
+    )
+
+
+def test_external_editor_invalid_custom_template_falls_back_to_system_default(tmp_path):
+    file_path = str(tmp_path / "sample.py")
+    with (
+        patch("sf_utils.file_helper.os.path.isfile", return_value=True),
+        patch("sf_utils.file_helper.subprocess.Popen", side_effect=ValueError("bad template")),
+        patch("sf_utils.file_helper.open_file", return_value=True) as open_file,
+    ):
+        assert open_in_external_editor(
+            file_path,
+            12,
+            {"editor_type": "custom", "custom_path": "C:/Tools/editor.exe", "custom_args": '"--line {line}'},
+        ) is True
+    open_file.assert_called_once_with(file_path)
+
+
 def test_settings_dialog_external_editor_defaults_to_system(qtbot, mock_config_manager):
     dialog = SettingsDialog(mock_config_manager)
     qtbot.addWidget(dialog)
@@ -57,6 +90,11 @@ def test_settings_dialog_external_editor_defaults_to_system(qtbot, mock_config_m
 
     dialog.external_editor_combo.setCurrentIndex(dialog.external_editor_combo.findData("vscode"))
     assert mock_config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR)[Constants.CONFIG_KEY_EDITOR_TYPE] == "vscode"
+
+    dialog.external_editor_combo.setCurrentIndex(dialog.external_editor_combo.findData("custom"))
+    dialog.external_editor_args_edit.setText("--line {line} {file}")
+    dialog._on_external_editor_args_changed()
+    assert mock_config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR)[Constants.CONFIG_KEY_EDITOR_CUSTOM_ARGS] == "--line {line} {file}"
 
 
 def test_search_tab_passes_match_location_to_configured_editor(search_tab_fixture):

@@ -80,6 +80,7 @@ class ConfigManager:
             Constants.CONFIG_KEY_EXTERNAL_EDITOR: {
                 Constants.CONFIG_KEY_EDITOR_TYPE: Constants.DEFAULT_EXTERNAL_EDITOR,
                 Constants.CONFIG_KEY_EDITOR_CUSTOM_PATH: "",
+                Constants.CONFIG_KEY_EDITOR_CUSTOM_ARGS: "{file}:{line}",
             },
             Constants.CONFIG_KEY_LOG_RETENTION: {
                 Constants.CONFIG_KEY_LOG_RETENTION_ENABLED: True,

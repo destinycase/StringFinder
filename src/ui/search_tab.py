@@ -63,6 +63,7 @@ class SearchTab(QMainWindow):
         self._liveliness_timer.setInterval(1000)
         self._liveliness_timer.timeout.connect(self._on_liveliness_tick)
         self.search_state = Constants.SearchState.IDLE
+        self._search_allowed = True
         self.pending_restart = False
         self._memory_alert_shown = False
         self.current_filename_filters: List[str] = []
@@ -549,6 +550,9 @@ class SearchTab(QMainWindow):
         사용자 입력을 검증하고 병렬 검색 프로세스를 시작합니다.
         """
         try:
+            if not self._search_allowed:
+                self.status_message_requested.emit(AppStrings.MSG_SEARCH_BLOCKED_BY_OTHER_TAB, 3000)
+                return
             if self.search_state != Constants.SearchState.IDLE:
                 logger.info(AppStrings.LOG_SCH_RESTART_SCHEDULED.format(self.search_state))
                 self.pending_restart = True
@@ -691,6 +695,10 @@ class SearchTab(QMainWindow):
         self.worker.signals.search_finished.connect(self._on_search_finished)
         self.worker.signals.error.connect(self._on_search_error)
         self.worker.signals.finished.connect(self._on_worker_finished)
+
+    def set_search_allowed(self, allowed: bool):
+        """메인 창의 탭 잠금 상태에 따라 검색 시작 허용 여부를 설정합니다."""
+        self._search_allowed = bool(allowed)
 
     def _check_pending_restart(self):
         """재시작 요청이 대기 중이라면 즉시 새 검색을 시작합니다."""

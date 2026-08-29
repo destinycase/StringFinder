@@ -3,6 +3,63 @@ import shutil
 import subprocess
 
 
+def _split_windows_command_line(arguments: str) -> list[str]:
+    """쉘을 실행하지 않고 Windows 명령행 인자를 안전하게 분리합니다."""
+    tokens = []
+    current = []
+    in_quotes = False
+    index = 0
+
+    while index < len(arguments):
+        char = arguments[index]
+        if char in " \t" and not in_quotes:
+            if current:
+                tokens.append("".join(current))
+                current = []
+            index += 1
+            continue
+        if char == "\\":
+            slash_count = 0
+            while index < len(arguments) and arguments[index] == "\\":
+                slash_count += 1
+                index += 1
+            if index < len(arguments) and arguments[index] == '"':
+                current.extend("\\" * (slash_count // 2))
+                if slash_count % 2:
+                    current.append('"')
+                    index += 1
+                else:
+                    in_quotes = not in_quotes
+                    index += 1
+            else:
+                current.extend("\\" * slash_count)
+            continue
+        if char == '"':
+            in_quotes = not in_quotes
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+
+    if in_quotes:
+        raise ValueError("닫히지 않은 따옴표가 있습니다.")
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
+def _build_custom_editor_arguments(template: str, file_path: str, line_number: int) -> list[str]:
+    """사용자 지정 편집기 인자를 생성합니다. 쉘은 사용하지 않습니다."""
+    template = str(template or "").strip() or "{file}:{line}"
+    tokens = _split_windows_command_line(template)
+    if not tokens:
+        tokens = ["{file}"]
+    replaced = [token.replace("{file}", file_path).replace("{line}", str(line_number)) for token in tokens]
+    if not any("{file}" in token for token in tokens):
+        replaced.append(file_path)
+    return replaced
+
+
 def open_file(file_path):
     """시스템 기본 프로그램으로 지정된 파일을 실행합니다."""
     try:
@@ -54,11 +111,14 @@ def open_in_external_editor(file_path: str, line: int = 1, editor_settings=None)
             command = [executable, "--goto", f"{file_path}:{line_number}"]
         elif editor_type == "notepadpp":
             command = [executable, file_path, f"-n{line_number}"]
+        elif editor_type == "custom":
+            custom_args = settings.get("custom_args", "{file}:{line}")
+            command = [executable, *_build_custom_editor_arguments(custom_args, file_path, line_number)]
         else:
             command = [executable, f"{file_path}:{line_number}"]
         subprocess.Popen(command, shell=False)
         return True
-    except (OSError, PermissionError, FileNotFoundError, subprocess.SubprocessError):
+    except (OSError, PermissionError, FileNotFoundError, subprocess.SubprocessError, ValueError):
         return open_file(file_path)
 
 

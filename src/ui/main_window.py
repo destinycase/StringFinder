@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(600, 400)
         self.system_manager = SystemManager()
 
+        self._search_lock_owner = None
         self._init_ui()
         from sf_utils.logger import qt_log_handler
 
@@ -181,7 +182,11 @@ class MainWindow(QMainWindow):
         new_tab.liveliness_updated.connect(lambda r, s: self._on_tab_liveliness_updated(new_tab, r, s))
         new_tab.skipped_count_updated.connect(lambda count: self._on_tab_skip_count_updated(new_tab, count))
         new_tab.search_finished_with_data.connect(lambda: self._on_search_finished_in_tab(new_tab))
-        new_tab.search_status_changed.connect(self._set_ui_locked)
+        new_tab.search_status_changed.connect(
+            lambda locked, tab=new_tab: self._on_tab_search_status_changed(tab, locked)
+        )
+        if self._search_lock_owner is not None:
+            new_tab.set_search_allowed(False)
         if state:
             new_tab.load_state(state)
         if name:
@@ -211,6 +216,30 @@ class MainWindow(QMainWindow):
         settings_btn = self.tab_widget.findChild(QPushButton, "settingsBtn")
         if settings_btn:
             settings_btn.setEnabled(not locked)
+
+    def _on_tab_search_status_changed(self, tab, locked):
+        """검색 중에는 다른 탭에서 검색을 시작하지 못하도록 전역 잠금을 관리합니다."""
+        if locked:
+            if self._search_lock_owner is None:
+                self._search_lock_owner = tab
+            if self._search_lock_owner is not tab:
+                tab.set_search_allowed(False)
+                return
+            for index in range(self.tab_widget.count()):
+                current_tab = self.tab_widget.widget(index)
+                if isinstance(current_tab, SearchTab):
+                    current_tab.set_search_allowed(current_tab is tab)
+            self._set_ui_locked(True)
+            return
+
+        if self._search_lock_owner is not None and self._search_lock_owner is not tab:
+            return
+        self._search_lock_owner = None
+        for index in range(self.tab_widget.count()):
+            current_tab = self.tab_widget.widget(index)
+            if isinstance(current_tab, SearchTab):
+                current_tab.set_search_allowed(True)
+        self._set_ui_locked(False)
 
     def _rename_tab(self, index):
         """탭 이름을 변경하고 세션 파일을 업데이트합니다."""
@@ -390,6 +419,9 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     logger.warning(AppStrings.ERROR_STOP_SEARCH_TAB.format(f"tab={index}, error={e}"))
                 tab.cleanup()
+                if self._search_lock_owner is tab:
+                    self._search_lock_owner = None
+                    self._set_ui_locked(False)
                 self.tab_widget.removeTab(index)
                 tab.deleteLater()
             self._save_tab_order()

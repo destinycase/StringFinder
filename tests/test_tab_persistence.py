@@ -40,6 +40,23 @@ def test_save_order_on_search_finish(qtbot, main_window):
     main_window.config_manager.set_tab_order.assert_called_once()
 
 
+def test_only_one_tab_can_start_search_at_a_time(main_window):
+    first_tab = main_window.add_new_tab("Tab1")
+    second_tab = main_window.add_new_tab("Tab2")
+
+    main_window._on_tab_search_status_changed(first_tab, True)
+
+    assert first_tab._search_allowed is True
+    assert second_tab._search_allowed is False
+    assert not main_window.tab_widget.tabBar().isEnabled()
+
+    main_window._on_tab_search_status_changed(first_tab, False)
+
+    assert first_tab._search_allowed is True
+    assert second_tab._search_allowed is True
+    assert main_window.tab_widget.tabBar().isEnabled()
+
+
 def test_save_order_on_tab_move(qtbot, main_window):
     """탭 이동 시 탭 순서가 저장되는지 테스트"""
     main_window.config_manager.set_tab_order = MagicMock()

@@ -18,7 +18,7 @@ def search_tab_fixture(qtbot, mock_config_manager):
     widget.deleteLater()
 
 
-def test_result_context_preview_is_bounded_and_highlights_match(search_tab_fixture, tmp_path):
+def test_result_context_preview_is_bounded_and_highlights_match(search_tab_fixture, qtbot, tmp_path):
     file_path = tmp_path / "context.txt"
     file_path.write_text(
         "\n".join(["one", "two", "three", "four", "five", "needle", "seven", "eight", "nine", "ten", "eleven"]),
@@ -30,6 +30,7 @@ def test_result_context_preview_is_bounded_and_highlights_match(search_tab_fixtu
 
     panel._on_result_clicked(panel.proxy_model.index(0, 0))
     panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
+    qtbot.waitUntil(lambda: "needle" in panel.context_preview.toPlainText(), timeout=2000)
 
     assert str(file_path) in panel.file_info_label.text()
     assert panel.file_info_header.height() <= 32
@@ -54,6 +55,7 @@ def test_context_preview_line_controls_are_configurable(search_tab_fixture, qtbo
     panel.set_results([[1, file_path.name, str(tmp_path), str(file_path), [[6, "needle", 28, 6]]]])
     panel._on_result_clicked(panel.proxy_model.index(0, 0))
     panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
+    qtbot.waitUntil(lambda: "needle" in panel.context_preview.toPlainText(), timeout=2000)
 
     assert panel.context_before_combo.count() == 21
     assert panel.context_after_combo.count() == 21
@@ -62,6 +64,7 @@ def test_context_preview_line_controls_are_configurable(search_tab_fixture, qtbo
 
     panel.context_before_combo.setCurrentText("2")
     panel.context_after_combo.setCurrentText("3")
+    qtbot.waitUntil(lambda: "       4 | four" in panel.context_preview.toPlainText(), timeout=2000)
     preview = panel.context_preview.toPlainText()
 
     assert search_tab_fixture.config_manager.get(Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES) == 2

@@ -132,6 +132,17 @@ class SettingsDialog(QDialog):
         editor_path_row.addWidget(self.external_editor_path_edit, 1)
         editor_path_row.addWidget(browse_editor_btn)
         editor_layout.addLayout(editor_path_row)
+
+        editor_args_row = QHBoxLayout()
+        editor_args_label = QLabel(AppStrings.EXTERNAL_EDITOR_ARGS_LABEL)
+        self.external_editor_args_edit = QLineEdit(
+            str(editor_settings.get(Constants.CONFIG_KEY_EDITOR_CUSTOM_ARGS, "{file}:{line}"))
+        )
+        self.external_editor_args_edit.setPlaceholderText(AppStrings.EXTERNAL_EDITOR_ARGS_PLACEHOLDER)
+        self.external_editor_args_edit.editingFinished.connect(self._on_external_editor_args_changed)
+        editor_args_row.addWidget(editor_args_label)
+        editor_args_row.addWidget(self.external_editor_args_edit, 1)
+        editor_layout.addLayout(editor_args_row)
         self._update_external_editor_path_state()
         tab_general_layout.addWidget(editor_group)
         
@@ -341,6 +352,7 @@ class SettingsDialog(QDialog):
     def _update_external_editor_path_state(self):
         is_custom = self.external_editor_combo.currentData() == "custom"
         self.external_editor_path_edit.setEnabled(is_custom)
+        self.external_editor_args_edit.setEnabled(is_custom)
 
     def _on_external_editor_changed(self, index):
         settings = self._get_external_editor_settings()
@@ -351,6 +363,12 @@ class SettingsDialog(QDialog):
     def _on_external_editor_path_changed(self):
         settings = self._get_external_editor_settings()
         settings[Constants.CONFIG_KEY_EDITOR_CUSTOM_PATH] = self.external_editor_path_edit.text().strip()
+        self.config_manager.set(Constants.CONFIG_KEY_EXTERNAL_EDITOR, settings)
+
+    def _on_external_editor_args_changed(self):
+        settings = self._get_external_editor_settings()
+        custom_args = self.external_editor_args_edit.text().strip() or "{file}:{line}"
+        settings[Constants.CONFIG_KEY_EDITOR_CUSTOM_ARGS] = custom_args
         self.config_manager.set(Constants.CONFIG_KEY_EXTERNAL_EDITOR, settings)
 
     def _browse_external_editor(self):

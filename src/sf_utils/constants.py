@@ -102,6 +102,7 @@ class Constants:
     CONFIG_KEY_EXTERNAL_EDITOR = "external_editor"
     CONFIG_KEY_EDITOR_TYPE = "editor_type"
     CONFIG_KEY_EDITOR_CUSTOM_PATH = "custom_path"
+    CONFIG_KEY_EDITOR_CUSTOM_ARGS = "custom_args"
     CONFIG_KEY_LOG_RETENTION = "log_retention"
     CONFIG_KEY_LOG_RETENTION_ENABLED = "enabled"
     CONFIG_KEY_LOG_RETENTION_MAX_FILES = "max_files"

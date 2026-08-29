@@ -18,6 +18,7 @@ class AppStrings:
     STATUS_ELAPSED_TIME = "소요 시간: {:02d}:{:02d}"
     MSG_SEARCH_SINGLE_CHAR_WARN = "검색어가 너무 짧아 검색 시간이 오래 걸릴 수 있습니다. 진행하시겠습니까?"
     MSG_ALREADY_RUNNING = "프로그램이 이미 실행 중입니다."
+    MSG_SEARCH_BLOCKED_BY_OTHER_TAB = "다른 탭에서 검색이 진행 중입니다. 검색이 끝난 후 다시 시도하세요."
     # =========================================================================
     # [2] UI 요소 (Buttons, Menus, Labels)
     # =========================================================================
@@ -83,6 +84,8 @@ class AppStrings:
     EXTERNAL_EDITOR_SUBLIME = "Sublime Text"
     EXTERNAL_EDITOR_CUSTOM = "사용자 지정"
     EXTERNAL_EDITOR_PATH_LABEL = "실행 파일:"
+    EXTERNAL_EDITOR_ARGS_LABEL = "인자 형식:"
+    EXTERNAL_EDITOR_ARGS_PLACEHOLDER = "예: --line {line} {file}"
     EXTERNAL_EDITOR_BROWSE = "찾아보기"
     EXTERNAL_EDITOR_FILE_FILTER = "실행 파일 (*.exe);;모든 파일 (*)"
     
@@ -224,6 +227,7 @@ class AppStrings:
     CONTEXT_PREVIEW_LINE_UNIT = "줄"
     CONTEXT_PREVIEW_PLACEHOLDER = "매치 항목을 선택하면 전후 문맥이 표시됩니다."
     CONTEXT_PREVIEW_FILE_UNAVAILABLE = "[파일이 존재하지 않거나 접근할 수 없습니다]"
+    CONTEXT_PREVIEW_LOADING = "문맥을 읽는 중..."
     CONTEXT_PREVIEW_SPECIAL_MATCH = "[특수 데이터 매치]\n\n위치: {}\n내용: {}"
     CONTEXT_PREVIEW_READ_FAILED = "[문맥 미리보기 읽기 실패]\n{}"
     CONTEXT_PREVIEW_SCAN_LIMIT = "[문맥 미리보기 생략]\n대상 줄이 너무 멀어 UI 보호를 위해 읽기를 중단했습니다."
