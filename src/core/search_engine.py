@@ -17,6 +17,29 @@ def _get_adv_setting(key, default):
     return ConfigManager().get_advanced_settings().get(key, default)
 
 
+def _get_rust_search_limits() -> Tuple[int, int, int]:
+    """Return the safety limits supported by the Rust search API.
+
+    Keep the normalization here so every Rust entry point receives the same
+    positive integer values, including when a legacy or hand-edited config is
+    malformed.  The defaults match the Rust API defaults, preserving existing
+    behavior when users have not customized these settings.
+    """
+    settings = ConfigManager().get_advanced_settings()
+
+    def positive_int(key: str, default: int) -> int:
+        try:
+            return max(1, int(settings.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    return (
+        positive_int(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES),
+        positive_int(Constants.CONFIG_KEY_MAX_CHECK_CELLS, Constants.DEFAULT_MAX_CHECK_CELLS),
+        positive_int(Constants.CONFIG_KEY_MAX_JSON_DEPTH, Constants.DEFAULT_MAX_JSON_DEPTH),
+    )
+
+
 def _memory_guard_result(file_path: str) -> Optional[Tuple[str, str]]:
     """Prevent a structured-file parse when the application is already under pressure."""
     try:
@@ -490,16 +513,24 @@ def _fast_existence_check(
         else:
             # 스트리밍 기반 검색 (대용량 일반 파일 등)
             with open(file_path, "r", encoding=encoding, errors="ignore") as f:
+                # 검색어가 두 청크에 걸쳐 있어도 누락되지 않도록 변환된
+                # 이전 청크의 끝부분을 다음 청크에 이어 붙입니다.
+                overlap = ""
+                overlap_size = max(0, len(search_fold) - 1)
                 while True:
                     chunk = f.read(65536)
                     if not chunk:
                         break
-                    
+
                     chunk_nfc = normalize_unicode(chunk)
                     chunk_fold = chunk_nfc.casefold()
-                    if search_fold in chunk_fold:
+                    searchable_fold = overlap + chunk_fold
+                    if search_fold in searchable_fold:
                         return True
-                    
+
+                    if overlap_size:
+                        overlap = searchable_fold[-overlap_size:]
+
                     if "\\" in chunk_nfc:
                         has_non_ascii = any(ord(c) > 127 for c in search_str_nfc)
                         if has_non_ascii and ("\\u" in chunk_nfc or "\\x" in chunk_nfc):
@@ -668,7 +699,15 @@ def search_in_excel_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
+            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            results = sf_engine.search_file(  # type: ignore
+                str(file_path),
+                search_string,
+                mode_bits,
+                max_per_file=max_per_file,
+                max_check_cells=max_check_cells,
+                max_json_depth=max_json_depth,
+            )
             if results:
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
@@ -814,7 +853,15 @@ def search_in_json_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
+            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            results = sf_engine.search_file(  # type: ignore
+                str(file_path),
+                search_string,
+                mode_bits,
+                max_per_file=max_per_file,
+                max_check_cells=max_check_cells,
+                max_json_depth=max_json_depth,
+            )
             if results:
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
@@ -1028,7 +1075,15 @@ def search_in_xml_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            results = sf_engine.search_file(str(file_path), search_string, mode_bits)  # type: ignore
+            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            results = sf_engine.search_file(  # type: ignore
+                str(file_path),
+                search_string,
+                mode_bits,
+                max_per_file=max_per_file,
+                max_check_cells=max_check_cells,
+                max_json_depth=max_json_depth,
+            )
             if results:
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
@@ -1238,7 +1293,16 @@ def search_in_file(
             t_start = time.time()
             # Rust 엔진 검색어에서 BOM이나 제어 문자를 제거하여 매칭 확률을 높입니다.
             clean_pattern = search_string_nfc.replace("\ufeff", "")
-            rust_results = sf_engine.search_file(str(file_path), clean_pattern, mode_bits, stop_event)  # type: ignore
+            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            rust_results = sf_engine.search_file(  # type: ignore
+                str(file_path),
+                clean_pattern,
+                mode_bits,
+                stop_event=stop_event,
+                max_per_file=max_per_file,
+                max_check_cells=max_check_cells,
+                max_json_depth=max_json_depth,
+            )
             t_rust = time.time() - t_start
             if not rust_results:
                 # 인코딩 신뢰도 판단: UTF-8(및 SIG)인 경우 Rust 결과를 신뢰합니다.
@@ -1555,6 +1619,7 @@ def search_directory_fast(
             raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(kwargs.get("special_mode"), exclude_binary=exclude_binary, existence_only=existence_only)
+        max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
         raw_ret = search_dir_func(
             search_paths,
             rust_pattern,
@@ -1567,6 +1632,9 @@ def search_directory_fast(
             kwargs.get("results_callback"),
             kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
             kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
+            max_per_file,
+            max_check_cells,
+            max_json_depth,
         )
         formatted_results = []
         skipped_results = []
@@ -1627,6 +1695,7 @@ def search_files_list_fast(
         # 파일 리스트 검색 시에도 바이너리 제외 옵션을 존중하도록 처리합니다.
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
+        max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
         raw_ret = search_func(
             file_list,
             rust_pattern,
@@ -1637,6 +1706,9 @@ def search_files_list_fast(
             kwargs.get("results_callback"),
             batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
             flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
+            max_per_file=max_per_file,
+            max_check_cells=max_check_cells,
+            max_json_depth=max_json_depth,
         )
         formatted_results = []
         skipped_results = []

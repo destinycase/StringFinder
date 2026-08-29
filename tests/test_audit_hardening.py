@@ -29,7 +29,7 @@ def test_memory_guard_handling_json(tmp_path, monkeypatch):
             self.offset = 0
             self.length = 0
 
-    def mock_search_file(path, _query, mode, stop_event=None):
+    def mock_search_file(path, _query, mode, stop_event=None, **_kwargs):
         return [MockMatch("ERR_MEMORY_GUARD|Size exceeds limit")]
 
     import core.search_engine
@@ -58,7 +58,7 @@ def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch):
             self.offset = 0
             self.length = 0
 
-    def mock_search_file(path, _query, mode_bits, stop_event=None, _progress_cb=None):
+    def mock_search_file(path, _query, mode_bits, stop_event=None, _progress_cb=None, **_kwargs):
         return [MockMatch("ERR_PANIC|Simulated engine crash")]
 
     import core.search_engine

@@ -15,7 +15,7 @@
 
 import os
 
-from core.search_engine import detect_encoding_quickly, search_in_file
+from core.search_engine import _fast_existence_check, detect_encoding_quickly, search_in_file
 
 
 def test_search_extremely_long_line(tmp_path):
@@ -47,6 +47,14 @@ def test_detect_encoding_empty_data():
     empty_data = b""
     enc = detect_encoding_quickly(empty_data)
     assert enc == "utf-8"
+
+
+def test_existence_check_detects_match_across_chunk_boundary(tmp_path):
+    """64KiB 스트리밍 청크 경계에 걸친 검색어도 검출해야 합니다."""
+    test_file = tmp_path / "chunk_boundary.txt"
+    test_file.write_text("a" * 65534 + "needle", encoding="utf-8")
+
+    assert _fast_existence_check(str(test_file), "needle", encoding="utf-8") is True
 
 
 def test_large_file_mixed_case_integrity(tmp_path):
