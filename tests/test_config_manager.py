@@ -154,6 +154,25 @@ def test_log_retention_settings(temp_dir):
         assert retention2.get("max_days") == 14
 
 
+def test_config_accessors_do_not_expose_mutable_state(temp_dir):
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        cm = ConfigManager()
+
+        retention = cm.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
+        retention["max_files"] = 99
+        assert cm.get(Constants.CONFIG_KEY_LOG_RETENTION, {})["max_files"] == 10
+
+        history = cm.get_history()
+        history.append("outside mutation")
+        assert "outside mutation" not in cm.get_history()
+
+        advanced = {Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 42}
+        cm.set_advanced_settings(advanced)
+        advanced[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] = 99
+        assert cm.get_advanced_settings()[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] == 42
+
+
 def test_sanitize_session_name_forbidden_chars(temp_dir):
     """test_sanitize_session_name_forbidden_chars 함수."""
     with patch("os.getenv", return_value=temp_dir):

@@ -387,22 +387,19 @@ class SettingsDialog(QDialog):
         enabled = self.log_retention_combo.itemData(index)
         retention = self.config_manager.get("log_retention", {})
         retention["enabled"] = enabled
-        self.config_manager.config["log_retention"] = retention
-        self.config_manager.save()
+        self.config_manager.set("log_retention", retention)
         self.max_files_spinbox.setEnabled(enabled)
         self.max_days_spinbox.setEnabled(enabled)
 
     def _on_max_files_changed(self, value):
         retention = self.config_manager.get("log_retention", {})
         retention["max_files"] = value
-        self.config_manager.config["log_retention"] = retention
-        self.config_manager.save()
+        self.config_manager.set("log_retention", retention)
 
     def _on_max_days_changed(self, value):
         retention = self.config_manager.get("log_retention", {})
         retention["max_days"] = value
-        self.config_manager.config["log_retention"] = retention
-        self.config_manager.save()
+        self.config_manager.set("log_retention", retention)
 
     def _on_lock_layout_changed(self, index):
         locked = self.lock_layout_combo.itemData(index)

@@ -64,10 +64,12 @@ def get_logger():
             os.makedirs(log_dir, exist_ok=True)
         from datetime import datetime
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = os.path.join(log_dir, f"stringfinder_{timestamp}.log")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        process_id = os.getpid()
+        log_file = os.path.join(log_dir, f"stringfinder_{timestamp}_{process_id}.log")
         try:
-            file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="w")
+            # Windows spawn 자식 프로세스가 같은 시각에 초기화되어도 기존 로그를 덮어쓰지 않습니다.
+            file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a")
             file_handler.setFormatter(formatter)
             _logger_instance.addHandler(file_handler)
         except Exception as e:

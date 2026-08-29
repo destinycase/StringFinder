@@ -49,7 +49,7 @@
 ## 4. 유지보수성 이슈
 
 - `search_engine.py`에 검색·인코딩·특수 파일·Rust 연동 책임이 집중되어 함수 복잡도가 높음
-- `file_helper.py`, `result_view.py`에 mypy 오류 10개
+- `file_helper.py`, `result_view.py`의 mypy 오류 10개
 - 여러 파일의 포맷 및 줄바꿈 일관성 개선 필요
 - Python·Rust 테스트와 정적 검사를 CI에서 자동화할 필요
 
@@ -71,9 +71,24 @@
 - Ruff: 통과
 - Python compileall: 통과
 - Rust unit tests: `9 passed`
-- mypy: 기존 오류 10개 유지 (`file_helper.py`, `result_view.py`)
+- mypy: 통과
 
 ## 7. 권장 후속 순서
+
+### P2 진행 상태
+
+- `ConfigManager` getter/setter와 history 반환값의 방어적 복사 적용
+- 설정 UI의 log retention 직접 수정 제거
+- Windows 예약 장치명 확장자 변형(`CON.txt` 등) 보완
+- 멀티프로세스 로그 파일의 프로세스별 분리 및 append 모드 적용
+- 관련 회귀 테스트 추가
+
+### 현재 남은 작업
+
+- `ConfigManager`의 raw `config`/`defaults` 속성을 private snapshot API로 전환
+- 배포 환경에서 장시간 검색·중지 후 재검색·타임아웃 후 재검색을 반복하는 통합 테스트
+- `search_engine.py`의 기능별 모듈 분리
+- mypy: 현재 전체 소스 통과
 
 1. 장시간 검색, 중지 후 재검색, 타임아웃 후 재검색 통합 테스트를 배포 환경에서도 반복 검증
 

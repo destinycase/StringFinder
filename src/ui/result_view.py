@@ -687,10 +687,10 @@ class ResultView(QWidget):
             text += AppStrings.CONTEXT_PREVIEW_TRUNCATED
         self.context_preview.setPlainText(text)
         selection = QTextEdit.ExtraSelection()
-        selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))
-        selection.format = QTextCharFormat()
-        selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
-        selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))
+        selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))  # type: ignore[attr-defined]
+        selection.format = QTextCharFormat()  # type: ignore[attr-defined]
+        selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)  # type: ignore[attr-defined]
+        selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))  # type: ignore[attr-defined]
         self.context_preview.setExtraSelections([selection])
 
     def _show_context_preview(self, match_item):

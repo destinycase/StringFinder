@@ -6,7 +6,7 @@ import subprocess
 def _split_windows_command_line(arguments: str) -> list[str]:
     """쉘을 실행하지 않고 Windows 명령행 인자를 안전하게 분리합니다."""
     tokens = []
-    current = []
+    current: list[str] = []
     in_quotes = False
     index = 0
 
@@ -60,7 +60,7 @@ def _build_custom_editor_arguments(template: str, file_path: str, line_number: i
     return replaced
 
 
-def open_file(file_path):
+def open_file(file_path: str) -> bool:
     """시스템 기본 프로그램으로 지정된 파일을 실행합니다."""
     try:
         if os.name == "nt":
@@ -158,6 +158,8 @@ def sanitize_filename(name: str, replacement: str = "_") -> str:
         "LPT8",
         "LPT9",
     }
-    if name.upper() in reserved:
+    # Windows 예약 장치명은 확장자가 붙어도 유효하지 않습니다(예: CON.txt).
+    base_name = name.split(".", 1)[0].rstrip(" .")
+    if base_name.upper() in reserved:
         name = f"_{name}"
     return name

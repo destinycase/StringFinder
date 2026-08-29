@@ -266,12 +266,12 @@ class ConfigManager:
     def get(self, key, default=None):
         """설정 값을 조회한다."""
         with self._config_lock:
-            return self.config.get(key, default)
+            return copy.deepcopy(self.config.get(key, default))
 
     def set(self, key, value):
         """설정 값을 변경하고 저장을 예약한다."""
         with self._config_lock:
-            self.config[key] = value
+            self.config[key] = copy.deepcopy(value)
         self.save()
 
     def add_history(self, search_text):
@@ -307,7 +307,7 @@ class ConfigManager:
     def get_history(self):
         with self._config_lock:
             history = self.config.get(Constants.CONFIG_KEY_HISTORY, [])
-            return history if isinstance(history, list) else []
+            return copy.deepcopy(history) if isinstance(history, list) else []
 
     def add_filename_history(self, filename):
         """파일명 필터 히스토리를 최신순으로 추가한다."""
@@ -341,7 +341,7 @@ class ConfigManager:
     def get_filename_history(self):
         with self._config_lock:
             history = self.config.get(Constants.CONFIG_KEY_FILENAME_HISTORY, [])
-            return history if isinstance(history, list) else []
+            return copy.deepcopy(history) if isinstance(history, list) else []
 
     def _normalize_filter_container(self, value, fallback):
         if isinstance(value, dict):
@@ -679,7 +679,7 @@ class ConfigManager:
             current = self.config.get(Constants.CONFIG_KEY_ADVANCED, {})
             if not isinstance(current, dict):
                 current = copy.deepcopy(self.defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
-            current.update(settings_dict)
+            current.update(copy.deepcopy(settings_dict))
             self.config[Constants.CONFIG_KEY_ADVANCED] = current
         self.save()
         

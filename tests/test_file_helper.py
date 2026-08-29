@@ -47,6 +47,10 @@ class TestSanitizeFilename:
     def test_reserved_names_case_insensitive(self):
         assert sanitize_filename("con") == "_con"
 
+    def test_reserved_names_with_extensions(self):
+        for name in ("CON.txt", "nul.log", "COM1.port", "LPT9.device", "CON .txt"):
+            assert sanitize_filename(name).startswith("_")
+
     def test_empty_string(self):
         assert sanitize_filename("") == "untitled"
         assert sanitize_filename("   ") == "untitled"
