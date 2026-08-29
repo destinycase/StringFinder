@@ -118,8 +118,8 @@ def main():
         from sf_utils.config_manager import ConfigManager
 
         config_mgr = ConfigManager()
-        # Use ConfigManager.defaults as SSOT for log_retention defaults.
-        _log_ret_default = config_mgr.defaults.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
+        # Use ConfigManager's detached defaults snapshot as the fallback.
+        _log_ret_default = config_mgr.get_defaults().get(Constants.CONFIG_KEY_LOG_RETENTION, {})
         retention = config_mgr.get(Constants.CONFIG_KEY_LOG_RETENTION, _log_ret_default)
         app_data = os.getenv("APPDATA")
         if app_data:
@@ -149,8 +149,8 @@ def main():
         try:
             config_mgr = ConfigManager()
             config_mgr.stop()
-            # SSOT: use ConfigManager.defaults as fallback
-            _log_ret_default = config_mgr.defaults.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
+            # Use ConfigManager's detached defaults snapshot as the fallback.
+            _log_ret_default = config_mgr.get_defaults().get(Constants.CONFIG_KEY_LOG_RETENTION, {})
             retention = config_mgr.get(Constants.CONFIG_KEY_LOG_RETENTION, _log_ret_default)
             app_data = os.getenv("APPDATA")
             if app_data:

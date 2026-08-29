@@ -182,7 +182,7 @@ class SearchTab(QMainWindow):
         if dock_state:
             self.restoreState(QByteArray.fromHex(dock_state.encode()))
         else:
-            default_dock_state = self.config_manager.defaults.get(Constants.CONFIG_KEY_DOCK_LAYOUT_STATE)
+            default_dock_state = self.config_manager.get_defaults().get(Constants.CONFIG_KEY_DOCK_LAYOUT_STATE)
             if default_dock_state:
                 self.restoreState(QByteArray.fromHex(default_dock_state.encode()))
         self._apply_lock_layout()

@@ -85,9 +85,8 @@
 
 ### 현재 남은 작업
 
-- `ConfigManager`의 raw `config`/`defaults` 속성을 private snapshot API로 전환
-- 배포 환경에서 장시간 검색·중지 후 재검색·타임아웃 후 재검색을 반복하는 통합 테스트
 - `search_engine.py`의 기능별 모듈 분리
+- 배포 환경 반복 테스트를 CI workflow로 자동화
 - mypy: 현재 전체 소스 통과
 
 1. 장시간 검색, 중지 후 재검색, 타임아웃 후 재검색 통합 테스트를 배포 환경에서도 반복 검증

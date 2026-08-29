@@ -57,7 +57,7 @@ class ConfigManager:
         self.CURRENT_CONFIG_VERSION = 2
         self.last_load_error: Optional[Exception] = None
         self.last_save_error: Optional[Exception] = None
-        self.defaults: Dict[str, Any] = {
+        self._defaults: Dict[str, Any] = {
             Constants.CONFIG_KEY_VERSION: self.CURRENT_CONFIG_VERSION,
             Constants.CONFIG_KEY_FILTERS: {
                 Constants.CONFIG_KEY_FOLDERS: [],
@@ -105,13 +105,34 @@ class ConfigManager:
         self._config_lock = threading.RLock()
         self._save_lock = threading.Lock()
         self.last_load_error = None  # _load() 호출 전 에러 상태 초기화
-        self.config: Dict[str, Any] = self._load()
+        self._config: Dict[str, Any] = self._load()
         self.sessions_dir: str = os.path.join(self.config_dir, Constants.SESSIONS_DIRNAME)
         os.makedirs(self.sessions_dir, exist_ok=True)
         # 교착 상태를 방지하기 위해 반드시 _config_lock보다 _save_lock을 먼저 획득해야 합니다.
         self._save_timer = None
         self._save_debounce_time = 0.5
         self._initialized = True
+
+    @property
+    def config(self) -> Dict[str, Any]:
+        """Return a detached configuration snapshot for compatibility callers."""
+        return self.get_config_snapshot()
+
+    @property
+    def defaults(self) -> Dict[str, Any]:
+        """Return a detached defaults snapshot for compatibility callers."""
+        with self._config_lock:
+            return copy.deepcopy(self._defaults)
+
+    def get_config_snapshot(self) -> Dict[str, Any]:
+        """Return configuration data without exposing internal mutable state."""
+        with self._config_lock:
+            return copy.deepcopy(self._config)
+
+    def get_defaults(self) -> Dict[str, Any]:
+        """Return default configuration data without exposing internal mutable state."""
+        with self._config_lock:
+            return copy.deepcopy(self._defaults)
 
     def get_column_widths(self, table_name):
         """테이블 이름에 해당하는 저장된 컬럼 너비 목록을 반환한다."""
@@ -136,7 +157,7 @@ class ConfigManager:
                     data = json.load(f)
                     if not isinstance(data, dict):
                         logger.warning(AppStrings.LOG_CFG_INVALID_VER)
-                        return copy.deepcopy(self.defaults)
+                        return copy.deepcopy(self._defaults)
                     loaded_version = data.get(Constants.CONFIG_KEY_VERSION, 0)
                     if loaded_version < self.CURRENT_CONFIG_VERSION:
                         logger.info(AppStrings.LOG_CFG_MIGRATION.format(loaded_version, self.CURRENT_CONFIG_VERSION))
@@ -145,7 +166,7 @@ class ConfigManager:
                         logger.warning(
                             AppStrings.LOG_CFG_MIGRATE_WARN.format(loaded_version, self.CURRENT_CONFIG_VERSION)
                         )
-                    merged = copy.deepcopy(self.defaults)
+                    merged = copy.deepcopy(self._defaults)
                     for k, v in data.items():
                         if k in merged and v is not None:
                             if isinstance(merged[k], list) and not isinstance(v, list):
@@ -163,7 +184,7 @@ class ConfigManager:
             except Exception as e:
                 self.last_load_error = e
                 logger.error(AppStrings.LOG_CFG_UNEXPECTED_LOAD_ERROR.format(e))
-        return copy.deepcopy(self.defaults)
+        return copy.deepcopy(self._defaults)
 
     def _migrate_config(self, config: dict, from_version: int) -> dict:
         """구버전 설정을 현재 버전 스키마로 마이그레이션한다."""
@@ -217,7 +238,7 @@ class ConfigManager:
             
             # 스냅샷 촬영을 위해 config_lock만 아주 짧게 획득
             with self._config_lock:
-                config_snapshot = copy.deepcopy(self.config)
+                config_snapshot = copy.deepcopy(self._config)
 
             for attempt in range(5):
                 try:
@@ -266,12 +287,12 @@ class ConfigManager:
     def get(self, key, default=None):
         """설정 값을 조회한다."""
         with self._config_lock:
-            return copy.deepcopy(self.config.get(key, default))
+            return copy.deepcopy(self._config.get(key, default))
 
     def set(self, key, value):
         """설정 값을 변경하고 저장을 예약한다."""
         with self._config_lock:
-            self.config[key] = copy.deepcopy(value)
+            self._config[key] = copy.deepcopy(value)
         self.save()
 
     def add_history(self, search_text):
@@ -279,19 +300,19 @@ class ConfigManager:
         if not search_text:
             return
         with self._config_lock:
-            history = self.config.get(Constants.CONFIG_KEY_HISTORY)
+            history = self._config.get(Constants.CONFIG_KEY_HISTORY)
             if not isinstance(history, list):
                 history = []
-                self.config[Constants.CONFIG_KEY_HISTORY] = history
+                self._config[Constants.CONFIG_KEY_HISTORY] = history
             if search_text in history:
                 history.remove(search_text)
             history.insert(0, search_text)
-            self.config[Constants.CONFIG_KEY_HISTORY] = history[:20]
+            self._config[Constants.CONFIG_KEY_HISTORY] = history[:20]
         self.save()
 
     def remove_history_item(self, text):
         with self._config_lock:
-            history = self.config.get(Constants.CONFIG_KEY_HISTORY, [])
+            history = self._config.get(Constants.CONFIG_KEY_HISTORY, [])
             if isinstance(history, list) and text in history:
                 history.remove(text)
             else:
@@ -301,12 +322,12 @@ class ConfigManager:
 
     def clear_history(self):
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_HISTORY] = []
+            self._config[Constants.CONFIG_KEY_HISTORY] = []
         self.save()
 
     def get_history(self):
         with self._config_lock:
-            history = self.config.get(Constants.CONFIG_KEY_HISTORY, [])
+            history = self._config.get(Constants.CONFIG_KEY_HISTORY, [])
             return copy.deepcopy(history) if isinstance(history, list) else []
 
     def add_filename_history(self, filename):
@@ -314,19 +335,19 @@ class ConfigManager:
         if not filename:
             return
         with self._config_lock:
-            history = self.config.get(Constants.CONFIG_KEY_FILENAME_HISTORY)
+            history = self._config.get(Constants.CONFIG_KEY_FILENAME_HISTORY)
             if not isinstance(history, list):
                 history = []
-                self.config[Constants.CONFIG_KEY_FILENAME_HISTORY] = history
+                self._config[Constants.CONFIG_KEY_FILENAME_HISTORY] = history
             if filename in history:
                 history.remove(filename)
             history.insert(0, filename)
-            self.config[Constants.CONFIG_KEY_FILENAME_HISTORY] = history[:20]
+            self._config[Constants.CONFIG_KEY_FILENAME_HISTORY] = history[:20]
         self.save()
 
     def remove_filename_history_item(self, text):
         with self._config_lock:
-            history = self.config.get(Constants.CONFIG_KEY_FILENAME_HISTORY, [])
+            history = self._config.get(Constants.CONFIG_KEY_FILENAME_HISTORY, [])
             if isinstance(history, list) and text in history:
                 history.remove(text)
             else:
@@ -335,12 +356,12 @@ class ConfigManager:
 
     def clear_filename_history(self):
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_FILENAME_HISTORY] = []
+            self._config[Constants.CONFIG_KEY_FILENAME_HISTORY] = []
         self.save()
 
     def get_filename_history(self):
         with self._config_lock:
-            history = self.config.get(Constants.CONFIG_KEY_FILENAME_HISTORY, [])
+            history = self._config.get(Constants.CONFIG_KEY_FILENAME_HISTORY, [])
             return copy.deepcopy(history) if isinstance(history, list) else []
 
     def _normalize_filter_container(self, value, fallback):
@@ -354,9 +375,9 @@ class ConfigManager:
 
     def _ensure_filters_dict(self):
         # 경쟁 조건을 방지하기 위해 단일 설정 잠금 블록 내에서 처리합니다.
-        default_filters = copy.deepcopy(self.defaults.get(Constants.CONFIG_KEY_FILTERS, {}))
+        default_filters = copy.deepcopy(self._defaults.get(Constants.CONFIG_KEY_FILTERS, {}))
         with self._config_lock:
-            filters = self.config.get(Constants.CONFIG_KEY_FILTERS)
+            filters = self._config.get(Constants.CONFIG_KEY_FILTERS)
             if not isinstance(filters, dict):
                 filters = default_filters
             else:
@@ -373,24 +394,24 @@ class ConfigManager:
             filters[Constants.CONFIG_KEY_FILENAMES] = self._normalize_filter_container(
                 filters.get(Constants.CONFIG_KEY_FILENAMES), filenames_default
             )
-            self.config[Constants.CONFIG_KEY_FILTERS] = filters
+            self._config[Constants.CONFIG_KEY_FILTERS] = filters
         return filters
 
 
     def update_filters(self, folders, extensions, filenames=None):
         filters = self._ensure_filters_dict()
         filters[Constants.CONFIG_KEY_FOLDERS] = self._normalize_filter_container(
-            folders, self.defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_FOLDERS]
+            folders, self._defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_FOLDERS]
         )
         filters[Constants.CONFIG_KEY_EXTENSIONS] = self._normalize_filter_container(
-            extensions, self.defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_EXTENSIONS]
+            extensions, self._defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_EXTENSIONS]
         )
         if filenames is not None:
             filters[Constants.CONFIG_KEY_FILENAMES] = self._normalize_filter_container(
-                filenames, self.defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_FILENAMES]
+            filenames, self._defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_FILENAMES]
             )
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_FILTERS] = filters
+            self._config[Constants.CONFIG_KEY_FILTERS] = filters
         self.save()
 
     def get_filters(self):
@@ -399,50 +420,50 @@ class ConfigManager:
     def set_window_state(self, geometry, state):
         """메인 윈도우 지오메트리/상태를 저장한다."""
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_GEOMETRY] = geometry.toHex().data().decode()
-            self.config[Constants.CONFIG_KEY_WINDOW_STATE] = state.toHex().data().decode()
+            self._config[Constants.CONFIG_KEY_GEOMETRY] = geometry.toHex().data().decode()
+            self._config[Constants.CONFIG_KEY_WINDOW_STATE] = state.toHex().data().decode()
         self.save()
 
     def get_window_state(self):
         with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_GEOMETRY), self.config.get(Constants.CONFIG_KEY_WINDOW_STATE)
+            return self._config.get(Constants.CONFIG_KEY_GEOMETRY), self._config.get(Constants.CONFIG_KEY_WINDOW_STATE)
 
     def set_splitter_states(self, main_state, result_state, filter_state=None):
         with self._config_lock:
             if main_state:
-                self.config[Constants.CONFIG_KEY_MAIN_SPLITTER_STATE] = main_state.toHex().data().decode()
+                self._config[Constants.CONFIG_KEY_MAIN_SPLITTER_STATE] = main_state.toHex().data().decode()
             if result_state:
-                self.config[Constants.CONFIG_KEY_RESULT_SPLITTER_STATE] = result_state.toHex().data().decode()
+                self._config[Constants.CONFIG_KEY_RESULT_SPLITTER_STATE] = result_state.toHex().data().decode()
             if filter_state:
-                self.config[Constants.CONFIG_KEY_FILTER_SPLITTER_STATE] = filter_state.toHex().data().decode()
+                self._config[Constants.CONFIG_KEY_FILTER_SPLITTER_STATE] = filter_state.toHex().data().decode()
         self.save()
 
     def get_dock_state(self):
         """저장된 도크 레이아웃 상태를 반환한다."""
         with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_DOCK_LAYOUT_STATE)
+            return self._config.get(Constants.CONFIG_KEY_DOCK_LAYOUT_STATE)
 
     def get_lock_dock_layout(self):
         """도크 레이아웃 잠금 여부를 반환한다."""
         with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT, False)
+            return self._config.get(Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT, False)
 
     def set_lock_dock_layout(self, lock):
         """도크 레이아웃 잠금 여부를 설정한다."""
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT] = lock
+            self._config[Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT] = lock
         self.save()
 
     def get_tab_order(self):
         """저장된 탭 순서를 반환한다."""
         with self._config_lock:
-            tabs = self.config.get(Constants.CONFIG_KEY_TABS, [])
+            tabs = self._config.get(Constants.CONFIG_KEY_TABS, [])
             return copy.deepcopy(tabs) if isinstance(tabs, list) else []
 
     def set_tab_order(self, tabs):
         """탭 순서를 저장한다."""
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_TABS] = list(tabs) if isinstance(tabs, list) else []
+            self._config[Constants.CONFIG_KEY_TABS] = list(tabs) if isinstance(tabs, list) else []
         self.save()
 
     def _sanitize_session_name(self, name: str) -> str:
@@ -589,18 +610,18 @@ class ConfigManager:
     def get_splitter_states(self):
         with self._config_lock:
             return (
-                self.config.get(Constants.CONFIG_KEY_MAIN_SPLITTER_STATE),
-                self.config.get(Constants.CONFIG_KEY_RESULT_SPLITTER_STATE),
-                self.config.get(Constants.CONFIG_KEY_FILTER_SPLITTER_STATE),
+                self._config.get(Constants.CONFIG_KEY_MAIN_SPLITTER_STATE),
+                self._config.get(Constants.CONFIG_KEY_RESULT_SPLITTER_STATE),
+                self._config.get(Constants.CONFIG_KEY_FILTER_SPLITTER_STATE),
             )
 
     def get_theme(self):
         with self._config_lock:
-            return self.config.get(Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME)
+            return self._config.get(Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME)
 
     def set_theme(self, theme):
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_THEME] = theme
+            self._config[Constants.CONFIG_KEY_THEME] = theme
         self.save()
 
     def clear_all_logs(self):
@@ -637,7 +658,7 @@ class ConfigManager:
             except OSError as e:
                 logger.error(AppStrings.LOG_CFG_DELETE_FAIL_MSG.format(e))
         with self._config_lock:
-            self.config = copy.deepcopy(self.defaults)
+            self._config = copy.deepcopy(self._defaults)
         self.save()
         logger.info(AppStrings.LOG_CFG_ALL_DATA_CLEARED)
 
@@ -645,19 +666,19 @@ class ConfigManager:
     def get_exclude_binary(self) -> bool:
         """바이너리 파일 제외 옵션 값을 반환한다."""
         with self._config_lock:
-            return bool(self.config.get(Constants.CONFIG_KEY_EXCLUDE_BINARY, True))
+            return bool(self._config.get(Constants.CONFIG_KEY_EXCLUDE_BINARY, True))
 
     def set_exclude_binary(self, value: bool):
         """바이너리 파일 제외 옵션 값을 설정하고 저장한다."""
         with self._config_lock:
-            self.config[Constants.CONFIG_KEY_EXCLUDE_BINARY] = value
+            self._config[Constants.CONFIG_KEY_EXCLUDE_BINARY] = value
         self.save()
 
     def get_advanced_settings(self) -> dict[str, Any]:
         """고급 설정 딕셔너리를 반환한다. (누락된 키는 기본값으로 채운다)"""
         with self._config_lock:
-            advanced = self.config.get(Constants.CONFIG_KEY_ADVANCED, {})
-            defaults = self.defaults.get(Constants.CONFIG_KEY_ADVANCED, {})
+            advanced = self._config.get(Constants.CONFIG_KEY_ADVANCED, {})
+            defaults = self._defaults.get(Constants.CONFIG_KEY_ADVANCED, {})
             result = copy.deepcopy(defaults)
             if isinstance(advanced, dict):
                 result.update(advanced)
@@ -676,16 +697,16 @@ class ConfigManager:
     def set_advanced_settings(self, settings_dict: dict):
         """고급 설정을 업데이트한다."""
         with self._config_lock:
-            current = self.config.get(Constants.CONFIG_KEY_ADVANCED, {})
+            current = self._config.get(Constants.CONFIG_KEY_ADVANCED, {})
             if not isinstance(current, dict):
-                current = copy.deepcopy(self.defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
+                current = copy.deepcopy(self._defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
             current.update(copy.deepcopy(settings_dict))
-            self.config[Constants.CONFIG_KEY_ADVANCED] = current
+            self._config[Constants.CONFIG_KEY_ADVANCED] = current
         self.save()
         
     def reset_advanced_settings(self) -> dict[str, Any]:
         """고급 설정을 초기화하고 반환한다."""
         with self._config_lock:
-            defaults = copy.deepcopy(self.defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
-            self.config[Constants.CONFIG_KEY_ADVANCED] = defaults
+            defaults = copy.deepcopy(self._defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
+            self._config[Constants.CONFIG_KEY_ADVANCED] = defaults
             return defaults  # type: ignore

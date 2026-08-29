@@ -80,7 +80,7 @@ def test_splitter_states(temp_dir):
         ConfigManager._instance = None
         cm = ConfigManager()
 
-        cm.config["main_splitter_state"] = "aabbcc"
+        cm.set("main_splitter_state", "aabbcc")
         cm.save_immediately()
 
         states = cm.get_splitter_states()
@@ -124,7 +124,7 @@ def test_new_settings(temp_dir):
 
         assert cm.config.get("lock_dock_layout") is False
 
-        cm.config["lock_dock_layout"] = True
+        cm.set_lock_dock_layout(True)
         cm.save_immediately()
 
         ConfigManager._instance = None
@@ -144,7 +144,7 @@ def test_log_retention_settings(temp_dir):
 
         retention["max_files"] = 50
         retention["max_days"] = 14
-        cm.config["log_retention"] = retention
+        cm.set("log_retention", retention)
         cm.save_immediately()
 
         ConfigManager._instance = None
@@ -162,6 +162,14 @@ def test_config_accessors_do_not_expose_mutable_state(temp_dir):
         retention = cm.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
         retention["max_files"] = 99
         assert cm.get(Constants.CONFIG_KEY_LOG_RETENTION, {})["max_files"] == 10
+
+        config_snapshot = cm.config
+        config_snapshot[Constants.CONFIG_KEY_LOG_RETENTION]["max_files"] = 77
+        assert cm.get(Constants.CONFIG_KEY_LOG_RETENTION, {})["max_files"] == 10
+
+        defaults_snapshot = cm.defaults
+        defaults_snapshot[Constants.CONFIG_KEY_LOG_RETENTION]["max_files"] = 66
+        assert cm.get_defaults()[Constants.CONFIG_KEY_LOG_RETENTION]["max_files"] == 10
 
         history = cm.get_history()
         history.append("outside mutation")
@@ -280,7 +288,7 @@ def test_update_filters_does_not_alias_defaults(temp_dir):
         ConfigManager._instance = None
         config = ConfigManager()
 
-        config.config["filters"] = "broken"
+        config.set("filters", "broken")
         folders = {"C:/Project": True}
         extensions = {"special_mode": "Normal", "extensions": {"txt": True}}
         filenames = {"filename_filter": "needle", "filenames": {"target.txt": True}}
@@ -290,7 +298,9 @@ def test_update_filters_does_not_alias_defaults(temp_dir):
         folders["C:/Project"] = False
         assert config.config["filters"]["folders"]["C:/Project"] is True
 
-        config.config["filters"]["folders"]["C:/Project"] = False
+        filters = config.get_filters()
+        filters["folders"]["C:/Project"] = False
+        config.set("filters", filters)
         assert config.defaults["filters"]["folders"] == []
 
 
@@ -299,7 +309,7 @@ def test_get_filters_self_heals_invalid_structure(temp_dir):
         ConfigManager._instance = None
         config = ConfigManager()
 
-        config.config["filters"] = "invalid-type"
+        config.set("filters", "invalid-type")
         healed = config.get_filters()
 
         assert isinstance(healed, dict)
