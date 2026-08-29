@@ -40,8 +40,8 @@ def test_result_context_preview_is_bounded_and_highlights_match(search_tab_fixtu
     assert "needle" in panel.context_preview.toPlainText()
     assert "▶" in panel.context_preview.toPlainText()
     assert panel.context_preview.extraSelections()
-    assert "       1 | one" in panel.context_preview.toPlainText()
-    assert "      11 | eleven" in panel.context_preview.toPlainText()
+    assert "      1 | one" in panel.context_preview.toPlainText()
+    assert "     11 | eleven" in panel.context_preview.toPlainText()
 
 
 def test_context_preview_line_controls_are_configurable(search_tab_fixture, qtbot, tmp_path):
@@ -64,15 +64,15 @@ def test_context_preview_line_controls_are_configurable(search_tab_fixture, qtbo
 
     panel.context_before_combo.setCurrentText("2")
     panel.context_after_combo.setCurrentText("3")
-    qtbot.waitUntil(lambda: "       4 | four" in panel.context_preview.toPlainText(), timeout=2000)
+    qtbot.waitUntil(lambda: "      4 | four" in panel.context_preview.toPlainText(), timeout=2000)
     preview = panel.context_preview.toPlainText()
 
     assert search_tab_fixture.config_manager.get(Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES) == 2
     assert search_tab_fixture.config_manager.get(Constants.CONFIG_KEY_CONTEXT_AFTER_LINES) == 3
-    assert "       3 | three" not in preview
-    assert "       4 | four" in preview
-    assert "       9 | nine" in preview
-    assert "      10 | ten" not in preview
+    assert "      3 | three" not in preview
+    assert "      4 | four" in preview
+    assert "      9 | nine" in preview
+    assert "     10 | ten" not in preview
 
     restored_panel = ResultView(None, search_tab_fixture.config_manager)
     qtbot.addWidget(restored_panel)

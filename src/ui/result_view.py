@@ -4,7 +4,16 @@ import sys
 import threading
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
 from PySide6.QtCore import QObject, QRunnable, QThreadPool
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut, QTextCharFormat, QTextCursor
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QKeySequence,
+    QShortcut,
+    QTextCharFormat,
+    QTextCursor,
+    QTextFormat,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -669,7 +678,7 @@ class ResultView(QWidget):
             if len(line) > self.CONTEXT_MAX_LINE_CHARS:
                 line = line[: self.CONTEXT_MAX_LINE_CHARS]
                 truncated = True
-            marker = "▶ " if line_number == target_line else "  "
+            marker = "▶" if line_number == target_line else " "
             if line_number == target_line:
                 target_block = block
             rendered.append(f"{marker}{line_number:>6} | {line}")
@@ -679,8 +688,8 @@ class ResultView(QWidget):
         self.context_preview.setPlainText(text)
         selection = QTextEdit.ExtraSelection()
         selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))
-        selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
         selection.format = QTextCharFormat()
+        selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
         selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))
         self.context_preview.setExtraSelections([selection])
 

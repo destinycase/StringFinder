@@ -3,7 +3,7 @@
 StringFinder는 대용량 파일에서 문자열을 빠르게 탐색하기 위한 Windows 데스크톱 도구입니다.
 UI는 Python(PySide6), 검색 코어는 Python + Rust(`sf_engine`) 하이브리드 구조를 사용합니다.
 
-현재 버전: **5.6.3**
+현재 버전: **5.6.4**
 
 ---
 
