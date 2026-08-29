@@ -365,7 +365,7 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
         bits |= Constants.RUST_MODE_XML
     if Constants.MODE_JSON in special_mode:
         bits |= Constants.RUST_MODE_JSON
-    
+
     if Constants.MODE_EXACT in special_mode:
         bits |= Constants.RUST_MODE_EXACT
     return bits
