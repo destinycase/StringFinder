@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.benchmarks/
 .env
 .venv
 env/
@@ -22,6 +25,9 @@ target/
 dist/
 build/
 *.egg-info/
+coverage.xml
+.coverage
+htmlcov/
 
 # Local data
 data/
@@ -29,3 +35,7 @@ data/
 # Logs and History
 *.log
 benchmark_history.md
+
+# Generated Rust metadata and rotated development binaries
+src/rust_engine/metadata.json
+src/rust_engine/*.pyd.old_*
