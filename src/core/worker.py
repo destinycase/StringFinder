@@ -59,10 +59,12 @@ class GlobalExecutor:
     _instance = None
     _executor = None
     _is_active = False
+    _owner = None
+    _additional_executors: dict[int, tuple[ProcessPoolExecutor, Any]] = {}
     _lock = threading.Lock()
 
     @classmethod
-    def get_executor(cls, total_tasks: Optional[int] = None):
+    def get_executor(cls, total_tasks: Optional[int] = None, owner=None):
         with cls._lock:
             # 실행기 상태 확인을 위해 피클링 불가능한 더미 작업을 제출하지 않습니다.
             # 실행기 생명주기는 이 클래스가 관리하므로 명시적인 상태 플래그로 추적합니다.
@@ -81,6 +83,26 @@ class GlobalExecutor:
                 logger.debug(AppStrings.LOG_WKR_ADAPTIVE_POLICY_INFO.format(cpu_count, max_workers))
                 cls._executor = ProcessPoolExecutor(max_workers=max_workers)
                 cls._is_active = True
+                cls._owner = owner
+            elif owner is not None and cls._owner is None:
+                cls._owner = owner
+            elif owner is not None and cls._owner is not owner:
+                for key, (additional_executor, additional_owner) in cls._additional_executors.items():
+                    if additional_owner is None:
+                        cls._additional_executors[key] = (additional_executor, owner)
+                        return additional_executor
+                cpu_count = multiprocessing.cpu_count()
+                if cpu_count <= 4:
+                    max_workers = max(1, cpu_count - 1)
+                elif cpu_count <= 8:
+                    max_workers = cpu_count
+                else:
+                    max_workers = max(8, int(cpu_count * 0.75))
+                if total_tasks is not None:
+                    max_workers = min(max_workers, total_tasks)
+                additional_executor = ProcessPoolExecutor(max_workers=max_workers)
+                cls._additional_executors[id(additional_executor)] = (additional_executor, owner)
+                return additional_executor
             return cls._executor
 
     @classmethod
@@ -90,20 +112,78 @@ class GlobalExecutor:
             if cls._executor is executor:
                 cls._executor = None
                 cls._is_active = False
+                cls._owner = None
+                return
+            cls._additional_executors.pop(id(executor), None)
+
+    @classmethod
+    def release(cls, executor, owner=None) -> None:
+        """Release a worker lease while keeping a healthy executor reusable."""
+        with cls._lock:
+            if cls._executor is executor and (owner is None or cls._owner is owner):
+                cls._owner = None
+                return
+            key = id(executor)
+            additional = cls._additional_executors.get(key)
+            if additional and (owner is None or additional[1] is owner):
+                cls._additional_executors[key] = (executor, None)
+
+    @staticmethod
+    def _snapshot_processes(executor) -> list[Any]:
+        """Capture worker processes before executor.shutdown() drops its references."""
+        process_map = getattr(executor, "_processes", None)
+        if not isinstance(process_map, dict):
+            return []
+        return list(process_map.values())
+
+    @staticmethod
+    def _terminate_processes(processes: list[Any]) -> None:
+        """Terminate and reap ProcessPool workers after cooperative cancellation."""
+        for process in processes:
+            try:
+                if process.is_alive():
+                    process.terminate()
+            except Exception as e:
+                logger.debug("Process termination skipped: %s", e)
+
+        for process in processes:
+            try:
+                process.join(timeout=2.0)
+                if process.is_alive() and hasattr(process, "kill"):
+                    process.kill()
+                    process.join(timeout=2.0)
+            except Exception as e:
+                logger.debug("Process reap skipped: %s", e)
+
+    @classmethod
+    def shutdown_executor(cls, executor, wait=False, cancel_futures=True, terminate=False) -> None:
+        """Shutdown one executor and optionally force-reap its worker processes."""
+        if executor is None:
+            return
+        processes = cls._snapshot_processes(executor)
+        try:
+            logger.debug("Shutting down executor (wait=%s, terminate=%s)", wait, terminate)
+            executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+        except Exception as e:
+            logger.error(AppStrings.LOG_EXECUTOR_SHUTDOWN_ERROR.format(e))
+        finally:
+            if terminate and processes:
+                cls._terminate_processes(processes)
 
     @classmethod
     def shutdown(cls, wait=True, cancel_futures=True):
         """전역 실행기를 종료합니다. wait=True를 기본값으로 하여 서브 프로세스가 확실히 닫히게 합니다."""
         with cls._lock:
-            if cls._executor:
-                try:
-                    logger.debug(f"Shutting down GlobalExecutor (wait={wait})")
-                    cls._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
-                except Exception as e:
-                    logger.error(AppStrings.LOG_EXECUTOR_SHUTDOWN_ERROR.format(e))
-                finally:
-                    cls._executor = None
-                    cls._is_active = False
+            executor = cls._executor
+            additional_executors = [item[0] for item in cls._additional_executors.values()]
+            cls._executor = None
+            cls._is_active = False
+            cls._owner = None
+            cls._additional_executors = {}
+        if executor is not None:
+            cls.shutdown_executor(executor, wait=wait, cancel_futures=cancel_futures)
+        for additional_executor in additional_executors:
+            cls.shutdown_executor(additional_executor, wait=wait, cancel_futures=cancel_futures)
 
 
 class WorkerSignals(QObject):
@@ -395,9 +475,11 @@ class SearchWorker(QRunnable):
         if current_batch:
             batches.append(current_batch)
 
-        self._executor = GlobalExecutor.get_executor(total_tasks=len(batches))
+        self._executor = GlobalExecutor.get_executor(total_tasks=len(batches), owner=self)
         executor = self._executor
         if not self.is_running.is_set():
+            GlobalExecutor.release(executor, owner=self)
+            self._executor = None
             return (0, 0, 0)
             
         # 멀티프로세싱 직렬화 문제를 방지하기 위해 최상위 모듈 함수를 직접 참조합니다.
@@ -446,13 +528,21 @@ class SearchWorker(QRunnable):
 
         found_count = total_matches = skipped_count = completed = 0
         last_logged_percent = -1
-        loop_start_time = time.time()
+        timeout_setting = _get_adv_setting(
+            Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG,
+            Constants.DEFAULT_TIMEOUT_WORKER_HANG,
+        )
+        try:
+            timeout_seconds = float(timeout_setting)
+        except (TypeError, ValueError):
+            timeout_seconds = float(Constants.DEFAULT_TIMEOUT_WORKER_HANG)
+        self._last_progress_time = time.monotonic()
         try:
             while pending_futures:
                 # 작업 지연이 임계치를 초과할 경우 강제로 종료하여 시스템 응답성을 유지합니다.
-                if (time.time() - loop_start_time) > _get_adv_setting(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, Constants.DEFAULT_TIMEOUT_WORKER_HANG):
-                    err_msg = AppStrings.ERROR_LIMIT_REACHED.format(f"Timeout {_get_adv_setting(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, Constants.DEFAULT_TIMEOUT_WORKER_HANG)}s")
-                    logger.error(AppStrings.LOG_WKR_HANG_TIMEOUT.format(_get_adv_setting(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, Constants.DEFAULT_TIMEOUT_WORKER_HANG)))
+                if (time.monotonic() - self._last_progress_time) > timeout_seconds:
+                    err_msg = AppStrings.ERROR_LIMIT_REACHED.format(f"Timeout {timeout_seconds}s")
+                    logger.error(AppStrings.LOG_WKR_HANG_TIMEOUT.format(timeout_seconds))
                     
                     # 타임아웃 발생 시 모든 하위 프로세스에 즉시 중지 신호를 보냅니다.
                     if self.stop_event:
@@ -462,7 +552,12 @@ class SearchWorker(QRunnable):
                     if self._executor:
                         executor = self._executor
                         try:
-                            executor.shutdown(wait=False, cancel_futures=True)
+                            GlobalExecutor.shutdown_executor(
+                                executor,
+                                wait=False,
+                                cancel_futures=True,
+                                terminate=True,
+                            )
                         finally:
                             GlobalExecutor.invalidate(executor)
                             self._executor = None
@@ -476,9 +571,12 @@ class SearchWorker(QRunnable):
                     for f in list(pending_futures):
                         f.cancel()
                     break
-                done, _ = wait(pending_futures, timeout=1.0, return_when=FIRST_COMPLETED)
+                remaining_timeout = timeout_seconds - (time.monotonic() - self._last_progress_time)
+                wait_timeout = min(1.0, max(0.0, remaining_timeout))
+                done, _ = wait(pending_futures, timeout=wait_timeout, return_when=FIRST_COMPLETED)
                 if not done:
                     continue
+                self._last_progress_time = time.monotonic()
                 for future in done:
                     pending_futures.remove(future)
                     try:
@@ -531,6 +629,7 @@ class SearchWorker(QRunnable):
         finally:
             # 로컬 참조를 해제하고 실행기의 생명주기 관리는 전역적으로 관리됩니다.
             # 다음 검색 시 _run_batch_search에서 새 Executor 할당.
+            GlobalExecutor.release(executor, owner=self)
             self._executor = None
         return found_count, total_matches, skipped_count
 
@@ -541,7 +640,12 @@ class SearchWorker(QRunnable):
         if hasattr(self, "_executor") and self._executor:
             executor = self._executor
             try:
-                executor.shutdown(wait=False, cancel_futures=True)
+                GlobalExecutor.shutdown_executor(
+                    executor,
+                    wait=False,
+                    cancel_futures=True,
+                    terminate=True,
+                )
             except Exception as e:
                 logger.debug(AppStrings.LOG_WKR_EXECUTOR_SHUTDOWN_ERROR.format(e))
             finally:

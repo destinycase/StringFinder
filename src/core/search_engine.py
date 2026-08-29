@@ -17,7 +17,7 @@ def _get_adv_setting(key, default):
     return ConfigManager().get_advanced_settings().get(key, default)
 
 
-def _get_rust_search_limits() -> Tuple[int, int, int]:
+def _get_rust_search_limits() -> Tuple[int, int, int, int]:
     """Return the safety limits supported by the Rust search API.
 
     Keep the normalization here so every Rust entry point receives the same
@@ -33,10 +33,15 @@ def _get_rust_search_limits() -> Tuple[int, int, int]:
         except (TypeError, ValueError):
             return default
 
+    max_json_size_mb = min(
+        positive_int(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB),
+        Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB,
+    )
     return (
         positive_int(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES),
         positive_int(Constants.CONFIG_KEY_MAX_CHECK_CELLS, Constants.DEFAULT_MAX_CHECK_CELLS),
         positive_int(Constants.CONFIG_KEY_MAX_JSON_DEPTH, Constants.DEFAULT_MAX_JSON_DEPTH),
+        max_json_size_mb * 1024 * 1024,
     )
 
 
@@ -66,7 +71,7 @@ try:
     from rust_engine import sf_engine  # type: ignore
     import hashlib
 
-    REQUIRED_API_VERSION = 5
+    REQUIRED_API_VERSION = 6
     engine_version = getattr(sf_engine, "API_VERSION", 0)
     if engine_version < REQUIRED_API_VERSION:
         _err_msg = f"API 버전 불일치: 필요={REQUIRED_API_VERSION}, 실제={engine_version}"
@@ -699,7 +704,7 @@ def search_in_excel_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
             results = sf_engine.search_file(  # type: ignore
                 str(file_path),
                 search_string,
@@ -707,6 +712,7 @@ def search_in_excel_special(
                 max_per_file=max_per_file,
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
             )
             if results:
                 if existence_only:
@@ -853,7 +859,7 @@ def search_in_json_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
             results = sf_engine.search_file(  # type: ignore
                 str(file_path),
                 search_string,
@@ -861,6 +867,7 @@ def search_in_json_special(
                 max_per_file=max_per_file,
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
             )
             if results:
                 if existence_only:
@@ -1075,7 +1082,7 @@ def search_in_xml_special(
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
                 mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
-            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
             results = sf_engine.search_file(  # type: ignore
                 str(file_path),
                 search_string,
@@ -1083,6 +1090,7 @@ def search_in_xml_special(
                 max_per_file=max_per_file,
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
             )
             if results:
                 if existence_only:
@@ -1293,7 +1301,7 @@ def search_in_file(
             t_start = time.time()
             # Rust 엔진 검색어에서 BOM이나 제어 문자를 제거하여 매칭 확률을 높입니다.
             clean_pattern = search_string_nfc.replace("\ufeff", "")
-            max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+            max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
             rust_results = sf_engine.search_file(  # type: ignore
                 str(file_path),
                 clean_pattern,
@@ -1302,6 +1310,7 @@ def search_in_file(
                 max_per_file=max_per_file,
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
             )
             t_rust = time.time() - t_start
             if not rust_results:
@@ -1619,7 +1628,7 @@ def search_directory_fast(
             raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(kwargs.get("special_mode"), exclude_binary=exclude_binary, existence_only=existence_only)
-        max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+        max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
         raw_ret = search_dir_func(
             search_paths,
             rust_pattern,
@@ -1635,6 +1644,7 @@ def search_directory_fast(
             max_per_file,
             max_check_cells,
             max_json_depth,
+            max_json_size,
         )
         formatted_results = []
         skipped_results = []
@@ -1695,7 +1705,7 @@ def search_files_list_fast(
         # 파일 리스트 검색 시에도 바이너리 제외 옵션을 존중하도록 처리합니다.
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
-        max_per_file, max_check_cells, max_json_depth = _get_rust_search_limits()
+        max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
         raw_ret = search_func(
             file_list,
             rust_pattern,
@@ -1709,6 +1719,7 @@ def search_files_list_fast(
             max_per_file=max_per_file,
             max_check_cells=max_check_cells,
             max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
         )
         formatted_results = []
         skipped_results = []
@@ -1799,7 +1810,7 @@ def find_files_with_keyword_fast(
             raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.find_files_with_keyword"))  # type: ignore
         exclude_binary = bool(kwargs.get("exclude_binary", False))
         rust_mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
-        # [M-06 Fix] TypeError fallback 제거: API_VERSION 5 미만은 로드 시 차단됨
+        # [M-06 Fix] TypeError fallback 제거: API_VERSION 6 미만은 로드 시 차단됨
         # stop_event 없는 재시도는 사용자 중단 신호를 무력화하는 버그였음
         found_ret = find_func(
             search_paths,

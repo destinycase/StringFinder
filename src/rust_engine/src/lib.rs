@@ -41,7 +41,7 @@ const REASON_ERR_METADATA: &str = "ERR_METADATA";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
 const REASON_ERR_MEMORY_GUARD: &str = "ERR_MEMORY_GUARD";
 
-const MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
+const DEFAULT_MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
 const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
 // Python 측에서 문자열 비교에 사용되므로 유지합니다.
 #[allow(dead_code)]
@@ -54,7 +54,7 @@ fn encode_skip_reason<T: std::fmt::Display>(code: &str, detail: T) -> String {
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=5000, max_check_cells=500000, max_json_depth=20000))]
+#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=5000, max_check_cells=500000, max_json_depth=20000, max_json_size=524288000))]
 #[allow(clippy::too_many_arguments)]
 fn search_file(
     py: Python,
@@ -65,6 +65,7 @@ fn search_file(
     max_per_file: usize,
     max_check_cells: u64,
     max_json_depth: usize,
+    max_json_size: u64,
 ) -> Result<Vec<RawMatch>, PyErr> {
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
@@ -129,6 +130,7 @@ fn search_file(
             max_per_file,
             max_check_cells,
             max_json_depth,
+            max_json_size,
         })
     });
 
@@ -320,14 +322,14 @@ struct InternalSearchParams<'a> {
     path: &'a Path, pattern: &'a str, pat_upper: &'a str, pat_bytes: &'a [u8], ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool, is_json: bool, is_xml: bool, is_excel: bool,
     exclude_hidden: bool, exclude_binary: bool, existence_only: bool, stop_flag: Arc<AtomicBool>,
-    max_per_file: usize, max_check_cells: u64, max_json_depth: usize,
+    max_per_file: usize, max_check_cells: u64, max_json_depth: usize, max_json_size: u64,
 }
 
 fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMatch>, String>> {
     let InternalSearchParams {
         path, pattern, pat_upper, pat_bytes: _pat_bytes, ac, is_exact, is_json, is_xml, is_excel,
         exclude_hidden, exclude_binary, existence_only, stop_flag,
-        max_per_file, max_check_cells, max_json_depth,
+        max_per_file, max_check_cells, max_json_depth, max_json_size,
     } = params;
     
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
@@ -387,7 +389,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     } else { mmap_c };
 
     let res = if is_json && ext_l == ".json" {
-        if final_mmap.len() as u64 > MAX_JSON_SIZE {
+        if final_mmap.len() as u64 > max_json_size {
             vec![(1, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON"), None, None)]
         } else if existence_only {
             if check_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_json_depth) { vec![(1, "MATCH".to_string(), None, None)] }
@@ -433,7 +435,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
 
 #[pyfunction]
-#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, **_kwargs))]
+#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 pub fn search_dir(
     py: Python,
@@ -451,6 +453,7 @@ pub fn search_dir(
     max_per_file: Option<usize>,
     max_check_cells: Option<u64>,
     max_json_depth: Option<usize>,
+    max_json_size: Option<u64>,
     _kwargs: Option<pyo3::PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
@@ -593,6 +596,7 @@ pub fn search_dir(
                             max_per_file: max_per_file.unwrap_or(5000),
                             max_check_cells: max_check_cells.unwrap_or(500_000),
                             max_json_depth: max_json_depth.unwrap_or(20_000),
+                            max_json_size: max_json_size.unwrap_or(DEFAULT_MAX_JSON_SIZE),
                         });
 
                         if let Some(r) = res {
@@ -631,7 +635,7 @@ pub fn search_dir(
 }
 
 #[pyfunction]
-#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, **_kwargs))]
+#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn search_files_list(
     py: Python<'_>,
@@ -647,6 +651,7 @@ fn search_files_list(
     max_per_file: Option<usize>,
     max_check_cells: Option<u64>,
     max_json_depth: Option<usize>,
+    max_json_size: Option<u64>,
     _kwargs: Option<PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -738,6 +743,7 @@ fn search_files_list(
                 max_per_file: max_per_file.unwrap_or(5000),
                 max_check_cells: max_check_cells.unwrap_or(500_000),
                 max_json_depth: max_json_depth.unwrap_or(20_000),
+                max_json_size: max_json_size.unwrap_or(DEFAULT_MAX_JSON_SIZE),
             });
 
             if let Some(r) = res {
@@ -937,7 +943,7 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_dir, m)?)?;
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;
     m.add_function(wrap_pyfunction!(find_files_with_keyword, m)?)?;
-    m.add("API_VERSION", 5)?;
+    m.add("API_VERSION", 6)?;
     // Cargo.toml version 필드를 빌드 시점에 자동으로 읽어 Python 측에 노출합니다.
     m.add("ENGINE_VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())

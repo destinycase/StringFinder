@@ -37,7 +37,7 @@ def _require_search_result(result: object) -> tuple[str, int, list[tuple[Any, ..
     return cast(tuple[str, int, list[tuple[Any, ...]]], result)
 
 
-@pytest.mark.parametrize("api_version", [None, 3])
+@pytest.mark.parametrize("api_version", [None, 3, 5])
 def test_engine_api_version_mismatch_fallback(monkeypatch, api_version):
     import core.search_engine as search_engine
 
