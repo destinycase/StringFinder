@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from sf_utils.file_helper import open_file
+from sf_utils.file_helper import open_file, open_in_external_editor
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -131,6 +131,7 @@ class SearchTab(QMainWindow):
         results_tab_layout.addWidget(self.result_view_panel)
         # 결과 뷰 시그널 연결
         self.result_view_panel.file_double_clicked.connect(self._open_file_from_view)
+        self.result_view_panel.match_double_clicked.connect(self._open_match_in_editor)
         self.tab_widget.addTab(self.results_tab, AppStrings.TAB_RESULTS)
         # 로그 탭
         self.logs_tab = QWidget()
@@ -913,6 +914,11 @@ class SearchTab(QMainWindow):
         from sf_utils.file_helper import open_file
 
         open_file(file_path)
+
+    def _open_match_in_editor(self, file_path, line=0):
+        """매치 행을 설정된 외부 편집기의 해당 줄에서 엽니다."""
+        editor_settings = self.config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR, {})
+        open_in_external_editor(file_path, line, editor_settings)
 
     def _run_open_file(self, file_path):
         """파일 열기 실행."""

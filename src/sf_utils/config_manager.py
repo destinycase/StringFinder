@@ -77,6 +77,10 @@ class ConfigManager:
             Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS: [60, 400, 400],
             Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES: Constants.DEFAULT_CONTEXT_PREVIEW_LINES,
             Constants.CONFIG_KEY_CONTEXT_AFTER_LINES: Constants.DEFAULT_CONTEXT_PREVIEW_LINES,
+            Constants.CONFIG_KEY_EXTERNAL_EDITOR: {
+                Constants.CONFIG_KEY_EDITOR_TYPE: Constants.DEFAULT_EXTERNAL_EDITOR,
+                Constants.CONFIG_KEY_EDITOR_CUSTOM_PATH: "",
+            },
             Constants.CONFIG_KEY_LOG_RETENTION: {
                 Constants.CONFIG_KEY_LOG_RETENTION_ENABLED: True,
                 Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES: 10,

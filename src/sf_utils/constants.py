@@ -99,6 +99,9 @@ class Constants:
     CONFIG_KEY_MATCH_COLUMN_WIDTHS = "match_column_widths"
     CONFIG_KEY_CONTEXT_BEFORE_LINES = "context_before_lines"
     CONFIG_KEY_CONTEXT_AFTER_LINES = "context_after_lines"
+    CONFIG_KEY_EXTERNAL_EDITOR = "external_editor"
+    CONFIG_KEY_EDITOR_TYPE = "editor_type"
+    CONFIG_KEY_EDITOR_CUSTOM_PATH = "custom_path"
     CONFIG_KEY_LOG_RETENTION = "log_retention"
     CONFIG_KEY_LOG_RETENTION_ENABLED = "enabled"
     CONFIG_KEY_LOG_RETENTION_MAX_FILES = "max_files"
@@ -123,6 +126,7 @@ class Constants:
     CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
     DEFAULT_CONTEXT_PREVIEW_LINES = 5
     MAX_CONTEXT_PREVIEW_LINES = 20
+    DEFAULT_EXTERNAL_EDITOR = "system"
 
     ADAPTIVE_BATCH_SIZE_THRESHOLD = 100 * 1024 * 1024  # 100MB (적응형 배치 임계치)
     COLOR_RED = "#FF5555"

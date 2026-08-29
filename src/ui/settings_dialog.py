@@ -7,11 +7,13 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QLineEdit,
     QSpinBox,
     QVBoxLayout,
     QTabWidget,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
 
 
 from sf_utils.app_strings import AppStrings
+from sf_utils.constants import Constants
 from sf_utils.logger import logger
 from ui.styles import UIStyles
 
@@ -32,7 +35,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config_manager = config_manager
         self.setWindowTitle(AppStrings.SETTINGS_TITLE)
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(420)
         self._doctor_msg_box = None
         self.doctor_finished.connect(self._on_doctor_finished)
         self._init_ui()
@@ -85,6 +88,52 @@ class SettingsDialog(QDialog):
         reset_layout_btn.clicked.connect(self._reset_layout)
         appearance_layout.addWidget(reset_layout_btn)
         tab_general_layout.addWidget(appearance_group)
+
+        editor_group = QGroupBox(AppStrings.EXTERNAL_EDITOR_GROUP)
+        editor_layout = QVBoxLayout(editor_group)
+        editor_settings = self.config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR, {})
+        if not isinstance(editor_settings, dict):
+            editor_settings = {}
+
+        editor_row = QHBoxLayout()
+        editor_label = QLabel(AppStrings.EXTERNAL_EDITOR_LABEL)
+        self.external_editor_combo = QComboBox()
+        editor_options = [
+            (AppStrings.EXTERNAL_EDITOR_SYSTEM, "system"),
+            (AppStrings.EXTERNAL_EDITOR_VSCODE, "vscode"),
+            (AppStrings.EXTERNAL_EDITOR_CURSOR, "cursor"),
+            (AppStrings.EXTERNAL_EDITOR_NOTEPADPP, "notepadpp"),
+            (AppStrings.EXTERNAL_EDITOR_SUBLIME, "sublime"),
+            (AppStrings.EXTERNAL_EDITOR_CUSTOM, "custom"),
+        ]
+        for label_text, value in editor_options:
+            self.external_editor_combo.addItem(label_text, value)
+        current_editor = editor_settings.get(
+            Constants.CONFIG_KEY_EDITOR_TYPE, Constants.DEFAULT_EXTERNAL_EDITOR
+        )
+        editor_index = self.external_editor_combo.findData(current_editor)
+        self.external_editor_combo.setCurrentIndex(max(0, editor_index))
+        self.external_editor_combo.currentIndexChanged.connect(self._on_external_editor_changed)
+        self.external_editor_combo.setFixedWidth(INPUT_WIDTH)
+        editor_row.addWidget(editor_label)
+        editor_row.addStretch()
+        editor_row.addWidget(self.external_editor_combo)
+        editor_layout.addLayout(editor_row)
+
+        editor_path_row = QHBoxLayout()
+        editor_path_label = QLabel(AppStrings.EXTERNAL_EDITOR_PATH_LABEL)
+        self.external_editor_path_edit = QLineEdit(
+            str(editor_settings.get(Constants.CONFIG_KEY_EDITOR_CUSTOM_PATH, ""))
+        )
+        self.external_editor_path_edit.editingFinished.connect(self._on_external_editor_path_changed)
+        browse_editor_btn = QPushButton(AppStrings.EXTERNAL_EDITOR_BROWSE)
+        browse_editor_btn.clicked.connect(self._browse_external_editor)
+        editor_path_row.addWidget(editor_path_label)
+        editor_path_row.addWidget(self.external_editor_path_edit, 1)
+        editor_path_row.addWidget(browse_editor_btn)
+        editor_layout.addLayout(editor_path_row)
+        self._update_external_editor_path_state()
+        tab_general_layout.addWidget(editor_group)
         
         log_group = QGroupBox(AppStrings.SETTINGS_GROUP_LOG)
         log_layout = QVBoxLayout(log_group)
@@ -191,7 +240,6 @@ class SettingsDialog(QDialog):
             return spinbox
             
         self.adv_spinboxes = {}
-        from sf_utils.constants import Constants
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_TOTAL_MATCHES,
             Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, 1000, 10_000_000, AppStrings.UNIT_COUNT
@@ -285,6 +333,36 @@ class SettingsDialog(QDialog):
             parent = self.parent()
             if parent and hasattr(parent, "_apply_theme"):
                 parent._apply_theme()  # 테마 변경 시 메인 윈도우의 스타일을 즉시 갱신합니다.
+
+    def _get_external_editor_settings(self):
+        settings = self.config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR, {})
+        return dict(settings) if isinstance(settings, dict) else {}
+
+    def _update_external_editor_path_state(self):
+        is_custom = self.external_editor_combo.currentData() == "custom"
+        self.external_editor_path_edit.setEnabled(is_custom)
+
+    def _on_external_editor_changed(self, index):
+        settings = self._get_external_editor_settings()
+        settings[Constants.CONFIG_KEY_EDITOR_TYPE] = self.external_editor_combo.itemData(index)
+        self.config_manager.set(Constants.CONFIG_KEY_EXTERNAL_EDITOR, settings)
+        self._update_external_editor_path_state()
+
+    def _on_external_editor_path_changed(self):
+        settings = self._get_external_editor_settings()
+        settings[Constants.CONFIG_KEY_EDITOR_CUSTOM_PATH] = self.external_editor_path_edit.text().strip()
+        self.config_manager.set(Constants.CONFIG_KEY_EXTERNAL_EDITOR, settings)
+
+    def _browse_external_editor(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            AppStrings.EXTERNAL_EDITOR_BROWSE,
+            "",
+            AppStrings.EXTERNAL_EDITOR_FILE_FILTER,
+        )
+        if path:
+            self.external_editor_path_edit.setText(path)
+            self._on_external_editor_path_changed()
 
 
     def _on_log_retention_changed(self, index):

@@ -1,8 +1,6 @@
 import os
 import subprocess
 import sys
-from typing import Any, cast
-
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
@@ -31,6 +29,7 @@ from sf_utils.logger import logger
 from ui.models import MatchDetailModel, SearchResultModel
 from ui.proxies import MatchProxyModel, ResultProxyModel
 from ui.styles import UIStyles
+from ui.syntax_highlighter import LightweightSyntaxHighlighter
 from ui.widgets import HtmlDelegate
 
 
@@ -206,6 +205,9 @@ class ResultView(QWidget):
         self.context_preview.setReadOnly(True)
         self.context_preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.context_preview.setFont(QFont("Consolas", 10))
+        self.context_highlighter = LightweightSyntaxHighlighter(
+            self.context_preview.document(), "text", self._is_dark_theme()
+        )
         self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
         context_preview_layout.addWidget(self.context_preview)
         context_line_settings_layout = QHBoxLayout()
@@ -262,7 +264,8 @@ class ResultView(QWidget):
         saved_value = min(max(saved_value, 0), self.CONTEXT_MAX_RADIUS)
         combo.setCurrentIndex(saved_value)
         combo.setMinimumContentsLength(2)
-        combo.setFixedWidth(70)
+        combo.setMinimumWidth(72)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         combo.currentTextChanged.connect(
             lambda text, key=config_key: self._on_context_line_count_changed(key, text)
         )
@@ -286,6 +289,7 @@ class ResultView(QWidget):
         self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(is_dark))
         self.file_info_label.setStyleSheet(UIStyles.get_file_info_header_style(is_dark))
         self.context_preview.setStyleSheet(UIStyles.get_context_preview_style(is_dark))
+        self.context_highlighter.set_dark_mode(is_dark)
 
     def _is_dark_theme(self) -> bool:
         """현재 설정된 테마가 다크 계열인지 반환합니다."""
@@ -530,6 +534,7 @@ class ResultView(QWidget):
     def _clear_context_preview(self):
         """문맥 미리보기 영역을 초기 상태로 되돌립니다."""
         self._current_match_item = None
+        self.context_highlighter.set_language("text")
         self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
         self.context_preview.setExtraSelections([])
 
@@ -581,22 +586,27 @@ class ResultView(QWidget):
         try:
             target_line = int(position)
         except (TypeError, ValueError):
+            self.context_highlighter.set_language("text")
             self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SPECIAL_MATCH.format(position, content))
             self.context_preview.setExtraSelections([])
             return
         if target_line <= 0:
+            self.context_highlighter.set_language("text")
             self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SPECIAL_MATCH.format(position, content))
             self.context_preview.setExtraSelections([])
             return
 
         file_path = self.match_model.current_file_path
         if not file_path or not os.path.isfile(file_path):
+            self.context_highlighter.set_language("text")
             self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_FILE_UNAVAILABLE)
             self.context_preview.setExtraSelections([])
             return
         try:
+            self.context_highlighter.set_file_path(file_path)
             lines = self._read_context_lines(file_path, target_line)
             if lines is None:
+                self.context_highlighter.set_language("text")
                 self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_SCAN_LIMIT)
                 self.context_preview.setExtraSelections([])
                 return
@@ -615,14 +625,14 @@ class ResultView(QWidget):
             if truncated:
                 text += AppStrings.CONTEXT_PREVIEW_TRUNCATED
             self.context_preview.setPlainText(text)
-            selection = cast(Any, QTextEdit.ExtraSelection())
+            selection = QTextEdit.ExtraSelection()
             selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))
             selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
             selection.format = QTextCharFormat()
             selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))
-            selection.format.setForeground(QColor("#FFFFFF" if self._is_dark_theme() else "#202124"))
             self.context_preview.setExtraSelections([selection])
         except (OSError, UnicodeError) as error:
+            self.context_highlighter.set_language("text")
             self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_READ_FAILED.format(error))
             self.context_preview.setExtraSelections([])
 
@@ -637,6 +647,12 @@ class ResultView(QWidget):
             self.file_double_clicked.emit(self.selected_file_path, 0)
 
     def _on_match_double_clicked(self, index):
+        if not index.isValid():
+            return
+        self._emit_match_open(index)
+
+    def _emit_match_open(self, index):
+        """선택된 매치의 파일과 줄 번호를 외부 편집기 연결부로 전달합니다."""
         if not index.isValid():
             return
         real_index = self.match_proxy_model.mapToSource(index)
@@ -951,6 +967,10 @@ class ResultView(QWidget):
             if index.isValid():
                 selection = [index]
         if selection:
+            open_line_action = QAction(AppStrings.OPEN_LINE_IN_EDITOR, self)
+            open_line_action.triggered.connect(lambda: self._emit_match_open(selection[0]))
+            menu.addAction(open_line_action)
+            menu.addSeparator()
             copy_label = (
                 AppStrings.COPY_CONTENT if len(selection) == 1 else f"{AppStrings.COPY_CONTENT} ({len(selection)})"
             )
