@@ -22,7 +22,6 @@ target/
 .idea/
 
 # Distribution / packaging
-dist/
 build/
 *.egg-info/
 coverage.xml
@@ -34,7 +33,7 @@ data/
 
 # Logs and History
 *.log
-benchmark_history.md
+docs/
 
 # Generated Rust metadata and rotated development binaries
 src/rust_engine/metadata.json

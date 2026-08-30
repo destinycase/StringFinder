@@ -520,7 +520,8 @@ def _summarize_skip_reasons(skip_reasons: Dict[str, int], max_items: int = 3) ->
 
 def save_benchmark_history(bench_results: List[Dict[str, Any]], tag: str = "Current") -> None:
     """Persist benchmark history with schema normalization."""
-    history_file = project_root / "benchmark_history.md"
+    history_file = project_root / "docs" / "benchmark_history.md"
+    history_file.parent.mkdir(parents=True, exist_ok=True)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     title, rows = _load_history_rows(history_file)
