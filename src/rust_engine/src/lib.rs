@@ -18,6 +18,8 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
+
 
 use crate::excel_search::{check_excel_file, search_excel_file};
 use crate::json_search::{check_json_file, search_json_file};
@@ -26,12 +28,14 @@ use crate::utils::{
     match_filename_glob, parse_search_mode,
 };
 use crate::xml_search::{check_xml_file, search_xml_file};
+use crate::types::{SearchMatch, SearchOptions};
 
 const MAX_FILE_SIZE: u64 = 1024 * 1024 * 1024; // 1GB 제한
 
 // 내부 타입 에일리어스 및 에러 마커 정의
 type RawMatch = (usize, String, Option<usize>, Option<usize>);
-type FileMatches = Vec<(String, Vec<RawMatch>)>;
+type RawFileMatches = Vec<(String, Vec<RawMatch>)>;
+type FileMatches = Vec<(String, Vec<SearchMatch>)>;
 type SkippedEntries = Vec<(String, String)>;
 type KeywordFileHits = Vec<(String, u64)>;
 
@@ -43,30 +47,125 @@ const REASON_ERR_MEMORY_GUARD: &str = "ERR_MEMORY_GUARD";
 
 const DEFAULT_MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
 const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
+const MATCH_META_TRUNCATED: &str = "__SF_TRUNCATED__";
 // Python 측에서 문자열 비교에 사용되므로 유지합니다.
 #[allow(dead_code)]
 const MATCH_META_LONG_LINE_PREFIX: &str = "__SF_LONG_LINE__|";
 
 const MONITOR_INTERVAL_MS: u64 = 100;
 
+struct CallbackState {
+    failed: AtomicBool,
+    message: Mutex<Option<String>>,
+}
+
+impl CallbackState {
+    fn new() -> Self {
+        Self { failed: AtomicBool::new(false), message: Mutex::new(None) }
+    }
+
+    fn record_error(&self, stop_flag: &Arc<AtomicBool>, name: &str, error: PyErr) {
+        if !self.failed.swap(true, Ordering::SeqCst) {
+            let mut message = self.message.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            *message = Some(format!("{} callback failed: {}", name, error));
+        }
+        stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    fn error_message(&self) -> Option<String> {
+        self.message.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    }
+}
+
+fn to_python_matches(matches: Vec<RawMatch>) -> Vec<SearchMatch> {
+    matches.into_iter().map(SearchMatch::from).collect()
+}
+
+fn to_python_file_matches(results: RawFileMatches) -> FileMatches {
+    results
+        .into_iter()
+        .map(|(path, matches)| (path, to_python_matches(matches)))
+        .collect()
+}
+
 fn encode_skip_reason<T: std::fmt::Display>(code: &str, detail: T) -> String {
     format!("{}|{}", code, detail)
 }
 
+enum FileSnapshot {
+    Mapped { _lock_file: File, mmap: Mmap },
+    Owned(Vec<u8>),
+}
+
+impl FileSnapshot {
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Mapped { mmap, .. } => mmap,
+            Self::Owned(bytes) => bytes,
+        }
+    }
+}
+
+fn metadata_matches(file: &File, expected_len: u64, expected_modified: Option<SystemTime>) -> bool {
+    let Ok(meta) = file.metadata() else { return false; };
+    if meta.len() != expected_len { return false; }
+    expected_modified.is_none_or(|expected| meta.modified().ok() == Some(expected))
+}
+
+fn load_file_snapshot(
+    file: File,
+    expected_len: u64,
+    expected_modified: Option<SystemTime>,
+) -> Result<FileSnapshot, String> {
+    if expected_len < 16 * 1024 {
+        let mut bytes = Vec::new();
+        let mut reader = file;
+        reader.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        return Ok(FileSnapshot::Owned(bytes));
+    }
+
+    // A shared lock protects the mmap path on platforms that enforce file
+    // sharing. If it cannot be acquired, use a read-copy snapshot instead.
+    if fs2::FileExt::try_lock_shared(&file).is_ok() {
+        match unsafe { Mmap::map(&file) } {
+            Ok(mmap) if metadata_matches(&file, expected_len, expected_modified) => {
+                return Ok(FileSnapshot::Mapped { _lock_file: file, mmap });
+            }
+            Ok(_) | Err(_) => {}
+        }
+        let _ = fs2::FileExt::unlock(&file);
+    }
+
+    let mut bytes = Vec::new();
+    let mut reader = file.try_clone().map_err(|e| e.to_string())?;
+    reader.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    Ok(FileSnapshot::Owned(bytes))
+}
+
 #[pyfunction]
-#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=5000, max_check_cells=500000, max_json_depth=20000, max_json_size=524288000))]
+#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=5000, max_check_cells=500000, max_json_depth=20000, max_json_size=524288000, options=None))]
 #[allow(clippy::too_many_arguments)]
 fn search_file(
     py: Python,
     path: String,
     pattern: String,
-    mode_bits: Option<u32>,
-    stop_event: Option<pyo3::PyObject>,
-    max_per_file: usize,
-    max_check_cells: u64,
-    max_json_depth: usize,
-    max_json_size: u64,
-) -> Result<Vec<RawMatch>, PyErr> {
+    mut mode_bits: Option<u32>,
+    mut stop_event: Option<pyo3::PyObject>,
+    mut max_per_file: usize,
+    mut max_check_cells: u64,
+    mut max_json_depth: usize,
+    mut max_json_size: u64,
+    options: Option<Py<SearchOptions>>,
+) -> Result<Vec<SearchMatch>, PyErr> {
+    if let Some(config) = options.as_ref() {
+        let config = config.bind(py).borrow();
+        if config.mode_bits.is_some() { mode_bits = config.mode_bits; }
+        if config.stop_event.is_some() { stop_event = config.stop_event.as_ref().map(|event| event.clone_ref(py)); }
+        if config.max_per_file.is_some() { max_per_file = config.max_per_file.unwrap_or(max_per_file); }
+        if config.max_check_cells.is_some() { max_check_cells = config.max_check_cells.unwrap_or(max_check_cells); }
+        if config.max_json_depth.is_some() { max_json_depth = config.max_json_depth.unwrap_or(max_json_depth); }
+        if config.max_json_size.is_some() { max_json_size = config.max_json_size.unwrap_or(max_json_size); }
+    }
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
     let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
@@ -138,9 +237,8 @@ fn search_file(
     if let Some(h) = monitor_handle { let _ = h.join(); }
 
     match res {
-        Some(Ok(mut m)) => {
-            if m.len() > max_per_file + 1 { m.truncate(max_per_file + 1); }
-            Ok(m)
+        Some(Ok(m)) => {
+            Ok(to_python_matches(apply_match_limit(m, max_per_file)))
         },
         Some(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e)),
         None => Ok(Vec::new()),
@@ -200,8 +298,6 @@ fn do_search_with_mmap(
         let mut current_line = 1usize;
         let mut last_nl_pos = 0usize;
         let mut next_nl_pos = memchr::memchr(b'\n', mmap).unwrap_or(mmap.len());
-        let mut cached_line: Option<(usize, String)> = None;
-        let mut last_returned_line = 0usize;
 
         for mat in ac.find_iter(mmap) {
             if results.len() > max_per_file { break; }
@@ -215,23 +311,13 @@ fn do_search_with_mmap(
             }
 
             // 라인당 한 번만 FFI 호출을 수행하도록 최적화합니다.
-            let content = if current_line == last_returned_line {
-                "__SF_SAME_LINE__".to_string()
+            let content = extract_line_content_bytes(mmap, last_nl_pos, next_nl_pos, Some(m_start), Some(mat.len()));
+            let (offset, length) = if content.starts_with(MATCH_META_LONG_LINE_PREFIX) {
+                (None, None)
             } else {
-                last_returned_line = current_line;
-                if let Some((l, ref s)) = cached_line {
-                    if l == current_line { s.clone() } else {
-                        let ns = extract_line_content_bytes(mmap, last_nl_pos, next_nl_pos, Some(m_start), Some(mat.len()));
-                        cached_line = Some((current_line, ns.clone()));
-                        ns
-                    }
-                } else {
-                    let ns = extract_line_content_bytes(mmap, last_nl_pos, next_nl_pos, Some(m_start), Some(mat.len()));
-                    cached_line = Some((current_line, ns.clone()));
-                    ns
-                }
+                (Some(m_start), Some(mat.len()))
             };
-            results.push((current_line, content, Some(m_start), Some(mat.len())));
+            results.push((current_line, content, offset, length));
             if existence_only { return results; }
         }
     } else {
@@ -239,6 +325,15 @@ fn do_search_with_mmap(
         search_non_utf8_chunks(mmap, encoding, pat_upper, ac, is_exact, existence_only, stop_flag, max_per_file, &mut results);
     }
     results
+}
+
+fn apply_match_limit(mut matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatch> {
+    let is_single_error_marker = matches.len() == 1 && matches[0].1.starts_with("ERR_");
+    if matches.len() > max_per_file && !is_single_error_marker {
+        matches.truncate(max_per_file);
+        matches.push((0, MATCH_META_TRUNCATED.to_string(), None, None));
+    }
+    matches
 }
 
 fn exact_line_matches(line: &[u8], pat_upper: &str) -> bool {
@@ -358,25 +453,15 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     }
 
     let f_len = meta.len();
+    let f_modified = meta.modified().ok();
     if f_len == 0 { return None; }
     if f_len > MAX_FILE_SIZE { return Some(Err(encode_skip_reason(REASON_ERR_TOO_LARGE, format!("{} bytes", f_len)))); }
 
-    let mut buf = Vec::new();
-    let mmap_h;
-    let (mmap_c, _) = if f_len < 16 * 1024 {
-        let mut f = file;
-        if let Err(e) = f.read_to_end(&mut buf) { return Some(Err(encode_skip_reason(REASON_ERR_OPEN, e))); }
-        (buf.as_slice(), true)
-    } else {
-        match unsafe { Mmap::map(&file) } {
-            Ok(m) => { mmap_h = Some(m); (mmap_h.as_ref().unwrap().as_ref(), false) }
-            Err(e) => {
-                let mut f = file;
-                if let Err(re) = f.read_to_end(&mut buf) { return Some(Err(encode_skip_reason(REASON_ERR_MMAP, format!("{}/{}", e, re)))); }
-                (buf.as_slice(), true)
-            }
-        }
+    let file_snapshot = match load_file_snapshot(file, f_len, f_modified) {
+        Ok(snapshot) => snapshot,
+        Err(e) => return Some(Err(encode_skip_reason(REASON_ERR_MMAP, e))),
     };
+    let mmap_c = file_snapshot.as_slice();
 
     let enc = detect_encoding(mmap_c);
     let mut _dec_h;
@@ -407,11 +492,11 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         if exclude_binary && bin { return None; }
         if bin {
             if existence_only {
-                if ac.find(mmap_c).is_some() { vec![(1, format!("{}{}", MATCH_META_BINARY_PREFIX, 1), None, Some(1))] }
+                if ac.find(mmap_c).is_some() { vec![(0, format!("{}{}", MATCH_META_BINARY_PREFIX, 1), None, Some(1))] }
                 else { Vec::new() }
             } else {
                 let c = ac.find_iter(mmap_c).count();
-                if c > 0 { vec![(1, format!("{}{}", MATCH_META_BINARY_PREFIX, c), None, Some(c))] }
+                if c > 0 { vec![(0, format!("{}{}", MATCH_META_BINARY_PREFIX, c), None, Some(c))] }
                 else { Vec::new() }
             }
         } else {
@@ -429,33 +514,51 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         }
     };
 
+    let res = apply_match_limit(res, max_per_file);
     if res.is_empty() { None } else { Some(Ok(res)) }
 }
 
 
 
 #[pyfunction]
-#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, **_kwargs))]
+#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, options=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 pub fn search_dir(
     py: Python,
     root_paths: Vec<String>,
     pattern: String,
-    extensions: Option<Vec<String>>,
-    mode_bits: Option<u32>,
-    filename_filter: Option<Vec<String>>,
-    exclude_hidden: bool,
-    stop_event: Option<pyo3::PyObject>,
-    progress_callback: Option<pyo3::PyObject>,
-    results_callback: Option<pyo3::PyObject>,
-    batch_size: Option<usize>,
-    _flush_ms: Option<u64>,
-    max_per_file: Option<usize>,
-    max_check_cells: Option<u64>,
-    max_json_depth: Option<usize>,
-    max_json_size: Option<u64>,
+    mut extensions: Option<Vec<String>>,
+    mut mode_bits: Option<u32>,
+    mut filename_filter: Option<Vec<String>>,
+    mut exclude_hidden: bool,
+    mut stop_event: Option<pyo3::PyObject>,
+    mut progress_callback: Option<pyo3::PyObject>,
+    mut results_callback: Option<pyo3::PyObject>,
+    mut batch_size: Option<usize>,
+    mut _flush_ms: Option<u64>,
+    mut max_per_file: Option<usize>,
+    mut max_check_cells: Option<u64>,
+    mut max_json_depth: Option<usize>,
+    mut max_json_size: Option<u64>,
+    options: Option<Py<SearchOptions>>,
     _kwargs: Option<pyo3::PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
+    if let Some(config) = options.as_ref() {
+        let config = config.bind(py).borrow();
+        if config.extensions.is_some() { extensions = config.extensions.clone(); }
+        if config.mode_bits.is_some() { mode_bits = config.mode_bits; }
+        if config.filename_filter.is_some() { filename_filter = config.filename_filter.clone(); }
+        exclude_hidden = config.exclude_hidden;
+        if config.stop_event.is_some() { stop_event = config.stop_event.as_ref().map(|event| event.clone_ref(py)); }
+        if config.progress_callback.is_some() { progress_callback = config.progress_callback.as_ref().map(|callback| callback.clone_ref(py)); }
+        if config.results_callback.is_some() { results_callback = config.results_callback.as_ref().map(|callback| callback.clone_ref(py)); }
+        if config.batch_size.is_some() { batch_size = config.batch_size; }
+        if config.flush_ms.is_some() { _flush_ms = config.flush_ms; }
+        if config.max_per_file.is_some() { max_per_file = config.max_per_file; }
+        if config.max_check_cells.is_some() { max_check_cells = config.max_check_cells; }
+        if config.max_json_depth.is_some() { max_json_depth = config.max_json_depth; }
+        if config.max_json_size.is_some() { max_json_size = config.max_json_size; }
+    }
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
     let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
@@ -475,6 +578,7 @@ pub fn search_dir(
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let done_flag = Arc::new(AtomicBool::new(false));
+    let callback_state = Arc::new(CallbackState::new());
     let processed_files = Arc::new(AtomicU64::new(0)); // M4: 실제 처리 파일 수 카운터
 
     // N2: JoinHandle을 보관하여 done_flag 설정 후 모니터 스레드가 완전히 종료됨을 보장합니다.
@@ -484,6 +588,7 @@ pub fn search_dir(
         let stop_evt_mon = stop_event.as_ref().map(|obj| obj.clone_ref(py));
         let progress_cb_mon = progress_callback.as_ref().map(|obj| obj.clone_ref(py));
         let processed_files_mon = processed_files.clone();
+        let callback_state_mon = callback_state.clone();
         
         Some(std::thread::spawn(move || {
             while !done_clone.load(Ordering::Relaxed) && !flag_clone.load(Ordering::Relaxed) {
@@ -497,7 +602,10 @@ pub fn search_dir(
                     if let Some(cb) = &progress_cb_mon {
                         // M4: 하드코딩 대신 실제 처리 파일 수 전달
                         let cnt = processed_files_mon.load(Ordering::Relaxed);
-                        let _ = cb.bind(py).call1((cnt,));
+                        if let Err(error) = cb.bind(py).call1((cnt,)) {
+                            callback_state_mon.record_error(&flag_clone, "progress", error);
+                            return true;
+                        }
                     }
                     false
                 });
@@ -515,24 +623,45 @@ pub fn search_dir(
         let (tx, rx) = crossbeam_channel::bounded::<(String, Vec<RawMatch>)>(queue_capacity);
         let cb_clone = cb.clone_ref(py);
         let done_dispatcher = done_flag.clone();
+        let callback_state_dispatcher = callback_state.clone();
+        let stop_flag_dispatcher = stop_flag.clone();
         let flush_interval_ms = _flush_ms.unwrap_or(20).clamp(1, 1_000);
         
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
             loop {
-                while let Ok(res) = rx.try_recv() {
-                    batch.push(res);
-                    if batch.len() >= batch_size_limit { break; }
+                if batch.is_empty() {
+                    match rx.recv_timeout(std::time::Duration::from_millis(flush_interval_ms)) {
+                        Ok(res) => batch.push(res),
+                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                            if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
+                            continue;
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+                while batch.len() < batch_size_limit {
+                    match rx.try_recv() {
+                        Ok(res) => batch.push(res),
+                        Err(_) => break,
+                    }
                 }
                 if !batch.is_empty() {
                     Python::with_gil(|py| {
-                        let _ = cb_clone.bind(py).call1((std::mem::take(&mut batch),));
+                        let typed_batch = batch
+                            .drain(..)
+                            .map(|(path, matches)| (path, to_python_matches(matches)))
+                            .collect::<Vec<_>>();
+                        if !callback_state_dispatcher.failed.load(Ordering::Relaxed) {
+                            if let Err(error) = cb_clone.bind(py).call1((typed_batch,)) {
+                                callback_state_dispatcher.record_error(&stop_flag_dispatcher, "results", error);
+                            }
+                        }
                     });
                 }
                 // 중지 시에도 이미 채널에 들어온 결과는 모두 전달합니다.
                 // done 플래그는 walker와 모든 worker가 송신을 마친 뒤 설정됩니다.
                 if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
-                std::thread::sleep(std::time::Duration::from_millis(flush_interval_ms));
             }
         });
         (tx, handle)
@@ -629,40 +758,60 @@ pub fn search_dir(
         if let Some(h) = monitor_handle { let _ = h.join(); }
     });
 
-    let final_res = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+    let final_res = to_python_file_matches(results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone());
     let final_skip = skipped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+    if let Some(error) = callback_state.error_message() {
+        return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error));
+    }
     Ok((final_res, final_skip))
 }
 
 #[pyfunction]
-#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, **_kwargs))]
+#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, options=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn search_files_list(
     py: Python<'_>,
     file_list: Vec<String>,
     search_string: String,
-    mode_bits: Option<u32>,
-    exclude_hidden: bool,
-    stop_event: Option<PyObject>,
-    progress_callback: Option<PyObject>,
-    results_callback: Option<PyObject>,
-    batch_size: Option<usize>,
-    _flush_ms: Option<u64>,
-    max_per_file: Option<usize>,
-    max_check_cells: Option<u64>,
-    max_json_depth: Option<usize>,
-    max_json_size: Option<u64>,
+    mut mode_bits: Option<u32>,
+    mut exclude_hidden: bool,
+    mut stop_event: Option<PyObject>,
+    mut progress_callback: Option<PyObject>,
+    mut results_callback: Option<PyObject>,
+    mut batch_size: Option<usize>,
+    mut _flush_ms: Option<u64>,
+    mut max_per_file: Option<usize>,
+    mut max_check_cells: Option<u64>,
+    mut max_json_depth: Option<usize>,
+    mut max_json_size: Option<u64>,
+    options: Option<Py<SearchOptions>>,
     _kwargs: Option<PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
+    if let Some(config) = options.as_ref() {
+        let config = config.bind(py).borrow();
+        if config.mode_bits.is_some() { mode_bits = config.mode_bits; }
+        exclude_hidden = config.exclude_hidden;
+        if config.stop_event.is_some() { stop_event = config.stop_event.as_ref().map(|event| event.clone_ref(py)); }
+        if config.progress_callback.is_some() { progress_callback = config.progress_callback.as_ref().map(|callback| callback.clone_ref(py)); }
+        if config.results_callback.is_some() { results_callback = config.results_callback.as_ref().map(|callback| callback.clone_ref(py)); }
+        if config.batch_size.is_some() { batch_size = config.batch_size; }
+        if config.flush_ms.is_some() { _flush_ms = config.flush_ms; }
+        if config.max_per_file.is_some() { max_per_file = config.max_per_file; }
+        if config.max_check_cells.is_some() { max_check_cells = config.max_check_cells; }
+        if config.max_json_depth.is_some() { max_json_depth = config.max_json_depth; }
+        if config.max_json_size.is_some() { max_json_size = config.max_json_size; }
+    }
     let stop_flag = Arc::new(AtomicBool::new(false));
     let done_flag = Arc::new(AtomicBool::new(false));
     let progress_counter = Arc::new(AtomicU64::new(0));
+    let callback_state = Arc::new(CallbackState::new());
 
     let stop_flag_mon = stop_flag.clone();
     let done_mon = done_flag.clone();
-    let stop_event_mon = stop_event.as_ref().map(|obj| obj.clone_ref(py));
-    let progress_cb_mon = progress_callback.as_ref().map(|obj| obj.clone_ref(py));
-    let progress_cnt_mon = progress_counter.clone();
+        let stop_event_mon = stop_event.as_ref().map(|obj| obj.clone_ref(py));
+        let progress_cb_mon = progress_callback.as_ref().map(|obj| obj.clone_ref(py));
+        let progress_cnt_mon = progress_counter.clone();
+        let callback_state_mon = callback_state.clone();
 
     // X1: search_dir(N2)와 동일하게 JoinHandle을 보관하여 done_flag 설정 후 join합니다.
     let monitor_handle = if stop_event.is_some() || progress_callback.is_some() {
@@ -675,7 +824,10 @@ fn search_files_list(
                         }
                     }
                     if let Some(cb) = &progress_cb_mon {
-                        let _ = cb.bind(py).call1((progress_cnt_mon.load(Ordering::Relaxed),));
+                        if let Err(error) = cb.bind(py).call1((progress_cnt_mon.load(Ordering::Relaxed),)) {
+                            callback_state_mon.record_error(&stop_flag_mon, "progress", error);
+                            return true;
+                        }
                     }
                     false
                 });
@@ -693,23 +845,44 @@ fn search_files_list(
         let (tx, rx) = crossbeam_channel::bounded::<(String, Vec<RawMatch>)>(queue_capacity);
         let cb_clone = cb.clone_ref(py);
         let done_dispatcher = done_flag.clone();
+        let callback_state_dispatcher = callback_state.clone();
+        let stop_flag_dispatcher = stop_flag.clone();
         let flush_interval_ms = _flush_ms.unwrap_or(20).clamp(1, 1_000);
         
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
             loop {
-                while let Ok(res) = rx.try_recv() {
-                    batch.push(res);
-                    if batch.len() >= batch_size_limit { break; }
+                if batch.is_empty() {
+                    match rx.recv_timeout(std::time::Duration::from_millis(flush_interval_ms)) {
+                        Ok(res) => batch.push(res),
+                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                            if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
+                            continue;
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+                while batch.len() < batch_size_limit {
+                    match rx.try_recv() {
+                        Ok(res) => batch.push(res),
+                        Err(_) => break,
+                    }
                 }
                 if !batch.is_empty() {
                     Python::with_gil(|py| {
-                        let _ = cb_clone.bind(py).call1((std::mem::take(&mut batch),));
+                        let typed_batch = batch
+                            .drain(..)
+                            .map(|(path, matches)| (path, to_python_matches(matches)))
+                            .collect::<Vec<_>>();
+                        if !callback_state_dispatcher.failed.load(Ordering::Relaxed) {
+                            if let Err(error) = cb_clone.bind(py).call1((typed_batch,)) {
+                                callback_state_dispatcher.record_error(&stop_flag_dispatcher, "results", error);
+                            }
+                        }
                     });
                 }
                 // 중지된 검색도 이미 큐에 적재된 결과는 모두 전달합니다.
                 if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
-                std::thread::sleep(std::time::Duration::from_millis(flush_interval_ms));
             }
         });
         (tx, handle)
@@ -768,34 +941,61 @@ fn search_files_list(
         done_flag.store(true, Ordering::SeqCst);
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
         if let Some(h) = monitor_handle { let _ = h.join(); }
-        let final_res = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        let final_res = to_python_file_matches(results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone());
         let final_skip = skipped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        if let Some(error) = callback_state.error_message() {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error));
+        }
         Ok((final_res, final_skip))
     })
 }
 
 #[pyfunction]
-#[pyo3(signature = (paths, keyword, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, results_callback=None))]
+#[pyo3(signature = (paths, keyword, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, results_callback=None, max_json_depth=20000, max_json_size=524288000, options=None))]
 #[allow(clippy::too_many_arguments)]
 fn find_files_with_keyword(
     py: Python<'_>,
     paths: Vec<String>,
     keyword: String,
-    extensions: Option<Vec<String>>,
-    mode_bits: Option<u32>,
-    filename_filter: Option<Vec<String>>,
-    exclude_hidden: bool,
-    stop_event: Option<PyObject>,
-    results_callback: Option<PyObject>,
+    mut extensions: Option<Vec<String>>,
+    mut mode_bits: Option<u32>,
+    mut filename_filter: Option<Vec<String>>,
+    mut exclude_hidden: bool,
+    mut stop_event: Option<PyObject>,
+    mut results_callback: Option<PyObject>,
+    mut max_json_depth: usize,
+    mut max_json_size: u64,
+    options: Option<Py<SearchOptions>>,
 ) -> Result<(KeywordFileHits, SkippedEntries), PyErr> {
+    if let Some(config) = options.as_ref() {
+        let config = config.bind(py).borrow();
+        if config.extensions.is_some() { extensions = config.extensions.clone(); }
+        if config.mode_bits.is_some() { mode_bits = config.mode_bits; }
+        if config.filename_filter.is_some() { filename_filter = config.filename_filter.clone(); }
+        exclude_hidden = config.exclude_hidden;
+        if config.stop_event.is_some() { stop_event = config.stop_event.as_ref().map(|event| event.clone_ref(py)); }
+        if config.results_callback.is_some() { results_callback = config.results_callback.as_ref().map(|callback| callback.clone_ref(py)); }
+        if config.max_json_depth.is_some() { max_json_depth = config.max_json_depth.unwrap_or(max_json_depth); }
+        if config.max_json_size.is_some() { max_json_size = config.max_json_size.unwrap_or(max_json_size); }
+    }
+    let (is_json, is_xml, is_exact, _is_excel, exclude_binary, _existence_only) = parse_search_mode(mode_bits);
+    let norm_keyword = crate::utils::normalize_unicode(&keyword);
+    let patterns = generate_search_patterns(&norm_keyword, is_xml, is_json);
+    let ac_shared = Arc::new(AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .match_kind(MatchKind::LeftmostFirst)
+        .build(&patterns)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?);
+
     let stop_flag = Arc::new(AtomicBool::new(false));
     let is_done = Arc::new(AtomicBool::new(false));
+    let callback_state = Arc::new(CallbackState::new());
     let stop_flag_mon = stop_flag.clone();
     let is_done_mon = is_done.clone();
     let stop_evt_mon = stop_event.as_ref().map(|obj| obj.clone_ref(py));
 
-    if stop_event.is_some() {
-        std::thread::spawn(move || {
+    let monitor_handle = if stop_event.is_some() {
+        Some(std::thread::spawn(move || {
             while !is_done_mon.load(Ordering::Relaxed) && !stop_flag_mon.load(Ordering::Relaxed) {
                 let is_stopped = Python::with_gil(|py| {
                     if let Some(obj) = &stop_evt_mon {
@@ -808,8 +1008,10 @@ fn find_files_with_keyword(
                 if is_stopped { stop_flag_mon.store(true, Ordering::SeqCst); break; }
                 std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
             }
-        });
-    }
+        }))
+    } else {
+        None
+    };
 
     // M1: `_results_dispatcher` → `results_dispatcher` (언더스코어 제거)
     // `_` prefix 변수는 Rust 컴파일러에 의해 즉시 drop되므로 tx도 함께 소멸되어 콜백 스레드가 동작하지 않았음.
@@ -819,34 +1021,46 @@ fn find_files_with_keyword(
         let (tx, rx) = crossbeam_channel::bounded::<(String, u64)>(queue_capacity);
         let cb_clone = cb.clone_ref(py);
         let done_dispatcher = is_done.clone();
+        let callback_state_dispatcher = callback_state.clone();
+        let stop_flag_dispatcher = stop_flag.clone();
         
         let handle = std::thread::spawn(move || {
             let mut batch = Vec::new();
             loop {
-                while let Ok(res) = rx.try_recv() {
-                    batch.push(res);
-                    if batch.len() >= batch_size_limit { break; }
+                if batch.is_empty() {
+                    match rx.recv_timeout(std::time::Duration::from_millis(20)) {
+                        Ok(res) => batch.push(res),
+                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                            if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
+                            continue;
+                        }
+                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+                while batch.len() < batch_size_limit {
+                    match rx.try_recv() {
+                        Ok(res) => batch.push(res),
+                        Err(_) => break,
+                    }
                 }
                 if !batch.is_empty() {
                     Python::with_gil(|py| {
-                        let _ = cb_clone.bind(py).call1((std::mem::take(&mut batch),));
+                        if !callback_state_dispatcher.failed.load(Ordering::Relaxed) {
+                            if let Err(error) = cb_clone.bind(py).call1((std::mem::take(&mut batch),)) {
+                                callback_state_dispatcher.record_error(&stop_flag_dispatcher, "results", error);
+                            }
+                        } else {
+                            batch.clear();
+                        }
                     });
                 }
                 if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() { break; }
-                std::thread::sleep(std::time::Duration::from_millis(20));
             }
         });
         (tx, handle)
     });
 
     py.allow_threads(|| {
-        let (is_json, is_xml, is_exact, _is_excel, exclude_binary, _existence_only) = parse_search_mode(mode_bits);
-        let ac_shared = Arc::new(AhoCorasickBuilder::new()
-            .ascii_case_insensitive(true)
-            .match_kind(MatchKind::LeftmostFirst)
-            .build([keyword.as_str()])
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?);
-
         let results = Arc::new(Mutex::new(Vec::new()));
         let skipped = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
         let exts = extensions.map(|v| v.iter().map(|s| s.trim_start_matches('.').to_lowercase()).collect::<HashSet<String>>());
@@ -857,9 +1071,10 @@ fn find_files_with_keyword(
             builder.hidden(exclude_hidden).ignore(false).git_ignore(false);
             let walker = builder.build_parallel();
             let res_ref = Arc::clone(&results);
+            let skipped_ref = Arc::clone(&skipped);
             let ac_ref = Arc::clone(&ac_shared);
             let stop_ref = Arc::clone(&stop_flag);
-            let kw_orig = keyword.clone();
+            let kw_orig = norm_keyword.clone();
             let ext_s = exts.clone();
             let glob_s = glob_set.clone();
             // M1: results_dispatcher에서 tx 채널 추출
@@ -867,6 +1082,7 @@ fn find_files_with_keyword(
 
             walker.run(move || {
                 let res_inner = Arc::clone(&res_ref);
+                let skipped_inner = Arc::clone(&skipped_ref);
                 let ac_inner = Arc::clone(&ac_ref);
                 let stop_inner = Arc::clone(&stop_ref);
                 let kw_inner = kw_orig.clone();
@@ -892,16 +1108,53 @@ fn find_files_with_keyword(
                         let meta = match file.metadata() { Ok(m) => m, Err(_) => return ignore::WalkState::Continue };
                         let f_size = meta.len();
                         if f_size == 0 || f_size > MAX_FILE_SIZE { return ignore::WalkState::Continue; }
-                        
-                        if let Ok(mmap) = unsafe { Mmap::map(&file) } {
-                             let is_match = if is_json && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
-                                 check_json_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), 20_000)
+
+                        let is_json_file = is_json && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json"));
+                        if is_json_file && f_size > max_json_size {
+                            let f_path = path.to_string_lossy().to_string();
+                            let mut g = skipped_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                            g.push((f_path, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON")));
+                            return ignore::WalkState::Continue;
+                        }
+
+                        let f_path = path.to_string_lossy().to_string();
+                        let snapshot = match load_file_snapshot(file, f_size, meta.modified().ok()) {
+                            Ok(snapshot) => snapshot,
+                            Err(error) => {
+                                let mut g = skipped_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                                g.push((f_path, encode_skip_reason(REASON_ERR_MMAP, error)));
+                                return ignore::WalkState::Continue;
+                            }
+                        };
+                        let bytes = snapshot.as_slice();
+                        let is_match = if is_json_file {
+                                 let encoding = detect_encoding(bytes);
+                                 let decoded = if encoding == UTF_8 {
+                                     None
+                                 } else {
+                                     Some(decode_bytes(bytes, encoding))
+                                 };
+                                 let searchable = decoded
+                                     .as_ref()
+                                     .map(|value| value.as_bytes())
+                                     .unwrap_or(bytes);
+                                 check_json_file(searchable, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), max_json_depth)
                              } else if is_xml && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) {
-                                 check_xml_file(&mmap, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
-                             } else if exclude_binary && is_binary(&mmap) {
+                                  let encoding = detect_encoding(bytes);
+                                 let decoded = if encoding == UTF_8 {
+                                     None
+                                 } else {
+                                      Some(decode_bytes(bytes, encoding))
+                                 };
+                                 let searchable = decoded
+                                     .as_ref()
+                                     .map(|value| value.as_bytes())
+                                      .unwrap_or(bytes);
+                                 check_xml_file(searchable, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
+                             } else if exclude_binary && is_binary(bytes) {
                                  false
                              } else {
-                                 ac_inner.find(&mmap).is_some()
+                                 ac_inner.find(bytes).is_some()
                              };
 
                             if is_match {
@@ -914,7 +1167,6 @@ fn find_files_with_keyword(
                                     g.push((f_path, f_size));
                                 }
                             }
-                        }
                     }
                     ignore::WalkState::Continue
                 })
@@ -924,8 +1176,12 @@ fn find_files_with_keyword(
         // N1: is_done을 먼저 설정하여 dispatcher가 종료 루프에 진입할 수 있도록 합니다.
         is_done.store(true, Ordering::SeqCst);
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
+        if let Some(handle) = monitor_handle { let _ = handle.join(); }
         let final_res = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
         let final_skipped = skipped.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        if let Some(error) = callback_state.error_message() {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error));
+        }
         Ok((final_res, final_skipped))
     })
 }
@@ -939,6 +1195,8 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // 의도적으로 비워둠: catch_unwind에서 패닉을 처리하므로 별도 출력 불필요
     }));
 
+    m.add_class::<SearchMatch>()?;
+    m.add_class::<SearchOptions>()?;
     m.add_function(wrap_pyfunction!(search_file, m)?)?;
     m.add_function(wrap_pyfunction!(search_dir, m)?)?;
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;
@@ -1026,6 +1284,21 @@ mod tests {
         let matches = do_search_with_mmap(&data, UTF_8, "needle", &ac, false, false, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.contains("needle"));
+    }
+
+    #[test]
+    fn match_limit_returns_only_allowed_matches_and_a_marker() {
+        let matches = vec![
+            (1, "one".to_string(), None, None),
+            (2, "two".to_string(), None, None),
+            (3, "three".to_string(), None, None),
+        ];
+        let limited = apply_match_limit(matches, 2);
+
+        assert_eq!(limited.len(), 3);
+        assert_eq!(limited[0].1, "one");
+        assert_eq!(limited[1].1, "two");
+        assert_eq!(limited[2].1, MATCH_META_TRUNCATED);
     }
 
     #[test]

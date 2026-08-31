@@ -45,6 +45,19 @@ def _get_rust_search_limits() -> Tuple[int, int, int, int]:
     )
 
 
+def _build_rust_options(**values: Any) -> Optional[Any]:
+    """Build the named Rust options object when the new extension is available.
+
+    Older locally installed extensions do not expose ``SearchOptions`` yet.
+    Returning ``None`` keeps the Python compatibility path operational while a
+    rebuilt extension is rolled out.
+    """
+    options_type = getattr(sf_engine, "SearchOptions", None)
+    if options_type is None:
+        return None
+    return options_type(**values)
+
+
 def _memory_guard_result(file_path: str) -> Optional[Tuple[str, str]]:
     """Prevent a structured-file parse when the application is already under pressure."""
     try:
@@ -131,6 +144,7 @@ class _BooleanMatchFound(Exception):
 SKIP_CODE_UNKNOWN = "ERR_UNKNOWN"
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
 RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
+RUST_MATCH_MARKER_TRUNCATED = "__SF_TRUNCATED__"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
 _SKIP_REASON_TEMPLATES = {
@@ -211,6 +225,13 @@ def _parse_rust_binary_count(marker_count: str, length: Any) -> int:
     return 1
 
 
+def _rust_match_field(match: Any, index: int, attribute: str, default: Any = None) -> Any:
+    """Read a Rust match from either the tuple ABI or the typed object ABI."""
+    if isinstance(match, (tuple, list)):
+        return match[index] if len(match) > index else default
+    return getattr(match, attribute, default)
+
+
 def _normalize_rust_matches(
     matches: List[Any], 
     special_mode: Optional[str] = None, 
@@ -220,24 +241,38 @@ def _normalize_rust_matches(
     res: List[Any] = []
     bin_cnt = 0
     sheet_skips: List[Tuple[str, str]] = []  # [(file_path, sheet_name), ...]
-    last_c = ""
-
     for m in matches:
         try:
             # Rust 엔진은 (라인, 내용, 오프셋, 길이)를 반환합니다.
-            c = m[1]
+            c = _rust_match_field(m, 1, "content", "")
         except (IndexError, TypeError):
             # 이전 객체 스타일 매치에 대한 폴백 처리입니다.
             c = getattr(m, "content", "")
 
-        if c == "__SF_SAME_LINE__":
-            c = last_c
-        else:
-            last_c = c
-
         # 내부 마커 처리 (LONG_LINE 포함)
-        if c.startswith("__SF_"):
-            if c.startswith("__SF_LONG_LINE__|"):
+        try:
+            marker_line = _rust_match_field(m, 0, "line")
+            marker_offset = _rust_match_field(m, 2, "offset")
+            marker_length = _rust_match_field(m, 3, "length")
+        except (IndexError, TypeError):
+            marker_line, marker_offset, marker_length = None, None, None
+
+        if c.startswith(RUST_MATCH_MARKER_LONG_LINE) and marker_line != 0 and marker_offset is None and marker_length is None:
+            c = AppStrings.MSG_LONG_LINE_PREVIEW.format(c[len(RUST_MATCH_MARKER_LONG_LINE):])
+
+        structured_kind = getattr(m, "kind", None)
+        is_structured_match = structured_kind == "match"
+        if not is_structured_match and marker_line == 0 and c.startswith("__SF_"):
+            if c == RUST_MATCH_MARKER_TRUNCATED and marker_line == 0:
+                res.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
+                    _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
+                ), None, None))
+                continue
+            if c == RUST_MATCH_MARKER_TRUNCATED:
+                # A real file match is identified by its positive line number;
+                # only the Rust metadata marker uses line 0.
+                pass
+            elif c.startswith("__SF_LONG_LINE__|"):
                 c = AppStrings.MSG_LONG_LINE_PREVIEW.format(c[len("__SF_LONG_LINE__|"):])
             elif c.startswith(RUST_MATCH_MARKER_BINARY):
                 try:
@@ -260,12 +295,12 @@ def _normalize_rust_matches(
                 continue
 
         if existence_only:
-            return [(m[0], AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, m[2] if len(m) > 2 else None, m[3] if len(m) > 3 else None)], 0, []
+            return [(_rust_match_field(m, 0, "line", 1), AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length"))], 0, []
 
         try:
-            line   = m[0]
-            offset = m[2] if len(m) > 2 else None
-            length = m[3] if len(m) > 3 else None
+            line = _rust_match_field(m, 0, "line", 1)
+            offset = _rust_match_field(m, 2, "offset")
+            length = _rust_match_field(m, 3, "length")
 
             # Rust 엔진은 특수 모드(XML, JSON)에서
             # content 필드에 모든 필드를 \t로 합쳐서 반환함.
@@ -311,15 +346,44 @@ def _normalize_rust_matches(
     return res, bin_cnt, sheet_skips
 
 
+def _visible_match_count(matches: List[Any]) -> int:
+    """내부 truncation marker를 제외한 사용자에게 표시할 매치 수를 반환합니다."""
+    return sum(
+        1
+        for match in matches
+        if isinstance(match, (tuple, list))
+        and match
+        and str(match[0]) != "-1"
+    )
+
+
 def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
     """엑셀 마커 전용 결과뿐만 아니라, 모든 모드의 일반 오류를 스킵 사유로 추출합니다."""
     for m in matches:
+        structured_kind = getattr(m, "kind", None)
+        structured_code = getattr(m, "code", None)
+        structured_detail = getattr(m, "detail", None)
+        if structured_kind == "error":
+            if structured_code:
+                if structured_code == "ERR_EXCEL_PANIC":
+                    return AppStrings.ERROR_EXCEL_PANIC.format(structured_detail or "unknown")
+                return format_skip_reason(_build_skip_reason(structured_code, structured_detail or ""))
+
         try:
             # m: (line, content, offset, length)
-            content = str(m[1])
+            content = str(_rust_match_field(m, 1, "content", ""))
         except (IndexError, TypeError):
             content = str(getattr(m, "content", ""))
-            
+
+        try:
+            marker_line = _rust_match_field(m, 0, "line")
+        except (IndexError, TypeError):
+            marker_line = None
+        # Current Rust output uses line 0 for metadata. Keep typed-object
+        # results compatible with older extension builds that used line 1.
+        if marker_line != 0 and isinstance(m, (tuple, list)):
+            continue
+
         if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
             panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
             return AppStrings.ERROR_EXCEL_PANIC.format(panic_detail)
@@ -721,7 +785,13 @@ def search_in_excel_special(
                 processed = []
                 sheet_errors: List[str] = []
                 for m in results:
-                    content = str(m[1])
+                    content = str(_rust_match_field(m, 1, "content", ""))
+                    line = _rust_match_field(m, 0, "line", 1)
+                    if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
+                        processed.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
+                            _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
+                        ), None, None))
+                        continue
                     if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
                         panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
                         return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_PANIC.format(panic_detail))
@@ -744,11 +814,11 @@ def search_in_excel_special(
                         parts = content.split(" | ", 2)
 
                     if len(parts) >= 3:
-                        processed.append((m[0], parts[0], parts[1], parts[2]))
+                        processed.append((line, parts[0], parts[1], parts[2]))
                     else:
-                        processed.append((m[0], content, "", ""))
+                        processed.append((line, content, "", ""))
                 if processed:
-                    return (file_path, len(processed), processed)
+                    return (file_path, _visible_match_count(processed), processed)
                 if sheet_errors:
                     return (Constants.STATUS_SKIPPED, sheet_errors[0])
             # [방어 정책] Rust 엔진에서 결과가 없으면 즉시 종료합니다.
@@ -880,12 +950,19 @@ def search_in_json_special(
                     return (Constants.STATUS_SKIPPED, skip_reason)
                 processed = []
                 for m in results:
-                    parts = m[1].split("\t", 1)
+                    content = _rust_match_field(m, 1, "content", "")
+                    line = _rust_match_field(m, 0, "line", 1)
+                    if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
+                        processed.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
+                            _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
+                        ), "", ""))
+                        continue
+                    parts = content.split("\t", 1)
                     # JSON 경로 정규화: /를 .으로 변경하고 시작 / 문자를 제거합니다.
                     json_path = parts[0].lstrip("/").replace("/", ".")
                     val = parts[1] if len(parts) > 1 else ""
-                    processed.append((m[0], json_path, val, m[2], m[3]))
-                return (file_path, len(processed), processed)
+                    processed.append((line, json_path, val, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
+                return (file_path, _visible_match_count(processed), processed)
             
             # 탐지 누락 방지: Rust 엔진이 결과를 찾지 못한 경우 Python 폴백으로 이어지도록 합니다.
             pass
@@ -1101,10 +1178,12 @@ def search_in_xml_special(
                     return (Constants.STATUS_SKIPPED, skip_reason)
                 processed = []
                 for m in results:
-                    parts = m[1].split("\t", 1)
+                    line = _rust_match_field(m, 0, "line", 1)
+                    content = str(_rust_match_field(m, 1, "content", ""))
+                    parts = content.split("\t", 1)
                     tag_path = parts[0].lstrip("/").replace("/", " > ")
                     val = parts[1] if len(parts) > 1 else ""
-                    processed.append((m[0], tag_path, val, m[2], m[3]))
+                    processed.append((line, tag_path, val, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
                 return (file_path, len(processed), processed)
             
             # XML 모드에서 탐지 누락을 방지합니다.
@@ -1629,23 +1708,41 @@ def search_directory_fast(
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(kwargs.get("special_mode"), exclude_binary=exclude_binary, existence_only=existence_only)
         max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
-        raw_ret = search_dir_func(
-            search_paths,
-            rust_pattern,
-            rust_exts,
-            mode_bits,
-            rust_fn_filters,
-            exclude_hidden,
-            stop_event,
-            progress_callback,
-            kwargs.get("results_callback"),
-            kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
-            kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
-            max_per_file,
-            max_check_cells,
-            max_json_depth,
-            max_json_size,
+        rust_options = _build_rust_options(
+            extensions=rust_exts,
+            mode_bits=mode_bits,
+            filename_filter=rust_fn_filters,
+            exclude_hidden=exclude_hidden,
+            stop_event=stop_event,
+            progress_callback=progress_callback,
+            results_callback=kwargs.get("results_callback"),
+            batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
+            flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
+            max_per_file=max_per_file,
+            max_check_cells=max_check_cells,
+            max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
         )
+        if rust_options is not None:
+            raw_ret = search_dir_func(root_paths=search_paths, pattern=rust_pattern, options=rust_options)
+        else:
+            raw_ret = search_dir_func(
+                root_paths=search_paths,
+                pattern=rust_pattern,
+                extensions=rust_exts,
+                mode_bits=mode_bits,
+                filename_filter=rust_fn_filters,
+                exclude_hidden=exclude_hidden,
+                stop_event=stop_event,
+                progress_callback=progress_callback,
+                results_callback=kwargs.get("results_callback"),
+                batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
+                _flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
+                max_per_file=max_per_file,
+                max_check_cells=max_check_cells,
+                max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
+            )
         formatted_results = []
         skipped_results = []
         if raw_ret:
@@ -1666,7 +1763,7 @@ def search_directory_fast(
                             )
                         )
                     elif match_tuples:
-                        formatted_results.append((path, len(match_tuples), match_tuples))
+                        formatted_results.append((path, _visible_match_count(match_tuples), match_tuples))
                     else:
                         skip_reason = _extract_marker_skip_reason(matches)
                         if skip_reason:
@@ -1706,14 +1803,12 @@ def search_files_list_fast(
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
         max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
-        raw_ret = search_func(
-            file_list,
-            rust_pattern,
-            mode_bits,
-            exclude_hidden,
-            stop_event,
-            progress_callback,
-            kwargs.get("results_callback"),
+        rust_options = _build_rust_options(
+            mode_bits=mode_bits,
+            exclude_hidden=exclude_hidden,
+            stop_event=stop_event,
+            progress_callback=progress_callback,
+            results_callback=kwargs.get("results_callback"),
             batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
             flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
             max_per_file=max_per_file,
@@ -1721,6 +1816,24 @@ def search_files_list_fast(
             max_json_depth=max_json_depth,
             max_json_size=max_json_size,
         )
+        if rust_options is not None:
+            raw_ret = search_func(file_list=file_list, search_string=rust_pattern, options=rust_options)
+        else:
+            raw_ret = search_func(
+                file_list=file_list,
+                search_string=rust_pattern,
+                mode_bits=mode_bits,
+                exclude_hidden=exclude_hidden,
+                stop_event=stop_event,
+                progress_callback=progress_callback,
+                results_callback=kwargs.get("results_callback"),
+                batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
+                _flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
+                max_per_file=max_per_file,
+                max_check_cells=max_check_cells,
+                max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
+            )
         formatted_results = []
         skipped_results = []
         if raw_ret:
@@ -1740,7 +1853,7 @@ def search_files_list_fast(
                             )
                         )
                     elif match_tuples:
-                        formatted_results.append((path, len(match_tuples), match_tuples))
+                        formatted_results.append((path, _visible_match_count(match_tuples), match_tuples))
                     else:
                         skip_reason = _extract_marker_skip_reason(matches)
                         if skip_reason:
@@ -1810,18 +1923,34 @@ def find_files_with_keyword_fast(
             raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.find_files_with_keyword"))  # type: ignore
         exclude_binary = bool(kwargs.get("exclude_binary", False))
         rust_mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
+        _max_per_file, _max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
         # [M-06 Fix] TypeError fallback 제거: API_VERSION 6 미만은 로드 시 차단됨
         # stop_event 없는 재시도는 사용자 중단 신호를 무력화하는 버그였음
-        found_ret = find_func(
-            search_paths,
-            rust_pattern,
-            rust_exts,
-            rust_mode_bits,
-            rust_fn_filters,
-            exclude_hidden,
-            stop_event,
-            kwargs.get("results_callback"),
+        rust_options = _build_rust_options(
+            extensions=rust_exts,
+            mode_bits=rust_mode_bits,
+            filename_filter=rust_fn_filters,
+            exclude_hidden=exclude_hidden,
+            stop_event=stop_event,
+            results_callback=kwargs.get("results_callback"),
+            max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
         )
+        if rust_options is not None:
+            found_ret = find_func(paths=search_paths, keyword=rust_pattern, options=rust_options)
+        else:
+            found_ret = find_func(
+                paths=search_paths,
+                keyword=rust_pattern,
+                extensions=rust_exts,
+                mode_bits=rust_mode_bits,
+                filename_filter=rust_fn_filters,
+                exclude_hidden=exclude_hidden,
+                stop_event=stop_event,
+                results_callback=kwargs.get("results_callback"),
+                max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
+            )
         found_files: List[FileInfo] = []
         skipped_files: List[SkippedResult] = []
         if found_ret:

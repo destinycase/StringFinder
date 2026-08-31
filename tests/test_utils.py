@@ -12,6 +12,7 @@
 """
 
 import os
+import subprocess
 import sys
 from unittest.mock import patch
 
@@ -75,3 +76,22 @@ def test_open_file_exception():
         with patch("os.name", "nt"):
             result = open_file("invalid/path")
             assert result is False
+
+
+def test_open_file_linux_uses_xdg_open(monkeypatch, tmp_path):
+    file_path = tmp_path / "test.txt"
+    file_path.touch()
+    monkeypatch.setattr("sf_utils.file_helper.os.name", "posix")
+    monkeypatch.setattr("sf_utils.file_helper.sys.platform", "linux")
+    monkeypatch.setattr("sf_utils.file_helper.shutil.which", lambda name: "/usr/bin/xdg-open" if name == "xdg-open" else None)
+
+    with patch("sf_utils.file_helper.subprocess.run") as run:
+        run.return_value.returncode = 0
+        assert open_file(str(file_path)) is True
+
+    run.assert_called_once_with(
+        ["/usr/bin/xdg-open", str(file_path)],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )

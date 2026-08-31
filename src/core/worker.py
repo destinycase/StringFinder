@@ -358,8 +358,9 @@ class SearchWorker(QRunnable):
                     formatted_batch.append((path, marker_binary_count, [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)]))
                     current_batch_matches += marker_binary_count
                 elif match_tuples:
-                    formatted_batch.append((path, len(match_tuples), match_tuples))
-                    current_batch_matches += len(match_tuples)
+                    visible_matches = [match for match in match_tuples if str(match[0]) != "-1"]
+                    formatted_batch.append((path, len(visible_matches), match_tuples))
+                    current_batch_matches += len(visible_matches)
             
             if not formatted_batch and not skipped_batch:
                 return

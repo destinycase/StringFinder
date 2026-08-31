@@ -81,6 +81,21 @@ def test_search_result_model_batch_addition():
     assert len(model.get_all_results()) == 2
 
 
+def test_search_result_model_sort_keeps_filtered_rows_in_sync(qtbot):
+    model = SearchResultModel()
+    model.add_results([
+        [1, "z.txt", "folder", "/z/z.txt", [(1, "z")]],
+        [2, "a.txt", "folder", "/a/a.txt", [(1, "a")]],
+    ])
+
+    model.sort(1)
+    qtbot.waitUntil(lambda: not model._is_sorting, timeout=2000)
+
+    assert [item[1] for item in model._result_buffer] == ["a.txt", "z.txt"]
+    assert [item[1] for item in model._filtered_buffer] == ["a.txt", "z.txt"]
+    assert [model.data(model.index(i, 1)) for i in range(model.rowCount())] == ["a.txt", "z.txt"]
+
+
 def test_result_view_visibility_toggle(qtbot, mock_config_manager):
     """ResultView가 첫 결과 수신 시 가시성을 전환하는지 확인합니다."""
     view = ResultView(None, mock_config_manager)

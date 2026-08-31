@@ -148,19 +148,24 @@ pub fn generate_search_patterns(
                 if encoded != *p { variants.push(encoded); }
             }
             if is_json {
-                let mut encoded = String::new();
+                let mut encoded_lower = String::new();
+                let mut encoded_upper = String::new();
                 for c in p.chars() {
-                    if c.is_ascii() { encoded.push(c); }
+                    if c.is_ascii() {
+                        encoded_lower.push(c);
+                        encoded_upper.push(c);
+                    }
                     else {
-                        let code_point = c as u32;
                         // 대문자(\uXXXX)와 소문자(\uxxxx) 양쪽 모두 추가합니다.
-                        variants.push(format!("\\u{:04X}", code_point));
-                        variants.push(format!("\\u{:04x}", code_point));
+                        push_json_unicode_escape(&mut encoded_lower, c, false);
+                        push_json_unicode_escape(&mut encoded_upper, c, true);
                         // encoded는 소문자 패턴으로 기본 빌드
-                        encoded.push_str(&format!("\\u{:04x}", code_point));
                     }
                 }
-                if encoded != *p { variants.push(encoded); }
+                if encoded_lower != *p { variants.push(encoded_lower.clone()); }
+                if encoded_upper != *p && encoded_upper != encoded_lower {
+                    variants.push(encoded_upper);
+                }
             }
         }
         for v in variants {
@@ -169,6 +174,30 @@ pub fn generate_search_patterns(
     }
     patterns.into_iter().collect()
 }
+
+fn push_json_unicode_escape(output: &mut String, value: char, uppercase: bool) {
+    use std::fmt::Write;
+
+    let code_point = value as u32;
+    if code_point <= 0xFFFF {
+        if uppercase {
+            write!(output, "\\u{:04X}", code_point).unwrap();
+        } else {
+            write!(output, "\\u{:04x}", code_point).unwrap();
+        }
+        return;
+    }
+
+    let adjusted = code_point - 0x1_0000;
+    let high = 0xD800 + (adjusted >> 10);
+    let low = 0xDC00 + (adjusted & 0x3FF);
+    if uppercase {
+        write!(output, "\\u{:04X}\\u{:04X}", high, low).unwrap();
+    } else {
+        write!(output, "\\u{:04x}\\u{:04x}", high, low).unwrap();
+    }
+}
+
 pub fn is_binary(data: &[u8]) -> bool {
     if data.len() >= 2 && (data.starts_with(b"\xff\xfe") || data.starts_with(b"\xfe\xff")) {
         return false;
@@ -227,6 +256,24 @@ mod tests {
         assert!(patterns.iter().any(|p| p == keyword));
         assert!(patterns.iter().any(|p| p == "A&amp;B&#54620;"));
         assert!(patterns.iter().any(|p| p == r"A&B\ud55c"));
+    }
+
+    #[test]
+    fn json_unicode_variants_encode_the_whole_keyword_only() {
+        let patterns = generate_search_patterns("한국어", false, true);
+
+        assert!(patterns.iter().any(|p| p == r"\ud55c\uad6d\uc5b4"));
+        assert!(!patterns.iter().any(|p| p == r"\ud55c"));
+        assert!(!patterns.iter().any(|p| p == r"\uad6d"));
+        assert!(!patterns.iter().any(|p| p == r"\uc5b4"));
+    }
+
+    #[test]
+    fn json_unicode_variants_use_surrogate_pairs_for_non_bmp_characters() {
+        let patterns = generate_search_patterns("😀", false, true);
+
+        assert!(patterns.iter().any(|p| p == r"\ud83d\ude00"));
+        assert!(!patterns.iter().any(|p| p == r"\u1f600"));
     }
 
     #[test]

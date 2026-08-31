@@ -685,14 +685,44 @@ class ConfigManager:
             # Structured parsers have bounded safe limits. Clamp legacy or
             # hand-edited settings so Python and Rust follow the same policy.
             for key, minimum, maximum in (
+                (Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, 1, 10_000_000),
+                (Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, 1, 1_000_000),
                 (Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB),
+                (Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, 1, 100),
+                (Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, 1, 100),
+                (Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, 1, 3_600),
+                (Constants.CONFIG_KEY_MAX_CHECK_CELLS, 1, 10_000_000),
                 (Constants.CONFIG_KEY_MAX_JSON_DEPTH, 1, Constants.DEFAULT_MAX_JSON_DEPTH),
             ):
                 try:
                     result[key] = min(max(int(result[key]), minimum), maximum)
                 except (KeyError, TypeError, ValueError):
-                    result[key] = maximum
+                    result[key] = defaults.get(key, minimum)
             return result  # type: ignore
+
+    def get_log_retention(self) -> dict[str, Any]:
+        """Return a detached, type- and range-normalized log retention config."""
+        with self._config_lock:
+            defaults = self._defaults.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
+            raw = self._config.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
+            result = copy.deepcopy(defaults) if isinstance(defaults, dict) else {}
+            if isinstance(raw, dict):
+                result.update(copy.deepcopy(raw))
+
+            enabled = result.get(Constants.CONFIG_KEY_LOG_RETENTION_ENABLED)
+            if not isinstance(enabled, bool):
+                result[Constants.CONFIG_KEY_LOG_RETENTION_ENABLED] = bool(
+                    defaults.get(Constants.CONFIG_KEY_LOG_RETENTION_ENABLED, True)
+                )
+            for key, minimum, maximum in (
+                (Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES, 1, 100),
+                (Constants.CONFIG_KEY_LOG_RETENTION_MAX_DAYS, 1, 365),
+            ):
+                try:
+                    result[key] = min(max(int(result[key]), minimum), maximum)
+                except (KeyError, TypeError, ValueError):
+                    result[key] = defaults.get(key, minimum)
+            return result
         
     def set_advanced_settings(self, settings_dict: dict):
         """고급 설정을 업데이트한다."""

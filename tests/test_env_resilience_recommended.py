@@ -17,6 +17,7 @@
 
 import importlib
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -105,7 +106,7 @@ def test_rust_binary_marker_is_mapped_to_appstrings(tmp_path):
     p.write_text("dummy", encoding="utf-8")
 
     fake_match = types.SimpleNamespace(
-        line=1,
+        line=0,
         content="__SF_BINARY_MATCH__|3",
         offset=None,
         length=3,
@@ -130,8 +131,8 @@ def test_rust_long_line_marker_is_mapped_to_appstrings(tmp_path):
     fake_match = types.SimpleNamespace(
         line=7,
         content=f"__SF_LONG_LINE__|{preview}",
-        offset=100,
-        length=5000000,
+        offset=None,
+        length=None,
     )
     fake_engine = types.SimpleNamespace(search_file=lambda *_args, **_kwargs: [fake_match])
 
@@ -148,7 +149,7 @@ def test_rust_long_line_marker_is_mapped_to_appstrings(tmp_path):
 
 def test_rust_search_dir_binary_marker_is_mapped():
     fake_match = types.SimpleNamespace(
-        line=1,
+        line=0,
         content="__SF_BINARY_MATCH__|2",
         offset=None,
         length=2,
@@ -169,8 +170,8 @@ def test_rust_search_files_list_long_line_marker_is_mapped():
     fake_match = types.SimpleNamespace(
         line=11,
         content=f"__SF_LONG_LINE__|{preview}",
-        offset=77,
-        length=999999,
+        offset=None,
+        length=None,
     )
     fake_engine = types.SimpleNamespace(search_files_list=lambda *_args, **_kwargs: ([("a.txt", [fake_match])], []))
 
@@ -186,7 +187,7 @@ def test_rust_search_files_list_long_line_marker_is_mapped():
 
 def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
     fake_match = types.SimpleNamespace(
-        line=1,
+        line=0,
         content="__SF_EXCEL_PANIC__|xlsx",
         offset=None,
         length=None,
@@ -204,7 +205,7 @@ def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
 
 def test_rust_search_files_list_excel_panic_marker_maps_to_skipped():
     fake_match = types.SimpleNamespace(
-        line=1,
+        line=0,
         content="__SF_EXCEL_PANIC__|xls",
         offset=None,
         length=None,
@@ -301,6 +302,60 @@ def test_windows_file_lock_sharing_violation_skip(monkeypatch, tmp_path):
 
     assert isinstance(result, tuple) and len(result) == 2
     assert result[0] == Constants.STATUS_SKIPPED
+
+
+def _assert_concurrent_replace_is_safe(tmp_path, *, truncate: bool) -> None:
+    from core import search_engine
+
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    p = tmp_path / "concurrent.txt"
+    payload = (b"x" * (32 * 1024 * 1024)) + b"\nneedle\n"
+    p.write_bytes(payload)
+
+    child_code = "from rust_engine import sf_engine; sf_engine.search_file(__import__('sys').argv[1], 'needle')"
+    env = os.environ.copy()
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    # Use the project src path explicitly so the child exercises the deployed
+    # extension module regardless of the pytest working directory.
+    env["PYTHONPATH"] = os.pathsep.join([os.path.join(repo_root, "src"), env.get("PYTHONPATH", "")]).strip(os.pathsep)
+
+    child = subprocess.Popen([sys.executable, "-c", child_code, str(p)], env=env)
+    return_code = None
+    try:
+        for index in range(8):
+            replacement = tmp_path / f"replacement_{index}.tmp"
+            replacement.write_bytes(payload)
+            try:
+                os.replace(replacement, p)
+            except OSError:
+                replacement.unlink(missing_ok=True)
+            if truncate:
+                try:
+                    with p.open("r+b") as handle:
+                        handle.truncate(len(payload) // 2)
+                except OSError:
+                    # A sharing violation is an expected safe outcome while
+                    # the Rust snapshot holds the file open.
+                    pass
+        return_code = child.wait(timeout=10)
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
+
+    assert return_code == 0
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only concurrent file mutation behavior")
+def test_windows_concurrent_replace_does_not_crash_rust_search(tmp_path):
+    _assert_concurrent_replace_is_safe(tmp_path, truncate=True)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Covered by Windows lock/truncate test")
+def test_posix_concurrent_replace_does_not_crash_rust_search(tmp_path):
+    _assert_concurrent_replace_is_safe(tmp_path, truncate=False)
 
 
 @pytest.mark.chaos

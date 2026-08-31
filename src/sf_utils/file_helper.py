@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import sys
 
 
 def _split_windows_command_line(arguments: str) -> list[str]:
@@ -66,7 +67,17 @@ def open_file(file_path: str) -> bool:
         if os.name == "nt":
             os.startfile(file_path)
         elif os.name == "posix":
-            subprocess.call(("open", file_path))
+            opener_name = "open" if sys.platform == "darwin" else "xdg-open"
+            opener = shutil.which(opener_name)
+            if not opener:
+                return False
+            completed = subprocess.run(
+                [opener, file_path],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return completed.returncode == 0
     except (OSError, PermissionError, FileNotFoundError, subprocess.SubprocessError):
         # 권한 부족, 파일 부재 등 다양한 시스템 오류로 인해 파일을 열 수 없는 경우 false를 반환합니다.
         return False

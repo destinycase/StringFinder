@@ -1,19 +1,300 @@
-#![allow(dead_code)]
-use crate::types::RawMatch;
-use serde_json::Value as JsonValue;
+use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::Deserialize;
+use serde_json::Deserializer;
+use std::fmt;
 
-struct JsonSearchContext<'a> {
-    pattern: &'a str,
+use crate::types::RawMatch;
+
+enum PathComponent {
+    ObjectKey(String),
+    ArrayIndex(usize),
+}
+
+struct JsonSearchState<'data> {
     pattern_upper: String,
-    ac: &'a aho_corasick::AhoCorasick,
+    ac: &'data aho_corasick::AhoCorasick,
     is_exact: bool,
-    mmap: &'a [u8],
+    mmap: &'data [u8],
     last_offset: usize,
     last_line: usize,
+    path: Vec<PathComponent>,
     results: Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
     max_json_depth: usize,
+    collect_results: bool,
+    found: bool,
+    valid: bool,
+}
+
+impl<'data> JsonSearchState<'data> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        mmap: &'data [u8],
+        pattern: &str,
+        ac: &'data aho_corasick::AhoCorasick,
+        is_exact: bool,
+        stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        max_per_file: usize,
+        max_json_depth: usize,
+        collect_results: bool,
+    ) -> Self {
+        Self {
+            pattern_upper: pattern.to_lowercase().to_uppercase(),
+            ac,
+            is_exact,
+            mmap,
+            last_offset: 0,
+            last_line: 1,
+            path: Vec::new(),
+            results: Vec::new(),
+            stop_flag,
+            max_per_file,
+            max_json_depth,
+            collect_results,
+            found: false,
+            valid: true,
+        }
+    }
+
+    fn path_string(&self) -> String {
+        let mut path = String::new();
+        for component in &self.path {
+            path.push('/');
+            match component {
+                PathComponent::ObjectKey(key) => path.push_str(key),
+                PathComponent::ArrayIndex(index) => path.push_str(&index.to_string()),
+            }
+        }
+        path
+    }
+
+    fn record_scalar(&mut self, value: &str) {
+        if self.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+
+        let is_match = if self.is_exact {
+            crate::utils::normalize_unicode(value).trim().to_lowercase().to_uppercase()
+                == self.pattern_upper
+        } else {
+            self.ac.find(value).is_some()
+        };
+        if !is_match {
+            return;
+        }
+        self.found = true;
+        if !self.collect_results || self.results.len() > self.max_per_file {
+            return;
+        }
+
+        let mut found_pos = None;
+        let mut found_len = 0;
+        if self.last_offset < self.mmap.len() {
+            if let Some(m) = self.ac.find(&self.mmap[self.last_offset..]) {
+                found_pos = Some(self.last_offset + m.start());
+                found_len = m.len();
+            }
+        }
+
+        let path_string = self.path_string();
+        if let Some(actual_pos) = found_pos {
+            self.last_line +=
+                memchr::memchr_iter(b'\n', &self.mmap[self.last_offset..actual_pos]).count();
+            self.results.push((
+                self.last_line,
+                format!("{}\t{}", path_string, value),
+                Some(actual_pos),
+                Some(found_len),
+            ));
+            self.last_offset = actual_pos + found_len;
+        } else {
+            self.results.push((
+                self.last_line,
+                format!("{}\t{}", path_string, value),
+                None,
+                None,
+            ));
+        }
+    }
+}
+
+struct JsonSeed<'state, 'data> {
+    state: &'state mut JsonSearchState<'data>,
+    depth: usize,
+}
+
+impl<'de, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data> {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if self.depth > self.state.max_json_depth {
+            IgnoredAny::deserialize(deserializer).map(|_| ())
+        } else {
+            deserializer.deserialize_any(JsonVisitor {
+                state: self.state,
+                depth: self.depth,
+            })
+        }
+    }
+}
+
+struct JsonVisitor<'state, 'data> {
+    state: &'state mut JsonSearchState<'data>,
+    depth: usize,
+}
+
+impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        while let Some(key) = map.next_key::<String>()? {
+            if self.state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            self.state.path.push(PathComponent::ObjectKey(key));
+            map.next_value_seed(JsonSeed {
+                state: &mut *self.state,
+                depth: self.depth.saturating_add(1),
+            })?;
+            self.state.path.pop();
+        }
+        Ok(())
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut index = 0;
+        while !self.state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            self.state.path.push(PathComponent::ArrayIndex(index));
+            let element = seq.next_element_seed(JsonSeed {
+                state: &mut *self.state,
+                depth: self.depth.saturating_add(1),
+            })?;
+            self.state.path.pop();
+            if element.is_none() {
+                break;
+            }
+            index = index.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.state.record_scalar(value);
+        Ok(())
+    }
+
+    fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.state.record_scalar(value);
+        Ok(())
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.state.record_scalar(&value);
+        Ok(())
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.state.record_scalar(&value.to_string());
+        Ok(())
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.state.record_scalar(&value.to_string());
+        Ok(())
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        self.state.record_scalar(&value.to_string());
+        Ok(())
+    }
+
+    fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(())
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_json<'data>(
+    mmap: &'data [u8],
+    pattern: &'data str,
+    ac: &'data aho_corasick::AhoCorasick,
+    is_exact: bool,
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_per_file: usize,
+    max_json_depth: usize,
+    collect_results: bool,
+) -> JsonSearchState<'data> {
+    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
+        &mmap[3..]
+    } else {
+        mmap
+    };
+
+    let mut state = JsonSearchState::new(
+        parse_mmap,
+        pattern,
+        ac,
+        is_exact,
+        stop_flag,
+        max_per_file,
+        max_json_depth,
+        collect_results,
+    );
+    let mut deserializer = Deserializer::from_slice(parse_mmap);
+    let parse_result = JsonSeed {
+        state: &mut state,
+        depth: 0,
+    }
+    .deserialize(&mut deserializer);
+    let stopped = state.stop_flag.load(std::sync::atomic::Ordering::Relaxed);
+    state.valid = if stopped {
+        parse_result.is_ok()
+    } else {
+        parse_result.is_ok() && deserializer.end().is_ok()
+    };
+    state
 }
 
 pub fn search_json_file(
@@ -25,174 +306,25 @@ pub fn search_json_file(
     max_per_file: usize,
     max_json_depth: usize,
 ) -> Vec<RawMatch> {
-    let mut ctx = JsonSearchContext {
-        pattern,
-        pattern_upper: pattern.to_lowercase().to_uppercase(),
-        ac,
-        is_exact,
-        mmap,
-        last_offset: 0,
-        last_line: 1,
-        results: Vec::new(),
-        stop_flag,
-        max_per_file,
-        max_json_depth,
-    };
-
-    let ac_precheck = ctx.ac.find(mmap);
-    if !ctx.is_exact && ac_precheck.is_none() {
+    if !is_exact && ac.find(mmap).is_none() {
         return Vec::new();
     }
 
-    // UTF-8 BOM 스킵 (serde_json은 BOM을 지원하지 않아 파싱 에러 발생)
-    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
-        &mmap[3..]
+    let mut state = parse_json(
+        mmap,
+        pattern,
+        ac,
+        is_exact,
+        stop_flag,
+        max_per_file,
+        max_json_depth,
+        true,
+    );
+    if state.valid {
+        std::mem::take(&mut state.results)
     } else {
-        mmap
-    };
-
-    // 스트리밍 데시리얼라이저를 사용하여 바이트 오프셋 기반으로 순차 접근
-    let deserializer = serde_json::Deserializer::from_slice(parse_mmap);
-    let mut stream = deserializer.into_iter::<JsonValue>();
-
-    while let Some(value_res) = stream.next() {
-        if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            break;
-        }
-        
-        let byte_offset = stream.byte_offset(); // 현재까지 파싱된 바이트 오프셋 확보
-
-        match value_res {
-            Ok(v) => {
-                enum PathComp<'a> {
-                    ObjKey(&'a str),
-                    ArrIdx(usize),
-                }
-                enum Task<'a> {
-                    Explore(&'a JsonValue, Option<PathComp<'a>>),
-                    PopPath,
-                }
-                let mut stack = vec![Task::Explore(&v, None)];
-                let mut current_path: Vec<PathComp> = Vec::new();
-
-                while let Some(task) = stack.pop() {
-                    // B4/N3: 깊이 방어 (루프 순회 방어용 2만)
-                    if stack.len() >= 20_000 { break; }
-                    if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
-                    }
-                    match task {
-                        Task::PopPath => {
-                            current_path.pop();
-                        }
-                        Task::Explore(val, comp) => {
-                            if let Some(c) = comp {
-                                current_path.push(c);
-                                stack.push(Task::PopPath);
-                            }
-                            match val {
-                                JsonValue::Object(map) => {
-                                    for (k, v) in map.iter().rev() {
-                                        stack.push(Task::Explore(v, Some(PathComp::ObjKey(k))));
-                                    }
-                                }
-                                JsonValue::Array(arr) => {
-                                    for (i, v) in arr.iter().enumerate().rev() {
-                                        stack.push(Task::Explore(v, Some(PathComp::ArrIdx(i))));
-                                    }
-                                }
-                                JsonValue::String(s) => {
-                                    let is_match = if ctx.is_exact {
-                                        s.trim().to_lowercase().to_uppercase() == ctx.pattern_upper
-                                    } else {
-                                        ctx.ac.find(s).is_some()
-                                    };
-
-                                    if is_match {
-                                        if ctx.results.len() > ctx.max_per_file {
-                                            return ctx.results;
-                                        }
-                                        let mut path_str = String::new();
-                                        for comp in &current_path {
-                                            path_str.push('/');
-                                            match comp {
-                                                PathComp::ObjKey(k) => path_str.push_str(k),
-                                                PathComp::ArrIdx(idx) => {
-                                                    use std::fmt::Write;
-                                                    write!(&mut path_str, "{}", idx).unwrap();
-                                                }
-                                            }
-                                        }
-                                        
-                                        // 하이브리드 스트리밍: 현재 값의 대략적인 위치 주변에서 정밀 위치를 탐색합니다.
-                                        let mut found_pos = None;
-                                        let mut found_len = 0;
-
-                                        let search_area_start = ctx.last_offset;
-                                        let search_area_end = std::cmp::min(byte_offset + 4096, ctx.mmap.len());
-                                        
-                                        if search_area_start < search_area_end {
-                                            if let Some(m) = ctx.ac.find(&ctx.mmap[search_area_start..search_area_end]) {
-                                                found_pos = Some(search_area_start + m.start());
-                                                found_len = m.len();
-                                            }
-                                        }
-                                        
-                                        if let Some(actual_pos) = found_pos {
-                                            ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
-                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), Some(actual_pos), Some(found_len)));
-                                            ctx.last_offset = actual_pos + found_len;
-                                        } else {
-                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), None, None));
-                                        }
-                                    }
-                                }
-                                JsonValue::Number(n) => {
-                                    let s = n.to_string();
-                                    let is_match = if ctx.is_exact { s == *ctx.pattern } else { ctx.ac.find(&s).is_some() };
-                                    if is_match {
-                                        if ctx.results.len() > ctx.max_per_file {
-                                            return ctx.results;
-                                        }
-                                        let mut path_str = String::new();
-                                        for comp in &current_path {
-                                            path_str.push('/');
-                                            match comp {
-                                                PathComp::ObjKey(k) => path_str.push_str(k),
-                                                PathComp::ArrIdx(idx) => {
-                                                    use std::fmt::Write;
-                                                    write!(&mut path_str, "{}", idx).unwrap();
-                                                }
-                                            }
-                                        }
-
-                                        let mut found_pos = None;
-                                        let search_area_end = std::cmp::min(byte_offset + 4096, ctx.mmap.len());
-                                        if ctx.last_offset < search_area_end {
-                                            if let Some(m) = ctx.ac.find(&ctx.mmap[ctx.last_offset..search_area_end]) {
-                                                found_pos = Some(ctx.last_offset + m.start());
-                                            }
-                                        }
-                                        if let Some(actual_pos) = found_pos {
-                                            ctx.last_line += memchr::memchr_iter(b'\n', &ctx.mmap[ctx.last_offset..actual_pos]).count();
-                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), Some(actual_pos), Some(s.len())));
-                                            ctx.last_offset = actual_pos + s.len();
-                                        } else {
-                                            ctx.results.push((ctx.last_line, format!("{}\t{}", path_str, s), None, None));
-                                        }
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
-            Err(_) => break, // 파싱 오류 시 중단
-        }
+        Vec::new()
     }
-
-    ctx.results
 }
 
 pub fn check_json_file(
@@ -201,67 +333,58 @@ pub fn check_json_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    _max_json_depth: usize,
+    max_json_depth: usize,
 ) -> bool {
-    let pattern_upper = pattern.to_lowercase().to_uppercase();
-    
-    // 전체 바이트 스캔을 통한 선행 필터링 (파싱 오버헤드 방지)
     if !is_exact && ac.find(mmap).is_none() {
         return false;
     }
 
-    // UTF-8 BOM 스킵
-    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
-        &mmap[3..]
-    } else {
-        mmap
-    };
+    let state = parse_json(
+        mmap,
+        pattern,
+        ac,
+        is_exact,
+        stop_flag,
+        0,
+        max_json_depth,
+        false,
+    );
+    state.valid && state.found
+}
 
-    // 스트리밍 방식으로 구조 탐색하여 메모리 스파이크 억제
-    let deserializer = serde_json::Deserializer::from_slice(parse_mmap);
-    let iter = deserializer.into_iter::<JsonValue>();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aho_corasick::AhoCorasickBuilder;
 
-    for value_res in iter {
-        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            break;
-        }
-        if let Ok(v) = value_res {
-            let mut stack = vec![&v];
-            while let Some(val) = stack.pop() {
-                match val {
-                    JsonValue::Object(map) => {
-                        for v in map.values().rev() {
-                            stack.push(v);
-                        }
-                    }
-                    JsonValue::Array(arr) => {
-                        for v in arr.iter().rev() {
-                            stack.push(v);
-                        }
-                    }
-                    JsonValue::String(s) => {
-                        let is_match = if is_exact {
-                            s.trim().to_lowercase().to_uppercase() == pattern_upper
-                        } else {
-                            ac.find(s).is_some()
-                        };
-                        if is_match {
-                            return true;
-                        }
-                    }
-                    JsonValue::Number(n) => {
-                        let s = n.to_string();
-                        let is_match = if is_exact { s == *pattern } else { ac.find(&s).is_some() };
-                        if is_match {
-                            return true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        } else {
-            break;
-        }
+    fn test_ac(pattern: &str) -> aho_corasick::AhoCorasick {
+        AhoCorasickBuilder::new()
+            .ascii_case_insensitive(true)
+            .build([pattern])
+            .unwrap()
     }
-    false
+
+    #[test]
+    fn search_json_honors_nesting_depth_limit() {
+        let ac = test_ac("needle");
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let json = br#"{"outer":{"key":"needle"}}"#;
+
+        assert_eq!(search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 2).len(), 1);
+        assert!(search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 1).is_empty());
+        assert!(!check_json_file(json, "needle", &ac, false, stop_flag.clone(), 1));
+        assert!(check_json_file(json, "needle", &ac, false, stop_flag, 2));
+    }
+
+    #[test]
+    fn search_json_streams_nested_values() {
+        let ac = test_ac("needle");
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let json = br#"{"items":[{"value":"needle"},{"value":"other"}]}"#;
+
+        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000);
+
+        assert_eq!(result.len(), 1);
+        assert!(result[0].1.contains("/items/0/value\tneedle"));
+    }
 }

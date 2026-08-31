@@ -153,7 +153,7 @@ class SettingsDialog(QDialog):
         self.log_retention_combo = QComboBox()
         self.log_retention_combo.addItem(AppStrings.COMBO_DISABLE, False)
         self.log_retention_combo.addItem(AppStrings.COMBO_ENABLE, True)
-        retention_config = self.config_manager.get("log_retention", {})
+        retention_config = self.config_manager.get_log_retention()
         enabled = retention_config.get("enabled", True)
         self.log_retention_combo.setCurrentIndex(self.log_retention_combo.findData(enabled))
         self.log_retention_combo.currentIndexChanged.connect(self._on_log_retention_changed)
@@ -385,19 +385,19 @@ class SettingsDialog(QDialog):
 
     def _on_log_retention_changed(self, index):
         enabled = self.log_retention_combo.itemData(index)
-        retention = self.config_manager.get("log_retention", {})
+        retention = self.config_manager.get_log_retention()
         retention["enabled"] = enabled
         self.config_manager.set("log_retention", retention)
         self.max_files_spinbox.setEnabled(enabled)
         self.max_days_spinbox.setEnabled(enabled)
 
     def _on_max_files_changed(self, value):
-        retention = self.config_manager.get("log_retention", {})
+        retention = self.config_manager.get_log_retention()
         retention["max_files"] = value
         self.config_manager.set("log_retention", retention)
 
     def _on_max_days_changed(self, value):
-        retention = self.config_manager.get("log_retention", {})
+        retention = self.config_manager.get_log_retention()
         retention["max_days"] = value
         self.config_manager.set("log_retention", retention)
 

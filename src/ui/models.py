@@ -70,6 +70,7 @@ class SearchResultModel(QAbstractTableModel):
         self._page_size = 1000  # 기본 페이지 크기를 1000건으로 설정합니다.
         self._pagination_enabled = True
         self._is_sorting = False
+        self._sort_worker = None
         self._file_filter = ""
         self._folder_filter = ""
         self.search_mode = Constants.MODE_NORMAL
@@ -80,7 +81,7 @@ class SearchResultModel(QAbstractTableModel):
     class SortWorker(QRunnable):
         def __init__(self, data, column, reverse, callback):
             super().__init__()
-            self.setAutoDelete(False)  # signals 소멸 방지 (autoDelete 시 소멸 레이스 차단)
+            self.setAutoDelete(True)
             self.data = data
             self.column = column
             self.reverse = reverse
@@ -105,13 +106,13 @@ class SearchResultModel(QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
         reverse = order == Qt.SortOrder.DescendingOrder
         # 정렬 워커 생성 및 실행
-        worker = self.SortWorker(list(self._result_buffer), column, reverse, self._on_sort_finished)
-        QThreadPool.globalInstance().start(worker)
-
+        self._sort_worker = self.SortWorker(list(self._result_buffer), column, reverse, self._on_sort_finished)
+        QThreadPool.globalInstance().start(self._sort_worker)
     def _on_sort_finished(self, sorted_data):
         self._result_buffer = sorted_data
+        self._apply_filters(reset_page=False)
+        self._sort_worker = None
         self._is_sorting = False
-        self.go_to_page(self._current_page)
         self.layoutChanged.emit()
         self.sort_completed.emit()
 
@@ -197,7 +198,7 @@ class SearchResultModel(QAbstractTableModel):
         self._folder_filter = new_folder
         self._apply_filters()
 
-    def _apply_filters(self):
+    def _apply_filters(self, reset_page: bool = True):
         """전체 버퍼에서 필터를 적용하여 _filtered_buffer를 갱신합니다."""
         if not self._file_filter and not self._folder_filter:
             self._filtered_buffer = list(self._result_buffer)
@@ -205,8 +206,9 @@ class SearchResultModel(QAbstractTableModel):
             self._filtered_buffer = [item for item in self._result_buffer if self._matches_filter(item)]
 
         # 필터 적용 후 첫 페이지로 이동
-        self._current_page = 1
-        self.go_to_page(1)
+        if reset_page:
+            self._current_page = 1
+        self.go_to_page(self._current_page)
 
     def sort_results(self):
         """전체 데이터를 전역 규칙에 따라 정렬합니다 (비동기)."""
@@ -355,7 +357,7 @@ class SearchResultModel(QAbstractTableModel):
         class GlobalSortWorker(QRunnable):
             def __init__(self, data, key, callback):
                 super().__init__()
-                self.setAutoDelete(False)  # signals 소멸 방지 (autoDelete 시 소멸 레이스 차단)
+                self.setAutoDelete(True)
                 self.data = data
                 self.key = key
                 self.callback = callback
@@ -370,8 +372,8 @@ class SearchResultModel(QAbstractTableModel):
                     logger.error(AppStrings.ERROR_GLOBAL_SORT_WORKER.format(e))
                     self.signals.finished.emit([])
 
-        worker = GlobalSortWorker(list(self._result_buffer), global_key, self._on_sort_finished)
-        QThreadPool.globalInstance().start(worker)
+        self._sort_worker = GlobalSortWorker(list(self._result_buffer), global_key, self._on_sort_finished)
+        QThreadPool.globalInstance().start(self._sort_worker)
 
     def _load_all_from_buffer(self):
         """버퍼의 모든 결과를 즉시 로드합니다 (페이지네이션 비활성화 시)."""

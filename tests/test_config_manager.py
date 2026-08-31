@@ -154,6 +154,32 @@ def test_log_retention_settings(temp_dir):
         assert retention2.get("max_days") == 14
 
 
+def test_malformed_runtime_settings_are_normalized(temp_dir):
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        cm = ConfigManager()
+        cm.set(Constants.CONFIG_KEY_LOG_RETENTION, {
+            Constants.CONFIG_KEY_LOG_RETENTION_ENABLED: "no",
+            Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES: "9999",
+            Constants.CONFIG_KEY_LOG_RETENTION_MAX_DAYS: "invalid",
+        })
+        cm.set_advanced_settings({
+            Constants.CONFIG_KEY_MAX_TOTAL_MATCHES: "invalid",
+            Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE: -100,
+            Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG: 999_999,
+        })
+
+        retention = cm.get_log_retention()
+        advanced = cm.get_advanced_settings()
+
+    assert retention[Constants.CONFIG_KEY_LOG_RETENTION_ENABLED] is True
+    assert retention[Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES] == 100
+    assert retention[Constants.CONFIG_KEY_LOG_RETENTION_MAX_DAYS] == 3
+    assert advanced[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] == Constants.DEFAULT_MAX_TOTAL_MATCHES
+    assert advanced[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] == 1
+    assert advanced[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG] == 3600
+
+
 def test_config_accessors_do_not_expose_mutable_state(temp_dir):
     with patch("os.getenv", return_value=temp_dir):
         ConfigManager._instance = None

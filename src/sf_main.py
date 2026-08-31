@@ -118,9 +118,7 @@ def main():
         from sf_utils.config_manager import ConfigManager
 
         config_mgr = ConfigManager()
-        # Use ConfigManager's detached defaults snapshot as the fallback.
-        _log_ret_default = config_mgr.get_defaults().get(Constants.CONFIG_KEY_LOG_RETENTION, {})
-        retention = config_mgr.get(Constants.CONFIG_KEY_LOG_RETENTION, _log_ret_default)
+        retention = config_mgr.get_log_retention()
         app_data = os.getenv("APPDATA")
         if app_data:
             log_dir = os.path.join(app_data, "StringFinder")
@@ -149,9 +147,7 @@ def main():
         try:
             config_mgr = ConfigManager()
             config_mgr.stop()
-            # Use ConfigManager's detached defaults snapshot as the fallback.
-            _log_ret_default = config_mgr.get_defaults().get(Constants.CONFIG_KEY_LOG_RETENTION, {})
-            retention = config_mgr.get(Constants.CONFIG_KEY_LOG_RETENTION, _log_ret_default)
+            retention = config_mgr.get_log_retention()
             app_data = os.getenv("APPDATA")
             if app_data:
                 log_dir = os.path.join(app_data, "StringFinder")
