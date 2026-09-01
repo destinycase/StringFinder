@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from sf_utils.constants import Constants
+from sf_utils.app_strings import AppStrings
 from ui.result_view import ResultView
 from ui.search_tab import SearchTab
 
@@ -113,6 +114,21 @@ def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture
     assert result_panel.match_view.toolTip() == ""
     assert result_panel.context_preview.toolTip() == ""
     assert search_tab_fixture.result_view_panel.match_pagination_widget.height() == 36
+
+
+def test_search_options_use_user_facing_label_and_requested_order(search_tab_fixture):
+    search_panel = search_tab_fixture.search_panel
+
+    assert search_panel.exclude_hidden_check.text() == "숨김 파일/폴더 제외"
+    assert search_panel.exclude_hidden_check.text() == AppStrings.EXCLUDE_HIDDEN_LABEL
+
+    option_widgets = [
+        search_panel.complex_search_check,
+        search_panel.boolean_search_check,
+        search_panel.exclude_hidden_check,
+    ]
+    option_layout = search_panel.layout().itemAt(3).layout()
+    assert [option_layout.itemAt(i).widget() for i in range(3)] == option_widgets
 
 
 def test_ui_source_does_not_restore_tooltips():

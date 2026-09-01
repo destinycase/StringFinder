@@ -99,8 +99,8 @@ class SearchOptionsPanel(QWidget):
         self.boolean_search_check = QCheckBox(AppStrings.BOOLEAN_SEARCH_LABEL)
         self.boolean_search_check.setChecked(False)  # 기본적으로 검색 결과 요약 확인 모드는 해제 상태로 시작합니다.
         options_layout.addWidget(self.complex_search_check)
-        options_layout.addWidget(self.exclude_hidden_check)
         options_layout.addWidget(self.boolean_search_check)
+        options_layout.addWidget(self.exclude_hidden_check)
         options_layout.addStretch()
         layout.addLayout(options_layout)
 

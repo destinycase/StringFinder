@@ -138,7 +138,7 @@ class AppStrings:
         "예: 독일어(ß↔ss), 프랑스어(Œ↔oe), 원문자(㉮↔가) 및 복잡한 유니코드 변형\n"
         "정밀 하게 검사하는 대신, 속도가 느립니다."
     )
-    EXCLUDE_HIDDEN_LABEL = "시스템 항목 제외"
+    EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_HIDDEN_TOOLTIP = (
         "윈도우의 '숨김' 속성이 설정된 폴더와 파일을 검색에서 제외합니다.\n"
         ".git, node_modules, AppData 등 불필요한 스캔을 줄여 속도가 대폭 향상됩니다."
