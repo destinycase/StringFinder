@@ -953,6 +953,10 @@ fn search_files_list(
 #[pyfunction]
 #[pyo3(signature = (paths, keyword, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, results_callback=None, max_json_depth=20000, max_json_size=524288000, options=None))]
 #[allow(clippy::too_many_arguments)]
+/// When `results_callback` is provided, matching `(path, size)` entries are
+/// delivered in callback batches and are intentionally omitted from the
+/// synchronous result list. This prevents retaining every smart-scan hit
+/// twice; skipped entries remain in the returned second tuple element.
 fn find_files_with_keyword(
     py: Python<'_>,
     paths: Vec<String>,

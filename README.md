@@ -3,9 +3,9 @@
 대용량 파일과 구조화된 데이터에서 문자열을 빠르게 찾는 Windows 데스크톱 검색 도구입니다.
 일반 검색은 Rust 엔진을 우선 사용하고, 정밀 검색이 필요한 경우 Python 경로를 사용합니다.
 
-현재 버전: **5.7.1**
+현재 버전: **5.7.2**
 
-## 5.7.1 변경 사항
+## 5.7.2 변경 사항
 
 - 대용량 JSON 검색을 streaming Visitor 방식으로 처리해 전체 JSON DOM 생성에 따른 메모리 급증을 줄였습니다.
 - JSON Unicode escaped 문자열과 비BMP 문자의 검색 정확도를 보강했습니다.
@@ -14,7 +14,7 @@
 - Rust callback 오류를 Python 예외로 전파하고, named-options 기반 `SearchOptions` API를 추가했습니다.
 - Windows 동시 파일 교체·truncate 안정성 테스트와 성능 baseline 측정 도구를 추가했습니다.
 
-이번 버전의 전체 검증 결과는 Python `249 passed, 1 skipped, 10 deselected`, Rust `14 passed`입니다. Linux/macOS POSIX 동시 파일 교체 테스트는 해당 OS runner에서 추가 실행해야 합니다.
+이번 버전의 전체 검증 결과는 Python `250 passed, 1 skipped, 10 deselected`, Rust `14 passed`입니다. Linux/macOS POSIX 동시 파일 교체 테스트는 해당 OS runner에서 추가 실행해야 합니다.
 
 ## 주요 기능
 

@@ -257,6 +257,29 @@ def test_real_rust_smart_scan_finds_escaped_json_unicode(tmp_path):
     assert str(partial_file) not in found_paths
 
 
+def test_real_rust_smart_scan_callback_has_single_result_contract(tmp_path):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    file_path = tmp_path / "callback.txt"
+    file_path.write_text("needle", encoding="utf-8")
+    batches = []
+
+    def collect(batch):
+        batches.extend(batch)
+
+    found, skipped = search_engine.sf_engine.find_files_with_keyword(  # type: ignore
+        [str(tmp_path)],
+        "needle",
+        mode_bits=Constants.RUST_MODE_NORMAL,
+        results_callback=collect,
+    )
+
+    assert found == []
+    assert skipped == []
+    assert (str(file_path), file_path.stat().st_size) in batches
+
+
 def test_rust_truncation_marker_is_normalized(monkeypatch):
     monkeypatch.setattr(
         search_engine.ConfigManager,

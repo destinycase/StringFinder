@@ -1898,7 +1898,12 @@ def find_files_with_keyword_fast(
     existence_only: bool = False,
     **kwargs,
 ) -> Union[List[FileInfo], Tuple[List[FileInfo], List[SkippedResult]]]:
-    """키워드가 포함된 파일 목록을 고속으로 찾아 반환합니다."""
+    """키워드가 포함된 파일 목록을 고속으로 찾아 반환합니다.
+
+    ``results_callback``이 지정되면 callback이 발견 결과의 단일 전달
+    경로가 되며, 반환되는 found 목록은 의도적으로 비어 있습니다.
+    callback은 ``(path, size)`` 항목의 batch를 받습니다.
+    """
     if not search_paths:
         return ([], []) if return_skipped else []
     try:
@@ -1924,6 +1929,7 @@ def find_files_with_keyword_fast(
         exclude_binary = bool(kwargs.get("exclude_binary", False))
         rust_mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
         _max_per_file, _max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
+        results_callback = kwargs.get("results_callback")
         # [M-06 Fix] TypeError fallback 제거: API_VERSION 6 미만은 로드 시 차단됨
         # stop_event 없는 재시도는 사용자 중단 신호를 무력화하는 버그였음
         rust_options = _build_rust_options(
@@ -1932,7 +1938,7 @@ def find_files_with_keyword_fast(
             filename_filter=rust_fn_filters,
             exclude_hidden=exclude_hidden,
             stop_event=stop_event,
-            results_callback=kwargs.get("results_callback"),
+            results_callback=results_callback,
             max_json_depth=max_json_depth,
             max_json_size=max_json_size,
         )
@@ -1947,7 +1953,7 @@ def find_files_with_keyword_fast(
                 filename_filter=rust_fn_filters,
                 exclude_hidden=exclude_hidden,
                 stop_event=stop_event,
-                results_callback=kwargs.get("results_callback"),
+                results_callback=results_callback,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
             )
@@ -1955,7 +1961,11 @@ def find_files_with_keyword_fast(
         skipped_files: List[SkippedResult] = []
         if found_ret:
             found_raw, skipped_raw = found_ret
-            found_files = list(found_raw)
+            # Streaming callback mode has a single authoritative result path:
+            # the callback receives batches and the synchronous found list is
+            # intentionally empty to avoid duplicating all matches in memory.
+            if results_callback is None:
+                found_files = list(found_raw)
             skipped_files = [(path, format_skip_reason(reason)) for path, reason in list(skipped_raw)]
         if skipped_files:
             for path, reason in skipped_files:
