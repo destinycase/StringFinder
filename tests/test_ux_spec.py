@@ -3,10 +3,11 @@
 from unittest.mock import patch
 
 import pytest
+from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
-from ui.result_view import ResultView
+from ui.result_view import ResultView, SkippedFilesDialog
 from ui.search_tab import SearchTab
 
 
@@ -149,3 +150,64 @@ def test_skipped_count_signal_is_updated(search_tab_fixture):
 
     assert search_tab_fixture.skipped_count == 1
     assert received == [1]
+
+
+def test_skipped_files_banner_is_emphasized_and_opens_list(search_tab_fixture):
+    panel = search_tab_fixture.result_view_panel
+    skipped_files = [
+        ("C:/restricted/a.xml", "XML 구문 오류"),
+        ("C:/locked/b.txt", "접근 거부"),
+    ]
+
+    search_tab_fixture._on_skipped_found(skipped_files)
+
+    assert not panel.skipped_files_banner.isHidden()
+    assert panel.skipped_files_label.text() == AppStrings.SKIPPED_FILES_COUNT.format(2)
+    assert panel.skipped_files_button.text() == AppStrings.SKIPPED_FILES_VIEW_BUTTON
+    assert "font-weight: 700" in panel.skipped_files_banner.styleSheet()
+
+    with patch("ui.result_view.SkippedFilesDialog") as dialog_class:
+        panel.skipped_files_button.click()
+
+    dialog_class.assert_called_once_with(skipped_files, 2, panel)
+    dialog_class.return_value.exec.assert_called_once_with()
+
+
+def test_empty_result_status_panels_stay_compact(search_tab_fixture, qtbot):
+    panel = search_tab_fixture.result_view_panel
+    layout = panel.layout()
+
+    panel.set_summary_info(file_count=0, match_count=0, duration=1.42, skip_count=2)
+    panel.set_skipped_files([("C:/broken.xml", "XML 구문 오류")], total_count=2)
+    panel.update_ui_visibility()
+    search_tab_fixture.resize(1600, 900)
+    search_tab_fixture.show()
+    qtbot.waitUntil(lambda: panel.width() > 0)
+
+    assert panel.summary_label.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
+    assert panel.skipped_files_banner.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
+    assert not panel.summary_label.wordWrap()
+    assert not panel.skipped_files_label.wordWrap()
+    assert layout.stretch(layout.indexOf(panel.empty_label)) == 1
+    assert layout.stretch(layout.indexOf(panel.result_splitter)) == 1
+    assert panel.summary_label.height() <= panel.summary_label.sizeHint().height()
+    assert panel.skipped_files_banner.height() <= panel.skipped_files_banner.sizeHint().height()
+
+
+def test_skipped_files_dialog_copies_paths_and_reasons(qtbot):
+    QApplication.clipboard().clear()
+    dialog = SkippedFilesDialog(
+        [("C:/restricted/a.xml", "XML 구문 오류"), ("C:/locked/b.txt", "접근 거부")],
+        total_count=3,
+    )
+    qtbot.addWidget(dialog)
+
+    dialog.copy_button.click()
+
+    copied = QApplication.clipboard().text()
+    assert copied == dialog.list_edit.toPlainText()
+    assert "C:/restricted/a.xml" in copied
+    assert "XML 구문 오류" in copied
+    assert "C:/locked/b.txt" in copied
+    assert AppStrings.SKIPPED_FILES_DETAILS_MISSING.format(1) in copied
+    assert not dialog.copy_confirmation_label.isHidden()

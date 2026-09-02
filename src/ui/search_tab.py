@@ -27,7 +27,7 @@ from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from sf_utils.logger import logger, normalize_log_level
 from ui.panels import ExtensionFilterPanel, FilenameFilterPanel, FolderFilterPanel, SearchOptionsPanel
-from ui.result_view import ResultView
+from ui.result_view import ResultView, normalize_skipped_files
 
 
 class SearchTab(QMainWindow):
@@ -54,6 +54,7 @@ class SearchTab(QMainWindow):
         self.total_matches = 0
         self.total_files = 0
         self.skipped_count = 0
+        self.skipped_files_list: List[Tuple[str, str]] = []
         self.scanned_count = 0
         self.results_buffer = []
         self.last_summary_update_time = 0.0  # 실시간 요약 업데이트를 위한 시간 기록입니다.
@@ -425,6 +426,7 @@ class SearchTab(QMainWindow):
                 "total_elapsed": self.last_search_duration,
                 "skip_count": total_skipped,
             },
+            Constants.PAYLOAD_SKIPPED: [list(item) for item in self.skipped_files_list],
             Constants.PAYLOAD_LOGS: self._serialize_logs(),
             Constants.PAYLOAD_TIMESTAMP: time.strftime("%Y-%m-%d %H:%M:%S"),
         }
@@ -488,10 +490,22 @@ class SearchTab(QMainWindow):
         results = self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
         self.total_matches = 0
         self.total_files = 0
-        self.skipped_count = 0
-        self.skipped_count_updated.emit(0)
+        self.result_view_panel.clear()  # 기존 결과와 스킵 안내를 먼저 초기화합니다.
+        self.skipped_files_list = normalize_skipped_files(state.get(Constants.PAYLOAD_SKIPPED, []))
+        summary = state.get(Constants.PAYLOAD_SUMMARY, {})
+        if not isinstance(summary, dict):
+            summary = {}
+        try:
+            self.last_search_duration = max(0.0, float(summary.get("total_elapsed", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            self.last_search_duration = 0.0
+        try:
+            restored_skip_count = max(0, int(summary.get("skip_count", 0) or 0))
+        except (TypeError, ValueError):
+            restored_skip_count = 0
+        self.skipped_count = max(restored_skip_count, len(self.skipped_files_list))
+        self.skipped_count_updated.emit(self.skipped_count)
         if results:
-            self.result_view_panel.clear()  # clear stale results before loading
             self.result_view_panel.set_results(results)
             self.total_matches = sum(row[0] for row in results if isinstance(row[0], int))
             self.total_files = len(results)
@@ -500,22 +514,16 @@ class SearchTab(QMainWindow):
                 0,
             )
 
-            # [REQ] 검색 요약 정보 복원
-            summary = state.get(Constants.PAYLOAD_SUMMARY, {})
-            if summary:
-                self.last_search_duration = summary.get("total_elapsed", 0.0)
-                skipped_count = summary.get("skip_count", 0)
-                self.skipped_count = max(0, int(skipped_count or 0))
-                self.skipped_count_updated.emit(self.skipped_count)
-                self.result_view_panel.set_summary_info(
-                    self.total_files,
-                    self.total_matches,
-                    self.last_search_duration,
-                    skip_count=skipped_count,
-                    state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED,
-                )
-
             QTimer.singleShot(100, self.result_view_panel.auto_select_first_result)
+        self.result_view_panel.set_skipped_files(self.skipped_files_list, total_count=self.skipped_count)
+        if summary or self.skipped_count:
+            self.result_view_panel.set_summary_info(
+                self.total_files,
+                self.total_matches,
+                self.last_search_duration,
+                skip_count=self.skipped_count,
+                state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED,
+            )
         # 로그 복원
         logs = state.get(Constants.PAYLOAD_LOGS, "")
         if logs:
@@ -763,10 +771,10 @@ class SearchTab(QMainWindow):
         # 사용자가 진행 상황을 실시간으로 확인할 수 있게 합니다.
         if hasattr(self, "scan_start_time"):
             total_elapsed = now - self.scan_start_time
-            total_skipped = self.skipped_count
-            # [Fix] 수신된 카운트(검색 단계)를 리스트(스캔 단계)와 합산하여 최종 표시
-            total_skipped += skipped_count
+            # search_finished의 skipped_count는 누적 합계이므로 이미 수신한 목록과 더하지 않습니다.
+            total_skipped = max(self.skipped_count, max(0, int(skipped_count or 0)))
             self.last_search_duration = total_elapsed
+            self.result_view_panel.set_skipped_files(self.skipped_files_list, total_count=total_skipped)
             
             if status_text is None:
                 if self.search_state in (Constants.SearchState.SCANNING, Constants.SearchState.SEARCHING):
@@ -793,10 +801,9 @@ class SearchTab(QMainWindow):
 
     def _on_skipped_found(self, file_paths):
         """스킵된 파일 목록을 누적합니다."""
-        if not hasattr(self, "skipped_files_list"):
-            self.skipped_files_list = []
-        self.skipped_files_list.extend(file_paths)
+        self.skipped_files_list.extend(normalize_skipped_files(file_paths))
         self.skipped_count = len(self.skipped_files_list)
+        self.result_view_panel.set_skipped_files(self.skipped_files_list, total_count=self.skipped_count)
         self.skipped_count_updated.emit(self.skipped_count)
         self._update_realtime_summary()
 
@@ -844,10 +851,11 @@ class SearchTab(QMainWindow):
             # [신규] 검색 종료 시 전역 정렬 트리거 (매치 수 기준 등)
             self.result_view_panel.sort_results()
 
-            # Phase 1(스캔)과 Phase 2(검색) 단계의 모든 스킵 파일을 합산하여 요약에 표시
-            self.skipped_count += max(0, int(skipped_count or 0))
+            # 최종 신호는 누적 합계입니다. 실시간 목록 수와 비교해 더 큰 값을 사용합니다.
+            self.skipped_count = max(self.skipped_count, max(0, int(skipped_count or 0)))
             self.skipped_count_updated.emit(self.skipped_count)
             total_skipped = self.skipped_count
+            self.result_view_panel.set_skipped_files(self.skipped_files_list, total_count=total_skipped)
             # 워커에서 수집한 시트 스킵 목록 참조 [(file_path, sheet_name)]
             skipped_sheets = []
             if hasattr(self, "worker") and self.worker and hasattr(self.worker, "skipped_sheets_list"):

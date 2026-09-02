@@ -15,8 +15,9 @@ struct JsonSearchState<'data> {
     ac: &'data aho_corasick::AhoCorasick,
     is_exact: bool,
     mmap: &'data [u8],
-    last_offset: usize,
-    last_line: usize,
+    scan_offset: usize,
+    scan_line: usize,
+    locations_reliable: bool,
     path: Vec<PathComponent>,
     results: Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -44,8 +45,9 @@ impl<'data> JsonSearchState<'data> {
             ac,
             is_exact,
             mmap,
-            last_offset: 0,
-            last_line: 1,
+            scan_offset: 0,
+            scan_line: 1,
+            locations_reliable: true,
             path: Vec::new(),
             results: Vec::new(),
             stop_flag,
@@ -69,13 +71,65 @@ impl<'data> JsonSearchState<'data> {
         path
     }
 
-    fn record_scalar(&mut self, value: &str) {
+    fn locate_token(&mut self, serialized: &str) -> Option<(usize, usize, usize)> {
+        if !self.locations_reliable || self.scan_offset >= self.mmap.len() {
+            return None;
+        }
+
+        let Some(relative_start) =
+            memchr::memmem::find(&self.mmap[self.scan_offset..], serialized.as_bytes())
+        else {
+            // Equivalent JSON spellings (for example, Unicode escapes or an
+            // exponent-form number) may not match serde_json's serialization.
+            // From this point on a guessed location could target a key or a
+            // different scalar, so omit locations instead of returning a lie.
+            self.locations_reliable = false;
+            return None;
+        };
+
+        let token_start = self.scan_offset + relative_start;
+        let skipped_bytes = &self.mmap[self.scan_offset..token_start];
+        if skipped_bytes.iter().any(|byte| {
+            !matches!(
+                byte,
+                b' ' | b'\t' | b'\r' | b'\n' | b'{' | b'}' | b'[' | b']' | b',' | b':'
+            )
+        }) {
+            // The canonical spelling was found only after another lexical
+            // token. It therefore cannot describe the scalar currently being
+            // visited (for example an escaped string followed by plain text).
+            self.locations_reliable = false;
+            return None;
+        }
+        self.scan_line += memchr::memchr_iter(b'\n', skipped_bytes).count();
+        let token_end = token_start + serialized.len();
+        self.scan_offset = token_end;
+        Some((self.scan_line, token_start, token_end))
+    }
+
+    fn advance_past_key(&mut self, key: &str) {
+        match serde_json::to_string(key) {
+            Ok(serialized) => {
+                let _ = self.locate_token(&serialized);
+            }
+            Err(_) => self.locations_reliable = false,
+        }
+    }
+
+    fn record_scalar(&mut self, value: &str, serialized: &str) {
         if self.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
 
+        // Advance for every scalar, not only matches. This keeps source-order
+        // location tracking aligned with serde's visitor traversal.
+        let token_location = self.locate_token(serialized);
+
         let is_match = if self.is_exact {
-            crate::utils::normalize_unicode(value).trim().to_lowercase().to_uppercase()
+            crate::utils::normalize_unicode(value)
+                .trim()
+                .to_lowercase()
+                .to_uppercase()
                 == self.pattern_upper
         } else {
             self.ac.find(value).is_some()
@@ -88,34 +142,27 @@ impl<'data> JsonSearchState<'data> {
             return;
         }
 
-        let mut found_pos = None;
-        let mut found_len = 0;
-        if self.last_offset < self.mmap.len() {
-            if let Some(m) = self.ac.find(&self.mmap[self.last_offset..]) {
-                found_pos = Some(self.last_offset + m.start());
-                found_len = m.len();
-            }
-        }
+        let (line, found_pos, found_len) =
+            token_location.map_or((0, None, None), |(line, token_start, token_end)| {
+                self.ac.find(&self.mmap[token_start..token_end]).map_or(
+                    (line, None, None),
+                    |matched| {
+                        (
+                            line,
+                            Some(token_start + matched.start()),
+                            Some(matched.len()),
+                        )
+                    },
+                )
+            });
 
         let path_string = self.path_string();
-        if let Some(actual_pos) = found_pos {
-            self.last_line +=
-                memchr::memchr_iter(b'\n', &self.mmap[self.last_offset..actual_pos]).count();
-            self.results.push((
-                self.last_line,
-                format!("{}\t{}", path_string, value),
-                Some(actual_pos),
-                Some(found_len),
-            ));
-            self.last_offset = actual_pos + found_len;
-        } else {
-            self.results.push((
-                self.last_line,
-                format!("{}\t{}", path_string, value),
-                None,
-                None,
-            ));
-        }
+        self.results.push((
+            line,
+            format!("{}\t{}", path_string, value),
+            found_pos,
+            found_len,
+        ));
     }
 }
 
@@ -132,6 +179,7 @@ impl<'de, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data> {
         D: serde::Deserializer<'de>,
     {
         if self.depth > self.state.max_json_depth {
+            self.state.locations_reliable = false;
             IgnoredAny::deserialize(deserializer).map(|_| ())
         } else {
             deserializer.deserialize_any(JsonVisitor {
@@ -159,9 +207,14 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
         A: MapAccess<'de>,
     {
         while let Some(key) = map.next_key::<String>()? {
-            if self.state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            if self
+                .state
+                .stop_flag
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
                 break;
             }
+            self.state.advance_past_key(&key);
             self.state.path.push(PathComponent::ObjectKey(key));
             map.next_value_seed(JsonSeed {
                 state: &mut *self.state,
@@ -177,7 +230,11 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
         A: SeqAccess<'de>,
     {
         let mut index = 0;
-        while !self.state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        while !self
+            .state
+            .stop_flag
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             self.state.path.push(PathComponent::ArrayIndex(index));
             let element = seq.next_element_seed(JsonSeed {
                 state: &mut *self.state,
@@ -196,7 +253,8 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         E: serde::de::Error,
     {
-        self.state.record_scalar(value);
+        let serialized = serde_json::to_string(value).map_err(E::custom)?;
+        self.state.record_scalar(value, &serialized);
         Ok(())
     }
 
@@ -204,7 +262,8 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         E: serde::de::Error,
     {
-        self.state.record_scalar(value);
+        let serialized = serde_json::to_string(value).map_err(E::custom)?;
+        self.state.record_scalar(value, &serialized);
         Ok(())
     }
 
@@ -212,7 +271,8 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         E: serde::de::Error,
     {
-        self.state.record_scalar(&value);
+        let serialized = serde_json::to_string(&value).map_err(E::custom)?;
+        self.state.record_scalar(&value, &serialized);
         Ok(())
     }
 
@@ -220,7 +280,8 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         E: serde::de::Error,
     {
-        self.state.record_scalar(&value.to_string());
+        let value = value.to_string();
+        self.state.record_scalar(&value, &value);
         Ok(())
     }
 
@@ -228,7 +289,8 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         E: serde::de::Error,
     {
-        self.state.record_scalar(&value.to_string());
+        let value = value.to_string();
+        self.state.record_scalar(&value, &value);
         Ok(())
     }
 
@@ -236,14 +298,18 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         E: serde::de::Error,
     {
-        self.state.record_scalar(&value.to_string());
+        let display = value.to_string();
+        let serialized = serde_json::to_string(&value).map_err(E::custom)?;
+        self.state.record_scalar(&display, &serialized);
         Ok(())
     }
 
-    fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E>
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
+        let value = if value { "true" } else { "false" };
+        self.state.record_scalar(value, value);
         Ok(())
     }
 
@@ -251,6 +317,7 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         E: serde::de::Error,
     {
+        self.state.record_scalar("null", "null");
         Ok(())
     }
 }
@@ -265,7 +332,7 @@ fn parse_json<'data>(
     max_per_file: usize,
     max_json_depth: usize,
     collect_results: bool,
-) -> JsonSearchState<'data> {
+) -> Result<JsonSearchState<'data>, String> {
     let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
         &mmap[3..]
     } else {
@@ -288,13 +355,13 @@ fn parse_json<'data>(
         depth: 0,
     }
     .deserialize(&mut deserializer);
-    let stopped = state.stop_flag.load(std::sync::atomic::Ordering::Relaxed);
-    state.valid = if stopped {
-        parse_result.is_ok()
-    } else {
-        parse_result.is_ok() && deserializer.end().is_ok()
-    };
-    state
+    if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(state);
+    }
+    parse_result.map_err(|error| error.to_string())?;
+    deserializer.end().map_err(|error| error.to_string())?;
+    state.valid = true;
+    Ok(state)
 }
 
 pub fn search_json_file(
@@ -305,11 +372,7 @@ pub fn search_json_file(
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
     max_json_depth: usize,
-) -> Vec<RawMatch> {
-    if !is_exact && ac.find(mmap).is_none() {
-        return Vec::new();
-    }
-
+) -> Result<Vec<RawMatch>, String> {
     let mut state = parse_json(
         mmap,
         pattern,
@@ -319,12 +382,11 @@ pub fn search_json_file(
         max_per_file,
         max_json_depth,
         true,
-    );
-    if state.valid {
-        std::mem::take(&mut state.results)
-    } else {
-        Vec::new()
+    )?;
+    if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(Vec::new());
     }
+    Ok(std::mem::take(&mut state.results))
 }
 
 pub fn check_json_file(
@@ -334,11 +396,7 @@ pub fn check_json_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_json_depth: usize,
-) -> bool {
-    if !is_exact && ac.find(mmap).is_none() {
-        return false;
-    }
-
+) -> Result<bool, String> {
     let state = parse_json(
         mmap,
         pattern,
@@ -348,8 +406,11 @@ pub fn check_json_file(
         0,
         max_json_depth,
         false,
-    );
-    state.valid && state.found
+    )?;
+    if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(false);
+    }
+    Ok(state.valid && state.found)
 }
 
 #[cfg(test)]
@@ -370,10 +431,19 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"{"outer":{"key":"needle"}}"#;
 
-        assert_eq!(search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 2).len(), 1);
-        assert!(search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 1).is_empty());
-        assert!(!check_json_file(json, "needle", &ac, false, stop_flag.clone(), 1));
-        assert!(check_json_file(json, "needle", &ac, false, stop_flag, 2));
+        assert_eq!(
+            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 2)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 1)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!check_json_file(json, "needle", &ac, false, stop_flag.clone(), 1).unwrap());
+        assert!(check_json_file(json, "needle", &ac, false, stop_flag, 2).unwrap());
     }
 
     #[test]
@@ -382,9 +452,68 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"{"items":[{"value":"needle"},{"value":"other"}]}"#;
 
-        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000);
+        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000).unwrap();
 
         assert_eq!(result.len(), 1);
         assert!(result[0].1.contains("/items/0/value\tneedle"));
+    }
+
+    #[test]
+    fn malformed_json_is_an_error_even_when_a_value_matches() {
+        let ac = test_ac("needle");
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let json = br#"{"value":"needle","#;
+
+        assert!(
+            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 20_000).is_err()
+        );
+        assert!(check_json_file(json, "needle", &ac, false, stop_flag, 20_000).is_err());
+    }
+
+    #[test]
+    fn json_boolean_and_null_use_json_lexical_values() {
+        let json = b"{\n  \"enabled\": true,\n  \"missing\": null\n}";
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let true_ac = test_ac("true");
+        let true_result =
+            search_json_file(json, "true", &true_ac, true, stop_flag.clone(), 10, 20_000).unwrap();
+        assert_eq!(true_result[0].0, 2);
+        assert!(true_result[0].1.ends_with("\ttrue"));
+
+        let null_ac = test_ac("null");
+        let null_result =
+            search_json_file(json, "null", &null_ac, true, stop_flag, 10, 20_000).unwrap();
+        assert_eq!(null_result[0].0, 3);
+        assert!(null_result[0].1.ends_with("\tnull"));
+    }
+
+    #[test]
+    fn json_location_points_to_the_value_not_an_earlier_key() {
+        let ac = test_ac("needle");
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let json = b"{\n  \"needle\": \"other\",\n  \"value\": \"needle\"\n}";
+
+        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, 3);
+        assert_eq!(result[0].2, memchr::memmem::rfind(json, b"needle"));
+    }
+
+    #[test]
+    fn json_location_is_omitted_when_source_spelling_cannot_be_verified() {
+        let ac = test_ac("needle");
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let json = br#"{"escaped":"\u006e\u0065\u0065\u0064\u006c\u0065","plain":"needle"}"#;
+
+        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, 0);
+        assert_eq!(result[0].2, None);
+        assert_eq!(result[0].3, None);
+        assert_eq!(result[1].0, 0);
+        assert_eq!(result[1].2, None);
     }
 }

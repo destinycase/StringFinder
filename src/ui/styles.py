@@ -73,6 +73,53 @@ class UIStyles:
         )
 
     @classmethod
+    def get_skipped_files_banner_style(cls, is_dark_mode: bool) -> str:
+        """건너뛴 파일 안내를 눈에 띄게 표시하는 테마별 스타일을 반환합니다."""
+        if is_dark_mode:
+            return """
+                QFrame#skippedFilesBanner {
+                    background-color: #3B3020;
+                    border: 1px solid #D69E2E;
+                    border-radius: 4px;
+                }
+                QLabel#skippedFilesCount {
+                    color: #FFD166;
+                    font-weight: 700;
+                }
+                QPushButton#skippedFilesButton {
+                    background-color: #D69E2E;
+                    color: #1F1F1F;
+                    font-weight: 700;
+                    padding: 4px 10px;
+                    border: 0;
+                    border-radius: 3px;
+                }
+                QPushButton#skippedFilesButton:hover { background-color: #EDB83D; }
+                QPushButton#skippedFilesButton:pressed { background-color: #B7791F; }
+            """
+        return """
+            QFrame#skippedFilesBanner {
+                background-color: #FFF7E0;
+                border: 1px solid #C47B00;
+                border-radius: 4px;
+            }
+            QLabel#skippedFilesCount {
+                color: #8A4B00;
+                font-weight: 700;
+            }
+            QPushButton#skippedFilesButton {
+                background-color: #C47B00;
+                color: white;
+                font-weight: 700;
+                padding: 4px 10px;
+                border: 0;
+                border-radius: 3px;
+            }
+            QPushButton#skippedFilesButton:hover { background-color: #D98A00; }
+            QPushButton#skippedFilesButton:pressed { background-color: #9A6100; }
+        """
+
+    @classmethod
     def get_file_info_header_style(cls, is_dark_mode: bool) -> str:
         """테마에 대응하는 선택 파일 정보 헤더 스타일을 반환합니다."""
         if is_dark_mode:

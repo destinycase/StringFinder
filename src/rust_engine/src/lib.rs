@@ -27,7 +27,7 @@ use crate::utils::{
     build_glob_set, decode_bytes, detect_encoding, generate_search_patterns, is_binary,
     match_filename_glob, parse_search_mode,
 };
-use crate::xml_search::{check_xml_file, search_xml_file};
+use crate::xml_search::{check_xml_file, search_xml_file, XmlSearchError};
 use crate::types::{SearchMatch, SearchOptions};
 
 const MAX_FILE_SIZE: u64 = 1024 * 1024 * 1024; // 1GB 제한
@@ -44,6 +44,9 @@ const REASON_ERR_OPEN: &str = "ERR_OPEN";
 const REASON_ERR_METADATA: &str = "ERR_METADATA";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
 const REASON_ERR_MEMORY_GUARD: &str = "ERR_MEMORY_GUARD";
+const REASON_ERR_JSON_PARSE: &str = "ERR_JSON_PARSE";
+const REASON_ERR_XML_PARSE: &str = "ERR_XML_PARSE";
+const REASON_ERR_XML_UNSUPPORTED_DTD: &str = "ERR_XML_UNSUPPORTED_DTD";
 
 const DEFAULT_MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
 const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
@@ -90,6 +93,15 @@ fn to_python_file_matches(results: RawFileMatches) -> FileMatches {
 
 fn encode_skip_reason<T: std::fmt::Display>(code: &str, detail: T) -> String {
     format!("{}|{}", code, detail)
+}
+
+fn encode_xml_skip_reason(error: XmlSearchError) -> String {
+    match error {
+        XmlSearchError::Parse(detail) => encode_skip_reason(REASON_ERR_XML_PARSE, detail),
+        XmlSearchError::UnsupportedDtd(detail) => {
+            encode_skip_reason(REASON_ERR_XML_UNSUPPORTED_DTD, detail)
+        }
+    }
 }
 
 enum FileSnapshot {
@@ -473,24 +485,32 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         _dec_h.as_slice()
     } else { mmap_c };
 
-    let res = if is_json && ext_l == ".json" {
+    let res: Result<Vec<RawMatch>, String> = if is_json && ext_l == ".json" {
         if final_mmap.len() as u64 > max_json_size {
-            vec![(1, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON"), None, None)]
+            Ok(vec![(1, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON"), None, None)])
         } else if existence_only {
-            if check_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_json_depth) { vec![(1, "MATCH".to_string(), None, None)] }
-            else { Vec::new() }
-        } else { search_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file, max_json_depth) }
+            check_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_json_depth)
+                .map(|found| if found { vec![(1, "MATCH".to_string(), None, None)] } else { Vec::new() })
+                .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
+        } else {
+            search_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file, max_json_depth)
+                .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
+        }
     } else if is_xml && (ext_l == ".xml" || ext_l == ".sf_xml") {
         if existence_only {
-            if check_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone()) { vec![(1, "MATCH".to_string(), None, None)] }
-            else { Vec::new() }
-        } else { search_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file) }
+            check_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone())
+                .map(|found| if found { vec![(1, "MATCH".to_string(), None, None)] } else { Vec::new() })
+                .map_err(encode_xml_skip_reason)
+        } else {
+            search_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file)
+                .map_err(encode_xml_skip_reason)
+        }
     } else {
         // 인코딩 감지에 성공한 텍스트(UTF-16/EUC-KR 등)는 NUL 바이트가 포함될 수
         // 있으므로 원본 바이트만 보고 바이너리로 판정하지 않습니다.
         let bin = enc == UTF_8 && is_binary(mmap_c);
         if exclude_binary && bin { return None; }
-        if bin {
+        Ok(if bin {
             if existence_only {
                 if ac.find(mmap_c).is_some() { vec![(0, format!("{}{}", MATCH_META_BINARY_PREFIX, 1), None, Some(1))] }
                 else { Vec::new() }
@@ -511,10 +531,13 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             };
             let searchable_mmap = &mmap_c[bom_len..];
             do_search_with_mmap(searchable_mmap, enc, pat_upper, ac, is_exact, existence_only, &stop_flag, max_per_file)
-        }
+        })
     };
 
-    let res = apply_match_limit(res, max_per_file);
+    let res = match res {
+        Ok(matches) => apply_match_limit(matches, max_per_file),
+        Err(error) => return Some(Err(error)),
+    };
     if res.is_empty() { None } else { Some(Ok(res)) }
 }
 
@@ -1114,6 +1137,10 @@ fn find_files_with_keyword(
                         if f_size == 0 || f_size > MAX_FILE_SIZE { return ignore::WalkState::Continue; }
 
                         let is_json_file = is_json && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json"));
+                        let is_xml_file = is_xml
+                            && path.extension().is_some_and(|e| {
+                                e.eq_ignore_ascii_case("xml") || e.eq_ignore_ascii_case("sf_xml")
+                            });
                         if is_json_file && f_size > max_json_size {
                             let f_path = path.to_string_lossy().to_string();
                             let mut g = skipped_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -1131,7 +1158,7 @@ fn find_files_with_keyword(
                             }
                         };
                         let bytes = snapshot.as_slice();
-                        let is_match = if is_json_file {
+                        let match_result: Result<bool, String> = if is_json_file {
                                  let encoding = detect_encoding(bytes);
                                  let decoded = if encoding == UTF_8 {
                                      None
@@ -1143,7 +1170,8 @@ fn find_files_with_keyword(
                                      .map(|value| value.as_bytes())
                                      .unwrap_or(bytes);
                                  check_json_file(searchable, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), max_json_depth)
-                             } else if is_xml && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) {
+                                     .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
+                             } else if is_xml_file {
                                   let encoding = detect_encoding(bytes);
                                  let decoded = if encoding == UTF_8 {
                                      None
@@ -1154,12 +1182,22 @@ fn find_files_with_keyword(
                                      .as_ref()
                                      .map(|value| value.as_bytes())
                                       .unwrap_or(bytes);
-                                 check_xml_file(searchable, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
-                             } else if exclude_binary && is_binary(bytes) {
-                                 false
-                             } else {
-                                 ac_inner.find(bytes).is_some()
-                             };
+                                  check_xml_file(searchable, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
+                                      .map_err(encode_xml_skip_reason)
+                              } else if exclude_binary && is_binary(bytes) {
+                                  Ok(false)
+                              } else {
+                                  Ok(ac_inner.find(bytes).is_some())
+                              };
+
+                            let is_match = match match_result {
+                                Ok(found) => found,
+                                Err(error) => {
+                                    let mut g = skipped_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                                    g.push((f_path, error));
+                                    return ignore::WalkState::Continue;
+                                }
+                            };
 
                             if is_match {
                                 let f_path = path.to_string_lossy().to_string();

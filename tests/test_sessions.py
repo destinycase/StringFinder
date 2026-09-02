@@ -62,11 +62,13 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
 
     test_results = [("path/to/file.txt", 1, [[1, "line content"]])]
     tab.result_view_panel.result_model.add_results(test_results)
+    tab._on_skipped_found([("C:/restricted/file.xml", "XML 구문 오류")])
 
     state = tab.get_state()
     assert state["inputs"]["search"] == "persistent_query"
     assert len(state["results"]) == 1
     assert state["logs"] == "Test Logs"
+    assert state[Constants.PAYLOAD_SKIPPED] == [["C:/restricted/file.xml", "XML 구문 오류"]]
 
     new_tab = SearchTab(mock_config_manager)
     qtbot.addWidget(new_tab)
@@ -76,6 +78,8 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
     assert new_tab.result_view_panel.result_model.rowCount() == 1
     assert new_tab.logs_output.toPlainText() == "Test Logs"
     assert not new_tab.result_view_panel.result_splitter.isHidden()
+    assert new_tab.skipped_files_list == [("C:/restricted/file.xml", "XML 구문 오류")]
+    assert not new_tab.result_view_panel.skipped_files_banner.isHidden()
 
 
 def test_main_window_tab_restoration(qtbot, mock_config_manager):

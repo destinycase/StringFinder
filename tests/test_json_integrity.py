@@ -66,7 +66,8 @@ def test_malformed_large_json_existence_only_integrity(tmp_path):
     result = search_in_json_special(str(file_path), "needle", existence_only=True)
     assert isinstance(result, tuple) and len(result) == 2
     assert result[0] == Constants.STATUS_SKIPPED
-    assert AppStrings.ERROR_JSON_PARSE in str(result[1])
+    assert AppStrings.ERROR_JSON_PARSE.split(":", 1)[0] in str(result[1])
+    assert "{}" not in str(result[1])
 
 def test_utf16_bom_json_search(tmp_path):
     # [v4.57.0] UTF-16 BOM이 포함된 JSON 파일 검색 성공 여부 확인

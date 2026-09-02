@@ -64,7 +64,8 @@ class TestPrefilterIntegrity(unittest.TestCase):
             self.assertEqual(res[0], "SKIPPED")
             # NoneType 에러가 보고되는지 확인 (v4.63.10 이전의 버그)
             self.assertNotIn("NoneType", str(res[1]), "JSON 파싱 실패 경로에서 NoneType 참조 오류 발생 (메시지 왜곡)")
-            self.assertIn("Integrity check failed", str(res[1]), "정상적인 무결성 실패 메시지가 보고되지 않음")
+            self.assertIn("JSON", str(res[1]), "정상적인 JSON 구문 오류 메시지가 보고되지 않음")
+            self.assertNotIn("{}", str(res[1]), "포맷되지 않은 오류 메시지가 노출됨")
 
     def test_utf16_prefilter_miss(self):
         """매치가 없는 경우 정확히 False를 반환하여 조기 종료되는지 확인"""

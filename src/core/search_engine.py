@@ -130,17 +130,17 @@ SKIP_CODE_METADATA = "ERR_METADATA"
 SKIP_CODE_MMAP = "ERR_MMAP"
 SKIP_CODE_TOO_LARGE = "ERR_TOO_LARGE"
 SKIP_CODE_MEMORY_GUARD = "ERR_MEMORY_GUARD"
+SKIP_CODE_JSON_PARSE = "ERR_JSON_PARSE"
+SKIP_CODE_XML_PARSE = "ERR_XML_PARSE"
+SKIP_CODE_XML_UNSUPPORTED_DTD = "ERR_XML_UNSUPPORTED_DTD"
 SKIP_CODE_PANIC = "ERR_PANIC"
 SKIP_CODE_CRITICAL = "ERR_CRITICAL"
 
 
-class _BooleanMatchFound(Exception):
-    """existence_only 모드에서 매치 발견 시 XML 파서를 조기 중단하는 신호 예외.
+class _UnsupportedXmlDtd(Exception):
+    """XML DTD 및 엔터티 확장을 명시적으로 거부하기 위한 내부 신호입니다."""
 
-    StopIteration을 흐름 제어에 사용하는 패턴은 PEP 479 위반입니다.
-    이 커스텀 예외는 의도적 중단임을 명확히 나타냅니다. (M-02 Fix)
-    """
-    pass
+
 SKIP_CODE_UNKNOWN = "ERR_UNKNOWN"
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
 RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
@@ -154,6 +154,9 @@ _SKIP_REASON_TEMPLATES = {
     SKIP_CODE_MMAP: AppStrings.SKIP_REASON_MMAP,
     SKIP_CODE_TOO_LARGE: AppStrings.SKIP_REASON_TOO_LARGE,
     SKIP_CODE_MEMORY_GUARD: AppStrings.SKIP_REASON_MEMORY_GUARD,
+    SKIP_CODE_JSON_PARSE: AppStrings.ERROR_JSON_PARSE,
+    SKIP_CODE_XML_PARSE: AppStrings.ERROR_XML_PARSE,
+    SKIP_CODE_XML_UNSUPPORTED_DTD: AppStrings.ERROR_XML_UNSUPPORTED_DTD,
     SKIP_CODE_PANIC: AppStrings.SKIP_REASON_PANIC,
     SKIP_CODE_CRITICAL: AppStrings.SKIP_REASON_CRITICAL,
     SKIP_CODE_UNKNOWN: AppStrings.SKIP_REASON_UNKNOWN,
@@ -168,6 +171,30 @@ _LEGACY_SKIP_MARKERS = (
     ("panic", SKIP_CODE_PANIC),
     ("critical error", SKIP_CODE_CRITICAL),
 )
+
+_XML_DETAIL_TRANSLATIONS = {
+    "XML declaration must appear exactly once at the beginning of the document": AppStrings.XML_DETAIL_DECLARATION_POSITION,
+    "DOCTYPE declaration must appear before the root element": AppStrings.XML_DETAIL_DOCTYPE_POSITION,
+    "DTD declarations and entity expansion are not supported": AppStrings.XML_DETAIL_DTD_UNSUPPORTED,
+    "multiple root elements": AppStrings.XML_DETAIL_MULTIPLE_ROOTS,
+    "unexpected closing element": AppStrings.XML_DETAIL_UNEXPECTED_CLOSING,
+    "text outside the root element": AppStrings.XML_DETAIL_TEXT_OUTSIDE_ROOT,
+    "CDATA outside the root element": AppStrings.XML_DETAIL_CDATA_OUTSIDE_ROOT,
+    "XML document is incomplete or has no root element": AppStrings.XML_DETAIL_INCOMPLETE_DOCUMENT,
+    "Malformed input, decoding impossible": AppStrings.XML_DETAIL_INVALID_ENCODING,
+    "DOCTYPE declaration must not be empty": AppStrings.XML_DETAIL_EMPTY_DOCTYPE,
+}
+
+_EXPAT_XML_DETAIL_TRANSLATIONS = {
+    "mismatched tag": AppStrings.XML_DETAIL_MISMATCHED_TAG,
+    "junk after document element": AppStrings.XML_DETAIL_MULTIPLE_ROOTS,
+    "not well-formed (invalid token)": AppStrings.XML_DETAIL_INVALID_TOKEN,
+    "no element found": AppStrings.XML_DETAIL_INCOMPLETE_DOCUMENT,
+    "unclosed token": AppStrings.XML_DETAIL_INCOMPLETE_DOCUMENT,
+    "unbound prefix": AppStrings.XML_DETAIL_UNKNOWN_NAMESPACE.format("접두사"),
+    "duplicate attribute": AppStrings.XML_DETAIL_INVALID_ATTRIBUTE,
+    "XML or text declaration not at start of entity": AppStrings.XML_DETAIL_DECLARATION_POSITION,
+}
 
 
 def _build_skip_reason(code: str, detail: Any) -> str:
@@ -198,10 +225,66 @@ def _decode_skip_reason(reason: Any) -> Tuple[str, str]:
     return SKIP_CODE_UNKNOWN, reason_str
 
 
+def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) -> str:
+    """XML 파서의 영문 진단을 사용자용 한글 설명으로 변환합니다."""
+    raw_detail = str(detail or "").strip()
+    if not raw_detail:
+        return (
+            AppStrings.XML_DETAIL_DTD_UNSUPPORTED
+            if unsupported_dtd
+            else AppStrings.XML_DETAIL_INVALID_DOCUMENT
+        )
+
+    translated = _XML_DETAIL_TRANSLATIONS.get(raw_detail)
+    if translated:
+        return translated
+
+    tag_mismatch = re.fullmatch(r"Expecting\s+(</[^>]+>)\s+found\s+(</[^>]+>)", raw_detail)
+    if tag_mismatch:
+        return AppStrings.XML_DETAIL_TAG_MISMATCH.format(*tag_mismatch.groups())
+
+    expat_location = re.fullmatch(r"(.+): line (\d+), column (\d+)", raw_detail)
+    if expat_location:
+        message, line, column = expat_location.groups()
+        localized_message = _EXPAT_XML_DETAIL_TRANSLATIONS.get(
+            message, AppStrings.XML_DETAIL_INVALID_DOCUMENT
+        )
+        return AppStrings.XML_DETAIL_WITH_POSITION.format(localized_message, line, column)
+
+    # 이미 한글로 전달된 진단은 중복 변환하지 않습니다.
+    if re.search(r"[가-힣]", raw_detail):
+        return raw_detail
+
+    if raw_detail.startswith(("Malformed UTF-8 input", "Malformed input")):
+        return AppStrings.XML_DETAIL_INVALID_ENCODING
+    if raw_detail.startswith("Unexpected EOF during reading"):
+        return AppStrings.XML_DETAIL_INCOMPLETE_DOCUMENT
+    if raw_detail.startswith("Unexpected token"):
+        return AppStrings.XML_DETAIL_INVALID_TOKEN
+    if raw_detail.startswith(("XmlDecl must start", "XML declaration")):
+        return AppStrings.XML_DETAIL_DECLARATION_POSITION
+    if raw_detail.startswith(("error while parsing attribute", "position ")):
+        return AppStrings.XML_DETAIL_INVALID_ATTRIBUTE
+    if raw_detail.startswith("Unknown namespace prefix"):
+        prefix_match = re.search(r"'([^']+)'", raw_detail)
+        prefix = prefix_match.group(1) if prefix_match else "접두사"
+        return AppStrings.XML_DETAIL_UNKNOWN_NAMESPACE.format(prefix)
+    if any(token in raw_detail for token in ("escaping character", "valid codepoint", "valid hexadecimal", "valid decimal")):
+        return AppStrings.XML_DETAIL_INVALID_ENTITY
+    if unsupported_dtd:
+        return AppStrings.XML_DETAIL_DTD_UNSUPPORTED
+    return AppStrings.XML_DETAIL_INVALID_DOCUMENT
+
+
 def format_skip_reason(reason: Any) -> str:
     code, detail = _decode_skip_reason(reason)
     template = _SKIP_REASON_TEMPLATES.get(code, AppStrings.SKIP_REASON_UNKNOWN)
     safe_detail = detail if detail else str(reason or "")
+    if code in (SKIP_CODE_XML_PARSE, SKIP_CODE_XML_UNSUPPORTED_DTD):
+        safe_detail = _localize_xml_error_detail(
+            safe_detail,
+            unsupported_dtd=code == SKIP_CODE_XML_UNSUPPORTED_DTD,
+        )
     try:
         return template.format(safe_detail)
     except Exception:
@@ -322,7 +405,8 @@ def _normalize_rust_matches(
                     pts = c.split("\t", 1)
                     json_path = pts[0].lstrip("/").replace("/", ".")
                     val = pts[1] if len(pts) > 1 else ""
-                    res.append((line, json_path, val, offset, length))
+                    position = "" if line == 0 else line
+                    res.append((position, json_path, val, offset, length))
                     continue
 
                 if "EXCEL" in mode_up:
@@ -782,7 +866,7 @@ def search_in_excel_special(
                 if existence_only:
                     # [Boolean] 일치 항목 발견 시 즉시 반환
                     return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
-                processed = []
+                processed: List[SearchMatch] = []
                 sheet_errors: List[str] = []
                 for m in results:
                     content = str(_rust_match_field(m, 1, "content", ""))
@@ -948,7 +1032,7 @@ def search_in_json_special(
                     if "ERR_MEMORY_GUARD" in skip_reason:
                         logger.warning(AppStrings.LOG_SRCH_RUST_MEM_GUARD_WARN.format(file_path))
                     return (Constants.STATUS_SKIPPED, skip_reason)
-                processed = []
+                processed: List[SearchMatch] = []
                 for m in results:
                     content = _rust_match_field(m, 1, "content", "")
                     line = _rust_match_field(m, 0, "line", 1)
@@ -957,6 +1041,8 @@ def search_in_json_special(
                             _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
                         ), "", ""))
                         continue
+                    if line == 0:
+                        line = ""
                     parts = content.split("\t", 1)
                     # JSON 경로 정규화: /를 .으로 변경하고 시작 / 문자를 제거합니다.
                     json_path = parts[0].lstrip("/").replace("/", ".")
@@ -969,7 +1055,10 @@ def search_in_json_special(
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_RUST_JSON_FAIL.format(file_path, e))
             # [Policy] 자동 폴백 중단
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE + f" (Eng: {e})")
+            reason = str(e)
+            if reason.startswith(f"{SKIP_CODE_JSON_PARSE}|"):
+                return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
+            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(reason))
     try:
         import json
 
@@ -1069,7 +1158,7 @@ def search_in_json_special(
                 
                 if data is None:
                     # 모든 재시도 실패 시 SKIPPED 보고 (None 반환 방지)
-                    return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE + " (Integrity check failed)")
+                    return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format("Integrity check failed"))
 
             # 무결성 통과 후 매치가 없는 것이 확실하면 여기서 조기 종료
             if skip_traversal:
@@ -1077,7 +1166,7 @@ def search_in_json_special(
                 return None
 
         except Exception as e:
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE + f" ({e})")
+            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(e))
         matches = []
         # 특수 문자(ß, İ 등)의 정규화를 위해 casefold() 사용
         search_string = normalize_unicode(search_string).casefold()
@@ -1112,7 +1201,12 @@ def search_in_json_special(
                     new_path = f"{path}[{i}]" if path else f"[{i}]"
                     stack.append((v, new_path, depth + 1))
             else:
-                val_raw = normalize_unicode(str(obj))
+                if obj is None:
+                    val_raw = "null"
+                elif isinstance(obj, bool):
+                    val_raw = "true" if obj else "false"
+                else:
+                    val_raw = normalize_unicode(str(obj))
                 val_comp = val_raw.casefold()
                 is_match = (val_comp == search_string) if exact_match else (search_string in val_comp)
                 if is_match:
@@ -1132,7 +1226,7 @@ def search_in_json_special(
             return (file_path, final_count, matches)
         return None
     except (json.JSONDecodeError, ValueError) as e:
-        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE + f" ({e})")
+        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(e))
     except Exception as e:
         logger.error(AppStrings.LOG_SCH_JSON_FAIL.format(file_path, e))
         return (Constants.STATUS_SKIPPED, f"JSON Search Error: {e}")
@@ -1191,7 +1285,13 @@ def search_in_xml_special(
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_RUST_XML_FAIL.format(file_path, e))
             # [Policy] 자동 폴백 중단
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_XML_PARSE.format(e))
+            reason = str(e)
+            if reason.startswith((f"{SKIP_CODE_XML_PARSE}|", f"{SKIP_CODE_XML_UNSUPPORTED_DTD}|")):
+                return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
+            return (
+                Constants.STATUS_SKIPPED,
+                format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, reason)),
+            )
     try:
         import xml.parsers.expat
 
@@ -1219,7 +1319,11 @@ def search_in_xml_special(
                 self.parser.StartElementHandler = self.start_element
                 self.parser.EndElementHandler = self.end_element
                 self.parser.CharacterDataHandler = self.char_data
+                self.parser.StartDoctypeDeclHandler = self.start_doctype
                 self.current_tags = []
+
+            def start_doctype(self, _name, _system_id, _public_id, _has_internal_subset):
+                raise _UnsupportedXmlDtd("DTD declarations and entity expansion are not supported")
 
             def start_element(self, name, attrs):
                 nonlocal count
@@ -1233,8 +1337,8 @@ def search_in_xml_special(
                     if (search_string in val_comp) if not exact_match else (search_string == val_comp):
                         count += 1
                         if existence_only:
-                            # [M-02 Fix] StopIteration 대신 커스텀 예외로 파싱을 즉시 중단
-                            raise _BooleanMatchFound()
+                            # 뒤쪽 구문 오류도 확인하도록 문서 끝까지 파싱합니다.
+                            continue
                         
                         # [상] Python 경로 매치 상한 적용
                         if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
@@ -1254,8 +1358,8 @@ def search_in_xml_special(
                     if (search_string in text_comp) if not exact_match else (search_string == text_comp):
                         count += 1
                         if existence_only:
-                            # [M-02 Fix] StopIteration 대신 커스텀 예외로 파싱을 즉시 중단
-                            raise _BooleanMatchFound()
+                            # 뒤쪽 구문 오류도 확인하도록 문서 끝까지 파싱합니다.
+                            return
                         
                         # Python 검색 경로에서 매치 결과 개수 상한을 적용합니다.
                         if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
@@ -1272,21 +1376,31 @@ def search_in_xml_special(
         searcher = XMLSearcher()
         try:
             searcher.parser.Parse(processed_content, True)
-        except _BooleanMatchFound:
-            # [M-02 Fix] Boolean 모드 매치 발견 시 의도적으로 파싱을 중단한 경우
-            return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
+        except _UnsupportedXmlDtd as dtd_error:
+            return (
+                Constants.STATUS_SKIPPED,
+                format_skip_reason(_build_skip_reason(SKIP_CODE_XML_UNSUPPORTED_DTD, dtd_error)),
+            )
         except xml.parsers.expat.ExpatError as xe:
             if _stop_event and _stop_event.is_set():
                 return (Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER)
             logger.warning(AppStrings.LOG_SCH_XML_FAIL.format(xe))
-            return (Constants.STATUS_SKIPPED, str(xe))
+            return (
+                Constants.STATUS_SKIPPED,
+                format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, xe)),
+            )
+        if existence_only and count > 0:
+            return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
         if count > 0:
             final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
             return (file_path, final_count, matches)
         return None
     except Exception as e:
         logger.error(AppStrings.LOG_SCH_XML_FAIL.format(e))
-        return (Constants.STATUS_SKIPPED, str(e))
+        return (
+            Constants.STATUS_SKIPPED,
+            format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, e)),
+        )
 
 
 def search_in_file(

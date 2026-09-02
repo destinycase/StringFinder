@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "5.7.2"
+version = "5.8.1"
 authors = [{ name = "N2", email = "your@email.com" }]
 
 description = "Production-ready high-performance string search utility with Rust engine, multiprocessing, and smart file scanning. Features UTF-16LE support, robust session management, and comprehensive error handling."

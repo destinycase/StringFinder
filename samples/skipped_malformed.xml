@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Search for "needle" in XML mode. Expected: 0 results, 1 skipped file. -->
+<root>
+  <value>needle</value>
+</broken_root>

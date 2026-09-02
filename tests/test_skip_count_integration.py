@@ -57,14 +57,14 @@ def test_skip_count_accumulation_from_scan_phase(search_tab, qtbot):
         search_tab.scan_start_time = time.time()
 
         # 통합 검색 단계(실제 SearchWorker 실행 결과 통계 수신) 종료 시그널 시뮬레이션
-        # found_count: 10, total_matches: 100, skipped_count: 1 (추가 스킵)
+        # found_count: 10, total_matches: 100, skipped_count: 1 (워커의 누적 합계)
         search_tab._on_search_finished(10, 100, 1)
 
-        # set_summary_info의 skip_count 인자가 4(3+1)이어야 함
-        # 실제 구현: total_skipped = len(skipped_files_list) [3] + skipped_count [1] = 4
+        # 실시간 목록 3건과 최종 누적 합계 1건 중 큰 값인 3을 사용해야 함
+        # 최종 누적 합계를 다시 더하면 동일한 스킵 항목을 중복 집계하게 됩니다.
         mock_summary.assert_called()
         args, kwargs = mock_summary.call_args
-        assert kwargs.get("skip_count") == 4
+        assert kwargs.get("skip_count") == 3
 
 
 def test_signal_connection_in_start_search(search_tab, qtbot):

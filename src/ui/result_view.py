@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTableView,
     QPlainTextEdit,
@@ -42,6 +44,20 @@ from ui.proxies import MatchProxyModel, ResultProxyModel
 from ui.styles import UIStyles
 from ui.syntax_highlighter import LightweightSyntaxHighlighter
 from ui.widgets import HtmlDelegate
+
+
+_EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def _sanitize_excel_cell(value):
+    """Return user-controlled text as a literal Excel cell value."""
+    if isinstance(value, str) and value.startswith(_EXCEL_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+def _append_excel_row(worksheet, values):
+    worksheet.append([_sanitize_excel_cell(value) for value in values])
 
 
 def _detect_text_encoding(file_path):
@@ -113,6 +129,81 @@ class ContextPreviewWorker(QRunnable):
             self.signals.finished.emit(self.request_id, None, error, self.cancel_event.is_set())
 
 
+def normalize_skipped_files(skipped_files):
+    """스킵 항목을 팝업과 세션 저장에 안전한 ``(경로, 사유)`` 튜플로 정규화합니다."""
+    normalized = []
+    for item in skipped_files or []:
+        if isinstance(item, (list, tuple)):
+            if not item:
+                continue
+            path = str(item[0])
+            reason = str(item[1]) if len(item) > 1 else ""
+        else:
+            path = str(item)
+            reason = ""
+        normalized.append((path, reason))
+    return normalized
+
+
+def _format_skipped_files_text(skipped_files, total_count):
+    """건너뛴 파일 경로와 사유를 클립보드 친화적인 일반 텍스트로 만듭니다."""
+    entries = normalize_skipped_files(skipped_files)
+    blocks = []
+    for index, (path, reason) in enumerate(entries, start=1):
+        lines = [f"{index}. {path}"]
+        if reason:
+            lines.append(f"   {AppStrings.SKIPPED_FILES_REASON.format(reason)}")
+        blocks.append("\n".join(lines))
+
+    missing_count = max(0, int(total_count or 0) - len(entries))
+    if missing_count:
+        blocks.append(AppStrings.SKIPPED_FILES_DETAILS_MISSING.format(missing_count))
+    return "\n\n".join(blocks)
+
+
+class SkippedFilesDialog(QDialog):
+    """건너뛴 파일과 사유를 표시하고 전체 목록 복사를 제공하는 대화상자입니다."""
+
+    def __init__(self, skipped_files, total_count, parent=None):
+        super().__init__(parent)
+        self.skipped_files = normalize_skipped_files(skipped_files)
+        self.total_count = max(int(total_count or 0), len(self.skipped_files))
+        self.list_text = _format_skipped_files_text(self.skipped_files, self.total_count)
+
+        self.setWindowTitle(AppStrings.SKIPPED_FILES_DIALOG_TITLE)
+        self.resize(760, 460)
+        layout = QVBoxLayout(self)
+
+        count_label = QLabel(AppStrings.SKIPPED_FILES_COUNT.format(self.total_count))
+        count_label.setStyleSheet("font-weight: 700;")
+        layout.addWidget(count_label)
+
+        self.list_edit = QPlainTextEdit()
+        self.list_edit.setReadOnly(True)
+        self.list_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.list_edit.setPlainText(self.list_text)
+        layout.addWidget(self.list_edit)
+
+        button_layout = QHBoxLayout()
+        self.copy_confirmation_label = QLabel(AppStrings.SKIPPED_FILES_COPIED)
+        self.copy_confirmation_label.setVisible(False)
+        button_layout.addWidget(self.copy_confirmation_label)
+        button_layout.addStretch(1)
+
+        self.copy_button = QPushButton(AppStrings.SKIPPED_FILES_COPY_BUTTON)
+        self.copy_button.clicked.connect(self.copy_to_clipboard)
+        button_layout.addWidget(self.copy_button)
+
+        close_button = QPushButton(AppStrings.SKIPPED_FILES_CLOSE_BUTTON)
+        close_button.clicked.connect(self.accept)
+        button_layout.addWidget(close_button)
+        layout.addLayout(button_layout)
+
+    def copy_to_clipboard(self):
+        QApplication.clipboard().setText(self.list_text)
+        self.copy_confirmation_label.setVisible(True)
+
+
 class ResultView(QWidget):
     CONTEXT_RADIUS = Constants.DEFAULT_CONTEXT_PREVIEW_LINES
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
@@ -135,6 +226,8 @@ class ResultView(QWidget):
         self.search_text = ""
         self.search_mode = Constants.MODE_NORMAL
         self.existence_only = False
+        self._skipped_files = []
+        self._skipped_file_count = 0
         self.selected_file_path = ""
         self._current_match_item = None
         self._context_request_id = 0
@@ -174,9 +267,26 @@ class ResultView(QWidget):
         self.result_filter_layout.addWidget(self.result_folder_filter_edit)
         # 검색 결과 요약 정보를 표시하는 레이블입니다.
         self.summary_label = QLabel()
+        self.summary_label.setWordWrap(False)
+        self.summary_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.summary_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(self._is_dark_theme()))
         self.summary_label.setVisible(False)
-        result_list_layout.addWidget(self.summary_label)
+        self.skipped_files_banner = QFrame()
+        self.skipped_files_banner.setObjectName("skippedFilesBanner")
+        self.skipped_files_banner.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        skipped_banner_layout = QHBoxLayout(self.skipped_files_banner)
+        skipped_banner_layout.setContentsMargins(10, 5, 6, 5)
+        self.skipped_files_label = QLabel()
+        self.skipped_files_label.setObjectName("skippedFilesCount")
+        self.skipped_files_label.setWordWrap(False)
+        skipped_banner_layout.addWidget(self.skipped_files_label)
+        skipped_banner_layout.addStretch(1)
+        self.skipped_files_button = QPushButton(AppStrings.SKIPPED_FILES_VIEW_BUTTON)
+        self.skipped_files_button.setObjectName("skippedFilesButton")
+        self.skipped_files_button.clicked.connect(self.show_skipped_files_dialog)
+        skipped_banner_layout.addWidget(self.skipped_files_button)
+        self.skipped_files_banner.setVisible(False)
         self.result_view = QTableView()
         self.result_model = SearchResultModel(self.icon_provider)
         self.proxy_model = ResultProxyModel()
@@ -323,12 +433,13 @@ class ResultView(QWidget):
         self.result_splitter.setStretchFactor(0, 1)
         self.result_splitter.setStretchFactor(1, 1)
         main_layout.addWidget(self.summary_label)
+        main_layout.addWidget(self.skipped_files_banner)
         main_layout.addLayout(self.result_filter_layout)
-        main_layout.addWidget(self.result_splitter)
+        main_layout.addWidget(self.result_splitter, 1)
         self.empty_label = QLabel(AppStrings.RESULT_EMPTY_MSG)
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet(UIStyles.STYLE_SELECTION_INFO)
-        main_layout.insertWidget(0, self.empty_label)
+        main_layout.insertWidget(2, self.empty_label, 1)
         self.result_splitter.setVisible(False)
         self._apply_theme_style()
         for i in range(self.result_filter_layout.count()):
@@ -372,6 +483,7 @@ class ResultView(QWidget):
         self.result_view.setStyleSheet(style)
         self.match_view.setStyleSheet(style)
         self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(is_dark))
+        self.skipped_files_banner.setStyleSheet(UIStyles.get_skipped_files_banner_style(is_dark))
         self.file_info_label.setStyleSheet(UIStyles.get_file_info_header_style(is_dark))
         self.context_preview.setStyleSheet(UIStyles.get_context_preview_style(is_dark))
         self.context_highlighter.set_dark_mode(is_dark)
@@ -847,6 +959,21 @@ class ResultView(QWidget):
             self.summary_label.setText("")
             self.summary_label.setVisible(False)
 
+    def set_skipped_files(self, skipped_files, total_count=None):
+        """상단 스킵 배너와 팝업에서 사용할 파일 목록을 갱신합니다."""
+        self._skipped_files = normalize_skipped_files(skipped_files)
+        requested_count = len(self._skipped_files) if total_count is None else int(total_count or 0)
+        self._skipped_file_count = max(requested_count, len(self._skipped_files), 0)
+        self.skipped_files_label.setText(AppStrings.SKIPPED_FILES_COUNT.format(self._skipped_file_count))
+        self.skipped_files_banner.setVisible(self._skipped_file_count > 0)
+
+    def show_skipped_files_dialog(self):
+        """건너뛴 파일 경로와 사유를 복사 가능한 팝업으로 표시합니다."""
+        if self._skipped_file_count <= 0:
+            return
+        dialog = SkippedFilesDialog(self._skipped_files, self._skipped_file_count, self)
+        dialog.exec()
+
     def set_searching_state(self, is_searching: bool):
         """검색 상태에 따른 UI 제어를 수행합니다. (검색 중에는 실시간 정렬 오버헤드를 막기 위해 정렬을 끕니다)"""
         # 검색 도중 데이터 유입으로 인한 UI 흔들림과 성능 저하를 방지하기 위해 정렬 기능을 일시적으로 끕니다.
@@ -856,6 +983,7 @@ class ResultView(QWidget):
         # [UI/UX] 검색 시작 시 이전 검색의 요약 정보를 숨깁니다.
         self.summary_label.setText("")
         self.summary_label.setVisible(False)
+        self.set_skipped_files([], total_count=0)
         self.selected_file_path = ""
         self.file_info_label.clear()
         self.file_info_header.setVisible(False)
@@ -1175,7 +1303,7 @@ class ResultView(QWidget):
         # [Sheet 1] 검색 파일 목록
         ws1 = wb.active
         ws1.title = AppStrings.EXCEL_SHEET_FILE_LIST
-        ws1.append([AppStrings.HEADER_COUNT, AppStrings.HEADER_FILE, AppStrings.HEADER_MATCH_COUNT])
+        _append_excel_row(ws1, [AppStrings.HEADER_COUNT, AppStrings.HEADER_FILE, AppStrings.HEADER_MATCH_COUNT])
 
         # [Sheet 2] 검색 상세
         ws2 = wb.create_sheet(title=AppStrings.EXCEL_SHEET_MATCH_DETAILS)
@@ -1207,13 +1335,13 @@ class ResultView(QWidget):
         else:
             headers = [AppStrings.HEADER_FILE, AppStrings.HEADER_POSITION, AppStrings.HEADER_CONTENT]
 
-        ws2.append(headers)
+        _append_excel_row(ws2, headers)
 
         all_results = self.result_model.get_all_results()
 
         for i, (count, path, folder, full_path, matches) in enumerate(all_results):
             # 시트 1 데이터 추가
-            ws1.append([i + 1, full_path, count])
+            _append_excel_row(ws1, [i + 1, full_path, count])
 
             # 시트 2 데이터 추가
             for m in matches:
@@ -1228,7 +1356,7 @@ class ResultView(QWidget):
                 else:
                     # 기본 모드: [Line, Content]
                     row.extend([str(m[0]), str(m[1])])
-                ws2.append(row)
+                _append_excel_row(ws2, row)
 
         wb.save(file_path)
 
