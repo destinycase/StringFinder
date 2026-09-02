@@ -93,7 +93,7 @@ class SearchOptionsPanel(QWidget):
         self.stop_btn.setVisible(False)
         layout.addWidget(self.stop_btn)
         options_layout = QHBoxLayout()
-        self.complex_search_check = QCheckBox(Constants.MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
+        self.complex_search_check = QCheckBox(AppStrings.SEARCH_MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
         self.exclude_hidden_check = QCheckBox(AppStrings.EXCLUDE_HIDDEN_LABEL)
         self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
         self.boolean_search_check = QCheckBox(AppStrings.BOOLEAN_SEARCH_LABEL)
@@ -318,6 +318,26 @@ class ExtensionFilterPanel(QWidget):
         self.desel_all_btn.setEnabled(is_off)
         self.special_mode_changed.emit(text)
 
+    def _set_special_mode(self, value):
+        """Restore current and legacy localized special-mode labels safely."""
+        value_text = str(value or "").strip()
+        direct_index = self.special_combo.findText(value_text)
+        if direct_index >= 0:
+            self.special_combo.setCurrentIndex(direct_index)
+            return
+
+        normalized = value_text.casefold()
+        is_exact = "정확" in value_text or "exact" in normalized
+        if "xml" in normalized:
+            target_index = 2 if is_exact else 1
+        elif "json" in normalized:
+            target_index = 4 if is_exact else 3
+        elif "excel" in normalized:
+            target_index = 6 if is_exact else 5
+        else:
+            target_index = 0
+        self.special_combo.setCurrentIndex(target_index)
+
     def _on_add_clicked(self):
         ext = self.ext_edit.text().strip().lower().replace(".", "")
         if ext:
@@ -390,7 +410,7 @@ class ExtensionFilterPanel(QWidget):
         self.ext_list.clear()
         if isinstance(data, dict):
             if Constants.PAYLOAD_SPECIAL_MODE in data:
-                self.special_combo.setCurrentText(data[Constants.PAYLOAD_SPECIAL_MODE])
+                self._set_special_mode(data[Constants.PAYLOAD_SPECIAL_MODE])
             exts = data.get(Constants.CONFIG_KEY_EXTENSIONS, {})
             if Constants.CONFIG_KEY_EXTENSIONS not in data and Constants.PAYLOAD_SPECIAL_MODE not in data:
                 exts = data
@@ -417,7 +437,7 @@ class ExtensionFilterPanel(QWidget):
         }
 
     def load_state(self, state: dict):
-        self.special_combo.setCurrentText(state.get(Constants.PAYLOAD_SPECIAL_MODE, AppStrings.SPECIAL_SEARCH_OFF))
+        self._set_special_mode(state.get(Constants.PAYLOAD_SPECIAL_MODE, AppStrings.SPECIAL_SEARCH_OFF))
         ext_states = state.get(Constants.CONFIG_KEY_EXTENSIONS, {})
         for i in range(self.ext_list.count()):
             item = self.ext_list.item(i)

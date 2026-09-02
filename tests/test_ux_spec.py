@@ -160,6 +160,7 @@ def test_skipped_files_banner_is_emphasized_and_opens_list(search_tab_fixture):
     ]
 
     search_tab_fixture._on_skipped_found(skipped_files)
+    localized_files = list(search_tab_fixture.skipped_files_list)
 
     assert not panel.skipped_files_banner.isHidden()
     assert panel.skipped_files_label.text() == AppStrings.SKIPPED_FILES_COUNT.format(2)
@@ -169,7 +170,7 @@ def test_skipped_files_banner_is_emphasized_and_opens_list(search_tab_fixture):
     with patch("ui.result_view.SkippedFilesDialog") as dialog_class:
         panel.skipped_files_button.click()
 
-    dialog_class.assert_called_once_with(skipped_files, 2, panel)
+    dialog_class.assert_called_once_with(localized_files, 2, panel)
     dialog_class.return_value.exec.assert_called_once_with()
 
 

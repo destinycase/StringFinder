@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
+from sf_utils.localization import LANGUAGE_LABELS
 from sf_utils.logger import logger
 from ui.styles import UIStyles
 
@@ -52,6 +53,19 @@ class SettingsDialog(QDialog):
 
         appearance_group = QGroupBox(AppStrings.SETTINGS_GROUP_APPEARANCE)
         appearance_layout = QVBoxLayout(appearance_group)
+        language_row = QHBoxLayout()
+        language_label = QLabel(AppStrings.LANGUAGE_LABEL)
+        self.language_combo = QComboBox()
+        for language_code, language_name in LANGUAGE_LABELS.items():
+            self.language_combo.addItem(language_name, language_code)
+        language_index = self.language_combo.findData(self.config_manager.get_language())
+        self.language_combo.setCurrentIndex(max(0, language_index))
+        self.language_combo.setFixedWidth(INPUT_WIDTH)
+        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
+        language_row.addWidget(language_label)
+        language_row.addStretch()
+        language_row.addWidget(self.language_combo)
+        appearance_layout.addLayout(language_row)
         theme_row = QHBoxLayout()
         theme_label = QLabel(AppStrings.THEME_LABEL)
         self.theme_combo = QComboBox()
@@ -344,6 +358,17 @@ class SettingsDialog(QDialog):
             parent = self.parent()
             if parent and hasattr(parent, "_apply_theme"):
                 parent._apply_theme()  # 테마 변경 시 메인 윈도우의 스타일을 즉시 갱신합니다.
+
+    def _on_language_changed(self, index):
+        language = self.language_combo.itemData(index)
+        if not language or language == self.config_manager.get_language():
+            return
+        self.config_manager.set_language(language)
+        QMessageBox.information(
+            self,
+            AppStrings.INFO_TITLE,
+            AppStrings.LANGUAGE_RESTART_REQUIRED,
+        )
 
     def _get_external_editor_settings(self):
         settings = self.config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR, {})

@@ -3,6 +3,8 @@ import shutil
 import subprocess
 import sys
 
+from sf_utils.app_strings import AppStrings
+
 
 def _split_windows_command_line(arguments: str) -> list[str]:
     """쉘을 실행하지 않고 Windows 명령행 인자를 안전하게 분리합니다."""
@@ -43,7 +45,7 @@ def _split_windows_command_line(arguments: str) -> list[str]:
         index += 1
 
     if in_quotes:
-        raise ValueError("닫히지 않은 따옴표가 있습니다.")
+        raise ValueError(AppStrings.ERROR_UNCLOSED_QUOTE)
     if current:
         tokens.append("".join(current))
     return tokens

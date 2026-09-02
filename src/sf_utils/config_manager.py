@@ -72,6 +72,7 @@ class ConfigManager:
             Constants.CONFIG_KEY_RESULT_SPLITTER_STATE: None,
             Constants.CONFIG_KEY_FILTER_SPLITTER_STATE: None,
             Constants.CONFIG_KEY_THEME: Constants.DEFAULT_THEME,
+            Constants.CONFIG_KEY_LANGUAGE: Constants.DEFAULT_LANGUAGE,
             Constants.CONFIG_KEY_CASE_INSENSITIVE: False,
             Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS: [60, 400, 100, 60],
             Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS: [60, 400, 400],
@@ -622,6 +623,24 @@ class ConfigManager:
     def set_theme(self, theme):
         with self._config_lock:
             self._config[Constants.CONFIG_KEY_THEME] = theme
+        self.save()
+
+    def get_language(self):
+        """Return the persisted UI language code."""
+        from sf_utils.localization import normalize_language
+
+        with self._config_lock:
+            return normalize_language(
+                self._config.get(Constants.CONFIG_KEY_LANGUAGE, Constants.DEFAULT_LANGUAGE)
+            )
+
+    def set_language(self, language):
+        """Persist a supported UI language code."""
+        from sf_utils.localization import normalize_language
+
+        normalized = normalize_language(language)
+        with self._config_lock:
+            self._config[Constants.CONFIG_KEY_LANGUAGE] = normalized
         self.save()
 
     def clear_all_logs(self):

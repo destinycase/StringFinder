@@ -482,7 +482,7 @@ class SearchTab(QMainWindow):
 
         # 세션 복원 시 검색어와 필터를 동기화하여 결과 뷰의 하이라이팅이 즉시 반영되도록 합니다.
         search_text = inputs.get(Constants.STATE_KEY_SEARCH, "")
-        search_mode = inputs.get(Constants.PAYLOAD_SPECIAL_MODE, Constants.MODE_NORMAL)
+        search_mode = self.ext_panel.get_special_mode()
         filename_filters = inputs.get(Constants.PAYLOAD_FILENAME_FILTER, [])
 
         self.result_view_panel.set_search_context(search_text, search_mode)

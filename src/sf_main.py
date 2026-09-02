@@ -6,13 +6,17 @@ import qdarktheme
 from PySide6.QtWidgets import QApplication
 
 from sf_utils.app_strings import AppStrings
-from sf_utils.constants import Constants
 from sf_utils.logger import logger
-from sf_utils.single_instance import ensure_single_instance
-from ui.main_window import MainWindow
+from sf_utils.localization import apply_saved_language
 
 
 def main():
+    # UI 및 검색 모듈이 문자열 상수를 캐시하기 전에 저장된 언어를 적용합니다.
+    apply_saved_language()
+    from sf_utils.constants import Constants
+    from sf_utils.single_instance import ensure_single_instance
+    from ui.main_window import MainWindow
+
     logger.info(AppStrings.LOG_SYS_APP_STARTED_DECO)
     app = QApplication(sys.argv)
     app.setApplicationName(Constants.APP_NAME)
@@ -34,7 +38,7 @@ def main():
         msg.setWindowTitle(AppStrings.TITLE_RUST_ENGINE_MISSING)
         msg.setText(AppStrings.MSG_RUST_ENGINE_MISSING)
         if _RUST_ENGINE_ERROR:
-            msg.setDetailedText(f"상세 오류:\n{_RUST_ENGINE_ERROR}")
+            msg.setDetailedText(AppStrings.ERROR_DETAIL_FORMAT.format(_RUST_ENGINE_ERROR))
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg.exec()
         sys.exit(1)

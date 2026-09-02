@@ -51,6 +51,7 @@ class Constants:
     EXT_JSON = ".json"
     EXT_EXCEL = ("xlsx", "xlsm", "xls", "xlsb")
     DEFAULT_THEME = "Dark"
+    DEFAULT_LANGUAGE = "ko"
     RUST_MODE_NORMAL = 0
     RUST_MODE_JSON = 1 << 0
     RUST_MODE_XML = 1 << 1
@@ -93,6 +94,7 @@ class Constants:
     CONFIG_KEY_RESULT_SPLITTER_STATE = "result_splitter_state"
     CONFIG_KEY_FILTER_SPLITTER_STATE = "filter_splitter_state"
     CONFIG_KEY_THEME = "theme"
+    CONFIG_KEY_LANGUAGE = "language"
     CONFIG_KEY_CASE_INSENSITIVE = "case_insensitive"
     CONFIG_KEY_EXCLUDE_BINARY = "exclude_binary"
     CONFIG_KEY_RESULT_COLUMN_WIDTHS = "result_column_widths"

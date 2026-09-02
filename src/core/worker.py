@@ -246,8 +246,11 @@ class SearchWorker(QRunnable):
 
     @staticmethod
     def _is_memory_skip(skip_list) -> bool:
+        localized_memory_prefix = AppStrings.SKIP_REASON_MEMORY_GUARD.split("{", 1)[0]
         return any(
-            "ERR_MEMORY_GUARD" in str(reason) or AppStrings.ERROR_MEMORY_CRITICAL in str(reason)
+            "ERR_MEMORY_GUARD" in str(reason)
+            or AppStrings.ERROR_MEMORY_CRITICAL in str(reason)
+            or str(reason).startswith(localized_memory_prefix)
             for _, reason in skip_list
         )
     def _check_safety_limits(self, new_matches_count: int) -> bool:
@@ -609,7 +612,13 @@ class SearchWorker(QRunnable):
                         logger.error(AppStrings.LOG_WKR_BATCH_FAILED.format(e))
                         # 배치 작업이 실패한 경우 해당 파일들을 검색 스킵으로 처리하여 보고합니다.
                         batch_files = future_to_batch[future]
-                        skip_list = [(f[0] if isinstance(f, (list, tuple)) else str(f), f"Batch Error: {e}") for f in batch_files]
+                        localized_reason = AppStrings.SKIP_REASON_BATCH.format(
+                            AppStrings.SKIP_DETAIL_INTERNAL_FAILURE
+                        )
+                        skip_list = [
+                            (f[0] if isinstance(f, (list, tuple)) else str(f), localized_reason)
+                            for f in batch_files
+                        ]
                         self._safe_emit(self.signals.skipped_found, skip_list)
                         skipped_count += len(skip_list)
                         if hasattr(self, "all_skipped"):

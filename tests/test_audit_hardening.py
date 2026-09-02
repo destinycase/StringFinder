@@ -15,6 +15,7 @@
 from typing import Any, List
 
 from core.search_engine import search_in_json_special, search_in_xml_special
+from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
 
@@ -42,7 +43,7 @@ def test_memory_guard_handling_json(tmp_path, monkeypatch):
     assert "Size exceeds limit" in str(result[1]) or "메모리" in str(result[1])
 
 
-def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch):
+def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch, caplog):
     """
     일반 검색 모드에서 Rust 엔진이 'ERR_PANIC|...' 형태의 마커를 반환할 때,
     단순히 '일치 항목 0건'으로 조용히 실패(Silent Failure)하지 않고
@@ -69,7 +70,8 @@ def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch):
     assert result is not None
     assert isinstance(result, tuple)
     assert result[0] == Constants.STATUS_SKIPPED
-    assert "Simulated engine crash" in str(result[1])
+    assert AppStrings.SKIP_DETAIL_INTERNAL_FAILURE in str(result[1])
+    assert "Simulated engine crash" in caplog.text
 
 
 def test_casefold_unicode_german(tmp_path):

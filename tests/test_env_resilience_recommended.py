@@ -27,7 +27,13 @@ from typing import Any, cast
 
 import pytest
 
-from core.search_engine import FileScanner, search_directory_fast, search_files_list_fast, search_in_file
+from core.search_engine import (
+    FileScanner,
+    format_excel_panic_reason,
+    search_directory_fast,
+    search_files_list_fast,
+    search_in_file,
+)
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -200,7 +206,7 @@ def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
         result = search_directory_fast(["."], "KEYWORD", special_mode=Constants.MODE_EXCEL)
 
     assert result["results"] == []
-    assert result["skipped"] == [("panic.xlsx", AppStrings.ERROR_EXCEL_PANIC.format("xlsx"))]
+    assert result["skipped"] == [("panic.xlsx", format_excel_panic_reason("xlsx"))]
 
 
 def test_rust_search_files_list_excel_panic_marker_maps_to_skipped():
@@ -218,7 +224,7 @@ def test_rust_search_files_list_excel_panic_marker_maps_to_skipped():
         result = search_files_list_fast(["panic.xls"], "KEYWORD", special_mode=Constants.MODE_EXCEL)
 
     assert result["results"] == []
-    assert result["skipped"] == [("panic.xls", AppStrings.ERROR_EXCEL_PANIC.format("xls"))]
+    assert result["skipped"] == [("panic.xls", format_excel_panic_reason("xls"))]
 
 
 def test_mainwindow_qtimer_after_destroy(qtbot, mock_config_manager):

@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from PySide6.QtWidgets import QDockWidget
 
+from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from ui.main_window import MainWindow
 from ui.search_tab import SearchTab
@@ -68,7 +69,8 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
     assert state["inputs"]["search"] == "persistent_query"
     assert len(state["results"]) == 1
     assert state["logs"] == "Test Logs"
-    assert state[Constants.PAYLOAD_SKIPPED] == [["C:/restricted/file.xml", "XML 구문 오류"]]
+    localized_reason = AppStrings.ERROR_XML_PARSE.format("XML 구문 오류")
+    assert state[Constants.PAYLOAD_SKIPPED] == [["C:/restricted/file.xml", localized_reason]]
 
     new_tab = SearchTab(mock_config_manager)
     qtbot.addWidget(new_tab)
@@ -78,7 +80,7 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
     assert new_tab.result_view_panel.result_model.rowCount() == 1
     assert new_tab.logs_output.toPlainText() == "Test Logs"
     assert not new_tab.result_view_panel.result_splitter.isHidden()
-    assert new_tab.skipped_files_list == [("C:/restricted/file.xml", "XML 구문 오류")]
+    assert new_tab.skipped_files_list == [("C:/restricted/file.xml", localized_reason)]
     assert not new_tab.result_view_panel.skipped_files_banner.isHidden()
 
 

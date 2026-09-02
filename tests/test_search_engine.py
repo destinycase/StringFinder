@@ -130,7 +130,9 @@ def test_search_large_file_size_limit(temp_dir, monkeypatch):
 
     assert isinstance(result, tuple)
     assert result[0] == Constants.STATUS_SKIPPED
-    assert result[1] == AppStrings.SKIP_REASON_TOO_LARGE.format(f"{forced_size} bytes")
+    assert result[1] == AppStrings.SKIP_REASON_TOO_LARGE.format(
+        AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(forced_size)
+    )
 
 
 def test_search_encoding_error_handling(temp_dir):

@@ -12,6 +12,8 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union, o
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
+from sf_utils.english_strings import ENGLISH_STRINGS
+from sf_utils.localization import get_korean_strings, get_language
 
 def _get_adv_setting(key, default):
     return ConfigManager().get_advanced_settings().get(key, default)
@@ -87,7 +89,7 @@ try:
     REQUIRED_API_VERSION = 6
     engine_version = getattr(sf_engine, "API_VERSION", 0)
     if engine_version < REQUIRED_API_VERSION:
-        _err_msg = f"API 버전 불일치: 필요={REQUIRED_API_VERSION}, 실제={engine_version}"
+        _err_msg = AppStrings.ERROR_RUST_API_VERSION.format(REQUIRED_API_VERSION, engine_version)
         logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format(_err_msg))
         _RUST_ENGINE_ERROR = _err_msg
         HAS_RUST_ENGINE = False
@@ -147,19 +149,19 @@ RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
 RUST_MATCH_MARKER_TRUNCATED = "__SF_TRUNCATED__"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
-_SKIP_REASON_TEMPLATES = {
-    SKIP_CODE_WALK: AppStrings.SKIP_REASON_WALK,
-    SKIP_CODE_OPEN: AppStrings.SKIP_REASON_OPEN,
-    SKIP_CODE_METADATA: AppStrings.SKIP_REASON_METADATA,
-    SKIP_CODE_MMAP: AppStrings.SKIP_REASON_MMAP,
-    SKIP_CODE_TOO_LARGE: AppStrings.SKIP_REASON_TOO_LARGE,
-    SKIP_CODE_MEMORY_GUARD: AppStrings.SKIP_REASON_MEMORY_GUARD,
-    SKIP_CODE_JSON_PARSE: AppStrings.ERROR_JSON_PARSE,
-    SKIP_CODE_XML_PARSE: AppStrings.ERROR_XML_PARSE,
-    SKIP_CODE_XML_UNSUPPORTED_DTD: AppStrings.ERROR_XML_UNSUPPORTED_DTD,
-    SKIP_CODE_PANIC: AppStrings.SKIP_REASON_PANIC,
-    SKIP_CODE_CRITICAL: AppStrings.SKIP_REASON_CRITICAL,
-    SKIP_CODE_UNKNOWN: AppStrings.SKIP_REASON_UNKNOWN,
+_SKIP_REASON_TEMPLATE_NAMES = {
+    SKIP_CODE_WALK: "SKIP_REASON_WALK",
+    SKIP_CODE_OPEN: "SKIP_REASON_OPEN",
+    SKIP_CODE_METADATA: "SKIP_REASON_METADATA",
+    SKIP_CODE_MMAP: "SKIP_REASON_MMAP",
+    SKIP_CODE_TOO_LARGE: "SKIP_REASON_TOO_LARGE",
+    SKIP_CODE_MEMORY_GUARD: "SKIP_REASON_MEMORY_GUARD",
+    SKIP_CODE_JSON_PARSE: "ERROR_JSON_PARSE",
+    SKIP_CODE_XML_PARSE: "ERROR_XML_PARSE",
+    SKIP_CODE_XML_UNSUPPORTED_DTD: "ERROR_XML_UNSUPPORTED_DTD",
+    SKIP_CODE_PANIC: "SKIP_REASON_PANIC",
+    SKIP_CODE_CRITICAL: "SKIP_REASON_CRITICAL",
+    SKIP_CODE_UNKNOWN: "SKIP_REASON_UNKNOWN",
 }
 _LEGACY_SKIP_MARKERS = (
     ("walker error", SKIP_CODE_WALK),
@@ -172,28 +174,27 @@ _LEGACY_SKIP_MARKERS = (
     ("critical error", SKIP_CODE_CRITICAL),
 )
 
-_XML_DETAIL_TRANSLATIONS = {
-    "XML declaration must appear exactly once at the beginning of the document": AppStrings.XML_DETAIL_DECLARATION_POSITION,
-    "DOCTYPE declaration must appear before the root element": AppStrings.XML_DETAIL_DOCTYPE_POSITION,
-    "DTD declarations and entity expansion are not supported": AppStrings.XML_DETAIL_DTD_UNSUPPORTED,
-    "multiple root elements": AppStrings.XML_DETAIL_MULTIPLE_ROOTS,
-    "unexpected closing element": AppStrings.XML_DETAIL_UNEXPECTED_CLOSING,
-    "text outside the root element": AppStrings.XML_DETAIL_TEXT_OUTSIDE_ROOT,
-    "CDATA outside the root element": AppStrings.XML_DETAIL_CDATA_OUTSIDE_ROOT,
-    "XML document is incomplete or has no root element": AppStrings.XML_DETAIL_INCOMPLETE_DOCUMENT,
-    "Malformed input, decoding impossible": AppStrings.XML_DETAIL_INVALID_ENCODING,
-    "DOCTYPE declaration must not be empty": AppStrings.XML_DETAIL_EMPTY_DOCTYPE,
+_XML_DETAIL_TRANSLATION_NAMES = {
+    "XML declaration must appear exactly once at the beginning of the document": "XML_DETAIL_DECLARATION_POSITION",
+    "DOCTYPE declaration must appear before the root element": "XML_DETAIL_DOCTYPE_POSITION",
+    "DTD declarations and entity expansion are not supported": "XML_DETAIL_DTD_UNSUPPORTED",
+    "multiple root elements": "XML_DETAIL_MULTIPLE_ROOTS",
+    "unexpected closing element": "XML_DETAIL_UNEXPECTED_CLOSING",
+    "text outside the root element": "XML_DETAIL_TEXT_OUTSIDE_ROOT",
+    "CDATA outside the root element": "XML_DETAIL_CDATA_OUTSIDE_ROOT",
+    "XML document is incomplete or has no root element": "XML_DETAIL_INCOMPLETE_DOCUMENT",
+    "Malformed input, decoding impossible": "XML_DETAIL_INVALID_ENCODING",
+    "DOCTYPE declaration must not be empty": "XML_DETAIL_EMPTY_DOCTYPE",
 }
 
-_EXPAT_XML_DETAIL_TRANSLATIONS = {
-    "mismatched tag": AppStrings.XML_DETAIL_MISMATCHED_TAG,
-    "junk after document element": AppStrings.XML_DETAIL_MULTIPLE_ROOTS,
-    "not well-formed (invalid token)": AppStrings.XML_DETAIL_INVALID_TOKEN,
-    "no element found": AppStrings.XML_DETAIL_INCOMPLETE_DOCUMENT,
-    "unclosed token": AppStrings.XML_DETAIL_INCOMPLETE_DOCUMENT,
-    "unbound prefix": AppStrings.XML_DETAIL_UNKNOWN_NAMESPACE.format("접두사"),
-    "duplicate attribute": AppStrings.XML_DETAIL_INVALID_ATTRIBUTE,
-    "XML or text declaration not at start of entity": AppStrings.XML_DETAIL_DECLARATION_POSITION,
+_EXPAT_XML_DETAIL_TRANSLATION_NAMES = {
+    "mismatched tag": "XML_DETAIL_MISMATCHED_TAG",
+    "junk after document element": "XML_DETAIL_MULTIPLE_ROOTS",
+    "not well-formed (invalid token)": "XML_DETAIL_INVALID_TOKEN",
+    "no element found": "XML_DETAIL_INCOMPLETE_DOCUMENT",
+    "unclosed token": "XML_DETAIL_INCOMPLETE_DOCUMENT",
+    "duplicate attribute": "XML_DETAIL_INVALID_ATTRIBUTE",
+    "XML or text declaration not at start of entity": "XML_DETAIL_DECLARATION_POSITION",
 }
 
 
@@ -226,7 +227,7 @@ def _decode_skip_reason(reason: Any) -> Tuple[str, str]:
 
 
 def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) -> str:
-    """XML 파서의 영문 진단을 사용자용 한글 설명으로 변환합니다."""
+    """XML parser diagnostics are converted to the active UI language."""
     raw_detail = str(detail or "").strip()
     if not raw_detail:
         return (
@@ -235,9 +236,9 @@ def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) ->
             else AppStrings.XML_DETAIL_INVALID_DOCUMENT
         )
 
-    translated = _XML_DETAIL_TRANSLATIONS.get(raw_detail)
-    if translated:
-        return translated
+    translated_name = _XML_DETAIL_TRANSLATION_NAMES.get(raw_detail)
+    if translated_name:
+        return getattr(AppStrings, translated_name)
 
     tag_mismatch = re.fullmatch(r"Expecting\s+(</[^>]+>)\s+found\s+(</[^>]+>)", raw_detail)
     if tag_mismatch:
@@ -246,14 +247,20 @@ def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) ->
     expat_location = re.fullmatch(r"(.+): line (\d+), column (\d+)", raw_detail)
     if expat_location:
         message, line, column = expat_location.groups()
-        localized_message = _EXPAT_XML_DETAIL_TRANSLATIONS.get(
-            message, AppStrings.XML_DETAIL_INVALID_DOCUMENT
-        )
+        if message == "unbound prefix":
+            localized_message = AppStrings.XML_DETAIL_UNKNOWN_NAMESPACE.format("prefix")
+        else:
+            localized_name = _EXPAT_XML_DETAIL_TRANSLATION_NAMES.get(message)
+            localized_message = (
+                getattr(AppStrings, localized_name)
+                if localized_name
+                else AppStrings.XML_DETAIL_INVALID_DOCUMENT
+            )
         return AppStrings.XML_DETAIL_WITH_POSITION.format(localized_message, line, column)
 
-    # 이미 한글로 전달된 진단은 중복 변환하지 않습니다.
+    # A Korean legacy-session reason is safe only while the Korean catalog is active.
     if re.search(r"[가-힣]", raw_detail):
-        return raw_detail
+        return raw_detail if get_language() == "ko" else AppStrings.XML_DETAIL_INVALID_DOCUMENT
 
     if raw_detail.startswith(("Malformed UTF-8 input", "Malformed input")):
         return AppStrings.XML_DETAIL_INVALID_ENCODING
@@ -267,7 +274,7 @@ def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) ->
         return AppStrings.XML_DETAIL_INVALID_ATTRIBUTE
     if raw_detail.startswith("Unknown namespace prefix"):
         prefix_match = re.search(r"'([^']+)'", raw_detail)
-        prefix = prefix_match.group(1) if prefix_match else "접두사"
+        prefix = prefix_match.group(1) if prefix_match else "?"
         return AppStrings.XML_DETAIL_UNKNOWN_NAMESPACE.format(prefix)
     if any(token in raw_detail for token in ("escaping character", "valid codepoint", "valid hexadecimal", "valid decimal")):
         return AppStrings.XML_DETAIL_INVALID_ENTITY
@@ -276,19 +283,248 @@ def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) ->
     return AppStrings.XML_DETAIL_INVALID_DOCUMENT
 
 
+def _log_raw_skip_detail(context: str, detail: Any) -> str:
+    """Keep diagnostic details in logs without exposing them in the skipped-file UI."""
+    raw_detail = str(detail or "").strip()
+    if raw_detail:
+        logger.debug(AppStrings.LOG_SCH_SKIP_RAW_DETAIL.format(context, raw_detail))
+    return raw_detail
+
+
+def _localize_io_error_detail(detail: Any) -> str:
+    """Convert common OS error details into the active UI language."""
+    raw_detail = _log_raw_skip_detail("I/O", detail)
+    if isinstance(detail, PermissionError):
+        return AppStrings.SKIP_DETAIL_PERMISSION_DENIED
+    if isinstance(detail, FileNotFoundError):
+        return AppStrings.SKIP_DETAIL_FILE_NOT_FOUND
+
+    normalized = raw_detail.casefold()
+    if any(token in normalized for token in ("permission denied", "access denied", "winerror 5", "접근이 거부", "접근 거부")):
+        return AppStrings.SKIP_DETAIL_PERMISSION_DENIED
+    if any(token in normalized for token in ("sharing violation", "winerror 32", "being used by another process", "다른 프로세스", "사용 중")):
+        return AppStrings.SKIP_DETAIL_FILE_IN_USE
+    if any(token in normalized for token in ("file not found", "no such file", "winerror 2", "winerror 3", "찾을 수 없")):
+        return AppStrings.SKIP_DETAIL_FILE_NOT_FOUND
+    if any(token in normalized for token in ("filename too long", "path too long", "winerror 206", "경로가 너무", "파일 이름이 너무")):
+        return AppStrings.SKIP_DETAIL_PATH_TOO_LONG
+    return AppStrings.SKIP_DETAIL_IO_FAILURE
+
+
+def _localize_json_error_detail(detail: Any) -> str:
+    """Convert JSON parser diagnostics into a stable localized explanation."""
+    raw_detail = _log_raw_skip_detail("JSON", detail)
+    position = re.search(r"(?:at\s+)?line\s+(\d+)(?:\s+column\s+(\d+))?", raw_detail, re.IGNORECASE)
+    if position:
+        line, column = position.groups()
+        return AppStrings.JSON_DETAIL_WITH_POSITION.format(
+            AppStrings.JSON_DETAIL_INVALID_DOCUMENT,
+            line,
+            column or "?",
+        )
+    return AppStrings.JSON_DETAIL_INVALID_DOCUMENT
+
+
+def _localize_file_size_detail(detail: Any) -> str:
+    raw_detail = _log_raw_skip_detail("file-size", detail)
+    byte_count = re.search(r"(\d+)\s*bytes?", raw_detail, re.IGNORECASE)
+    if byte_count:
+        return AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(byte_count.group(1))
+    return AppStrings.SKIP_DETAIL_SIZE_LIMIT
+
+
+def _localize_internal_error_detail(context: str, detail: Any) -> str:
+    _log_raw_skip_detail(context, detail)
+    return AppStrings.SKIP_DETAIL_INTERNAL_FAILURE
+
+
 def format_skip_reason(reason: Any) -> str:
     code, detail = _decode_skip_reason(reason)
-    template = _SKIP_REASON_TEMPLATES.get(code, AppStrings.SKIP_REASON_UNKNOWN)
+    template_name = _SKIP_REASON_TEMPLATE_NAMES.get(code, "SKIP_REASON_UNKNOWN")
+    template = getattr(AppStrings, template_name)
     safe_detail = detail if detail else str(reason or "")
     if code in (SKIP_CODE_XML_PARSE, SKIP_CODE_XML_UNSUPPORTED_DTD):
         safe_detail = _localize_xml_error_detail(
             safe_detail,
             unsupported_dtd=code == SKIP_CODE_XML_UNSUPPORTED_DTD,
         )
+    elif code == SKIP_CODE_JSON_PARSE:
+        safe_detail = _localize_json_error_detail(safe_detail)
+    elif code == SKIP_CODE_TOO_LARGE:
+        safe_detail = _localize_file_size_detail(safe_detail)
+    elif code == SKIP_CODE_MEMORY_GUARD:
+        _log_raw_skip_detail("memory-guard", safe_detail)
+        safe_detail = AppStrings.SKIP_DETAIL_LARGE_JSON
+    elif code in (SKIP_CODE_WALK, SKIP_CODE_OPEN, SKIP_CODE_METADATA, SKIP_CODE_MMAP):
+        safe_detail = _localize_io_error_detail(safe_detail)
+    elif code in (SKIP_CODE_PANIC, SKIP_CODE_CRITICAL, SKIP_CODE_UNKNOWN) or code not in _SKIP_REASON_TEMPLATE_NAMES:
+        safe_detail = _localize_internal_error_detail(code, safe_detail)
     try:
         return template.format(safe_detail)
     except Exception:
-        return AppStrings.SKIP_REASON_UNKNOWN.format(str(reason or ""))
+        return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
+
+
+def format_excel_panic_reason(detail: Any) -> str:
+    """Convert internal Excel panic diagnostics into a localized user message."""
+    raw_detail = str(detail or "").strip()
+    if raw_detail:
+        logger.warning(AppStrings.LOG_SCH_EXCEL_ENGINE_PANIC.format(raw_detail))
+    format_name = ""
+    engine_detail = raw_detail
+    if "|" in raw_detail:
+        candidate, engine_detail = raw_detail.split("|", 1)
+        if candidate.strip().lower() in Constants.EXT_EXCEL:
+            format_name = candidate.strip().upper()
+        else:
+            engine_detail = raw_detail
+    elif raw_detail.lower() in Constants.EXT_EXCEL:
+        format_name = raw_detail.upper()
+        engine_detail = ""
+
+    range_error = re.fullmatch(
+        r"range start index (\d+) out of range for slice of length (\d+)",
+        engine_detail.strip(),
+        flags=re.IGNORECASE,
+    )
+    if range_error:
+        display_format = format_name or "Excel"
+        localized_detail = AppStrings.EXCEL_DETAIL_RANGE_OUT_OF_BOUNDS.format(
+            display_format,
+            *range_error.groups(),
+        )
+    elif format_name:
+        localized_detail = AppStrings.EXCEL_DETAIL_ENGINE_FAILURE.format(format_name)
+    else:
+        localized_detail = AppStrings.EXCEL_DETAIL_UNKNOWN_FORMAT
+    return AppStrings.ERROR_EXCEL_PANIC.format(localized_detail)
+
+
+_LOCALIZED_SKIP_MESSAGE_NAMES = (
+    "ERROR_JSON_PARSE",
+    "ERROR_EXCEL_ACCESS",
+    "ERROR_EXCEL_SIGNATURE",
+    "ERROR_EXCEL_PROCESS",
+    "ERROR_EXCEL_CALAMINE",
+    "ERROR_SEARCH_EXCEL",
+    "ERROR_SEARCH_EXCEL_SHEET",
+    "ERROR_EXCEL_PANIC",
+    "ERROR_XML_PARSE",
+    "ERROR_XML_UNSUPPORTED_DTD",
+    "ERROR_FILE_ACCESS_BINARY",
+    "ERROR_IO_DURING_SEARCH",
+    "ERROR_UNEXPECTED_FILE",
+    "ERROR_MEMORY_CRITICAL",
+    "SKIP_EMPTY_FILE",
+    "SKIP_REASON_WALK",
+    "SKIP_REASON_OPEN",
+    "SKIP_REASON_METADATA",
+    "SKIP_REASON_MMAP",
+    "SKIP_REASON_TOO_LARGE",
+    "SKIP_REASON_MEMORY_GUARD",
+    "SKIP_REASON_PANIC",
+    "SKIP_REASON_CRITICAL",
+    "SKIP_REASON_BATCH",
+    "SKIP_REASON_UNKNOWN",
+)
+
+
+def _match_localized_skip_resource(reason: str, catalog: Dict[str, Any]) -> Optional[str]:
+    for resource_name in _LOCALIZED_SKIP_MESSAGE_NAMES:
+        template = str(catalog.get(resource_name, ""))
+        prefix = template.split("{", 1)[0]
+        if prefix and reason.startswith(prefix):
+            return resource_name
+        if template and "{" not in template and reason == template:
+            return resource_name
+    return None
+
+
+def _is_current_localized_skip_reason(reason: str) -> bool:
+    """Return whether a reason was already rendered with the active catalog."""
+    current_catalog = {
+        name: getattr(AppStrings, name, "")
+        for name in _LOCALIZED_SKIP_MESSAGE_NAMES
+    }
+    return _match_localized_skip_resource(reason, current_catalog) is not None
+
+
+def _render_saved_skip_resource(resource_name: str) -> str:
+    """Re-render a categorized legacy-session reason with the active catalog."""
+    direct_resources = {
+        "ERROR_EXCEL_SIGNATURE",
+        "ERROR_EXCEL_CALAMINE",
+        "ERROR_MEMORY_CRITICAL",
+        "SKIP_EMPTY_FILE",
+    }
+    if resource_name in direct_resources:
+        return str(getattr(AppStrings, resource_name))
+    if resource_name == "ERROR_JSON_PARSE":
+        return AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT)
+    if resource_name == "ERROR_XML_PARSE":
+        return AppStrings.ERROR_XML_PARSE.format(AppStrings.XML_DETAIL_INVALID_DOCUMENT)
+    if resource_name == "ERROR_XML_UNSUPPORTED_DTD":
+        return AppStrings.ERROR_XML_UNSUPPORTED_DTD.format(AppStrings.XML_DETAIL_DTD_UNSUPPORTED)
+    if resource_name == "ERROR_EXCEL_ACCESS":
+        return AppStrings.ERROR_EXCEL_ACCESS.format(AppStrings.SKIP_DETAIL_IO_FAILURE)
+    if resource_name in {"ERROR_EXCEL_PROCESS", "ERROR_SEARCH_EXCEL", "ERROR_SEARCH_EXCEL_SHEET"}:
+        return AppStrings.ERROR_EXCEL_PROCESS.format(AppStrings.EXCEL_DETAIL_UNKNOWN_FORMAT)
+    if resource_name == "ERROR_EXCEL_PANIC":
+        return AppStrings.ERROR_EXCEL_PANIC.format(AppStrings.EXCEL_DETAIL_UNKNOWN_FORMAT)
+    if resource_name in {"ERROR_FILE_ACCESS_BINARY", "ERROR_IO_DURING_SEARCH"}:
+        return AppStrings.ERROR_IO_DURING_SEARCH.format(AppStrings.SKIP_DETAIL_IO_FAILURE)
+    if resource_name == "ERROR_UNEXPECTED_FILE":
+        return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
+
+    if resource_name == "SKIP_REASON_OPEN":
+        return AppStrings.SKIP_REASON_OPEN.format(AppStrings.SKIP_DETAIL_PERMISSION_DENIED)
+    if resource_name in {"SKIP_REASON_WALK", "SKIP_REASON_METADATA", "SKIP_REASON_MMAP"}:
+        return getattr(AppStrings, resource_name).format(AppStrings.SKIP_DETAIL_IO_FAILURE)
+    if resource_name == "SKIP_REASON_TOO_LARGE":
+        return AppStrings.SKIP_REASON_TOO_LARGE.format(AppStrings.SKIP_DETAIL_SIZE_LIMIT)
+    if resource_name == "SKIP_REASON_MEMORY_GUARD":
+        return AppStrings.SKIP_REASON_MEMORY_GUARD.format(AppStrings.SKIP_DETAIL_LARGE_JSON)
+    if resource_name in {"SKIP_REASON_PANIC", "SKIP_REASON_CRITICAL"}:
+        return getattr(AppStrings, resource_name).format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
+    if resource_name == "SKIP_REASON_BATCH":
+        return AppStrings.SKIP_REASON_BATCH.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
+    return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
+
+
+def localize_skip_reason_for_display(reason: Any) -> str:
+    """Normalize raw or saved skipped-file reasons to the active UI language."""
+    reason_text = str(reason or "").strip()
+    if not reason_text:
+        return ""
+    if reason_text.startswith("ERR_") and "|" in reason_text:
+        return format_skip_reason(reason_text)
+    if reason_text.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
+        return format_excel_panic_reason(reason_text[len(RUST_MATCH_MARKER_EXCEL_PANIC) :])
+    if re.match(r"^(?:xlsx?|xlsm|xlsb)\|range start index ", reason_text, re.IGNORECASE):
+        return format_excel_panic_reason(reason_text)
+    if _is_current_localized_skip_reason(reason_text):
+        return reason_text
+
+    normalized = reason_text.casefold()
+    # Old sessions may contain a reason rendered in the other supported language.
+    other_catalog = ENGLISH_STRINGS if get_language() == "ko" else get_korean_strings()
+    saved_resource = _match_localized_skip_resource(reason_text, other_catalog)
+    if saved_resource:
+        _log_raw_skip_detail("saved-session", reason_text)
+        return _render_saved_skip_resource(saved_resource)
+    if reason_text.startswith(("[오류]", "[안내]", "[건너뜀]", "[Error]", "[Info]", "[Skipped]")):
+        _log_raw_skip_detail("saved-session", reason_text)
+        return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
+    if "json" in normalized:
+        return AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(reason_text))
+    if "xml" in normalized:
+        return AppStrings.ERROR_XML_PARSE.format(_localize_xml_error_detail(reason_text))
+    if any(token in normalized for token in ("permission", "access denied", "접근 거부", "접근이 거부")):
+        return AppStrings.SKIP_REASON_OPEN.format(_localize_io_error_detail(reason_text))
+    if any(token in normalized for token in ("read error", "os error", "i/o", "입출력")):
+        return AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(reason_text))
+
+    return AppStrings.SKIP_REASON_UNKNOWN.format(_localize_internal_error_detail("unclassified", reason_text))
 
 
 def _parse_rust_binary_count(marker_count: str, length: Any) -> int:
@@ -372,7 +608,8 @@ def _normalize_rust_matches(
                     sheet_name, detail = payload.split("|", 1)
                 else:
                     sheet_name, detail = payload, ""
-                sheet_skips.append((sheet_name.strip(), detail.strip()))
+                _log_raw_skip_detail(f"Excel sheet {sheet_name.strip()}", detail)
+                sheet_skips.append((sheet_name.strip(), AppStrings.EXCEL_DETAIL_SHEET_FAILURE))
                 continue
             elif not (existence_only and c == "MATCH"):
                 continue
@@ -450,7 +687,7 @@ def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
         if structured_kind == "error":
             if structured_code:
                 if structured_code == "ERR_EXCEL_PANIC":
-                    return AppStrings.ERROR_EXCEL_PANIC.format(structured_detail or "unknown")
+                    return format_excel_panic_reason(structured_detail)
                 return format_skip_reason(_build_skip_reason(structured_code, structured_detail or ""))
 
         try:
@@ -470,7 +707,7 @@ def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
 
         if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
             panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
-            return AppStrings.ERROR_EXCEL_PANIC.format(panic_detail)
+            return format_excel_panic_reason(panic_detail)
         # 엑셀 시트 파싱 에러(sheet error)는 파일 전체를 건너뛰는 사유가 아닙니다.
         # 이 마커가 오더라도 다른 시트의 정상 매치 데이터가 존재할 수 있으므로 파일 전체를 스킵하지 않습니다.
         if content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
@@ -821,10 +1058,12 @@ def _check_excel_signature(file_path: str) -> Tuple[bool, Optional[str]]:
                 return True, None
             return False, AppStrings.ERROR_EXCEL_SIGNATURE
     except (IOError, OSError, PermissionError) as e:
-        return False, AppStrings.ERROR_EXCEL_ACCESS.format(e)
+        return False, AppStrings.ERROR_EXCEL_ACCESS.format(_localize_io_error_detail(e))
     except Exception as e:
         logger.debug(AppStrings.ERROR_EXCEL_PROCESS.format(e))
-        return False, AppStrings.ERROR_EXCEL_PROCESS.format(e)
+        return False, AppStrings.ERROR_EXCEL_PROCESS.format(
+            _localize_internal_error_detail("Excel signature", e)
+        )
 
 
 def is_valid_excel_signature(file_path: str) -> bool:
@@ -878,7 +1117,7 @@ def search_in_excel_special(
                         continue
                     if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
                         panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
-                        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_PANIC.format(panic_detail))
+                        return (Constants.STATUS_SKIPPED, format_excel_panic_reason(panic_detail))
                     if content.startswith("ERR_") and "|" in content:
                         return (Constants.STATUS_SKIPPED, format_skip_reason(content))
                     if content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
@@ -886,8 +1125,12 @@ def search_in_excel_special(
                         if "|" in payload:
                             sheet_name, detail = payload.split("|", 1)
                         else:
-                            sheet_name, detail = "unknown", payload
-                        sheet_error = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, detail)
+                            sheet_name, detail = "?", payload
+                        _log_raw_skip_detail(f"Excel sheet {sheet_name}", detail)
+                        sheet_error = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(
+                            sheet_name,
+                            AppStrings.EXCEL_DETAIL_SHEET_FAILURE,
+                        )
                         logger.warning(f"[{file_path}] {sheet_error}")
                         sheet_errors.append(sheet_error)
                         continue
@@ -911,16 +1154,30 @@ def search_in_excel_special(
             return None
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_RUST_EXCEL_FAIL.format(file_path, e))
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_SEARCH_EXCEL.format(file_path, e))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_SEARCH_EXCEL.format(
+                    file_path,
+                    _localize_internal_error_detail("Excel", e),
+                ),
+            )
     try:
         from python_calamine import CalamineWorkbook
 
         try:
             workbook = CalamineWorkbook.from_path(file_path)
         except (IOError, OSError) as e:
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_ACCESS.format(e))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_EXCEL_ACCESS.format(_localize_io_error_detail(e)),
+            )
         except BaseException as e:  # PanicException 등 C 레벨 예외까지 포착
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_PROCESS.format(e))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_EXCEL_PROCESS.format(
+                    _localize_internal_error_detail("Excel conversion", e)
+                ),
+            )
 
         count = 0
         matches = []
@@ -978,7 +1235,11 @@ def search_in_excel_special(
                                 elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
                                     matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), "", ""))
             except BaseException as e:  # 특정 시트에서 패닉 발생 시 해당 시트만 스킵
-                sheet_err_msg = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, e)
+                _log_raw_skip_detail(f"Excel sheet {sheet_name}", e)
+                sheet_err_msg = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(
+                    sheet_name,
+                    AppStrings.EXCEL_DETAIL_SHEET_FAILURE,
+                )
                 logger.warning(f"[{file_path}] {sheet_err_msg}")
                 continue
 
@@ -988,7 +1249,13 @@ def search_in_excel_special(
     except ImportError:
         return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_CALAMINE)
     except BaseException as e:  # 전체 파일 처리 중 발생하는 모든 치명적 예외 포착
-        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_SEARCH_EXCEL.format(file_path, e))
+        return (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_SEARCH_EXCEL.format(
+                file_path,
+                _localize_internal_error_detail("Excel", e),
+            ),
+        )
     return None
 
 
@@ -1058,7 +1325,10 @@ def search_in_json_special(
             reason = str(e)
             if reason.startswith(f"{SKIP_CODE_JSON_PARSE}|"):
                 return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(reason))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(reason)),
+            )
     try:
         import json
 
@@ -1067,7 +1337,12 @@ def search_in_json_special(
             file_size = os.path.getsize(file_path)
             if file_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
                 logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
-                return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_TOO_LARGE.format(f"{file_size} bytes"))
+                return (
+                    Constants.STATUS_SKIPPED,
+                    AppStrings.SKIP_REASON_TOO_LARGE.format(
+                        AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
+                    ),
+                )
         except (OSError, IOError):
             # 파일 크기 측정 실패 시 안전을 위해 필터링을 건너뜁니다.
             pass
@@ -1158,7 +1433,11 @@ def search_in_json_special(
                 
                 if data is None:
                     # 모든 재시도 실패 시 SKIPPED 보고 (None 반환 방지)
-                    return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format("Integrity check failed"))
+                    _log_raw_skip_detail("JSON", "Integrity check failed")
+                    return (
+                        Constants.STATUS_SKIPPED,
+                        AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT),
+                    )
 
             # 무결성 통과 후 매치가 없는 것이 확실하면 여기서 조기 종료
             if skip_traversal:
@@ -1166,7 +1445,10 @@ def search_in_json_special(
                 return None
 
         except Exception as e:
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(e))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
+            )
         matches = []
         # 특수 문자(ß, İ 등)의 정규화를 위해 casefold() 사용
         search_string = normalize_unicode(search_string).casefold()
@@ -1226,10 +1508,16 @@ def search_in_json_special(
             return (file_path, final_count, matches)
         return None
     except (json.JSONDecodeError, ValueError) as e:
-        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(e))
+        return (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
+        )
     except Exception as e:
         logger.error(AppStrings.LOG_SCH_JSON_FAIL.format(file_path, e))
-        return (Constants.STATUS_SKIPPED, f"JSON Search Error: {e}")
+        return (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
+        )
 
 
 def search_in_xml_special(
@@ -1301,7 +1589,12 @@ def search_in_xml_special(
             file_size = os.path.getsize(file_path)
             if file_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
                 logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
-                return (Constants.STATUS_SKIPPED, AppStrings.SKIP_REASON_TOO_LARGE.format(f"{file_size} bytes"))
+                return (
+                    Constants.STATUS_SKIPPED,
+                    AppStrings.SKIP_REASON_TOO_LARGE.format(
+                        AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
+                    ),
+                )
         except (OSError, IOError):
             pass
 
@@ -1434,7 +1727,13 @@ def search_in_file(
             raise RuntimeError(AppStrings.ERROR_EXCEL_CALAMINE_REQ)
         except Exception as e:
             logger.error(AppStrings.ERROR_SEARCH_EXCEL.format(file_path, e), exc_info=True)
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_SEARCH_EXCEL.format(file_path, e))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_SEARCH_EXCEL.format(
+                    file_path,
+                    _localize_internal_error_detail("Excel", e),
+                ),
+            )
     if special_mode:
         is_exact = Constants.MODE_EXACT in special_mode
         existence_only = bool(kwargs.get(Constants.PAYLOAD_EXISTENCE_ONLY, False))
@@ -1462,7 +1761,10 @@ def search_in_file(
             return (Constants.STATUS_SKIPPED, AppStrings.SKIP_EMPTY_FILE)
     except (OSError, IOError) as e:
         logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_ERROR.format(file_path, e))
-        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_FILE_ACCESS_BINARY.format(e))
+        return (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_FILE_ACCESS_BINARY.format(_localize_io_error_detail(e)),
+        )
     # 인코딩 조기 감지 (Rust 결과 신뢰도 판단 및 폴백 결정용)
     head = b""
     detected_enc_quick = Constants.ENC_UTF8
@@ -1565,7 +1867,13 @@ def search_in_file(
                     return None
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format(file_path, e), exc_info=True)
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_UNEXPECTED_FILE.format(file_path, e))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_UNEXPECTED_FILE.format(
+                    file_path,
+                    _localize_internal_error_detail("Rust file search", e),
+                ),
+            )
 
     # 여기서부터는 Python 폴백 엔진입니다.
     # use_complex_search가 False이고 force_python도 False인 경우,
@@ -1721,7 +2029,10 @@ def search_in_file(
                                 matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES))))
             except Exception as e:
                 logger.debug(AppStrings.LOG_SCH_STREAM_ERROR.format(e))
-                return (Constants.STATUS_SKIPPED, AppStrings.ERROR_IO_DURING_SEARCH.format(e))
+                return (
+                    Constants.STATUS_SKIPPED,
+                    AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(e)),
+                )
 
             if count > 0:
                 if existence_only:
@@ -1743,10 +2054,19 @@ def search_in_file(
             return None
     except (IOError, OSError) as e:
         logger.debug(AppStrings.LOG_SCH_ERROR_FILE.format(file_path, e))
-        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_IO_DURING_SEARCH.format(e))
+        return (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(e)),
+        )
     except Exception as e:  # BaseException 대신 구체적인 Exception 포착
         logger.error(AppStrings.LOG_SCH_UNEXPECTED_ERROR.format(AppStrings.HEADER_FILE, file_path, e), exc_info=True)
-        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_UNEXPECTED_FILE.format(file_path, e))
+        return (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_UNEXPECTED_FILE.format(
+                file_path,
+                _localize_internal_error_detail("file search", e),
+            ),
+        )
     return None
 
 

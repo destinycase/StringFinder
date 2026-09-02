@@ -131,13 +131,15 @@ class ContextPreviewWorker(QRunnable):
 
 def normalize_skipped_files(skipped_files):
     """스킵 항목을 팝업과 세션 저장에 안전한 ``(경로, 사유)`` 튜플로 정규화합니다."""
+    from core.search_engine import localize_skip_reason_for_display
+
     normalized = []
     for item in skipped_files or []:
         if isinstance(item, (list, tuple)):
             if not item:
                 continue
             path = str(item[0])
-            reason = str(item[1]) if len(item) > 1 else ""
+            reason = localize_skip_reason_for_display(item[1]) if len(item) > 1 else ""
         else:
             path = str(item)
             reason = ""

@@ -16,7 +16,12 @@ import os
 from typing import Any, List
 from unittest.mock import patch
 
-from core.search_engine import is_valid_excel_signature, search_in_excel_special, search_in_file
+from core.search_engine import (
+    format_excel_panic_reason,
+    is_valid_excel_signature,
+    search_in_excel_special,
+    search_in_file,
+)
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
@@ -98,7 +103,7 @@ def test_rust_excel_panic_marker_returns_skipped(tmp_path):
     assert res is not None
     res_list: List[Any] = list(res)
     assert res_list[0] == Constants.STATUS_SKIPPED
-    assert res_list[1] == AppStrings.ERROR_EXCEL_PANIC.format("xlsx")
+    assert res_list[1] == format_excel_panic_reason("xlsx")
 
 
 def test_rust_excel_sheet_error_marker_is_filtered(tmp_path):

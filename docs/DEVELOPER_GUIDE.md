@@ -1,6 +1,6 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.2 (StringFinder v5.8.1 기준)
+- **문서 버전:** 1.2 (StringFinder v5.8.2 기준)
 - **최종 수정일:** 2026-09-03
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
@@ -96,7 +96,9 @@ StringFinder/
 │   └── sf_utils/                  # 공통 유틸리티
 │       ├── config_manager.py      # 설정 파일(JSON) 입출력 및 범위 Clamping
 │       ├── file_helper.py         # 외부 에디터 연동, 파일 열기 헬퍼
-│       └── app_strings.py         # UI 및 로그 다국어/한국어 문자열 SSOT
+│       ├── app_strings.py         # 한국어 UI 및 로그 문자열 SSOT
+│       ├── english_strings.py     # 영어 번역 카탈로그
+│       └── localization.py        # 언어 설정 로드와 런타임 문자열 적용
 ├── tests/                         # pytest 통합 및 단위 테스트 스위트
 ├── tools/                         # 벤치마크 및 프로파일링 스크립트
 ├── build_rust.py                  # Rust 엔진 원클릭 릴리스 빌드 스크립트
@@ -233,12 +235,14 @@ python build.py
 ## 7. 코딩 컨벤션 및 기여 가이드
 
 1. **에러 핸들링:** Rust 내부의 파일 접근·메타데이터·매핑·크기 제한 오류는 `SkippedEntries`로 기록하고, 검색 파이프라인 전체가 중단되지 않도록 작성합니다. 숨김·바이너리·빈 파일처럼 의도적으로 제외한 항목은 오류 스킵으로 보고되지 않을 수 있습니다.
-2. **사용자 대면 문자열:** UI·로그 문자열은 `src/sf_utils/app_strings.py`에 모으고, 코드 내부 식별자와 기술 주석은 기존 모듈의 언어·스타일을 일관되게 따릅니다.
+2. **사용자 대면 문자열:** 기본 문자열은 `src/sf_utils/app_strings.py`, 영어 번역은 `src/sf_utils/english_strings.py`에 같은 상수명으로 추가합니다. 두 언어의 `{}` 자리표시자 이름·순서·서식은 반드시 같아야 합니다. 코드 내부 식별자와 기술 주석은 기존 모듈의 언어·스타일을 일관되게 따릅니다.
 3. **버전 관리:** `pyproject.toml`을 Python 프로젝트 버전의 기준으로 삼습니다. `build.py`가 이 값을 읽어 `src/sf_utils/_version.py`를 생성하며, Rust의 `CARGO_PKG_VERSION`은 `src/rust_engine/Cargo.toml`의 버전에서 나오므로 릴리스 시 두 선언을 함께 확인해야 합니다.
 
 ### 7.1 변경 시 함께 확인할 계약
 
 - Rust 결과 형식을 바꾸면 `src/core/search_engine.py`의 정규화 로직과 `src/ui/models.py`의 표시 로직을 함께 수정합니다.
+- 새 사용자 문자열을 추가하면 한국어·영어 카탈로그와 현지화 계약 테스트를 함께 갱신합니다. 저장된 언어는 UI 모듈 import 전에 적용해야 클래스 수준 문자열 캐시가 한 언어로 일관됩니다.
+- 운영체제·파서·Rust/Calamine의 원본 오류는 로그에 보존하고, 건너뛴 파일 팝업에는 `search_engine.py`의 `format_skip_reason()`과 `localize_skip_reason_for_display()`로 정규화한 현재 언어의 사용자용 사유만 전달합니다. 세션에서 복원한 사유도 표시 전에 다시 현지화합니다.
 - 검색 결과 상한(`max_per_file`, 전체 결과 상한), JSON 깊이·크기 제한, Excel 셀 검사 상한은 안전장치이므로 기본값과 UI 범위를 함께 검토합니다.
 - 결과 callback은 검색 중 UI로 전달되는 스트림입니다. callback을 추가·변경할 때는 중복 전달, callback 예외 전파, 중지 시 이미 큐에 들어온 배치 처리 여부를 테스트합니다.
 
