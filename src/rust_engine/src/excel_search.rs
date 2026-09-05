@@ -5,6 +5,13 @@ use unicode_normalization::UnicodeNormalization;
 
 const EXCEL_MARKER_SHEET_ERROR_PREFIX: &str = "__SF_EXCEL_SHEET_ERR__|";
 const EXCEL_MARKER_PANIC_PREFIX: &str = "__SF_EXCEL_PANIC__|";
+pub const EXCEL_CELL_LIMIT_MARKER_PREFIX: &str = "__SF_EXCEL_CELL_LIMIT__|";
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ExcelCheckOutcome {
+    pub found: bool,
+    pub cell_limit_reached: bool,
+}
 
 // M3: 포맷별 공통 컨텍스트
 struct ExcelCtx<'a> {
@@ -66,7 +73,7 @@ where
 }
 
 // M3: 존재 확인 전용 통합 헬퍼
-fn check_wb<R, WB>(wb: &mut WB, ctx: &ExcelCtx<'_>) -> bool
+fn check_wb<R, WB>(wb: &mut WB, ctx: &ExcelCtx<'_>) -> ExcelCheckOutcome
 where
     R: std::io::Read + std::io::Seek,
     WB: Reader<R>,
@@ -76,24 +83,34 @@ where
     
     for sheet_name in wb.sheet_names().to_vec() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            return false;
+            return ExcelCheckOutcome::default();
         }
         if let Ok(Ok(range)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             wb.worksheet_range(&sheet_name)
         })) {
             for row in range.rows() {
                 if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                    return false;
+                    return ExcelCheckOutcome::default();
                 }
                 for cell in row.iter() {
                     cell_count += 1;
-                    if cell_count > ctx.max_check_cells { return false; } // C1: 상한 초과 시 중단
-                    if cell_matches(cell, ctx) { return true; }
+                    if cell_count > ctx.max_check_cells {
+                        return ExcelCheckOutcome {
+                            found: false,
+                            cell_limit_reached: true,
+                        };
+                    }
+                    if cell_matches(cell, ctx) {
+                        return ExcelCheckOutcome {
+                            found: true,
+                            cell_limit_reached: false,
+                        };
+                    }
                 }
             }
         }
     }
-    false
+    ExcelCheckOutcome::default()
 }
 
 /// 공개 검색 함수
@@ -143,7 +160,7 @@ pub fn check_excel_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_check_cells: u64,
-) -> bool {
+) -> ExcelCheckOutcome {
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
     let pat_nfc: String = pattern.chars().nfc().collect();
     let pat_upper = pat_nfc.to_lowercase().to_uppercase();
@@ -153,7 +170,7 @@ pub fn check_excel_file(
         ($open:expr) => {{
             match $open {
                 Ok(mut wb) => check_wb(&mut wb, &ctx),
-                Err(_)     => false,
+                Err(_)     => ExcelCheckOutcome::default(),
             }
         }};
     }
@@ -162,7 +179,7 @@ pub fn check_excel_file(
         "xlsx" | "xlsm" => chk!(calamine::open_workbook::<Xlsx<_>, _>(path)),
         "xlsb"          => chk!(calamine::open_workbook::<Xlsb<_>, _>(path)),
         "xls"           => chk!(calamine::open_workbook::<Xls<_>,  _>(path)),
-        _               => false,
+        _               => ExcelCheckOutcome::default(),
     }
 }
 

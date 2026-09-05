@@ -245,6 +245,10 @@ class SettingsDialog(QDialog):
         advanced_layout.addLayout(eb_row)
 
         adv_settings = self.config_manager.get_advanced_settings()
+
+        def setting_bounds(key_name):
+            spec = Constants.ADVANCED_SETTING_SPECS[key_name]
+            return int(spec["minimum"]), int(spec["maximum"])
         
         def create_spinbox_row(
             label_text,
@@ -283,15 +287,16 @@ class SettingsDialog(QDialog):
         self.adv_spinboxes = {}
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_TOTAL_MATCHES,
-            Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, 1000, 10_000_000, AppStrings.UNIT_COUNT
+            Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, *setting_bounds(Constants.CONFIG_KEY_MAX_TOTAL_MATCHES), AppStrings.UNIT_COUNT
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_PER_FILE_MATCHES,
-            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, 10, 1_000_000, AppStrings.UNIT_COUNT
+            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, *setting_bounds(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES), AppStrings.UNIT_COUNT
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_JSON_DOM_SIZE,
-            Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB, AppStrings.UNIT_MB
+            Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, *setting_bounds(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE), AppStrings.UNIT_MB,
+            description_text=AppStrings.ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION,
         )
 
         precise_group = QGroupBox(AppStrings.ADVANCED_PRECISE_SEARCH_GROUP)
@@ -303,28 +308,31 @@ class SettingsDialog(QDialog):
         precise_layout.addWidget(precise_description)
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE,
-            Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, 1, 100, AppStrings.UNIT_MB,
+            Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, *setting_bounds(Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE), AppStrings.UNIT_MB,
             target_layout=precise_layout,
             description_text=AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION,
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD] = create_spinbox_row(
             AppStrings.ADVANCED_JSON_MMAP_THRESHOLD,
-            Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, 1, 100, AppStrings.UNIT_MB,
+            Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, *setting_bounds(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD), AppStrings.UNIT_MB,
             target_layout=precise_layout,
             description_text=AppStrings.ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION,
         )
-        advanced_layout.addWidget(precise_group)
         self.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG] = create_spinbox_row(
             AppStrings.ADVANCED_TIMEOUT_WORKER_HANG,
-            Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, 10, 3600, AppStrings.UNIT_SEC
+            Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, *setting_bounds(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG), AppStrings.UNIT_SEC,
+            target_layout=precise_layout,
+            description_text=AppStrings.ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION,
         )
+        advanced_layout.addWidget(precise_group)
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_CHECK_CELLS,
-            Constants.CONFIG_KEY_MAX_CHECK_CELLS, 1000, 10_000_000, AppStrings.UNIT_CELL
+            Constants.CONFIG_KEY_MAX_CHECK_CELLS, *setting_bounds(Constants.CONFIG_KEY_MAX_CHECK_CELLS), AppStrings.UNIT_CELL,
+            description_text=AppStrings.ADVANCED_MAX_CHECK_CELLS_DESCRIPTION,
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DEPTH] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_JSON_DEPTH,
-            Constants.CONFIG_KEY_MAX_JSON_DEPTH, 10, Constants.DEFAULT_MAX_JSON_DEPTH, AppStrings.UNIT_DEPTH
+            Constants.CONFIG_KEY_MAX_JSON_DEPTH, *setting_bounds(Constants.CONFIG_KEY_MAX_JSON_DEPTH), AppStrings.UNIT_DEPTH
         )
 
         advanced_layout.addSpacing(10)

@@ -488,19 +488,23 @@ class MatchDetailModel(QAbstractTableModel):
 
                 # DisplayRole: 하이라이팅 포함
                 if is_excel:
-                    # 엑셀: [하이라이팅된값]
+                    # 엑셀: 시트!셀 | [하이라이팅된 값]
                     val = str(row_data.extra_1 if row_data.extra_1 is not None else row_data.content)
                     if val == "None":
                         val = ""  # 방어적 처리
                     rendered_val = self._render_highlighted(val)
 
-                    pos = str(row_data.position).replace("None", "").strip()
-                    sheet_info = str(row_data.content).replace("None", "").strip()
-                    parts = [p for p in [pos, sheet_info] if p and p != "|"]
-                    header = " | ".join(parts)
+                    sheet_or_pos = str(row_data.position).replace("None", "").strip()
+                    cell = str(row_data.content).replace("None", "").strip()
+                    if "!" in sheet_or_pos:
+                        location = sheet_or_pos
+                    elif sheet_or_pos and cell:
+                        location = f"{sheet_or_pos}!{cell}"
+                    else:
+                        location = sheet_or_pos or cell
 
-                    if header:
-                        return f"<html>{escape(header)} | {rendered_val}</html>"
+                    if location:
+                        return f"<html>{escape(location)} | {rendered_val}</html>"
                     return f"<html>{rendered_val}</html>"
                 else:
                     # 텍스트: 줄 번호 | [하이라이팅된내용]
@@ -651,6 +655,40 @@ class MatchDetailModel(QAbstractTableModel):
         if matches:
             mode_upper = str(search_mode or "").upper()
             for m in matches:
+                # Rust/구버전 세션은 Excel 필드를 content 하나에 탭(또는 " | ")으로 묶을 수 있습니다.
+                # UI 모델 진입 시 한 번만 분리하여 목록·필터·미리보기가 동일한 스키마를 사용하게 합니다.
+                if is_excel_file and len(m) >= 2 and isinstance(m[1], str):
+                    packed = m[1]
+                    has_explicit_cell = (
+                        len(m) > 2
+                        and isinstance(m[2], str)
+                        and excel_cell_pattern is not None
+                        and excel_cell_pattern.fullmatch(m[2].strip()) is not None
+                    )
+                    separator = None
+                    if "\t" in packed:
+                        separator = "\t"
+                    elif not has_explicit_cell and " | " in packed:
+                        separator = " | "
+                    if separator:
+                        parts = packed.split(separator, 2)
+                        if len(parts) >= 2:
+                            sheet_candidate = parts[0].strip()
+                            cell_candidate = parts[1].strip()
+                            if excel_cell_pattern and excel_cell_pattern.fullmatch(cell_candidate):
+                                value_candidate = parts[2] if len(parts) == 3 else ""
+                                pos = f"{sheet_candidate}!{cell_candidate}"
+                                normalized_matches.append(
+                                    SearchMatchSchema(
+                                        position=sheet_candidate,
+                                        content=cell_candidate,
+                                        extra_1=value_candidate,
+                                        offset=m[2] if len(m) > 2 and m[2] is not None else pos,
+                                        length=m[3] if len(m) > 3 else None,
+                                    )
+                                )
+                                continue
+
                 # Case 1: Excel 모드 (Line, Sheet, Cell, Val, [Offset, Length])
                 if Constants.MODE_EXCEL.upper() in mode_upper and len(m) >= 4 and isinstance(m[1], str):
                     s, c, v = str(m[1]).strip(), str(m[2]).strip(), str(m[3]).strip()

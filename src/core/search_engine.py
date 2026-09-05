@@ -60,10 +60,20 @@ def _build_rust_options(**values: Any) -> Optional[Any]:
     return options_type(**values)
 
 
-def _memory_guard_result(file_path: str) -> Optional[Tuple[str, str]]:
-    """Prevent a structured-file parse when the application is already under pressure."""
+def _memory_guard_result(
+    file_path: str,
+    document_kind: Literal["json", "xml"],
+    engine_kind: Literal["rust", "python"],
+) -> Optional[Tuple[str, str]]:
+    """Prevent an unsafe structured parse without conflating file and system limits."""
     try:
-        from sf_utils.resource_guard import memory_pressure_detected, memory_pressure_message, memory_snapshot
+        from sf_utils.resource_guard import (
+            estimate_structured_memory_bytes,
+            memory_pressure_detected,
+            memory_pressure_message,
+            memory_snapshot,
+            projected_memory_pressure_reason,
+        )
 
         snapshot = memory_snapshot()
         if memory_pressure_detected(snapshot):
@@ -73,6 +83,47 @@ def _memory_guard_result(file_path: str) -> Optional[Tuple[str, str]]:
                 memory_pressure_message(snapshot),
             )
             return (Constants.STATUS_SKIPPED, AppStrings.ERROR_MEMORY_CRITICAL)
+        try:
+            file_size = os.path.getsize(file_path)
+        except OSError:
+            # The regular open/read path provides the localized I/O reason.
+            return None
+        try:
+            configured_size_mb = max(
+                1,
+                int(
+                    _get_adv_setting(
+                        Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE,
+                        Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB,
+                    )
+                ),
+            )
+        except (TypeError, ValueError):
+            configured_size_mb = Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB
+        configured_size_limit = configured_size_mb * 1024 * 1024
+        if file_size > configured_size_limit and (
+            document_kind == "json" or engine_kind == "python"
+        ):
+            # Let the established parser-size check return its more specific
+            # JSON/file size reason before applying a projected-memory reason.
+            return None
+        estimate = estimate_structured_memory_bytes(file_size, document_kind, engine_kind)
+        projection_reason = projected_memory_pressure_reason(snapshot, estimate)
+        if projection_reason:
+            logger.warning(
+                "Structured search skipped for %s due to projected memory budget "
+                "(engine=%s, document=%s, estimate=%dMB, reason=%s, %s)",
+                file_path,
+                engine_kind,
+                document_kind,
+                estimate // (1024 * 1024),
+                projection_reason,
+                memory_pressure_message(snapshot),
+            )
+            return (
+                Constants.STATUS_SKIPPED,
+                format_skip_reason(_build_skip_reason(SKIP_CODE_RESOURCE_BUDGET, estimate)),
+            )
     except Exception as exc:
         # Resource checks must never make an otherwise readable file fail.
         logger.debug("Memory preflight check failed for %s: %s", file_path, exc)
@@ -133,6 +184,7 @@ SKIP_CODE_MMAP = "ERR_MMAP"
 SKIP_CODE_TOO_LARGE = "ERR_TOO_LARGE"
 SKIP_CODE_MEMORY_GUARD = "ERR_MEMORY_GUARD"
 SKIP_CODE_JSON_SIZE_LIMIT = "ERR_JSON_SIZE_LIMIT"
+SKIP_CODE_RESOURCE_BUDGET = "ERR_RESOURCE_BUDGET"
 SKIP_CODE_JSON_PARSE = "ERR_JSON_PARSE"
 SKIP_CODE_XML_PARSE = "ERR_XML_PARSE"
 SKIP_CODE_XML_UNSUPPORTED_DTD = "ERR_XML_UNSUPPORTED_DTD"
@@ -140,6 +192,7 @@ SKIP_CODE_PANIC = "ERR_PANIC"
 SKIP_CODE_CRITICAL = "ERR_CRITICAL"
 SKIP_CODE_FILE_MATCH_LIMIT = "INFO_FILE_MATCH_LIMIT"
 SKIP_CODE_JSON_DEPTH_LIMIT = "INFO_JSON_DEPTH_LIMIT"
+SKIP_CODE_EXCEL_CELL_LIMIT = "INFO_EXCEL_CELL_LIMIT"
 
 
 class _UnsupportedXmlDtd(Exception):
@@ -151,6 +204,7 @@ RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
 RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
 RUST_MATCH_MARKER_TRUNCATED = "__SF_TRUNCATED__"
 RUST_MATCH_MARKER_JSON_DEPTH_LIMIT = "__SF_JSON_DEPTH_LIMIT__|"
+RUST_MATCH_MARKER_EXCEL_CELL_LIMIT = "__SF_EXCEL_CELL_LIMIT__|"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
 _SKIP_REASON_TEMPLATE_NAMES = {
@@ -161,8 +215,10 @@ _SKIP_REASON_TEMPLATE_NAMES = {
     SKIP_CODE_TOO_LARGE: "SKIP_REASON_TOO_LARGE",
     SKIP_CODE_MEMORY_GUARD: "SKIP_REASON_MEMORY_GUARD",
     SKIP_CODE_JSON_SIZE_LIMIT: "SKIP_REASON_JSON_SIZE_LIMIT",
+    SKIP_CODE_RESOURCE_BUDGET: "SKIP_REASON_RESOURCE_BUDGET",
     SKIP_CODE_FILE_MATCH_LIMIT: "SKIP_REASON_FILE_MATCH_LIMIT",
     SKIP_CODE_JSON_DEPTH_LIMIT: "SKIP_REASON_JSON_DEPTH_LIMIT",
+    SKIP_CODE_EXCEL_CELL_LIMIT: "SKIP_REASON_EXCEL_CELL_LIMIT",
     SKIP_CODE_JSON_PARSE: "ERROR_JSON_PARSE",
     SKIP_CODE_XML_PARSE: "ERROR_XML_PARSE",
     SKIP_CODE_XML_UNSUPPORTED_DTD: "ERROR_XML_UNSUPPORTED_DTD",
@@ -362,6 +418,9 @@ def format_skip_reason(reason: Any) -> str:
     elif code == SKIP_CODE_JSON_SIZE_LIMIT:
         _log_raw_skip_detail("json-size-limit", safe_detail)
         safe_detail = AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT
+    elif code == SKIP_CODE_RESOURCE_BUDGET:
+        _log_raw_skip_detail("resource-budget", safe_detail)
+        safe_detail = AppStrings.SKIP_DETAIL_RESOURCE_BUDGET
     elif code == SKIP_CODE_MEMORY_GUARD:
         # Older Rust extensions used ERR_MEMORY_GUARD for the configured
         # per-file JSON size limit. Keep it as a file-local skip so loading an
@@ -437,8 +496,10 @@ _LOCALIZED_SKIP_MESSAGE_NAMES = (
     "SKIP_REASON_TOO_LARGE",
     "SKIP_REASON_MEMORY_GUARD",
     "SKIP_REASON_JSON_SIZE_LIMIT",
+    "SKIP_REASON_RESOURCE_BUDGET",
     "SKIP_REASON_FILE_MATCH_LIMIT",
     "SKIP_REASON_JSON_DEPTH_LIMIT",
+    "SKIP_REASON_EXCEL_CELL_LIMIT",
     "SKIP_REASON_PANIC",
     "SKIP_REASON_CRITICAL",
     "SKIP_REASON_BATCH",
@@ -468,7 +529,11 @@ def _is_current_localized_skip_reason(reason: str) -> bool:
 
 def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> str:
     """Re-render a categorized legacy-session reason with the active catalog."""
-    saved_limit_match = re.search(r"\(([0-9,]+)(?:건)?\)", source_reason)
+    saved_limit_match = re.search(
+        r"\(([0-9,]+)(?:건|개|\s*cells?)?\)",
+        source_reason,
+        flags=re.IGNORECASE,
+    )
     saved_limit = (
         saved_limit_match.group(1).replace(",", "")
         if saved_limit_match
@@ -509,6 +574,8 @@ def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> 
         return AppStrings.SKIP_REASON_JSON_SIZE_LIMIT.format(AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT)
     if resource_name == "SKIP_REASON_JSON_SIZE_LIMIT":
         return AppStrings.SKIP_REASON_JSON_SIZE_LIMIT.format(AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT)
+    if resource_name == "SKIP_REASON_RESOURCE_BUDGET":
+        return AppStrings.SKIP_REASON_RESOURCE_BUDGET.format(AppStrings.SKIP_DETAIL_RESOURCE_BUDGET)
     if resource_name == "SKIP_REASON_FILE_MATCH_LIMIT":
         return AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(
             saved_limit
@@ -523,6 +590,14 @@ def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> 
             or _get_adv_setting(
                 Constants.CONFIG_KEY_MAX_JSON_DEPTH,
                 Constants.DEFAULT_MAX_JSON_DEPTH,
+            )
+        )
+    if resource_name == "SKIP_REASON_EXCEL_CELL_LIMIT":
+        return AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(
+            saved_limit
+            or _get_adv_setting(
+                Constants.CONFIG_KEY_MAX_CHECK_CELLS,
+                Constants.DEFAULT_MAX_CHECK_CELLS,
             )
         )
     if resource_name in {"SKIP_REASON_PANIC", "SKIP_REASON_CRITICAL"}:
@@ -642,6 +717,9 @@ def _normalize_rust_matches(
                 continue
             if c.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
                 # 파일 단위 부분 검색 안내로 별도 전달되며 결과 행에는 표시하지 않습니다.
+                continue
+            if c.startswith(RUST_MATCH_MARKER_EXCEL_CELL_LIMIT):
+                # Excel 존재 확인의 부분 검색 안내로 별도 전달합니다.
                 continue
             if c == RUST_MATCH_MARKER_TRUNCATED:
                 # A real file match is identified by its positive line number;
@@ -806,15 +884,25 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
             reasons.append(AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(limit))
             continue
 
-        if code == "JSON_DEPTH_LIMIT" or kind == "partial":
-            if code != "JSON_DEPTH_LIMIT":
-                continue
+        if code == "JSON_DEPTH_LIMIT":
             limit = _positive_limit(
                 detail,
                 Constants.CONFIG_KEY_MAX_JSON_DEPTH,
                 Constants.DEFAULT_MAX_JSON_DEPTH,
             )
             reasons.append(AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(limit))
+            continue
+
+        if code == "EXCEL_CELL_LIMIT":
+            limit = _positive_limit(
+                detail,
+                Constants.CONFIG_KEY_MAX_CHECK_CELLS,
+                Constants.DEFAULT_MAX_CHECK_CELLS,
+            )
+            reasons.append(AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(limit))
+            continue
+
+        if kind == "partial":
             continue
 
         if is_tuple_metadata and content.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
@@ -824,6 +912,15 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
                 Constants.DEFAULT_MAX_JSON_DEPTH,
             )
             reasons.append(AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(limit))
+            continue
+
+        if is_tuple_metadata and content.startswith(RUST_MATCH_MARKER_EXCEL_CELL_LIMIT):
+            limit = _positive_limit(
+                content[len(RUST_MATCH_MARKER_EXCEL_CELL_LIMIT) :],
+                Constants.CONFIG_KEY_MAX_CHECK_CELLS,
+                Constants.DEFAULT_MAX_CHECK_CELLS,
+            )
+            reasons.append(AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(limit))
 
     unique_reasons = list(dict.fromkeys(reasons))
     return "\n".join(unique_reasons) if unique_reasons else None
@@ -1233,7 +1330,13 @@ def search_in_excel_special(
                 max_json_size=max_json_size,
             )
             if results:
+                error_reason = _extract_marker_skip_reason(results)
+                if error_reason:
+                    return (Constants.STATUS_SKIPPED, error_reason)
+                partial_reason = _extract_partial_skip_reason(results)
                 if existence_only:
+                    if partial_reason:
+                        return (Constants.STATUS_SKIPPED, partial_reason)
                     # [Boolean] 일치 항목 발견 시 즉시 반환
                     return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 processed: List[SearchMatch] = []
@@ -1312,6 +1415,15 @@ def search_in_excel_special(
 
         count = 0
         matches = []
+        checked_cells = 0
+        max_check_cells = _get_adv_setting(
+            Constants.CONFIG_KEY_MAX_CHECK_CELLS,
+            Constants.DEFAULT_MAX_CHECK_CELLS,
+        )
+        max_per_file = _get_adv_setting(
+            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
+            Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+        )
         search_string_norm = re.sub(r"\s+", " ", search_string).strip()
         search_string_lower = search_string.casefold()
 
@@ -1323,9 +1435,14 @@ def search_in_excel_special(
                 sheet = workbook.get_sheet_by_name(sheet_name)
 
                 # [Stability] 빈 시트 체크: python-calamine 0.1.x 버그 대응
-                # 시트가 비어있을 경우 iter_rows() 내부에서 .unwrap() 패닉이 발생하는 현상을 사전 차단합니다.
-                if hasattr(sheet, "total_height") and hasattr(sheet, "total_width"):
-                    if sheet.total_height == 0 or sheet.total_width == 0:
+                # total_height/total_width는 개수가 아니라 0 기반 마지막 인덱스라서
+                # 값이 0인 정상적인 단일 행/열 시트도 있습니다. 지원 버전에서는
+                # 빈 시트만 start=None이므로 이를 우선 판별합니다.
+                if hasattr(sheet, "start"):
+                    if sheet.start is None:
+                        continue
+                elif hasattr(sheet, "total_height") and hasattr(sheet, "total_width"):
+                    if sheet.total_height == 0 and sheet.total_width == 0:
                         continue
 
                 # iter_rows() 호출 후 회수 시점에서 발생하는 패닉 처리
@@ -1334,6 +1451,15 @@ def search_in_excel_special(
                     if row_idx % 100 == 0 and stop_event and stop_event.is_set():
                         break
                     for col_idx, cell_value in enumerate(row):
+                        if existence_only:
+                            checked_cells += 1
+                            if checked_cells > max_check_cells:
+                                return (
+                                    Constants.STATUS_SKIPPED,
+                                    AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(
+                                        max_check_cells
+                                    ),
+                                )
                         if cell_value is not None:
                             val_str = normalize_unicode(str(cell_value))
                             val_norm = re.sub(r"\s+", " ", val_str).casefold().strip()
@@ -1352,7 +1478,7 @@ def search_in_excel_special(
                                     return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                                 
                                 # [상] Python 경로 매치 상한 적용
-                                if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
+                                if count <= max_per_file:
                                     col_letter = ""
                                     temp_col = col_idx
                                     while temp_col >= 0:
@@ -1363,8 +1489,8 @@ def search_in_excel_special(
                                         row_idx + 1 + (sheet.start[0] if hasattr(sheet, "start") and sheet.start else 0)
                                     )
                                     matches.append((0, sheet_name, f"{col_letter}{abs_row}", val_str))
-                                elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
-                                    matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), "", ""))
+                                elif count == max_per_file + 1:
+                                    matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", ""))
             except BaseException as e:  # 특정 시트에서 패닉 발생 시 해당 시트만 스킵
                 _log_raw_skip_detail(f"Excel sheet {sheet_name}", e)
                 sheet_err_msg = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(
@@ -1375,7 +1501,7 @@ def search_in_excel_special(
                 continue
 
         if count > 0:
-            final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
+            final_count = min(count, max_per_file + 1)
             return (file_path, final_count, matches)
     except ImportError:
         return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_CALAMINE)
@@ -1401,7 +1527,10 @@ def search_in_json_special(
     """
     JSON 특수 검색을 수행합니다.
     """
-    memory_result = _memory_guard_result(file_path)
+    initial_engine: Literal["rust", "python"] = (
+        "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
+    )
+    memory_result = _memory_guard_result(file_path, "json", initial_engine)
     if memory_result:
         return memory_result
     if HAS_RUST_ENGINE and not use_complex_search:
@@ -1474,6 +1603,10 @@ def search_in_json_special(
                 Constants.STATUS_SKIPPED,
                 AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(reason)),
             )
+    if initial_engine == "rust":
+        memory_result = _memory_guard_result(file_path, "json", "python")
+        if memory_result:
+            return memory_result
     try:
         import json
 
@@ -1687,7 +1820,8 @@ def search_in_xml_special(
     """
     XML 특수 검색을 수행합니다.
     """
-    memory_result = _memory_guard_result(file_path)
+    initial_engine = "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
+    memory_result = _memory_guard_result(file_path, "xml", initial_engine)
     if memory_result:
         return memory_result
     if HAS_RUST_ENGINE and not use_complex_search:
@@ -1736,6 +1870,10 @@ def search_in_xml_special(
                 Constants.STATUS_SKIPPED,
                 format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, reason)),
             )
+    if initial_engine == "rust":
+        memory_result = _memory_guard_result(file_path, "xml", "python")
+        if memory_result:
+            return memory_result
     try:
         import xml.parsers.expat
 

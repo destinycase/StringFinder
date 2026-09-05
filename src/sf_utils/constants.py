@@ -95,7 +95,6 @@ class Constants:
     CONFIG_KEY_FILTER_SPLITTER_STATE = "filter_splitter_state"
     CONFIG_KEY_THEME = "theme"
     CONFIG_KEY_LANGUAGE = "language"
-    CONFIG_KEY_CASE_INSENSITIVE = "case_insensitive"
     CONFIG_KEY_EXCLUDE_BINARY = "exclude_binary"
     CONFIG_KEY_RESULT_COLUMN_WIDTHS = "result_column_widths"
     CONFIG_KEY_MATCH_COLUMN_WIDTHS = "match_column_widths"
@@ -127,6 +126,51 @@ class Constants:
     CONFIG_KEY_TIMEOUT_WORKER_HANG = "timeout_worker_hang"
     CONFIG_KEY_MAX_CHECK_CELLS = "max_check_cells"
     CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
+    # 고급 설정의 기본값과 허용 범위는 ConfigManager와 UI가 함께 사용하는
+    # 단일 계약입니다. 두 계층에 숫자를 중복 선언하면 수동 편집된 설정이
+    # 화면과 실제 검색에서 서로 다르게 적용될 수 있습니다.
+    ADVANCED_SETTING_SPECS = {
+        CONFIG_KEY_MAX_TOTAL_MATCHES: {
+            "default": DEFAULT_MAX_TOTAL_MATCHES,
+            "minimum": 1_000,
+            "maximum": 10_000_000,
+        },
+        CONFIG_KEY_MAX_PER_FILE_MATCHES: {
+            "default": DEFAULT_MAX_PER_FILE_MATCHES,
+            "minimum": 10,
+            "maximum": 1_000_000,
+        },
+        CONFIG_KEY_MAX_JSON_DOM_SIZE: {
+            "default": DEFAULT_MAX_JSON_DOM_SIZE_MB,
+            "minimum": 1,
+            "maximum": DEFAULT_MAX_JSON_DOM_SIZE_MB,
+        },
+        CONFIG_KEY_MAX_SMALL_FILE_SIZE: {
+            "default": DEFAULT_MAX_SMALL_FILE_SIZE_MB,
+            "minimum": 1,
+            "maximum": 100,
+        },
+        CONFIG_KEY_JSON_MMAP_THRESHOLD: {
+            "default": DEFAULT_JSON_MMAP_THRESHOLD_MB,
+            "minimum": 1,
+            "maximum": 100,
+        },
+        CONFIG_KEY_TIMEOUT_WORKER_HANG: {
+            "default": DEFAULT_TIMEOUT_WORKER_HANG,
+            "minimum": 10,
+            "maximum": 3_600,
+        },
+        CONFIG_KEY_MAX_CHECK_CELLS: {
+            "default": DEFAULT_MAX_CHECK_CELLS,
+            "minimum": 1_000,
+            "maximum": 10_000_000,
+        },
+        CONFIG_KEY_MAX_JSON_DEPTH: {
+            "default": DEFAULT_MAX_JSON_DEPTH,
+            "minimum": 10,
+            "maximum": DEFAULT_MAX_JSON_DEPTH,
+        },
+    }
     DEFAULT_CONTEXT_PREVIEW_LINES = 5
     MAX_CONTEXT_PREVIEW_LINES = 20
     DEFAULT_EXTERNAL_EDITOR = "system"
@@ -142,9 +186,17 @@ class Constants:
     MAX_PER_FILE_MATCHES = DEFAULT_MAX_PER_FILE_MATCHES  # 파일당 매치 상한 (기본값 캐시)
     # 검색 프로세스 트리 기준 보호값입니다. 시스템 전체 사용률만 보면
     # 다른 애플리케이션의 메모리 사용 때문에 정상 검색이 중단될 수 있습니다.
-    PROCESS_MEMORY_THRESHOLD_PERCENT = 60
+    # 메모리 보호는 전체 RAM 비율만으로 판정하지 않습니다. 저용량 장치에서는
+    # 기존 비율 기준을 유지하고, 대용량 장치에서는 절대 상한과 동적 예약량을
+    # 함께 적용하여 장치별 편차와 무제한 증가를 모두 방지합니다.
+    MEMORY_RESERVE_PERCENT = 5
     MIN_AVAILABLE_MEMORY_MB = 512
     MIN_AVAILABLE_MEMORY_BYTES = MIN_AVAILABLE_MEMORY_MB * 1024 * 1024
+    MAX_AVAILABLE_MEMORY_RESERVE_MB = 2 * 1024
+    MAX_AVAILABLE_MEMORY_RESERVE_BYTES = MAX_AVAILABLE_MEMORY_RESERVE_MB * 1024 * 1024
+    PROCESS_MEMORY_THRESHOLD_PERCENT = 60
+    MAX_PROCESS_MEMORY_MB = 8 * 1024
+    MAX_PROCESS_MEMORY_BYTES = MAX_PROCESS_MEMORY_MB * 1024 * 1024
 
     # Rust 엔진 결과 배치 크기 및 지연 간격 (성능 튜닝용)
     RUST_RESULT_BATCH_SIZE = 128

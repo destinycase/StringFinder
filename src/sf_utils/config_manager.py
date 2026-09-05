@@ -54,7 +54,7 @@ class ConfigManager:
             # AppData 접근이 실패하면 임시 폴더로 전환한다.
             logger.warning(AppStrings.LOG_CFG_APPDATA_FALLBACK.format(e, self.config_dir))
         self.config_path = os.path.join(self.config_dir, Constants.CONFIG_FILENAME)
-        self.CURRENT_CONFIG_VERSION = 2
+        self.CURRENT_CONFIG_VERSION = 3
         self.last_load_error: Optional[Exception] = None
         self.last_save_error: Optional[Exception] = None
         self._defaults: Dict[str, Any] = {
@@ -73,7 +73,6 @@ class ConfigManager:
             Constants.CONFIG_KEY_FILTER_SPLITTER_STATE: None,
             Constants.CONFIG_KEY_THEME: Constants.DEFAULT_THEME,
             Constants.CONFIG_KEY_LANGUAGE: Constants.DEFAULT_LANGUAGE,
-            Constants.CONFIG_KEY_CASE_INSENSITIVE: False,
             Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS: [60, 400, 100, 60],
             Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS: [60, 400, 400],
             Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES: Constants.DEFAULT_CONTEXT_PREVIEW_LINES,
@@ -93,14 +92,8 @@ class ConfigManager:
             Constants.CONFIG_KEY_EXCLUDE_BINARY: True,
             Constants.CONFIG_KEY_TABS: [],
             Constants.CONFIG_KEY_ADVANCED: {
-                Constants.CONFIG_KEY_MAX_TOTAL_MATCHES: Constants.DEFAULT_MAX_TOTAL_MATCHES,
-                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-                Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB,
-                Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE: Constants.DEFAULT_MAX_SMALL_FILE_SIZE_MB,
-                Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD: Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB,
-                Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG: Constants.DEFAULT_TIMEOUT_WORKER_HANG,
-                Constants.CONFIG_KEY_MAX_CHECK_CELLS: Constants.DEFAULT_MAX_CHECK_CELLS,
-                Constants.CONFIG_KEY_MAX_JSON_DEPTH: Constants.DEFAULT_MAX_JSON_DEPTH,
+                key: spec["default"]
+                for key, spec in Constants.ADVANCED_SETTING_SPECS.items()
             },
         }
         self._config_lock = threading.RLock()
@@ -175,6 +168,9 @@ class ConfigManager:
                             if isinstance(merged[k], dict) and not isinstance(v, dict):
                                 continue
                             merged[k] = v
+                    merged[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(
+                        merged.get(Constants.CONFIG_KEY_ADVANCED),
+                    )
                     return merged
             except json.JSONDecodeError as e:
                 self.last_load_error = e
@@ -198,7 +194,26 @@ class ConfigManager:
                 if advanced.get(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE) == old_default:
                     advanced[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] = Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB
             config[Constants.CONFIG_KEY_VERSION] = 2
+        if from_version < 3:
+            # 더 이상 어떤 UI나 검색 경로에서도 소비하지 않는 v1 레거시 키입니다.
+            config.pop("case_insensitive", None)
+            config[Constants.CONFIG_KEY_VERSION] = 3
         return config
+
+    def _normalize_advanced_settings(self, settings: Any) -> dict[str, int]:
+        """Return only supported advanced settings with canonical bounds."""
+        source = settings if isinstance(settings, dict) else {}
+        normalized: dict[str, int] = {}
+        for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
+            default = int(spec["default"])
+            minimum = int(spec["minimum"])
+            maximum = int(spec["maximum"])
+            try:
+                value = int(source.get(key, default))
+            except (TypeError, ValueError):
+                value = default
+            normalized[key] = min(max(value, minimum), maximum)
+        return normalized
 
     def save(self):
         """디바운스 저장을 예약한다."""
@@ -697,27 +712,7 @@ class ConfigManager:
         """고급 설정 딕셔너리를 반환한다. (누락된 키는 기본값으로 채운다)"""
         with self._config_lock:
             advanced = self._config.get(Constants.CONFIG_KEY_ADVANCED, {})
-            defaults = self._defaults.get(Constants.CONFIG_KEY_ADVANCED, {})
-            result = copy.deepcopy(defaults)
-            if isinstance(advanced, dict):
-                result.update(advanced)
-            # Structured parsers have bounded safe limits. Clamp legacy or
-            # hand-edited settings so Python and Rust follow the same policy.
-            for key, minimum, maximum in (
-                (Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, 1, 10_000_000),
-                (Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, 1, 1_000_000),
-                (Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB),
-                (Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, 1, 100),
-                (Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, 1, 100),
-                (Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, 1, 3_600),
-                (Constants.CONFIG_KEY_MAX_CHECK_CELLS, 1, 10_000_000),
-                (Constants.CONFIG_KEY_MAX_JSON_DEPTH, 1, Constants.DEFAULT_MAX_JSON_DEPTH),
-            ):
-                try:
-                    result[key] = min(max(int(result[key]), minimum), maximum)
-                except (KeyError, TypeError, ValueError):
-                    result[key] = defaults.get(key, minimum)
-            return result  # type: ignore
+            return self._normalize_advanced_settings(advanced)
 
     def get_log_retention(self) -> dict[str, Any]:
         """Return a detached, type- and range-normalized log retention config."""
@@ -750,7 +745,7 @@ class ConfigManager:
             if not isinstance(current, dict):
                 current = copy.deepcopy(self._defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
             current.update(copy.deepcopy(settings_dict))
-            self._config[Constants.CONFIG_KEY_ADVANCED] = current
+            self._config[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(current)
         self.save()
         
     def reset_advanced_settings(self) -> dict[str, Any]:
@@ -758,4 +753,5 @@ class ConfigManager:
         with self._config_lock:
             defaults = copy.deepcopy(self._defaults.get(Constants.CONFIG_KEY_ADVANCED, {}))
             self._config[Constants.CONFIG_KEY_ADVANCED] = defaults
-            return defaults  # type: ignore
+        self.save()
+        return defaults  # type: ignore

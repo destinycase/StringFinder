@@ -1,6 +1,6 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.2 (StringFinder v5.8.4 기준)
+- **문서 버전:** 1.2 (StringFinder v5.8.6 기준)
 - **최종 수정일:** 2026-09-05
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
@@ -135,7 +135,7 @@ options = sf_engine.SearchOptions(
 
 `results_callback`을 사용하는 디렉터리/파일 목록 검색에서는 callback이 결과의 단일 전달 경로입니다. callback에는 `(path, matches)` 배치가 전달되고, 동기 반환 목록은 중복 메모리 보관을 피하기 위해 비워질 수 있습니다. callback 없이 호출하면 동기 반환 목록을 사용할 수 있습니다. callback 예외는 Rust 검색 오류로 호출자에게 전파됩니다.
 
-파일 단위 결과 제한은 `__SF_TRUNCATED__`, JSON 깊이 제한은 `__SF_JSON_DEPTH_LIMIT__|<limit>` 메타데이터로 전달합니다. 두 신호는 치명적 오류가 아니므로 정상 매치를 제거하지 않습니다. Python 계층은 같은 파일에서 발생한 부분 검색 사유를 하나로 합쳐 `skipped` 스트림에도 전달하며, UI는 기존 **건너뛴 파일 수** 패널과 목록 팝업을 재사용합니다. 깊이 제한만 발생해 정상 매치가 없어도 해당 파일은 `skipped` 안내에 포함되어야 합니다. 존재 여부 검색과 스마트 스캔도 동일한 깊이 제한 안내 계약을 지켜야 합니다.
+파일 단위 결과 제한은 `__SF_TRUNCATED__`, JSON 깊이 제한은 `__SF_JSON_DEPTH_LIMIT__|<limit>`, Excel 존재 확인 셀 제한은 `__SF_EXCEL_CELL_LIMIT__|<limit>` 메타데이터로 전달합니다. 이 신호들은 치명적 오류가 아니므로 정상 매치를 제거하지 않습니다. Python 계층은 같은 파일에서 발생한 부분 검색 사유를 하나로 합쳐 `skipped` 스트림에도 전달하며, UI는 기존 **건너뛴 파일 수** 패널과 목록 팝업을 재사용합니다. 제한만 발생해 정상 매치가 없어도 해당 파일은 `skipped` 안내에 포함되어야 합니다. 존재 여부 검색과 스마트 스캔도 적용 가능한 제한 안내 계약을 지켜야 합니다.
 
 ### 4.2 `SearchMatch` (Structured Match Object)
 검색 매치 결과를 튜플 및 속성(Property) 양방향으로 읽을 수 있는 통합 구조체입니다.
@@ -146,8 +146,8 @@ options = sf_engine.SearchOptions(
 | `content` | `String` | 매칭 라인 텍스트 또는 포맷된 결과 (`path\tvalue`) |
 | `offset` | `Option<usize>` | 매치 시작 바이트 오프셋 |
 | `length` | `Option<usize>` | 매치 바이트 길이 |
-| `kind` | `String` | `"match"`, `"binary"`, `"long_line"`, `"truncated"`, `"sheet_error"`, `"error"` |
-| `code` | `Option<String>` | 에러/안내 코드 (`ERR_MMAP`, `ERR_JSON_SIZE_LIMIT`, `INFO_JSON_DEPTH_LIMIT` 등) |
+| `kind` | `String` | `"match"`, `"partial"`, `"binary"`, `"long_line"`, `"truncated"`, `"sheet_error"`, `"error"` |
+| `code` | `Option<String>` | 에러/안내 코드 (`ERR_MMAP`, `ERR_JSON_SIZE_LIMIT`, `JSON_DEPTH_LIMIT`, `EXCEL_CELL_LIMIT` 등) |
 | `detail` | `Option<String>` | 상세 메시지 |
 
 ---
@@ -173,12 +173,17 @@ options = sf_engine.SearchOptions(
 ### 4) 엑셀 파싱 라이브러리 패닉 격리
 - **위치:** [`src/rust_engine/src/excel_search.rs`](../src/rust_engine/src/excel_search.rs)
 - 손상된 `.xlsx`, `.xlsb` 파일 파싱 시 `calamine` 내부에서 패닉이 발생하더라도 `std::panic::catch_unwind`로 포획하여 GUI 프로세스의 비정상 종료를 방지하고 `__SF_EXCEL_SHEET_ERR__|` 스킵 결과로 안전하게 변환합니다.
+- 존재 확인 경로는 Rust와 Python 모두 파일별 `max_check_cells`를 적용합니다. 한도 도달은 음성 결과가 아니라 `EXCEL_CELL_LIMIT` 부분 검색으로 전달해야 하며, 한도 전에 발견한 매치는 즉시 반환합니다.
+- `python-calamine`의 `total_height`/`total_width`는 0 기반 마지막 인덱스이므로 값이 0이라고 빈 시트로 판단하지 않습니다. `start is None`을 우선 사용하여 실제 빈 시트의 `iter_rows()` 패닉만 회피합니다.
 
 ### 5) 파일 크기 제한과 시스템 메모리 압력의 분리
 
 - JSON의 설정 크기 제한은 Rust에서 `ERR_JSON_SIZE_LIMIT`로 전달하며, 해당 파일만 `skipped`에 추가합니다. 이 사유로 전체 검색을 중단하거나 메모리 부족 팝업을 표시해서는 안 됩니다.
 - 구버전 Rust 확장이 반환한 `ERR_MEMORY_GUARD|Large JSON`도 호환 계층에서 JSON 파일 크기 제한으로 해석합니다.
-- 전체 검색 중단은 `resource_guard.py`가 감지한 실제 시스템 가용 메모리 부족 또는 StringFinder 프로세스 트리 RSS 한도 초과에만 적용합니다. 현재 512MB 최소 가용 메모리와 전체 RAM의 60% 프로세스 트리 기준은 유지합니다.
+- `resource_guard.py`의 장치별 한도는 `reserve = clamp(total RAM × 5%, 512MB, 2GB)`, `process_limit = min(total RAM × 60%, 8GB)`로 계산합니다. 단순 시스템 사용률(`system_percent`)은 로그 진단값일 뿐 판정 조건이 아닙니다.
+- 현재 `available < reserve`이거나 StringFinder 프로세스 트리 `RSS >= process_limit`이면 실제 시스템 압력으로 간주하여 전체 검색을 한 번만 중단합니다. 메모리 계측값이 없거나 유효하지 않으면 가드 자체가 검색 실패를 만들지 않도록 계속 진행합니다.
+- 개별 구조 문서 파싱 전에는 파일 크기를 기준으로 추가 작업 메모리를 보수적으로 예상합니다. Rust JSON/XML은 `2.5 × size + 64MB`, Python XML은 `4 × size + 64MB`, Python JSON은 `6 × size + 128MB`를 사용합니다. 예상 사용 후 `reserve` 또는 `process_limit`을 침범하면 `ERR_RESOURCE_BUDGET` 파일 스킵으로 반환하고 전체 검색은 유지합니다.
+- 이 사전 예상은 현재 개별 JSON/XML 검색 진입점과 Python 정밀 검색 경로를 보호합니다. Rust 디렉터리 병렬 검색의 동시 파일 예산 예약은 별도 동시성 가드가 필요하며, 기존 JSON 크기 제한·streaming 파싱·부모 워커의 실제 RSS 감시가 계속 적용됩니다.
 - `SearchWorker._is_memory_skip()`의 판정 범위를 넓힐 때는 파일 단위 제한 코드가 섞이지 않도록 반드시 혼합 파일 회귀 테스트를 추가합니다.
 
 ---
@@ -252,9 +257,12 @@ python build.py
 - Rust 결과 형식을 바꾸면 `src/core/search_engine.py`의 정규화 로직과 `src/ui/models.py`의 표시 로직을 함께 수정합니다.
 - 새 사용자 문자열을 추가하면 한국어·영어 카탈로그와 현지화 계약 테스트를 함께 갱신합니다. 저장된 언어는 UI 모듈 import 전에 적용해야 클래스 수준 문자열 캐시가 한 언어로 일관됩니다.
 - 운영체제·파서·Rust/Calamine의 원본 오류는 로그에 보존하고, 건너뛴 파일 팝업에는 `search_engine.py`의 `format_skip_reason()`과 `localize_skip_reason_for_display()`로 정규화한 현재 언어의 사용자용 사유만 전달합니다. 세션에서 복원한 사유도 표시 전에 다시 현지화합니다.
+- 메모리 가드의 비율·절대 상한·예상 사용량 계수를 변경할 때는 4/8/16/32/64/128GB 장치별 한도, 정확한 경계값, 유효하지 않은 계측값, 파일 단위 스킵과 전체 중단의 분리를 모두 테스트합니다. `system_percent`를 판정 조건으로 다시 사용하지 않습니다.
 - 검색 결과 상한(`max_per_file`, 전체 결과 상한), JSON 깊이·크기 제한, Excel 셀 검사 상한은 안전장치이므로 기본값과 UI 범위를 함께 검토합니다.
-- `max_small_file_size`와 `json_mmap_threshold`는 설정 키와 의미를 유지하되 **정밀 검색의 Python 처리 경로 전용**입니다. 전자는 일반 텍스트의 소형 파일 처리 경로 기준이고, 후자는 JSON을 mmap으로 읽기 시작하는 크기입니다. mmap 경로도 최종 JSON 분석은 전체 문서를 대상으로 하므로 스트리밍 파서라고 설명하지 않습니다. 두 값은 Rust 기본 검색 옵션으로 전달하지 않습니다.
-- `__SF_TRUNCATED__`와 `__SF_JSON_DEPTH_LIMIT__|<limit>`는 부분 검색 안내입니다. 정규화 시 사용자 결과 행에서는 깊이 메타데이터를 제거하되, 해당 파일을 현지화된 `skipped` 안내에 추가하고 기존 정상 결과는 보존합니다. 두 제한이 같은 파일에서 발생하면 파일 수가 중복 증가하지 않도록 사유를 한 항목으로 병합합니다.
+- 고급 설정의 기본값·최솟값·최댓값은 `Constants.ADVANCED_SETTING_SPECS`가 단일 계약입니다. `ConfigManager`와 설정 UI가 이 스키마를 함께 사용해야 하며, 새 키를 추가할 때 숫자 범위를 UI에 중복 선언하지 않습니다. 설정 스키마 v3은 사용되지 않는 `case_insensitive` 키를 제거하고, 수동 편집값도 같은 범위로 정규화합니다. 고급 설정 초기화는 메모리 변경 후 저장을 예약해야 합니다.
+- `max_small_file_size`, `json_mmap_threshold`, `timeout_worker_hang`는 **정밀 검색의 Python 처리 경로 전용**입니다. 앞의 두 값은 각각 일반 텍스트의 소형 파일 처리 경로와 JSON mmap 읽기 전환 크기입니다. mmap 경로도 최종 JSON 분석은 전체 문서를 대상으로 하므로 스트리밍 파서라고 설명하지 않습니다. 타임아웃은 파일별 실행 시간이 아니라 완료된 배치가 없는 대기 시간이며, 초과 시 전체 Python 작업 풀을 종료합니다. 세 값은 Rust 기본 검색 옵션으로 전달하지 않습니다.
+- `max_json_dom_size`는 실제 메모리 측정값이 아니라 모든 JSON 검색과 Python 정밀 XML 검색의 입력 파일 크기 상한입니다. Rust 기본 XML 검색에는 적용되지 않으므로 UI·문서에서 JSON 전용 또는 공통 XML 한도라고 단정하지 않습니다.
+- `__SF_TRUNCATED__`, `__SF_JSON_DEPTH_LIMIT__|<limit>`, `__SF_EXCEL_CELL_LIMIT__|<limit>`는 부분 검색 안내입니다. 정규화 시 사용자 결과 행에서는 메타데이터를 제거하되, 해당 파일을 현지화된 `skipped` 안내에 추가하고 기존 정상 결과는 보존합니다. 여러 제한이 같은 파일에서 발생하면 파일 수가 중복 증가하지 않도록 사유를 한 항목으로 병합합니다.
 - 결과 callback은 검색 중 UI로 전달되는 스트림입니다. callback을 추가·변경할 때는 중복 전달, callback 예외 전파, 중지 시 이미 큐에 들어온 배치 처리 여부를 테스트합니다.
 
 ### 7.2 벤치마크와 릴리스 검증

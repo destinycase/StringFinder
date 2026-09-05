@@ -178,6 +178,8 @@ impl From<RawMatch> for SearchMatch {
             ("truncated", Some("TRUNCATED"), None)
         } else if let Some(detail) = content.strip_prefix("__SF_JSON_DEPTH_LIMIT__|") {
             ("partial", Some("JSON_DEPTH_LIMIT"), Some(detail))
+        } else if let Some(detail) = content.strip_prefix("__SF_EXCEL_CELL_LIMIT__|") {
+            ("partial", Some("EXCEL_CELL_LIMIT"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_BINARY_MATCH__|") {
             ("binary", Some("BINARY"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_LONG_LINE__|") {

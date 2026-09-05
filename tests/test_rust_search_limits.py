@@ -388,6 +388,25 @@ def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
     assert reason.count("\n") == 1
 
 
+def test_excel_cell_limit_marker_is_a_partial_file_notice(monkeypatch):
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_CHECK_CELLS: 2},
+    )
+
+    raw_matches = [(0, "__SF_EXCEL_CELL_LIMIT__|2", None, None)]
+    reason = search_engine._extract_partial_skip_reason(raw_matches)
+    normalized, _, _ = search_engine._normalize_rust_matches(
+        raw_matches,
+        special_mode=Constants.MODE_EXCEL,
+        existence_only=True,
+    )
+
+    assert reason == search_engine.AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(2)
+    assert normalized == []
+
+
 def test_file_list_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
     class FakeEngine:
         @staticmethod

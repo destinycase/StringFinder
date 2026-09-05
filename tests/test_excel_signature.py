@@ -16,6 +16,8 @@ import os
 from typing import Any, List
 from unittest.mock import patch
 
+import pytest
+
 from core.search_engine import (
     format_excel_panic_reason,
     is_valid_excel_signature,
@@ -141,3 +143,121 @@ def test_rust_excel_sheet_error_marker_is_filtered(tmp_path):
     matches: List[Any] = list(res_list[2])
     assert str(matches[0][1]) == "Sheet2"
     assert str(matches[0][2]) == "A1"
+
+
+def test_rust_excel_existence_cell_limit_returns_skipped(tmp_path):
+    target = tmp_path / "limited.xlsx"
+    with open(target, "wb") as f:
+        f.write(b"PK\x03\x04" + b"\x00" * 10)
+
+    with (
+        patch("core.search_engine.HAS_RUST_ENGINE", True),
+        patch(
+            "core.search_engine.sf_engine.search_file",
+            return_value=[(0, "__SF_EXCEL_CELL_LIMIT__|2", None, None)],
+        ),
+    ):
+        result = search_in_excel_special(
+            str(target),
+            "keyword",
+            existence_only=True,
+        )
+
+    assert result == (
+        Constants.STATUS_SKIPPED,
+        AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(2),
+    )
+
+
+def test_python_excel_existence_cell_limit_returns_skipped(tmp_path, monkeypatch):
+    from openpyxl import Workbook
+
+    target = tmp_path / "limited_python.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["first", "second", "needle"])
+    workbook.save(target)
+    workbook.close()
+
+    monkeypatch.setattr(
+        "core.search_engine.ConfigManager.get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_CHECK_CELLS: 2},
+    )
+    result = search_in_excel_special(
+        str(target),
+        "needle",
+        use_complex_search=True,
+        existence_only=True,
+    )
+
+    assert result == (
+        Constants.STATUS_SKIPPED,
+        AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(2),
+    )
+
+
+def test_python_excel_precise_search_keeps_single_cell_sheet(tmp_path):
+    from openpyxl import Workbook
+
+    target = tmp_path / "single_cell.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet["A1"] = "needle"
+    workbook.save(target)
+    workbook.close()
+
+    result = search_in_excel_special(
+        str(target),
+        "needle",
+        use_complex_search=True,
+    )
+
+    assert isinstance(result, tuple) and len(result) == 3
+    assert result[1] == 1
+    assert result[2][0][2] == "A1"
+
+
+def test_real_rust_excel_existence_limit_and_early_match(tmp_path, monkeypatch):
+    from core import search_engine
+    from openpyxl import Workbook
+
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    limited_target = tmp_path / "rust_limited.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["first", "second", "needle"])
+    workbook.save(limited_target)
+    workbook.close()
+
+    matched_target = tmp_path / "rust_early_match.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["needle", "second", "third"])
+    workbook.save(matched_target)
+    workbook.close()
+
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_CHECK_CELLS: 2},
+    )
+
+    limited = search_in_excel_special(
+        str(limited_target),
+        "needle",
+        existence_only=True,
+    )
+    matched = search_in_excel_special(
+        str(matched_target),
+        "needle",
+        existence_only=True,
+    )
+
+    assert limited == (
+        Constants.STATUS_SKIPPED,
+        AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(2),
+    )
+    assert isinstance(matched, tuple) and len(matched) == 3
+    assert matched[1] == 1

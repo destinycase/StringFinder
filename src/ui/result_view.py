@@ -225,6 +225,7 @@ class ResultView(QWidget):
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
     CONTEXT_MAX_SCAN_LINES = 200_000
     CONTEXT_MAX_LINE_CHARS = 4_000
+    EXCEL_PREVIEW_EXTENSIONS = (".xlsx", ".xlsm", ".xls", ".xlsb", ".ods")
     """
     검색 결과 테이블, 상세 매치 테이블, 미리보기 패널을 관리하는 복합 뷰입니다.
     페이지네이션 기능도 포함합니다.
@@ -421,7 +422,8 @@ class ResultView(QWidget):
         )
         self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
         context_preview_layout.addWidget(self.context_preview)
-        context_line_settings_layout = QHBoxLayout()
+        self.context_line_settings_widget = QWidget()
+        context_line_settings_layout = QHBoxLayout(self.context_line_settings_widget)
         context_line_settings_layout.setContentsMargins(0, 0, 0, 0)
         context_line_settings_layout.addStretch()
         context_line_settings_layout.addWidget(QLabel(AppStrings.CONTEXT_PREVIEW_BEFORE_LABEL))
@@ -433,7 +435,7 @@ class ResultView(QWidget):
         self.context_after_combo = self._create_context_line_combo(Constants.CONFIG_KEY_CONTEXT_AFTER_LINES)
         context_line_settings_layout.addWidget(self.context_after_combo)
         context_line_settings_layout.addWidget(QLabel(AppStrings.CONTEXT_PREVIEW_LINE_UNIT))
-        context_preview_layout.addLayout(context_line_settings_layout)
+        context_preview_layout.addWidget(self.context_line_settings_widget)
         self.match_splitter.addWidget(self.context_preview_container)
         self.match_splitter.setStretchFactor(0, 3)
         self.match_splitter.setStretchFactor(1, 2)
@@ -748,8 +750,59 @@ class ResultView(QWidget):
         """문맥 미리보기 영역을 초기 상태로 되돌립니다."""
         self._cancel_context_preview()
         self._current_match_item = None
+        self._set_context_line_settings_visible(not self._is_excel_preview())
         self.context_highlighter.set_language("text")
         self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
+        self.context_preview.setExtraSelections([])
+
+    def _is_excel_preview(self):
+        """검색 모드 또는 파일 확장자로 Excel 전용 미리보기 여부를 판별합니다."""
+        modes = (self.search_mode, getattr(self.match_model, "search_mode", None))
+        if any(Constants.MODE_EXCEL.upper() in str(mode or "").upper() for mode in modes):
+            return True
+        file_path = self.selected_file_path or getattr(self.match_model, "current_file_path", "")
+        return str(file_path or "").lower().endswith(self.EXCEL_PREVIEW_EXTENSIONS)
+
+    def _set_context_line_settings_visible(self, visible):
+        self.context_line_settings_widget.setVisible(bool(visible))
+
+    @staticmethod
+    def _unpack_excel_preview_fields(sheet, cell, value):
+        """Rust/구버전 결과의 ``시트\t셀\t값`` 묶음 형식을 미리보기용으로 분리합니다."""
+        packed = None
+        if "\t" in sheet:
+            packed = sheet
+        elif value is None and ("\t" in cell or cell.count(" | ") >= 2):
+            packed = cell
+        elif cell in ("", "None") and value in (None, "", "None") and sheet.count(" | ") >= 2:
+            packed = sheet
+
+        if packed is None:
+            return sheet, cell, value
+
+        separator = "\t" if "\t" in packed else " | "
+        parts = packed.split(separator, 2)
+        if len(parts) != 3 or not parts[0].strip() or not parts[1].strip():
+            return sheet, cell, value
+        return parts[0].strip(), parts[1].strip(), parts[2]
+
+    def _show_excel_context_preview(self, match_item):
+        """검색 시 확보한 셀 정보만 사용하여 Excel 파일 재읽기 없이 표시합니다."""
+        sheet = str(getattr(match_item, "position", match_item[0]))
+        cell = str(getattr(match_item, "content", match_item[1]))
+        value = getattr(match_item, "extra_1", None)
+        sheet, cell, value = self._unpack_excel_preview_fields(sheet, cell, value)
+        value = "" if value is None else str(value)
+        truncated = len(value) > self.CONTEXT_MAX_LINE_CHARS
+        if truncated:
+            value = value[: self.CONTEXT_MAX_LINE_CHARS]
+        value = value.replace("\r\n", "\n").replace("\r", "\n")
+
+        preview = AppStrings.CONTEXT_PREVIEW_EXCEL_MATCH.format(sheet, cell, value)
+        if truncated:
+            preview += AppStrings.CONTEXT_PREVIEW_EXCEL_VALUE_TRUNCATED
+        self.context_highlighter.set_language("text")
+        self.context_preview.setPlainText(preview)
         self.context_preview.setExtraSelections([])
 
     def _detect_text_encoding(self, file_path):
@@ -825,6 +878,12 @@ class ResultView(QWidget):
         """선택된 매치의 일반 텍스트 문맥을 안전하게 표시합니다."""
         self._cancel_context_preview()
         self._current_match_item = match_item
+        if self._is_excel_preview():
+            self._set_context_line_settings_visible(False)
+            self._show_excel_context_preview(match_item)
+            return
+
+        self._set_context_line_settings_visible(True)
         position = str(getattr(match_item, "position", match_item[0]))
         content = str(getattr(match_item, "content", match_item[1]))
         try:
@@ -1052,6 +1111,8 @@ class ResultView(QWidget):
             self.search_mode = Constants.MODE_NORMAL
         else:
             self.search_mode = search_mode
+        is_excel_mode = Constants.MODE_EXCEL.upper() in str(self.search_mode or "").upper()
+        self._set_context_line_settings_visible(not is_excel_mode)
         self.update_ui_visibility()
 
     def set_results(self, results):

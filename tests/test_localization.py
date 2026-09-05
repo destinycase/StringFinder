@@ -16,6 +16,7 @@ from core.search_engine import (
     localize_skip_reason_for_display,
 )
 from sf_utils.app_strings import AppStrings
+from sf_utils.constants import Constants
 from sf_utils.english_strings import ENGLISH_STRINGS
 from sf_utils.localization import (
     get_korean_strings,
@@ -84,6 +85,9 @@ def test_partial_search_reasons_follow_active_language():
     assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
         "[안내] JSON 최대 깊이(40)를 초과한 하위 영역을 검색하지 않았습니다."
     )
+    assert format_skip_reason("INFO_EXCEL_CELL_LIMIT|1200") == (
+        "[안내] Excel 존재 확인 최대 검사 셀 수(1200개)에 도달하여 이후 셀을 검사하지 않았습니다."
+    )
 
     set_language("en")
     assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == (
@@ -91,6 +95,9 @@ def test_partial_search_reasons_follow_active_language():
     )
     assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
         "[Info] Nested content beyond the maximum JSON depth (40) was not searched."
+    )
+    assert format_skip_reason("INFO_EXCEL_CELL_LIMIT|1200") == (
+        "[Info] The Excel existence-check cell limit (1200) was reached; later cells were not checked."
     )
 
 
@@ -110,6 +117,20 @@ def test_json_size_limit_and_legacy_code_are_file_local_and_localized():
     assert english_new == english_legacy
     assert "JSON file size limit exceeded" in english_new
     assert "memory guard" not in english_new.casefold()
+
+
+def test_projected_resource_budget_reason_follows_active_language():
+    set_language("ko")
+    korean_reason = format_skip_reason("ERR_RESOURCE_BUDGET|123456")
+    assert "파일 메모리 예산 부족" in korean_reason
+    assert AppStrings.SKIP_DETAIL_RESOURCE_BUDGET in korean_reason
+    assert "123456" not in korean_reason
+
+    set_language("en")
+    english_reason = format_skip_reason("ERR_RESOURCE_BUDGET|123456")
+    assert "Insufficient file memory budget" in english_reason
+    assert AppStrings.SKIP_DETAIL_RESOURCE_BUDGET in english_reason
+    assert "123456" not in english_reason
 
 
 def test_saved_legacy_memory_guard_reason_is_rewritten_in_same_language():
@@ -138,7 +159,31 @@ def test_precise_search_setting_labels_describe_actual_scope(qtbot, mock_config_
     assert AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION in labels
     assert AppStrings.ADVANCED_JSON_MMAP_THRESHOLD in labels
     assert AppStrings.ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION in labels
+    assert AppStrings.ADVANCED_TIMEOUT_WORKER_HANG in labels
+    assert AppStrings.ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION in labels
     assert all("streaming parser" not in text.casefold() for text in labels)
+
+    precise_group = next(
+        group
+        for group in dialog.findChildren(QGroupBox)
+        if group.title() == AppStrings.ADVANCED_PRECISE_SEARCH_GROUP
+    )
+    timeout_spinbox = dialog.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG]
+    parent = timeout_spinbox.parentWidget()
+    while parent is not None and parent is not precise_group:
+        parent = parent.parentWidget()
+    assert parent is precise_group
+
+
+def test_advanced_setting_spinbox_ranges_share_the_config_contract(qtbot, mock_config_manager):
+    dialog = SettingsDialog(mock_config_manager)
+    qtbot.addWidget(dialog)
+
+    assert set(dialog.adv_spinboxes) == set(Constants.ADVANCED_SETTING_SPECS)
+    for key, spinbox in dialog.adv_spinboxes.items():
+        spec = Constants.ADVANCED_SETTING_SPECS[key]
+        assert spinbox.minimum() == spec["minimum"]
+        assert spinbox.maximum() == spec["maximum"]
 
 
 def test_combined_partial_reasons_are_relocalized_line_by_line():
@@ -147,6 +192,7 @@ def test_combined_partial_reasons_are_relocalized_line_by_line():
         (
             format_skip_reason("INFO_FILE_MATCH_LIMIT|25"),
             format_skip_reason("INFO_JSON_DEPTH_LIMIT|40"),
+            format_skip_reason("INFO_EXCEL_CELL_LIMIT|1200"),
         )
     )
 
@@ -155,8 +201,10 @@ def test_combined_partial_reasons_are_relocalized_line_by_line():
 
     assert "per-file match limit" in localized
     assert "maximum JSON depth" in localized
+    assert "Excel existence-check cell limit" in localized
     assert "(25)" in localized
     assert "(40)" in localized
+    assert "(1200)" in localized
     assert not re.search(r"[가-힣]", localized)
 
 

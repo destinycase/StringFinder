@@ -54,7 +54,58 @@ def test_json_dom_limit_migrates_previous_default(temp_dir):
         cm = ConfigManager()
 
     assert cm.get_advanced_settings()[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] == 500
-    assert cm.config[Constants.CONFIG_KEY_VERSION] == 2
+    assert cm.config[Constants.CONFIG_KEY_VERSION] == 3
+
+
+def test_v2_migration_removes_unused_case_setting_and_normalizes_advanced_bounds(temp_dir):
+    config_dir = os.path.join(temp_dir, "StringFinder")
+    os.makedirs(config_dir, exist_ok=True)
+    config_path = os.path.join(config_dir, "config.json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "config_version": 2,
+                "case_insensitive": True,
+                "advanced": {
+                    Constants.CONFIG_KEY_MAX_TOTAL_MATCHES: 1,
+                    Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 1,
+                    Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG: 1,
+                    Constants.CONFIG_KEY_MAX_CHECK_CELLS: 1,
+                    Constants.CONFIG_KEY_MAX_JSON_DEPTH: 1,
+                    "unknown_advanced_option": 123,
+                },
+            },
+            f,
+        )
+
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        cm = ConfigManager()
+
+    config = cm.config
+    advanced = cm.get_advanced_settings()
+    assert config[Constants.CONFIG_KEY_VERSION] == 3
+    assert "case_insensitive" not in config
+    assert "unknown_advanced_option" not in advanced
+    for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
+        assert spec["minimum"] <= advanced[key] <= spec["maximum"]
+
+
+def test_reset_advanced_settings_schedules_persistence(temp_dir):
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        cm = ConfigManager()
+        cm.set_advanced_settings({Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 42})
+        cm.save_immediately()
+
+        with patch.object(cm, "save") as save:
+            restored = cm.reset_advanced_settings()
+
+    save.assert_called_once_with()
+    assert restored == {
+        key: spec["default"]
+        for key, spec in Constants.ADVANCED_SETTING_SPECS.items()
+    }
 
 
 def test_history_management(temp_dir):

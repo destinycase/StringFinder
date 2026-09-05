@@ -82,14 +82,55 @@ def test_context_preview_line_controls_are_configurable(search_tab_fixture, qtbo
     assert restored_panel.context_after_combo.currentText() == "3"
 
 
-def test_special_match_does_not_attempt_file_read(search_tab_fixture):
+def test_excel_match_uses_stored_cell_value_without_file_read(search_tab_fixture):
     panel = search_tab_fixture.result_view_panel
     panel.match_model.set_matches("missing.xlsx", [(0, "Sheet1", "A1", "needle")], "needle", "Excel")
 
+    with patch.object(panel._context_thread_pool, "start") as start_worker:
+        panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
+
+    preview = panel.context_preview.toPlainText()
+    assert "missing.xlsx" not in preview
+    assert "Sheet1" in preview
+    assert "A1" in preview
+    assert "needle" in preview
+    assert panel.context_line_settings_widget.isHidden()
+    start_worker.assert_not_called()
+
+
+def test_excel_extension_defensively_blocks_binary_context_read(search_tab_fixture):
+    panel = search_tab_fixture.result_view_panel
+    panel.set_search_context("needle", Constants.MODE_NORMAL)
+    panel.match_model.set_matches(
+        "legacy.xls",
+        [(120, "Base\tA120\ttribe.ForgattenField.SkeletonLord.A", None, None)],
+        "needle",
+        Constants.MODE_NORMAL,
+    )
+
+    with patch.object(panel._context_thread_pool, "start") as start_worker:
+        panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
+
+    assert panel.context_preview.toPlainText() == AppStrings.CONTEXT_PREVIEW_EXCEL_MATCH.format(
+        "Base", "A120", "tribe.ForgattenField.SkeletonLord.A"
+    )
+    assert panel.context_line_settings_widget.isHidden()
+    start_worker.assert_not_called()
+
+
+def test_context_line_settings_return_for_text_preview(search_tab_fixture, tmp_path):
+    panel = search_tab_fixture.result_view_panel
+    panel.match_model.set_matches("missing.xlsx", [(0, "Sheet1", "A1", "needle")], "needle", "Excel")
+    panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
+    assert panel.context_line_settings_widget.isHidden()
+
+    file_path = tmp_path / "normal.txt"
+    file_path.write_text("needle", encoding="utf-8")
+    panel.set_search_context("needle", Constants.MODE_NORMAL)
+    panel.match_model.set_matches(str(file_path), [(1, "needle")], "needle", Constants.MODE_NORMAL)
     panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
 
-    assert "missing.xlsx" not in panel.context_preview.toPlainText()
-    assert "A1" in panel.context_preview.toPlainText()
+    assert not panel.context_line_settings_widget.isHidden()
 
 
 def test_selected_file_open_button_uses_default_file_handler(search_tab_fixture, tmp_path):

@@ -220,6 +220,49 @@ def test_excel_rust_normal_tuple_no_none_suffix(search_tab_fixture):
     assert "사냥꾼 증표" in str(text)
 
 
+def test_excel_rust_tab_tuple_is_normalized_for_list(search_tab_fixture):
+    from sf_utils.app_strings import AppStrings
+
+    excel_path = "D:/test/data.xlsx"
+    matches = [(120, "Base\tA120\ttribe.ForgattenField.SkeletonLord.A", None, None)]
+
+    search_tab_fixture.result_view_panel.match_model.set_matches(
+        excel_path,
+        matches,
+        search_text="SkeletonLord",
+        search_mode=AppStrings.SPECIAL_SEARCH_OFF,
+    )
+
+    model = search_tab_fixture.result_view_panel.match_model
+    item = model.get_match(0)
+    edit_text = model.data(model.index(0, 0), Qt.ItemDataRole.EditRole)
+    display_text = model.data(model.index(0, 0), Qt.ItemDataRole.DisplayRole)
+
+    assert item.position == "Base"
+    assert item.content == "A120"
+    assert item.extra_1 == "tribe.ForgattenField.SkeletonLord.A"
+    assert edit_text == "Base!A120 | tribe.ForgattenField.SkeletonLord.A"
+    assert "Base!A120" in display_text
+    assert "120 | Base" not in display_text
+
+
+def test_excel_sheet_name_containing_pipe_is_not_mistaken_for_packed_result(search_tab_fixture):
+    from sf_utils.app_strings import AppStrings
+
+    model = search_tab_fixture.result_view_panel.match_model
+    model.set_matches(
+        "D:/test/data.xlsx",
+        [(0, "Area | A1", "B2", "value")],
+        search_text="value",
+        search_mode=AppStrings.SPECIAL_SEARCH_OFF,
+    )
+
+    item = model.get_match(0)
+    assert item.position == "Area | A1"
+    assert item.content == "B2"
+    assert item.extra_1 == "value"
+
+
 def test_excel_rust_normal_tuple_highlight_in_normal_mode(search_tab_fixture):
     from sf_utils.app_strings import AppStrings
 

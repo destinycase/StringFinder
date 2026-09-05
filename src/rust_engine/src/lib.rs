@@ -21,7 +21,9 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 
-use crate::excel_search::{check_excel_file, search_excel_file};
+use crate::excel_search::{
+    check_excel_file, search_excel_file, EXCEL_CELL_LIMIT_MARKER_PREFIX,
+};
 use crate::json_search::{
     check_json_file, search_json_file, JSON_DEPTH_LIMIT_MARKER_PREFIX,
 };
@@ -456,8 +458,24 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
     if is_excel || ["xlsx", "xlsb", "xls", "xlsm"].contains(&ext.as_str()) {
         if existence_only {
-            if check_excel_file(path, pattern, ac, is_exact, stop_flag, max_check_cells) {
+            let outcome = check_excel_file(
+                path,
+                pattern,
+                ac,
+                is_exact,
+                stop_flag,
+                max_check_cells,
+            );
+            if outcome.found {
                 return Some(Ok(vec![(1, "MATCH".to_string(), None, None)]));
+            }
+            if outcome.cell_limit_reached {
+                return Some(Ok(vec![(
+                    0,
+                    format!("{}{}", EXCEL_CELL_LIMIT_MARKER_PREFIX, max_check_cells),
+                    None,
+                    None,
+                )]));
             }
             return None;
         }
