@@ -1,6 +1,6 @@
 [package]
 name = "sf_engine"
-version = "5.8.7"
+version = "5.8.8"
 edition = "2021"
 
 [dependencies]
@@ -14,8 +14,9 @@ rayon = "1.8"
 simdutf8 = "0.1"
 calamine = "0.33"
 crossbeam-channel = "0.5"
-serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_json = { version = "1.0", features = ["preserve_order", "unbounded_depth"] }
 serde = "1.0"
+serde_stacker = "0.1"
 quick-xml = "0.31"
 unicode-normalization = "0.1"
 fs2 = "0.4"

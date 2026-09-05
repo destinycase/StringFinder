@@ -4,13 +4,19 @@ use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
 
 const EXCEL_MARKER_SHEET_ERROR_PREFIX: &str = "__SF_EXCEL_SHEET_ERR__|";
-const EXCEL_MARKER_PANIC_PREFIX: &str = "__SF_EXCEL_PANIC__|";
 pub const EXCEL_CELL_LIMIT_MARKER_PREFIX: &str = "__SF_EXCEL_CELL_LIMIT__|";
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ExcelCheckOutcome {
     pub found: bool,
     pub cell_limit_reached: bool,
+    pub sheet_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExcelFileError {
+    Open(String),
+    Panic(String),
 }
 
 // M3: 포맷별 공통 컨텍스트
@@ -80,6 +86,7 @@ where
 {
     // C1: 매우 큰 파일에서 첫 매치가 극히 마지막에 있어도 무한 순회하지 않도록 상한을 둡니다.
     let mut cell_count: u64 = 0;
+    let mut first_sheet_error = None;
     
     for sheet_name in wb.sheet_names().to_vec() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -98,19 +105,27 @@ where
                         return ExcelCheckOutcome {
                             found: false,
                             cell_limit_reached: true,
+                            sheet_error: first_sheet_error,
                         };
                     }
                     if cell_matches(cell, ctx) {
                         return ExcelCheckOutcome {
                             found: true,
                             cell_limit_reached: false,
+                            sheet_error: first_sheet_error,
                         };
                     }
                 }
             }
+        } else if first_sheet_error.is_none() {
+            first_sheet_error = Some(sheet_name);
         }
     }
-    ExcelCheckOutcome::default()
+    ExcelCheckOutcome {
+        found: false,
+        cell_limit_reached: false,
+        sheet_error: first_sheet_error,
+    }
 }
 
 /// 공개 검색 함수
@@ -122,7 +137,7 @@ pub fn search_excel_file(
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
     max_check_cells: u64,
-) -> Vec<RawMatch> {
+) -> Result<Vec<RawMatch>, ExcelFileError> {
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
     let pat_nfc: String = pattern.chars().nfc().collect();
     let pat_upper = pat_nfc.to_lowercase().to_uppercase();
@@ -133,13 +148,13 @@ pub fn search_excel_file(
         ($open:expr, $label:expr) => {{
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 match $open {
-                    Ok(mut wb) => search_wb(&mut wb, &ctx),
-                    Err(_)     => vec![],
+                    Ok(mut wb) => Ok(search_wb(&mut wb, &ctx)),
+                    Err(error) => Err(ExcelFileError::Open(format!("{}|{:?}", $label, error))),
                 }
             }));
             match result {
                 Ok(v) => v,
-                Err(p) => vec![(0, format!("{}{}|{}", EXCEL_MARKER_PANIC_PREFIX, $label, panic_to_string(p)), None, None)],
+                Err(p) => Err(ExcelFileError::Panic(format!("{}|{}", $label, panic_to_string(p)))),
             }
         }};
     }
@@ -148,7 +163,7 @@ pub fn search_excel_file(
         "xlsx" | "xlsm" => run!(calamine::open_workbook::<Xlsx<_>, _>(path), &ext),
         "xlsb"          => run!(calamine::open_workbook::<Xlsb<_>, _>(path), &ext),
         "xls"           => run!(calamine::open_workbook::<Xls<_>,  _>(path), &ext),
-        _               => vec![],
+        _               => Err(ExcelFileError::Open(ext)),
     }
 }
 
@@ -160,26 +175,32 @@ pub fn check_excel_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_check_cells: u64,
-) -> ExcelCheckOutcome {
+) -> Result<ExcelCheckOutcome, ExcelFileError> {
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
     let pat_nfc: String = pattern.chars().nfc().collect();
     let pat_upper = pat_nfc.to_lowercase().to_uppercase();
     let ctx = ExcelCtx { pat_upper: &pat_upper, ac, is_exact, stop_flag: stop_flag.clone(), max_per_file: 5000, max_check_cells };
 
     macro_rules! chk {
-        ($open:expr) => {{
-            match $open {
-                Ok(mut wb) => check_wb(&mut wb, &ctx),
-                Err(_)     => ExcelCheckOutcome::default(),
+        ($open:expr, $label:expr) => {{
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                match $open {
+                    Ok(mut wb) => Ok(check_wb(&mut wb, &ctx)),
+                    Err(error) => Err(ExcelFileError::Open(format!("{}|{:?}", $label, error))),
+                }
+            }));
+            match result {
+                Ok(outcome) => outcome,
+                Err(error) => Err(ExcelFileError::Panic(format!("{}|{}", $label, panic_to_string(error)))),
             }
         }};
     }
 
     match ext.as_str() {
-        "xlsx" | "xlsm" => chk!(calamine::open_workbook::<Xlsx<_>, _>(path)),
-        "xlsb"          => chk!(calamine::open_workbook::<Xlsb<_>, _>(path)),
-        "xls"           => chk!(calamine::open_workbook::<Xls<_>,  _>(path)),
-        _               => ExcelCheckOutcome::default(),
+        "xlsx" | "xlsm" => chk!(calamine::open_workbook::<Xlsx<_>, _>(path), &ext),
+        "xlsb"          => chk!(calamine::open_workbook::<Xlsb<_>, _>(path), &ext),
+        "xls"           => chk!(calamine::open_workbook::<Xls<_>,  _>(path), &ext),
+        _               => Err(ExcelFileError::Open(ext)),
     }
 }
 

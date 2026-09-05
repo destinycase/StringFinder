@@ -56,6 +56,49 @@ def test_worker_result_batching():
     assert len(all_found) == 3
 
 
+def test_worker_total_limit_keeps_exact_allowed_prefix(monkeypatch):
+    worker = SearchWorker({"file_list": [], "search_string": "needle"})
+    worker._total_matches_accumulated = 7
+    monkeypatch.setattr("core.worker._get_adv_setting", lambda *_args: 10)
+
+    batch = [
+        (
+            "many.txt",
+            5,
+            [(1, "one"), (2, "two"), (3, "three"), (4, "four"), (5, "five")],
+        )
+    ]
+    accepted, count, reached = worker._fit_results_to_total_limit(batch)
+
+    assert count == 3
+    assert reached is True
+    assert accepted == [("many.txt", 3, [(1, "one"), (2, "two"), (3, "three")])]
+
+
+def test_precise_structured_concurrency_uses_shared_memory_budget(monkeypatch):
+    worker = SearchWorker(
+        {
+            "file_list": [],
+            "search_string": "needle",
+            "special_mode": "JSON",
+            "use_complex_search": True,
+        }
+    )
+    monkeypatch.setattr(
+        "sf_utils.resource_guard.memory_snapshot",
+        lambda: {
+            "available": 2 * 1024**3,
+            "total": 8 * 1024**3,
+            "process_rss": 1 * 1024**3,
+            "valid": 1,
+        },
+    )
+
+    batches = [[("large.json", 100 * 1024**2)]] * 16
+
+    assert worker._recommended_structured_in_flight(batches, 16) < 16
+
+
 def test_worker_stop_logic():
     worker = SearchWorker(
         {"file_list": [("f1.txt", 100), ("f2.txt", 100)], "search_string": "search", "use_complex_search": True}

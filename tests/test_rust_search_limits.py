@@ -211,7 +211,9 @@ def test_real_rust_engine_accepts_named_search_options(tmp_path):
         mode_bits=Constants.RUST_MODE_NORMAL,
         extensions=["txt"],
         max_per_file=1,
+        structured_memory_budget=256 * 1024 * 1024,
     )
+    assert options.structured_memory_budget == 256 * 1024 * 1024
 
     single = search_engine.sf_engine.search_file(str(file_path), "needle", options=options)  # type: ignore
     assert len(single) == 2  # one visible result plus the truncation marker
@@ -230,6 +232,42 @@ def test_real_rust_engine_accepts_named_search_options(tmp_path):
         [str(tmp_path)], "needle", options=options  # type: ignore
     )
     assert found and not skipped
+
+
+def test_real_rust_shared_budget_skips_only_oversized_structured_file(tmp_path):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    large_json = tmp_path / "large.json"
+    large_json.write_bytes(b'{"value":"needle"}' + b" " * (8 * 1024 * 1024))
+    plain_text = tmp_path / "plain.txt"
+    plain_text.write_text("needle", encoding="utf-8")
+
+    json_options = search_engine.sf_engine.SearchOptions(  # type: ignore
+        mode_bits=Constants.RUST_MODE_JSON,
+        structured_memory_budget=1,
+    )
+    results, skipped = search_engine.sf_engine.search_files_list(  # type: ignore
+        [str(large_json)],
+        "needle",
+        options=json_options,
+    )
+
+    assert results == []
+    assert len(skipped) == 1
+    assert skipped[0][0] == str(large_json)
+    assert skipped[0][1].startswith("ERR_RESOURCE_BUDGET|")
+
+    plain_options = search_engine.sf_engine.SearchOptions(  # type: ignore
+        mode_bits=Constants.RUST_MODE_NORMAL,
+        structured_memory_budget=1,
+    )
+    results, skipped = search_engine.sf_engine.search_files_list(  # type: ignore
+        [str(plain_text)],
+        "needle",
+        options=plain_options,
+    )
+    assert results and skipped == []
 
 
 def test_python_batch_wrapper_uses_named_options_when_available(monkeypatch):
@@ -256,6 +294,7 @@ def test_python_batch_wrapper_uses_named_options_when_available(monkeypatch):
     assert captured["args"] == ()
     assert captured["options"]["max_per_file"] is not None
     assert captured["options"]["flush_ms"] is not None
+    assert captured["options"]["structured_memory_budget"] > 0
 
 
 def test_rust_batch_callback_errors_are_returned(tmp_path):

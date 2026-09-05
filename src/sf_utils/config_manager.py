@@ -560,12 +560,14 @@ class ConfigManager:
         try:
             if not os.path.exists(self.sessions_dir):
                 os.makedirs(self.sessions_dir, exist_ok=True)
-            payload = copy.deepcopy(data) if isinstance(data, dict) else data
+            # Search results are immutable after completion.  A shallow top-level
+            # copy is enough to add metadata without duplicating every match.
+            payload = dict(data) if isinstance(data, dict) else data
             if isinstance(payload, dict):
                 payload[self._SESSION_NAME_META_KEY] = str(name)
 
             with open(temp_path, "w", encoding=Constants.ENC_UTF8) as f:
-                json.dump(payload, f, ensure_ascii=False, indent=4)
+                json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
 
             os.replace(temp_path, file_path)
             return True

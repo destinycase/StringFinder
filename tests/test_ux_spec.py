@@ -7,7 +7,13 @@ from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
-from ui.result_view import ResultView, SkippedFilesDialog, normalize_skipped_files
+from ui.result_view import (
+    ResultView,
+    SkippedFilesDialog,
+    _detect_text_encoding,
+    _read_context_lines_from_file,
+    normalize_skipped_files,
+)
 from ui.search_tab import SearchTab
 
 
@@ -44,6 +50,15 @@ def test_result_context_preview_is_bounded_and_highlights_match(search_tab_fixtu
     assert panel.context_preview.extraSelections()
     assert "      1 | one" in panel.context_preview.toPlainText()
     assert "     11 | eleven" in panel.context_preview.toPlainText()
+
+
+def test_context_preview_uses_cp949_detection(tmp_path):
+    file_path = tmp_path / "cp949.txt"
+    original = "\ud55c\uae00 \ubb38\ub9e5 needle"
+    file_path.write_bytes(original.encode("cp949"))
+
+    assert _detect_text_encoding(str(file_path)) == "cp949"
+    assert _read_context_lines_from_file(str(file_path), 1, 0, 0) == [(1, original)]
 
 
 def test_context_preview_line_controls_are_configurable(search_tab_fixture, qtbot, tmp_path):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "5.8.7"
+version = "5.8.8"
 authors = [{ name = "N2", email = "your@email.com" }]
 
 description = "Production-ready high-performance string search utility with Rust engine, multiprocessing, and smart file scanning. Features UTF-16LE support, robust session management, and comprehensive error handling."
@@ -25,6 +25,7 @@ dependencies = [
     "pyqtdarktheme>=0.1.7",
     "python-calamine>=0.1.7",
     "psutil>=5.9.0",
+    "openpyxl>=3.1.2",
 ]
 
 [project.gui-scripts]
@@ -43,7 +44,6 @@ dev = [
     "pyinstaller>=6.3.0",
     "maturin>=1.5.0",
     "mypy>=1.8.0",
-    "openpyxl>=3.1.2",  # 테스트 데이터 생성용 (런타임 의존성 아님)
     "Pillow>=10.0.0",  # build.py 아이콘 변환용
 ]
 

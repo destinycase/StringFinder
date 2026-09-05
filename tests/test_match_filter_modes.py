@@ -20,8 +20,20 @@ def test_filter_normal_mode(match_model):
     assert len(match_model._filtered_buffer) == 1
     assert match_model._filtered_buffer[0].position == "10"
 
-    # '10' 검색 (라인 번호로 검색)
     match_model.set_column_filter(0, "10")
+    assert len(match_model._filtered_buffer) == 1
+
+
+def test_filter_normal_excel_row_includes_cell_value(match_model):
+    match_model.set_matches(
+        "book.xls",
+        [(0, "120", "A120", "tribe.ForgattenField.SkeletonLord.A")],
+        "SkeletonLord",
+        Constants.MODE_NORMAL,
+    )
+
+    match_model.set_column_filter(0, "SkeletonLord")
+
     assert len(match_model._filtered_buffer) == 1
 
 def test_filter_json_xml_mode_mapping(match_model):

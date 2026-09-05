@@ -261,3 +261,56 @@ def test_real_rust_excel_existence_limit_and_early_match(tmp_path, monkeypatch):
     )
     assert isinstance(matched, tuple) and len(matched) == 3
     assert matched[1] == 1
+
+
+@pytest.mark.parametrize(
+    ("suffix", "payload"),
+    [
+        (".xlsx", b"PK\x03\x04broken workbook"),
+        (".xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1broken workbook"),
+    ],
+)
+@pytest.mark.parametrize("existence_only", [False, True])
+def test_real_rust_bulk_corrupted_excel_is_reported_as_skipped(
+    tmp_path, suffix, payload, existence_only
+):
+    from core import search_engine
+
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    target = tmp_path / f"corrupted{suffix}"
+    target.write_bytes(payload)
+
+    result = search_engine.search_files_list_fast(
+        [str(target)],
+        "needle",
+        special_mode=Constants.MODE_EXCEL,
+        existence_only=existence_only,
+    )
+
+    assert result["results"] == []
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0][0] == str(target)
+    assert "Excel" in result["skipped"][0][1]
+
+
+def test_real_rust_recycle_excel_is_never_reported(tmp_path):
+    from core import search_engine
+
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    recycle_dir = tmp_path / "$RECYCLE.BIN" / "canary"
+    recycle_dir.mkdir(parents=True)
+    target = recycle_dir / "canary.xlsx"
+    target.write_bytes(b"PK\x03\x04broken workbook")
+
+    for exclude_hidden in (False, True):
+        result = search_engine.search_files_list_fast(
+            [str(target)],
+            "needle",
+            special_mode=Constants.MODE_EXCEL,
+            exclude_hidden=exclude_hidden,
+        )
+        assert result == {"results": [], "skipped": []}

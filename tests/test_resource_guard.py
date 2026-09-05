@@ -8,6 +8,7 @@ from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
 from sf_utils.resource_guard import (
+    available_processing_budget_bytes,
     calculate_memory_limits,
     estimate_structured_memory_bytes,
     memory_pressure_detected,
@@ -93,6 +94,18 @@ def test_projected_memory_budget_uses_available_and_process_headroom():
     ) == "projected_process_tree_limit"
 
 
+def test_available_processing_budget_uses_the_tighter_headroom():
+    total = 16 * GIB
+    limits = calculate_memory_limits(total)
+    snapshot = {
+        "available": limits.reserve_bytes + 3 * GIB,
+        "total": total,
+        "process_rss": limits.process_limit_bytes - 2 * GIB,
+    }
+
+    assert available_processing_budget_bytes(snapshot) == 2 * GIB
+
+
 def test_structured_memory_estimates_are_stable_and_engine_specific():
     file_size = 10 * MIB
 
@@ -100,6 +113,8 @@ def test_structured_memory_estimates_are_stable_and_engine_specific():
     assert estimate_structured_memory_bytes(file_size, "xml", "rust") == 89 * MIB
     assert estimate_structured_memory_bytes(file_size, "xml", "python") == 104 * MIB
     assert estimate_structured_memory_bytes(file_size, "json", "python") == 188 * MIB
+    assert estimate_structured_memory_bytes(file_size, "excel", "rust") == 208 * MIB
+    assert estimate_structured_memory_bytes(file_size, "excel", "python") == 208 * MIB
     with pytest.raises(ValueError):
         estimate_structured_memory_bytes(file_size, "yaml", "python")  # type: ignore[arg-type]
 

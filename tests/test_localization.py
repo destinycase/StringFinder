@@ -350,6 +350,23 @@ def test_excel_panic_reason_is_localized_without_raw_engine_text():
     )
 
 
+def test_excel_open_failure_reason_is_localized_without_engine_text():
+    raw_reason = "ERR_EXCEL_PROCESS|xlsx|ZipError(InvalidArchive)"
+
+    set_language("ko")
+    korean_reason = format_skip_reason(raw_reason)
+    assert korean_reason == AppStrings.ERROR_EXCEL_PROCESS.format(
+        AppStrings.SKIP_DETAIL_INTERNAL_FAILURE
+    )
+    assert "ZipError" not in korean_reason
+
+    set_language("en")
+    english_reason = format_skip_reason(raw_reason)
+    assert english_reason == AppStrings.ERROR_EXCEL_PROCESS.format(
+        AppStrings.SKIP_DETAIL_INTERNAL_FAILURE
+    )
+
+
 def test_saved_language_is_loaded_before_ui_imports(tmp_path, monkeypatch):
     config_dir = tmp_path / "StringFinder"
     config_dir.mkdir()

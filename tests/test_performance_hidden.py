@@ -20,7 +20,13 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from core.search_engine import FileScanner, find_files_with_keyword_fast, search_directory_fast
+from core.search_engine import (
+    FileScanner,
+    find_files_with_keyword_fast,
+    search_directory_fast,
+    search_files_list_fast,
+    search_in_file,
+)
 
 
 def set_hidden(path):
@@ -121,3 +127,42 @@ def test_rust_files_list_exclude_hidden(hidden_test_env):
     assert any("normal_dir" in p for p in paths)
     assert any("hidden_dir" in p for p in paths)
     assert len(results) == 2
+
+
+def test_recycle_bin_is_always_excluded_from_every_search_entry_point(tmp_path):
+    normal = tmp_path / "normal.txt"
+    normal.write_text("needle", encoding="utf-8")
+    recycle = tmp_path / "$RECYCLE.BIN" / "user" / "recycled.txt"
+    recycle.parent.mkdir(parents=True)
+    recycle.write_text("needle", encoding="utf-8")
+
+    scanned = FileScanner(
+        folders=[str(tmp_path)],
+        extensions=[".txt"],
+        exclude_hidden=False,
+    ).scan()
+    assert [path for path, _size in scanned] == [str(normal)]
+
+    directory_result = search_directory_fast(
+        [str(tmp_path)],
+        "needle",
+        extensions=["txt"],
+        exclude_hidden=False,
+    )
+    assert [item[0] for item in directory_result["results"]] == [str(normal)]
+
+    listed_result = search_files_list_fast(
+        [str(normal), str(recycle)],
+        "needle",
+        exclude_hidden=False,
+    )
+    assert [item[0] for item in listed_result["results"]] == [str(normal)]
+
+    found = find_files_with_keyword_fast(
+        [str(tmp_path)],
+        "needle",
+        extensions=["txt"],
+        exclude_hidden=False,
+    )
+    assert [item[0] for item in found] == [str(normal)]
+    assert search_in_file(str(recycle), "needle", force_python=True) is None

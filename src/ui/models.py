@@ -835,7 +835,7 @@ class MatchDetailModel(QAbstractTableModel):
         for col, f_text in self._filters.items():
             if is_normal:
                 # Normal 모드는 '위치 | 내용' 전체에서 검색
-                data = f"{item.position} | {item.content}".lower()
+                data = f"{item.position} | {item.content} | {item.extra_1 or ''}".lower()
             else:
                 # 특수 모드는 지정된 인덱스의 필드에서 검색
                 try:

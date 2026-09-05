@@ -17,12 +17,12 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
 
 use crate::excel_search::{
-    check_excel_file, search_excel_file, EXCEL_CELL_LIMIT_MARKER_PREFIX,
+    check_excel_file, search_excel_file, ExcelFileError, EXCEL_CELL_LIMIT_MARKER_PREFIX,
 };
 use crate::json_search::{
     check_json_file, search_json_file, JSON_DEPTH_LIMIT_MARKER_PREFIX,
@@ -51,6 +51,9 @@ const REASON_ERR_JSON_SIZE_LIMIT: &str = "ERR_JSON_SIZE_LIMIT";
 const REASON_ERR_JSON_PARSE: &str = "ERR_JSON_PARSE";
 const REASON_ERR_XML_PARSE: &str = "ERR_XML_PARSE";
 const REASON_ERR_XML_UNSUPPORTED_DTD: &str = "ERR_XML_UNSUPPORTED_DTD";
+const REASON_ERR_EXCEL_PROCESS: &str = "ERR_EXCEL_PROCESS";
+const REASON_ERR_EXCEL_PANIC: &str = "ERR_EXCEL_PANIC";
+const REASON_ERR_RESOURCE_BUDGET: &str = "ERR_RESOURCE_BUDGET";
 const REASON_INFO_JSON_DEPTH_LIMIT: &str = "INFO_JSON_DEPTH_LIMIT";
 
 const DEFAULT_MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
@@ -61,6 +64,174 @@ const MATCH_META_TRUNCATED: &str = "__SF_TRUNCATED__";
 const MATCH_META_LONG_LINE_PREFIX: &str = "__SF_LONG_LINE__|";
 
 const MONITOR_INTERVAL_MS: u64 = 100;
+const LARGE_STRUCTURED_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
+struct StructuredMemoryLimiter {
+    capacity: u64,
+    reserved: Mutex<u64>,
+    available: Condvar,
+}
+
+struct StructuredMemoryPermit {
+    limiter: Arc<StructuredMemoryLimiter>,
+    reserved: u64,
+}
+
+enum StructuredPermitError {
+    Cancelled,
+    InsufficientBudget(u64),
+}
+
+impl StructuredMemoryLimiter {
+    fn new(capacity: u64) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            reserved: Mutex::new(0),
+            available: Condvar::new(),
+        }
+    }
+
+    fn acquire(
+        self: &Arc<Self>,
+        requested: u64,
+        stop_flag: &Arc<AtomicBool>,
+    ) -> Result<StructuredMemoryPermit, StructuredPermitError> {
+        if requested > self.capacity {
+            return Err(StructuredPermitError::InsufficientBudget(requested));
+        }
+        let reservation = requested.max(1);
+        let mut reserved = self
+            .reserved
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        loop {
+            if stop_flag.load(Ordering::Relaxed) {
+                return Err(StructuredPermitError::Cancelled);
+            }
+            if reserved.saturating_add(reservation) <= self.capacity {
+                *reserved += reservation;
+                return Ok(StructuredMemoryPermit {
+                    limiter: self.clone(),
+                    reserved: reservation,
+                });
+            }
+            let (next, _) = self
+                .available
+                .wait_timeout(reserved, std::time::Duration::from_millis(MONITOR_INTERVAL_MS))
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            reserved = next;
+        }
+    }
+}
+
+impl Drop for StructuredMemoryPermit {
+    fn drop(&mut self) {
+        let mut reserved = self
+            .limiter
+            .reserved
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *reserved = reserved.saturating_sub(self.reserved);
+        self.limiter.available.notify_all();
+    }
+}
+
+fn estimated_structured_memory(path: &Path, is_json: bool, is_xml: bool, is_excel: bool) -> u64 {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let memory_profile = if is_excel || ["xlsx", "xlsm", "xlsb", "xls"].contains(&extension.as_str()) {
+        Some((8, 128 * 1024 * 1024))
+    } else if (is_json && extension == "json")
+        || (is_xml && ["xml", "sf_xml"].contains(&extension.as_str()))
+    {
+        Some((5, 64 * 1024 * 1024))
+    } else {
+        None
+    };
+    let Some((multiplier, fixed_overhead)) = memory_profile else {
+        return 0;
+    };
+    let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+    if file_size < LARGE_STRUCTURED_FILE_BYTES {
+        return 0;
+    }
+    if multiplier == 8 {
+        return file_size.saturating_mul(multiplier).saturating_add(fixed_overhead);
+    }
+    file_size
+        .saturating_mul(multiplier)
+        .saturating_add(1)
+        .saturating_div(2)
+        .saturating_add(fixed_overhead)
+}
+
+fn acquire_structured_permit(
+    limiter: &Option<Arc<StructuredMemoryLimiter>>,
+    path: &Path,
+    is_json: bool,
+    is_xml: bool,
+    is_excel: bool,
+    stop_flag: &Arc<AtomicBool>,
+) -> Result<Option<StructuredMemoryPermit>, StructuredPermitError> {
+    let Some(limiter) = limiter else {
+        return Ok(None);
+    };
+    let estimate = estimated_structured_memory(path, is_json, is_xml, is_excel);
+    if estimate == 0 {
+        return Ok(None);
+    }
+    limiter.acquire(estimate, stop_flag).map(Some)
+}
+
+fn has_recycle_bin_component(path: &Path) -> bool {
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|value| value.eq_ignore_ascii_case("$RECYCLE.BIN"))
+    })
+}
+
+fn is_direct_child_of_filesystem_root(path: &Path) -> bool {
+    path.is_absolute()
+        && path
+            .components()
+            .filter(|component| matches!(component, std::path::Component::Normal(_)))
+            .count()
+            == 1
+}
+
+fn should_exclude_recycle_path(path: &Path) -> bool {
+    if has_recycle_bin_component(path) {
+        return true;
+    }
+
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    if !is_direct_child_of_filesystem_root(parent) {
+        return false;
+    }
+    let Some(root) = parent.parent() else {
+        return false;
+    };
+    let Some(alias_name) = parent.file_name() else {
+        return false;
+    };
+    if !root.join("$RECYCLE.BIN").join(alias_name).is_dir() {
+        return false;
+    }
+
+    // Anti-ransomware canaries can expose a root-level directory alias while
+    // the final file path lives below $RECYCLE.BIN. The cheap sibling-directory
+    // check above ensures canonicalization is limited to alias candidates.
+    std::fs::canonicalize(path)
+        .ok()
+        .is_some_and(|resolved| has_recycle_bin_component(&resolved))
+}
 
 struct CallbackState {
     failed: AtomicBool,
@@ -106,6 +277,13 @@ fn encode_xml_skip_reason(error: XmlSearchError) -> String {
         XmlSearchError::UnsupportedDtd(detail) => {
             encode_skip_reason(REASON_ERR_XML_UNSUPPORTED_DTD, detail)
         }
+    }
+}
+
+fn encode_excel_skip_reason(error: ExcelFileError) -> String {
+    match error {
+        ExcelFileError::Open(detail) => encode_skip_reason(REASON_ERR_EXCEL_PROCESS, detail),
+        ExcelFileError::Panic(detail) => encode_skip_reason(REASON_ERR_EXCEL_PANIC, detail),
     }
 }
 
@@ -257,6 +435,9 @@ fn search_file(
         Some(Ok(m)) => {
             Ok(to_python_matches(apply_match_limit(m, max_per_file)))
         },
+        Some(Err(e)) if e.starts_with(REASON_ERR_JSON_SIZE_LIMIT) => {
+            Ok(to_python_matches(vec![(0, e, None, None)]))
+        }
         Some(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e)),
         None => Ok(Vec::new()),
     }
@@ -452,20 +633,46 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         exclude_hidden, exclude_binary, existence_only, stop_flag,
         max_per_file, max_check_cells, max_json_depth, max_json_size,
     } = params;
+
+    if should_exclude_recycle_path(path) {
+        return None;
+    }
     
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
     let ext_l = format!(".{}", ext);
 
     if is_excel || ["xlsx", "xlsb", "xls", "xlsm"].contains(&ext.as_str()) {
+        let metadata = match std::fs::metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) => return Some(Err(encode_skip_reason(REASON_ERR_METADATA, error))),
+        };
+        if metadata.len() > MAX_FILE_SIZE {
+            return Some(Err(encode_skip_reason(
+                REASON_ERR_TOO_LARGE,
+                format!("{} bytes", metadata.len()),
+            )));
+        }
+        if exclude_hidden {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if (metadata.file_attributes() & 0x02) != 0 {
+                    return None;
+                }
+            }
+        }
         if existence_only {
-            let outcome = check_excel_file(
+            let outcome = match check_excel_file(
                 path,
                 pattern,
                 ac,
                 is_exact,
                 stop_flag,
                 max_check_cells,
-            );
+            ) {
+                Ok(outcome) => outcome,
+                Err(error) => return Some(Err(encode_excel_skip_reason(error))),
+            };
             if outcome.found {
                 return Some(Ok(vec![(1, "MATCH".to_string(), None, None)]));
             }
@@ -477,9 +684,15 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                     None,
                 )]));
             }
+            if let Some(sheet_name) = outcome.sheet_error {
+                return Some(Err(encode_skip_reason(REASON_ERR_EXCEL_PROCESS, sheet_name)));
+            }
             return None;
         }
-        let r_raw = search_excel_file(path, pattern, ac, is_exact, stop_flag, max_per_file, max_check_cells);
+        let r_raw = match search_excel_file(path, pattern, ac, is_exact, stop_flag, max_per_file, max_check_cells) {
+            Ok(matches) => matches,
+            Err(error) => return Some(Err(encode_excel_skip_reason(error))),
+        };
         let r = apply_match_limit(r_raw, max_per_file);
         return if r.is_empty() { None } else { Some(Ok(r)) };
     }
@@ -498,6 +711,12 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     let f_modified = meta.modified().ok();
     if f_len == 0 { return None; }
     if f_len > MAX_FILE_SIZE { return Some(Err(encode_skip_reason(REASON_ERR_TOO_LARGE, format!("{} bytes", f_len)))); }
+    if is_json && ext_l == ".json" && f_len > max_json_size {
+        return Some(Err(encode_skip_reason(
+            REASON_ERR_JSON_SIZE_LIMIT,
+            format!("{} bytes", max_json_size),
+        )));
+    }
 
     let file_snapshot = match load_file_snapshot(file, f_len, f_modified) {
         Ok(snapshot) => snapshot,
@@ -506,27 +725,14 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     let mmap_c = file_snapshot.as_slice();
 
     let enc = detect_encoding(mmap_c);
-    let mut _dec_h;
+    let decoded = ((is_json || is_xml) && enc != UTF_8)
+        .then(|| decode_bytes(mmap_c, enc).into_bytes());
     // 구조화된 문서는 파서가 전체 버퍼를 요구하므로 기존 디코딩 경로를 유지합니다.
     // 일반 Non-UTF8 텍스트는 아래의 청크 디코딩 경로에서 처리하여 파일 전체 String 복사를 피합니다.
-    let final_mmap = if is_json || is_xml {
-        let d = decode_bytes(mmap_c, enc);
-        _dec_h = d.into_bytes();
-        _dec_h.as_slice()
-    } else { mmap_c };
+    let final_mmap = decoded.as_deref().unwrap_or(mmap_c);
 
     let res: Result<Vec<RawMatch>, String> = if is_json && ext_l == ".json" {
-        if final_mmap.len() as u64 > max_json_size {
-            Ok(vec![(
-                1,
-                encode_skip_reason(
-                    REASON_ERR_JSON_SIZE_LIMIT,
-                    format!("{} bytes", max_json_size),
-                ),
-                None,
-                None,
-            )])
-        } else if existence_only {
+        if existence_only {
             check_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_json_depth)
                 .map(|outcome| {
                     let mut matches = Vec::new();
@@ -618,6 +824,7 @@ pub fn search_dir(
     options: Option<Py<SearchOptions>>,
     _kwargs: Option<pyo3::PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
+    let mut structured_memory_budget = None;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
         if config.extensions.is_some() { extensions = config.extensions.clone(); }
@@ -633,6 +840,7 @@ pub fn search_dir(
         if config.max_check_cells.is_some() { max_check_cells = config.max_check_cells; }
         if config.max_json_depth.is_some() { max_json_depth = config.max_json_depth; }
         if config.max_json_size.is_some() { max_json_size = config.max_json_size; }
+        structured_memory_budget = config.structured_memory_budget;
     }
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) = parse_search_mode(mode_bits);
@@ -652,6 +860,9 @@ pub fn search_dir(
     let filename_glob_set = filename_filter.as_ref().and_then(|f| build_glob_set(f));
 
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let structured_limiter = structured_memory_budget
+        .filter(|budget| *budget > 0)
+        .map(|budget| Arc::new(StructuredMemoryLimiter::new(budget)));
     let done_flag = Arc::new(AtomicBool::new(false));
     let callback_state = Arc::new(CallbackState::new());
     let processed_files = Arc::new(AtomicU64::new(0)); // M4: 실제 처리 파일 수 카운터
@@ -764,6 +975,7 @@ pub fn search_dir(
                     let ext_s = extensions_set.as_ref();
                     let glob_s = filename_glob_set.clone();
                     let file_counter = processed_files.clone(); // M4: 카운터 공유
+                    let limiter_ref = structured_limiter.clone();
 
                     Box::new(move |entry| {
                         if stop_ref.load(Ordering::Relaxed) { return ignore::WalkState::Quit; }
@@ -776,7 +988,13 @@ pub fn search_dir(
                                 return ignore::WalkState::Continue; 
                             }
                         };
-                        if !entry.file_type().is_some_and(|ft| ft.is_file()) { return ignore::WalkState::Continue; }
+                        let Some(file_type) = entry.file_type() else {
+                            return ignore::WalkState::Continue;
+                        };
+                        if file_type.is_dir() && has_recycle_bin_component(entry.path()) {
+                            return ignore::WalkState::Skip;
+                        }
+                        if !file_type.is_file() { return ignore::WalkState::Continue; }
                         
                         let path = entry.path();
                         if let Some(s) = ext_s {
@@ -788,6 +1006,29 @@ pub fn search_dir(
                             if !set.is_match(filename) { return ignore::WalkState::Continue; }
                         }
 
+                        let _memory_permit = match acquire_structured_permit(
+                            &limiter_ref,
+                            path,
+                            is_json,
+                            is_xml,
+                            is_excel,
+                            &stop_ref,
+                        ) {
+                            Ok(permit) => permit,
+                            Err(StructuredPermitError::Cancelled) => return ignore::WalkState::Quit,
+                            Err(StructuredPermitError::InsufficientBudget(estimate)) => {
+                                let f_path = path.to_string_lossy().to_string();
+                                let mut skipped = skip_ref
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                skipped.push((
+                                    f_path,
+                                    encode_skip_reason(REASON_ERR_RESOURCE_BUDGET, estimate),
+                                ));
+                                file_counter.fetch_add(1, Ordering::Relaxed);
+                                return ignore::WalkState::Continue;
+                            }
+                        };
                         let res = search_file_internal(InternalSearchParams {
                             path,
                             pattern: &pat_orig,
@@ -862,6 +1103,7 @@ fn search_files_list(
     options: Option<Py<SearchOptions>>,
     _kwargs: Option<PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
+    let mut structured_memory_budget = None;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
         if config.mode_bits.is_some() { mode_bits = config.mode_bits; }
@@ -875,8 +1117,12 @@ fn search_files_list(
         if config.max_check_cells.is_some() { max_check_cells = config.max_check_cells; }
         if config.max_json_depth.is_some() { max_json_depth = config.max_json_depth; }
         if config.max_json_size.is_some() { max_json_size = config.max_json_size; }
+        structured_memory_budget = config.structured_memory_budget;
     }
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let structured_limiter = structured_memory_budget
+        .filter(|budget| *budget > 0)
+        .map(|budget| Arc::new(StructuredMemoryLimiter::new(budget)));
     let done_flag = Arc::new(AtomicBool::new(false));
     let progress_counter = Arc::new(AtomicU64::new(0));
     let callback_state = Arc::new(CallbackState::new());
@@ -983,6 +1229,28 @@ fn search_files_list(
         file_list.into_par_iter().for_each(|f_path| {
             if stop_flag.load(Ordering::Relaxed) { return; }
             let path = Path::new(&f_path);
+            let _memory_permit = match acquire_structured_permit(
+                &structured_limiter,
+                path,
+                is_json,
+                is_xml,
+                is_excel,
+                &stop_flag,
+            ) {
+                Ok(permit) => permit,
+                Err(StructuredPermitError::Cancelled) => return,
+                Err(StructuredPermitError::InsufficientBudget(estimate)) => {
+                    let mut entries = skipped
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    entries.push((
+                        f_path,
+                        encode_skip_reason(REASON_ERR_RESOURCE_BUDGET, estimate),
+                    ));
+                    progress_counter.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+            };
             let res = search_file_internal(InternalSearchParams {
                 path, pattern: &search_string, pat_upper: &pat_upper, pat_bytes: &pat_bytes_v,
                 ac: &ac, is_exact, is_json, is_xml, is_excel,
@@ -1046,6 +1314,7 @@ fn find_files_with_keyword(
     mut max_json_size: u64,
     options: Option<Py<SearchOptions>>,
 ) -> Result<(KeywordFileHits, SkippedEntries), PyErr> {
+    let mut structured_memory_budget = None;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
         if config.extensions.is_some() { extensions = config.extensions.clone(); }
@@ -1056,6 +1325,7 @@ fn find_files_with_keyword(
         if config.results_callback.is_some() { results_callback = config.results_callback.as_ref().map(|callback| callback.clone_ref(py)); }
         if config.max_json_depth.is_some() { max_json_depth = config.max_json_depth.unwrap_or(max_json_depth); }
         if config.max_json_size.is_some() { max_json_size = config.max_json_size.unwrap_or(max_json_size); }
+        structured_memory_budget = config.structured_memory_budget;
     }
     let (is_json, is_xml, is_exact, _is_excel, exclude_binary, _existence_only) = parse_search_mode(mode_bits);
     let norm_keyword = crate::utils::normalize_unicode(&keyword);
@@ -1067,6 +1337,9 @@ fn find_files_with_keyword(
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?);
 
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let structured_limiter = structured_memory_budget
+        .filter(|budget| *budget > 0)
+        .map(|budget| Arc::new(StructuredMemoryLimiter::new(budget)));
     let is_done = Arc::new(AtomicBool::new(false));
     let callback_state = Arc::new(CallbackState::new());
     let stop_flag_mon = stop_flag.clone();
@@ -1156,6 +1429,7 @@ fn find_files_with_keyword(
             let kw_orig = norm_keyword.clone();
             let ext_s = exts.clone();
             let glob_s = glob_set.clone();
+            let limiter_ref = structured_limiter.clone();
             // M1: results_dispatcher에서 tx 채널 추출
             let tx_kw = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
 
@@ -1168,11 +1442,18 @@ fn find_files_with_keyword(
                 let exts_inner = ext_s.clone();
                 let glob_inner = glob_s.clone();
                 let tx_inner = tx_kw.clone(); // M1: tx 채널 공유
+                let limiter_inner = limiter_ref.clone();
 
                 Box::new(move |entry| {
                     if stop_inner.load(Ordering::Relaxed) { return ignore::WalkState::Quit; }
                     let entry = match entry { Ok(e) => e, Err(_) => return ignore::WalkState::Continue };
-                    if !entry.file_type().is_some_and(|ft| ft.is_file()) { return ignore::WalkState::Continue; }
+                    let Some(file_type) = entry.file_type() else {
+                        return ignore::WalkState::Continue;
+                    };
+                    if file_type.is_dir() && has_recycle_bin_component(entry.path()) {
+                        return ignore::WalkState::Skip;
+                    }
+                    if !file_type.is_file() { return ignore::WalkState::Continue; }
                     
                     let path = entry.path();
                     if let Some(ref valid) = exts_inner {
@@ -1180,6 +1461,9 @@ fn find_files_with_keyword(
                         if !valid.contains(&ext_str) { return ignore::WalkState::Continue; }
                     }
                     if !match_filename_glob(path.file_name().and_then(|s| s.to_str()).unwrap_or(""), &glob_inner) {
+                        return ignore::WalkState::Continue;
+                    }
+                    if should_exclude_recycle_path(path) {
                         return ignore::WalkState::Continue;
                     }
 
@@ -1205,6 +1489,29 @@ fn find_files_with_keyword(
                             ));
                             return ignore::WalkState::Continue;
                         }
+
+                        let _memory_permit = match acquire_structured_permit(
+                            &limiter_inner,
+                            path,
+                            is_json_file,
+                            is_xml_file,
+                            false,
+                            &stop_inner,
+                        ) {
+                            Ok(permit) => permit,
+                            Err(StructuredPermitError::Cancelled) => return ignore::WalkState::Quit,
+                            Err(StructuredPermitError::InsufficientBudget(estimate)) => {
+                                let f_path = path.to_string_lossy().to_string();
+                                let mut entries = skipped_inner
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                entries.push((
+                                    f_path,
+                                    encode_skip_reason(REASON_ERR_RESOURCE_BUDGET, estimate),
+                                ));
+                                return ignore::WalkState::Continue;
+                            }
+                        };
 
                         let f_path = path.to_string_lossy().to_string();
                         let snapshot = match load_file_snapshot(file, f_size, meta.modified().ok()) {
@@ -1311,7 +1618,7 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_dir, m)?)?;
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;
     m.add_function(wrap_pyfunction!(find_files_with_keyword, m)?)?;
-    m.add("API_VERSION", 6)?;
+    m.add("API_VERSION", 7)?;
     // Cargo.toml version 필드를 빌드 시점에 자동으로 읽어 Python 측에 노출합니다.
     m.add("ENGINE_VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
@@ -1452,6 +1759,52 @@ mod tests {
         assert_eq!(limited.len(), 3);
         assert!(!limited.iter().any(|item| item.1 == MATCH_META_TRUNCATED));
         assert!(limited[2].1.starts_with("__SF_EXCEL_SHEET_ERR__|"));
+    }
+
+    #[test]
+    fn structured_memory_limiter_rejects_oversized_request_and_releases_permit() {
+        let limiter = Arc::new(StructuredMemoryLimiter::new(100));
+        let stop_flag = Arc::new(AtomicBool::new(false));
+
+        assert!(matches!(
+            limiter.acquire(101, &stop_flag),
+            Err(StructuredPermitError::InsufficientBudget(101))
+        ));
+
+        let permit = match limiter.acquire(80, &stop_flag) {
+            Ok(permit) => permit,
+            Err(_) => panic!("a request within the budget must be accepted"),
+        };
+        assert_eq!(*limiter.reserved.lock().unwrap(), 80);
+        drop(permit);
+        assert_eq!(*limiter.reserved.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn plain_files_do_not_require_structured_memory_metadata() {
+        assert_eq!(
+            estimated_structured_memory(Path::new("definitely-missing.txt"), false, false, false),
+            0
+        );
+    }
+
+    #[test]
+    fn recycle_bin_component_detection_is_case_insensitive() {
+        assert!(has_recycle_bin_component(Path::new(
+            r"D:\$Recycle.Bin\canary\file.xlsx"
+        )));
+        assert!(should_exclude_recycle_path(Path::new(
+            r"D:\$Recycle.Bin\canary\file.xlsx"
+        )));
+        assert!(!has_recycle_bin_component(Path::new(
+            r"D:\documents\file.xlsx"
+        )));
+        assert!(is_direct_child_of_filesystem_root(Path::new(
+            r"D:\documents"
+        )));
+        assert!(!is_direct_child_of_filesystem_root(Path::new(
+            r"D:\documents\nested"
+        )));
     }
 
     #[test]

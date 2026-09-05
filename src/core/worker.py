@@ -4,7 +4,7 @@ import threading
 import time
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
@@ -256,16 +256,8 @@ class SearchWorker(QRunnable):
             for _, reason in skip_list
         )
     def _check_safety_limits(self, new_matches_count: int) -> bool:
-        """전역 상한 및 메모리 가드 체크"""
+        """Account for accepted matches and enforce the memory guard."""
         self._total_matches_accumulated += new_matches_count
-        if self._total_matches_accumulated > _get_adv_setting(Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, Constants.DEFAULT_MAX_TOTAL_MATCHES):
-            err_msg = AppStrings.ERROR_LIMIT_REACHED.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_TOTAL_MATCHES, Constants.DEFAULT_MAX_TOTAL_MATCHES))
-            logger.warning(err_msg)
-            self.stop_event.set()
-            self.is_running.clear()
-            self._safe_emit(self.signals.error, err_msg)
-            return False
-
         now = time.time()
         if self._last_mem_check is None or (now - self._last_mem_check) > 1.0:
             try:
@@ -279,6 +271,134 @@ class SearchWorker(QRunnable):
                 logger.debug(AppStrings.LOG_SYS_MEMORY_CHECK_FAIL.format(e))
             self._last_mem_check = now
         return True
+
+    @staticmethod
+    def _trim_match_rows(matches, allowed_count: int):
+        """Keep at most ``allowed_count`` visible rows plus their notice rows."""
+        if allowed_count <= 0:
+            return []
+
+        visible_rows = [
+            match
+            for match in matches
+            if isinstance(match, (tuple, list))
+            and match
+            and str(match[0]) not in {"-1", "-2"}
+        ]
+        if len(visible_rows) <= allowed_count:
+            return list(matches)
+
+        retained = []
+        visible_remaining = allowed_count
+        for match in matches:
+            is_notice = (
+                isinstance(match, (tuple, list))
+                and match
+                and str(match[0]) in {"-1", "-2"}
+            )
+            if is_notice:
+                retained.append(match)
+            elif visible_remaining > 0:
+                retained.append(match)
+                visible_remaining -= 1
+        return retained
+
+    def _fit_results_to_total_limit(self, result_batch):
+        """Return the exact prefix that fits within the configured global limit."""
+        maximum = _get_adv_setting(
+            Constants.CONFIG_KEY_MAX_TOTAL_MATCHES,
+            Constants.DEFAULT_MAX_TOTAL_MATCHES,
+        )
+        remaining = max(0, maximum - self._total_matches_accumulated)
+        accepted = []
+        accepted_count = 0
+        limit_reached = False
+
+        for path, declared_count, matches in result_batch:
+            count = max(0, int(declared_count))
+            if count <= remaining:
+                accepted.append((path, count, matches))
+                accepted_count += count
+                remaining -= count
+                continue
+
+            limit_reached = True
+            if remaining <= 0:
+                break
+
+            visible_count = sum(
+                1
+                for match in matches
+                if isinstance(match, (tuple, list))
+                and match
+                and str(match[0]) not in {"-1", "-2"}
+            )
+            if visible_count == 1 and count > 1:
+                trimmed_matches = [
+                    (1, AppStrings.MSG_BINARY_MATCH.format(remaining), None, None)
+                ]
+            else:
+                trimmed_matches = self._trim_match_rows(matches, remaining)
+            accepted.append((path, remaining, trimmed_matches))
+            accepted_count += remaining
+            remaining = 0
+            break
+
+        if accepted_count < sum(max(0, int(item[1])) for item in result_batch):
+            limit_reached = True
+        elif accepted_count > 0 and remaining == 0:
+            limit_reached = True
+        return accepted, accepted_count, limit_reached
+
+    def _stop_for_total_match_limit(self):
+        maximum = _get_adv_setting(
+            Constants.CONFIG_KEY_MAX_TOTAL_MATCHES,
+            Constants.DEFAULT_MAX_TOTAL_MATCHES,
+        )
+        err_msg = AppStrings.ERROR_LIMIT_REACHED.format(maximum)
+        logger.warning(err_msg)
+        self.stop_event.set()
+        self.is_running.clear()
+        self._safe_emit(self.signals.error, err_msg)
+
+    def _recommended_structured_in_flight(self, batches, executor_workers: int) -> int:
+        """Limit only memory-heavy precise batches; keep small-file throughput intact."""
+        mode = str(self.special_mode or "").upper()
+        document_kind: Literal["json", "xml", "excel"]
+        if "JSON" in mode:
+            document_kind = "json"
+        elif "XML" in mode:
+            document_kind = "xml"
+        elif "EXCEL" in mode:
+            document_kind = "excel"
+        else:
+            return executor_workers
+
+        try:
+            from sf_utils.resource_guard import (
+                available_processing_budget_bytes,
+                estimate_structured_memory_bytes,
+                memory_snapshot,
+            )
+
+            estimates = [
+                max(
+                    estimate_structured_memory_bytes(size, document_kind, "python")
+                    for _path, size in batch
+                )
+                for batch in batches
+                if batch
+            ]
+            if not estimates:
+                return executor_workers
+            budget = available_processing_budget_bytes(memory_snapshot())
+            if budget <= 0:
+                return executor_workers
+            memory_workers = max(1, budget // max(estimates))
+            return max(1, min(executor_workers, memory_workers))
+        except Exception as exc:
+            logger.debug("Structured batch concurrency calculation failed: %s", exc)
+            return executor_workers
 
     @Slot()
     def run(self):
@@ -381,6 +501,11 @@ class SearchWorker(QRunnable):
                 return
             if skipped_batch and self._is_memory_skip(skipped_batch):
                 self._stop_for_memory_pressure()
+            limit_reached = False
+            if formatted_batch:
+                formatted_batch, current_batch_matches, limit_reached = self._fit_results_to_total_limit(
+                    formatted_batch
+                )
             if formatted_batch and not self._check_safety_limits(current_batch_matches):
                 return
             if formatted_batch:
@@ -388,6 +513,8 @@ class SearchWorker(QRunnable):
                 self._rust_total_matches += current_batch_matches
                 self.all_results.extend(formatted_batch)
                 self._safe_emit(self.signals.results_found, formatted_batch)
+            if limit_reached:
+                self._stop_for_total_match_limit()
             if skipped_batch:
                 self._safe_emit(self.signals.skipped_found, skipped_batch)
             # logger.debug(f"[Worker] results_callback processing finished")
@@ -529,7 +656,8 @@ class SearchWorker(QRunnable):
             return True
 
         try:
-            max_in_flight = max(1, int(getattr(executor, "_max_workers", 1)))
+            executor_workers = max(1, int(getattr(executor, "_max_workers", 1)))
+            max_in_flight = self._recommended_structured_in_flight(batches, executor_workers)
             for _ in range(min(max_in_flight, len(batches))):
                 if not submit_next_batch():
                     break
@@ -602,7 +730,9 @@ class SearchWorker(QRunnable):
                             if batch_res.get(Constants.PAYLOAD_RESULTS):
                                 res_list = batch_res[Constants.PAYLOAD_RESULTS]
                                 # 실질적인 매치 수(m[1])를 합산하여 집계 정확도를 높입니다.
-                                current_matches = sum(m[1] for m in res_list)
+                                res_list, current_matches, limit_reached = self._fit_results_to_total_limit(
+                                    res_list
+                                )
                                 if not self._check_safety_limits(current_matches):
                                     for f in list(pending_futures):
                                         f.cancel()
@@ -612,6 +742,12 @@ class SearchWorker(QRunnable):
                                 total_matches += current_matches
                                 self.all_results.extend(res_list)
                                 self._safe_emit(self.signals.results_found, res_list)
+                                if limit_reached:
+                                    self._stop_for_total_match_limit()
+                                    for pending in list(pending_futures):
+                                        pending.cancel()
+                                    pending_futures.clear()
+                                    break
                             if batch_res.get(Constants.PAYLOAD_SKIPPED):
                                 skip_list = batch_res[Constants.PAYLOAD_SKIPPED]
                                 self._safe_emit(self.signals.skipped_found, skip_list)

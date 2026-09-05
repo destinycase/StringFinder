@@ -60,6 +60,22 @@ def _build_rust_options(**values: Any) -> Optional[Any]:
     return options_type(**values)
 
 
+def _get_structured_memory_budget() -> int:
+    """Return one shared budget for concurrent native structured searches."""
+    try:
+        from sf_utils.resource_guard import (
+            available_processing_budget_bytes,
+            memory_snapshot,
+        )
+
+        budget = available_processing_budget_bytes(memory_snapshot())
+        if budget > 0:
+            return budget
+    except Exception as exc:
+        logger.debug("Structured memory budget calculation failed: %s", exc)
+    return Constants.MIN_AVAILABLE_MEMORY_BYTES
+
+
 def _memory_guard_result(
     file_path: str,
     document_kind: Literal["json", "xml"],
@@ -137,7 +153,7 @@ try:
     from rust_engine import sf_engine  # type: ignore
     import hashlib
 
-    REQUIRED_API_VERSION = 6
+    REQUIRED_API_VERSION = 7
     engine_version = getattr(sf_engine, "API_VERSION", 0)
     if engine_version < REQUIRED_API_VERSION:
         _err_msg = AppStrings.ERROR_RUST_API_VERSION.format(REQUIRED_API_VERSION, engine_version)
@@ -188,6 +204,8 @@ SKIP_CODE_RESOURCE_BUDGET = "ERR_RESOURCE_BUDGET"
 SKIP_CODE_JSON_PARSE = "ERR_JSON_PARSE"
 SKIP_CODE_XML_PARSE = "ERR_XML_PARSE"
 SKIP_CODE_XML_UNSUPPORTED_DTD = "ERR_XML_UNSUPPORTED_DTD"
+SKIP_CODE_EXCEL_PROCESS = "ERR_EXCEL_PROCESS"
+SKIP_CODE_EXCEL_PANIC = "ERR_EXCEL_PANIC"
 SKIP_CODE_PANIC = "ERR_PANIC"
 SKIP_CODE_CRITICAL = "ERR_CRITICAL"
 SKIP_CODE_FILE_MATCH_LIMIT = "INFO_FILE_MATCH_LIMIT"
@@ -222,6 +240,8 @@ _SKIP_REASON_TEMPLATE_NAMES = {
     SKIP_CODE_JSON_PARSE: "ERROR_JSON_PARSE",
     SKIP_CODE_XML_PARSE: "ERROR_XML_PARSE",
     SKIP_CODE_XML_UNSUPPORTED_DTD: "ERROR_XML_UNSUPPORTED_DTD",
+    SKIP_CODE_EXCEL_PROCESS: "ERROR_EXCEL_PROCESS",
+    SKIP_CODE_EXCEL_PANIC: "ERROR_EXCEL_PANIC",
     SKIP_CODE_PANIC: "SKIP_REASON_PANIC",
     SKIP_CODE_CRITICAL: "SKIP_REASON_CRITICAL",
     SKIP_CODE_UNKNOWN: "SKIP_REASON_UNKNOWN",
@@ -413,6 +433,10 @@ def format_skip_reason(reason: Any) -> str:
         )
     elif code == SKIP_CODE_JSON_PARSE:
         safe_detail = _localize_json_error_detail(safe_detail)
+    elif code == SKIP_CODE_EXCEL_PROCESS:
+        safe_detail = _localize_internal_error_detail("Excel conversion", safe_detail)
+    elif code == SKIP_CODE_EXCEL_PANIC:
+        return format_excel_panic_reason(safe_detail)
     elif code == SKIP_CODE_TOO_LARGE:
         safe_detail = _localize_file_size_detail(safe_detail)
     elif code == SKIP_CODE_JSON_SIZE_LIMIT:
@@ -964,6 +988,37 @@ def is_hidden_windows(path: str) -> bool:
         return False
 
 
+def _has_recycle_bin_component(path: str) -> bool:
+    return any(
+        component.casefold() == "$recycle.bin"
+        for component in re.split(r"[\\/]+", os.fspath(path))
+        if component
+    )
+
+
+def is_recycle_bin_path(path: str) -> bool:
+    """Return whether a file belongs to the Windows recycle bin or its root alias."""
+    if _has_recycle_bin_component(path):
+        return True
+    if os.name != "nt":
+        return False
+
+    normalized = os.path.normpath(path)
+    parent = os.path.dirname(normalized)
+    drive, tail = os.path.splitdrive(parent)
+    parent_parts = [part for part in re.split(r"[\\/]+", tail) if part]
+    if not drive or len(parent_parts) != 1:
+        return False
+
+    alias_target = os.path.join(f"{drive}{os.sep}", "$RECYCLE.BIN", parent_parts[0])
+    if not os.path.isdir(alias_target):
+        return False
+    try:
+        return _has_recycle_bin_component(os.path.realpath(path))
+    except OSError:
+        return False
+
+
 def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False, existence_only: bool = False) -> int:
     """검색 옵션에 따른 Rust 엔진 모드 비트 플래그를 생성하여 반환합니다."""
     bits = Constants.RUST_MODE_NORMAL
@@ -1217,6 +1272,8 @@ class FileScanner:
         for folder in self.folders:
             if self.stop_check_callback and self.stop_check_callback():
                 break
+            if is_recycle_bin_path(folder):
+                continue
             if not os.path.exists(folder):
                 continue
             real_folder = os.path.realpath(folder)
@@ -1230,6 +1287,8 @@ class FileScanner:
         """폴더를 재귀적으로 탐색하며 대상 파일을 수집합니다."""
         if visited is None:
             visited = set()
+        if _has_recycle_bin_component(folder):
+            return
         try:
             with os.scandir(folder) as entries:
                 for entry in entries:
@@ -1252,6 +1311,8 @@ class FileScanner:
                                 visited.add(real_path)
                                 self._scan_recursive(entry.path, file_list, visited)
                         elif entry.is_file():
+                            if is_recycle_bin_path(entry.path):
+                                continue
                             ext = splitext(entry.name)[1].lower()
                             if ext in self.extensions:
                                 if self.processed_filename_filters:
@@ -1388,6 +1449,9 @@ def search_in_excel_special(
             return None
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_RUST_EXCEL_FAIL.format(file_path, e))
+            raw_reason = str(e)
+            if raw_reason.startswith((f"{SKIP_CODE_EXCEL_PROCESS}|", f"{SKIP_CODE_EXCEL_PANIC}|")):
+                return (Constants.STATUS_SKIPPED, format_skip_reason(raw_reason))
             return (
                 Constants.STATUS_SKIPPED,
                 AppStrings.ERROR_SEARCH_EXCEL.format(
@@ -1523,6 +1587,7 @@ def search_in_json_special(
     use_complex_search: bool = False,
     stop_event=None,
     existence_only: bool = False,
+    _rust_only: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """
     JSON 특수 검색을 수행합니다.
@@ -1592,7 +1657,8 @@ def search_in_json_special(
                 return (file_path, _visible_match_count(processed), processed)
             
             # 탐지 누락 방지: Rust 엔진이 결과를 찾지 못한 경우 Python 폴백으로 이어지도록 합니다.
-            pass
+            if _rust_only:
+                return None
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_RUST_JSON_FAIL.format(file_path, e))
             # [Policy] 자동 폴백 중단
@@ -1691,6 +1757,26 @@ def search_in_json_special(
             if processed_content:
                 try:
                     data = json.loads(processed_content, strict=True)
+                except RecursionError:
+                    if HAS_RUST_ENGINE:
+                        return search_in_json_special(
+                            file_path,
+                            search_string,
+                            exact_match=exact_match,
+                            use_complex_search=False,
+                            stop_event=stop_event,
+                            existence_only=existence_only,
+                            _rust_only=True,
+                        )
+                    return (
+                        Constants.STATUS_SKIPPED,
+                        AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(
+                            _get_adv_setting(
+                                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
+                                Constants.DEFAULT_MAX_JSON_DEPTH,
+                            )
+                        ),
+                    )
                 except (json.JSONDecodeError, ValueError):
                     pass
 
@@ -1897,6 +1983,10 @@ def search_in_xml_special(
         matches = []
         count = 0
         search_string = normalize_unicode(search_string).casefold()
+        max_per_file = _get_adv_setting(
+            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
+            Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+        )
         # stop_event 참조를 핸들러에 전달하기 위해 클로저로 캡처
         _stop_event = stop_event
 
@@ -1908,6 +1998,8 @@ def search_in_xml_special(
                 self.parser.CharacterDataHandler = self.char_data
                 self.parser.StartDoctypeDeclHandler = self.start_doctype
                 self.current_tags = []
+                self.text_chunks = []
+                self.text_line = 1
 
             def start_doctype(self, _name, _system_id, _public_id, _has_internal_subset):
                 raise _UnsupportedXmlDtd("DTD declarations and entity expansion are not supported")
@@ -1917,6 +2009,7 @@ def search_in_xml_special(
                 # 중단 신호 확인 후 즉시 예외로 실제 종료
                 if _stop_event and _stop_event.is_set():
                     raise xml.parsers.expat.ExpatError("User stopped")
+                self.flush_text()
                 self.current_tags.append(name)
                 for k, v in attrs.items():
                     val = normalize_unicode(str(v))
@@ -1928,18 +2021,27 @@ def search_in_xml_special(
                             continue
                         
                         # [상] Python 경로 매치 상한 적용
-                        if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
+                        if count <= max_per_file:
                             matches.append((self.parser.CurrentLineNumber, str(k), val))
-                        elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
-                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), ""))
+                        elif count == max_per_file + 1:
+                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), ""))
 
             def end_element(self, name):
+                self.flush_text()
                 if self.current_tags:
                     self.current_tags.pop()
 
             def char_data(self, data):
+                if not self.text_chunks:
+                    self.text_line = self.parser.CurrentLineNumber
+                self.text_chunks.append(data)
+
+            def flush_text(self):
                 nonlocal count
-                text = normalize_unicode(data).strip()
+                if not self.text_chunks:
+                    return
+                text = normalize_unicode("".join(self.text_chunks)).strip()
+                self.text_chunks.clear()
                 if text:
                     text_comp = text.casefold()
                     if (search_string in text_comp) if not exact_match else (search_string == text_comp):
@@ -1949,16 +2051,16 @@ def search_in_xml_special(
                             return
                         
                         # Python 검색 경로에서 매치 결과 개수 상한을 적용합니다.
-                        if count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
+                        if count <= max_per_file:
                             matches.append(
                                 (
-                                    self.parser.CurrentLineNumber,
+                                    self.text_line,
                                     self.current_tags[-1] if self.current_tags else "root",
                                     text,
                                 )
                             )
-                        elif count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
-                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), ""))
+                        elif count == max_per_file + 1:
+                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), ""))
 
         searcher = XMLSearcher()
         try:
@@ -1979,7 +2081,7 @@ def search_in_xml_special(
         if existence_only and count > 0:
             return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
         if count > 0:
-            final_count = min(count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
+            final_count = min(count, max_per_file + 1)
             return (file_path, final_count, matches)
         return None
     except Exception as e:
@@ -2001,6 +2103,8 @@ def search_in_file(
     **kwargs,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """파일의 성격에 따라 적절한 검색 엔진을 선택하여 검색을 수행합니다."""
+    if is_recycle_bin_path(file_path):
+        return None
     search_string_nfc = normalize_unicode(search_string)
     ext = splitext(file_path)[1].lower()
     if ext in [".xlsx", ".xlsm", ".xls", ".xlsb"]:
@@ -2466,6 +2570,7 @@ def search_directory_fast(
             max_check_cells=max_check_cells,
             max_json_depth=max_json_depth,
             max_json_size=max_json_size,
+            structured_memory_budget=_get_structured_memory_budget(),
         )
         if rust_options is not None:
             raw_ret = search_dir_func(root_paths=search_paths, pattern=rust_pattern, options=rust_options)
@@ -2562,6 +2667,7 @@ def search_files_list_fast(
             max_check_cells=max_check_cells,
             max_json_depth=max_json_depth,
             max_json_size=max_json_size,
+            structured_memory_budget=_get_structured_memory_budget(),
         )
         if rust_options is not None:
             raw_ret = search_func(file_list=file_list, search_string=rust_pattern, options=rust_options)
@@ -2680,7 +2786,7 @@ def find_files_with_keyword_fast(
         rust_mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary, existence_only=existence_only)
         _max_per_file, _max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
         results_callback = kwargs.get("results_callback")
-        # [M-06 Fix] TypeError fallback 제거: API_VERSION 6 미만은 로드 시 차단됨
+        # [M-06 Fix] TypeError fallback 제거: API_VERSION 7 미만은 로드 시 차단됨
         # stop_event 없는 재시도는 사용자 중단 신호를 무력화하는 버그였음
         rust_options = _build_rust_options(
             extensions=rust_exts,
@@ -2691,6 +2797,7 @@ def find_files_with_keyword_fast(
             results_callback=results_callback,
             max_json_depth=max_json_depth,
             max_json_size=max_json_size,
+            structured_memory_budget=_get_structured_memory_budget(),
         )
         if rust_options is not None:
             found_ret = find_func(paths=search_paths, keyword=rust_pattern, options=rust_options)

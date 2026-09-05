@@ -46,6 +46,8 @@ pub struct SearchOptions {
     pub max_json_depth: Option<usize>,
     #[pyo3(get)]
     pub max_json_size: Option<u64>,
+    #[pyo3(get)]
+    pub structured_memory_budget: Option<u64>,
 }
 
 #[pymethods]
@@ -65,6 +67,7 @@ impl SearchOptions {
         max_check_cells=None,
         max_json_depth=None,
         max_json_size=None,
+        structured_memory_budget=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -81,6 +84,7 @@ impl SearchOptions {
         max_check_cells: Option<u64>,
         max_json_depth: Option<usize>,
         max_json_size: Option<u64>,
+        structured_memory_budget: Option<u64>,
     ) -> Self {
         Self {
             mode_bits,
@@ -96,13 +100,14 @@ impl SearchOptions {
             max_check_cells,
             max_json_depth,
             max_json_size,
+            structured_memory_budget,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "SearchOptions(mode_bits={:?}, exclude_hidden={}, max_per_file={:?}, max_json_depth={:?}, max_json_size={:?})",
-            self.mode_bits, self.exclude_hidden, self.max_per_file, self.max_json_depth, self.max_json_size
+            "SearchOptions(mode_bits={:?}, exclude_hidden={}, max_per_file={:?}, max_json_depth={:?}, max_json_size={:?}, structured_memory_budget={:?})",
+            self.mode_bits, self.exclude_hidden, self.max_per_file, self.max_json_depth, self.max_json_size, self.structured_memory_budget
         )
     }
 }

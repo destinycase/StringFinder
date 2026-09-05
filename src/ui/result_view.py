@@ -61,20 +61,16 @@ def _append_excel_row(worksheet, values):
 
 
 def _detect_text_encoding(file_path):
-    """BOM을 우선 확인하고 일반 텍스트는 UTF-8로 읽습니다."""
+    """Detect preview encoding from the same bounded sample used by search."""
     with open(file_path, "rb") as file:
-        prefix = file.read(4)
-    if prefix.startswith(b"\xff\xfe\x00\x00"):
+        sample = file.read(65536)
+    if sample.startswith(b"\xff\xfe\x00\x00"):
         return "utf-32-le"
-    if prefix.startswith(b"\x00\x00\xfe\xff"):
+    if sample.startswith(b"\x00\x00\xfe\xff"):
         return "utf-32-be"
-    if prefix.startswith(b"\xff\xfe"):
-        return "utf-16-le"
-    if prefix.startswith(b"\xfe\xff"):
-        return "utf-16-be"
-    if prefix.startswith(b"\xef\xbb\xbf"):
-        return "utf-8-sig"
-    return "utf-8"
+    from core.search_engine import detect_encoding_quickly
+
+    return detect_encoding_quickly(sample)
 
 
 def _read_context_lines_from_file(file_path, target_line, before_lines, after_lines, cancel_event=None):

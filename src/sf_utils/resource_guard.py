@@ -17,7 +17,7 @@ ProjectedMemoryPressureReason = Literal[
     "projected_available_memory",
     "projected_process_tree_limit",
 ]
-StructuredDocumentKind = Literal["json", "xml"]
+StructuredDocumentKind = Literal["json", "xml", "excel"]
 StructuredEngineKind = Literal["rust", "python"]
 
 
@@ -134,6 +134,21 @@ def memory_pressure_detected(snapshot: Dict[str, int] | None = None) -> bool:
     return memory_pressure_reason(snapshot) is not None
 
 
+def available_processing_budget_bytes(
+    snapshot: Mapping[str, object] | None = None,
+) -> int:
+    """Return shared allocation headroom after reserve and process limits."""
+    values = memory_snapshot() if snapshot is None else snapshot
+    available, total, process_rss, valid = _snapshot_values(values)
+    if not valid:
+        return 0
+
+    limits = calculate_memory_limits(total)
+    available_headroom = max(0, available - limits.reserve_bytes)
+    process_headroom = max(0, limits.process_limit_bytes - process_rss)
+    return min(available_headroom, process_headroom)
+
+
 def estimate_structured_memory_bytes(
     file_size: int,
     document_kind: StructuredDocumentKind,
@@ -151,6 +166,10 @@ def estimate_structured_memory_bytes(
     if profile == ("json", "python"):
         # Decoded text and the Python object graph created by json.loads().
         return size * 6 + 128 * 1024 * 1024
+    if profile == ("excel", "python"):
+        return size * 8 + 128 * 1024 * 1024
+    if profile == ("excel", "rust"):
+        return size * 8 + 128 * 1024 * 1024
     raise ValueError(f"Unsupported structured-memory profile: {profile!r}")
 
 

@@ -379,7 +379,7 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn parse_json<'data>(
+fn parse_json_once<'data>(
     mmap: &'data [u8],
     pattern: &'data str,
     ac: &'data aho_corasick::AhoCorasick,
@@ -388,6 +388,7 @@ fn parse_json<'data>(
     max_per_file: usize,
     max_json_depth: usize,
     collect_results: bool,
+    stack_safe: bool,
 ) -> Result<JsonSearchState<'data>, String> {
     let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
         &mmap[3..]
@@ -406,11 +407,20 @@ fn parse_json<'data>(
         collect_results,
     );
     let mut deserializer = Deserializer::from_slice(parse_mmap);
-    let parse_result = JsonSeed {
-        state: &mut state,
-        depth: 0,
-    }
-    .deserialize(&mut deserializer);
+    let parse_result = if stack_safe {
+        deserializer.disable_recursion_limit();
+        JsonSeed {
+            state: &mut state,
+            depth: 0,
+        }
+        .deserialize(serde_stacker::Deserializer::new(&mut deserializer))
+    } else {
+        JsonSeed {
+            state: &mut state,
+            depth: 0,
+        }
+        .deserialize(&mut deserializer)
+    };
     if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(state);
     }
@@ -418,6 +428,44 @@ fn parse_json<'data>(
     deserializer.end().map_err(|error| error.to_string())?;
     state.valid = true;
     Ok(state)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_json<'data>(
+    mmap: &'data [u8],
+    pattern: &'data str,
+    ac: &'data aho_corasick::AhoCorasick,
+    is_exact: bool,
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_per_file: usize,
+    max_json_depth: usize,
+    collect_results: bool,
+) -> Result<JsonSearchState<'data>, String> {
+    let first_attempt = parse_json_once(
+        mmap,
+        pattern,
+        ac,
+        is_exact,
+        stop_flag.clone(),
+        max_per_file,
+        max_json_depth,
+        collect_results,
+        false,
+    );
+    match first_attempt {
+        Err(error) if error.contains("recursion limit exceeded") => parse_json_once(
+            mmap,
+            pattern,
+            ac,
+            is_exact,
+            stop_flag,
+            max_per_file,
+            max_json_depth,
+            collect_results,
+            true,
+        ),
+        outcome => outcome,
+    }
 }
 
 pub fn search_json_file(
@@ -535,6 +583,30 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert!(result[0].1.contains("/items/0/value\tneedle"));
+    }
+
+    #[test]
+    fn search_json_supports_the_configured_deep_limit_without_stack_overflow() {
+        let depth = 20_000;
+        let mut json = "[".repeat(depth);
+        json.push_str("\"needle\"");
+        json.push_str(&"]".repeat(depth));
+        let ac = test_ac("needle");
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let matches = search_json_file(
+            json.as_bytes(),
+            "needle",
+            &ac,
+            false,
+            stop_flag,
+            10,
+            depth,
+        )
+        .expect("deep JSON should be parsed with stack growth");
+
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].1.ends_with("\tneedle"));
     }
 
     #[test]

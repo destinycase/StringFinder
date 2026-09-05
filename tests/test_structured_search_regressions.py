@@ -171,6 +171,22 @@ def test_python_xml_existence_search_validates_the_entire_document(tmp_path):
     assert result[0] == Constants.STATUS_SKIPPED
 
 
+def test_python_xml_search_matches_text_split_by_character_callbacks(tmp_path):
+    file_path = tmp_path / "split-character-data.xml"
+    file_path.write_text("<root><v>need&#108;e</v></root>", encoding="utf-8")
+
+    result = search_in_xml_special(
+        str(file_path),
+        "needle",
+        use_complex_search=True,
+    )
+
+    assert result is not None
+    assert result[0] == str(file_path)
+    assert result[1] == 1
+    assert result[2][0][2] == "needle"
+
+
 def test_python_json_fallback_uses_json_boolean_and_null_literals(tmp_path):
     file_path = tmp_path / "scalars.json"
     file_path.write_text(
@@ -194,6 +210,25 @@ def test_python_json_fallback_uses_json_boolean_and_null_literals(tmp_path):
     assert search_in_json_special(
         str(file_path), "True", exact_match=True, use_complex_search=True
     ) is not None
+
+
+@requires_rust
+def test_python_precise_json_uses_stack_safe_fallback_for_deep_document(tmp_path):
+    depth = 1_500
+    file_path = tmp_path / "deep.json"
+    file_path.write_text("[" * depth + '"needle"' + "]" * depth, encoding="utf-8")
+
+    result = search_in_json_special(
+        str(file_path),
+        "needle",
+        exact_match=True,
+        use_complex_search=True,
+    )
+
+    assert result is not None
+    assert result[0] == str(file_path)
+    assert result[1] == 1
+    assert result[2][0][2] == "needle"
 
 
 @requires_rust
