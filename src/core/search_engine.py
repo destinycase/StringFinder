@@ -132,11 +132,14 @@ SKIP_CODE_METADATA = "ERR_METADATA"
 SKIP_CODE_MMAP = "ERR_MMAP"
 SKIP_CODE_TOO_LARGE = "ERR_TOO_LARGE"
 SKIP_CODE_MEMORY_GUARD = "ERR_MEMORY_GUARD"
+SKIP_CODE_JSON_SIZE_LIMIT = "ERR_JSON_SIZE_LIMIT"
 SKIP_CODE_JSON_PARSE = "ERR_JSON_PARSE"
 SKIP_CODE_XML_PARSE = "ERR_XML_PARSE"
 SKIP_CODE_XML_UNSUPPORTED_DTD = "ERR_XML_UNSUPPORTED_DTD"
 SKIP_CODE_PANIC = "ERR_PANIC"
 SKIP_CODE_CRITICAL = "ERR_CRITICAL"
+SKIP_CODE_FILE_MATCH_LIMIT = "INFO_FILE_MATCH_LIMIT"
+SKIP_CODE_JSON_DEPTH_LIMIT = "INFO_JSON_DEPTH_LIMIT"
 
 
 class _UnsupportedXmlDtd(Exception):
@@ -147,6 +150,7 @@ SKIP_CODE_UNKNOWN = "ERR_UNKNOWN"
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
 RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
 RUST_MATCH_MARKER_TRUNCATED = "__SF_TRUNCATED__"
+RUST_MATCH_MARKER_JSON_DEPTH_LIMIT = "__SF_JSON_DEPTH_LIMIT__|"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
 _SKIP_REASON_TEMPLATE_NAMES = {
@@ -156,6 +160,9 @@ _SKIP_REASON_TEMPLATE_NAMES = {
     SKIP_CODE_MMAP: "SKIP_REASON_MMAP",
     SKIP_CODE_TOO_LARGE: "SKIP_REASON_TOO_LARGE",
     SKIP_CODE_MEMORY_GUARD: "SKIP_REASON_MEMORY_GUARD",
+    SKIP_CODE_JSON_SIZE_LIMIT: "SKIP_REASON_JSON_SIZE_LIMIT",
+    SKIP_CODE_FILE_MATCH_LIMIT: "SKIP_REASON_FILE_MATCH_LIMIT",
+    SKIP_CODE_JSON_DEPTH_LIMIT: "SKIP_REASON_JSON_DEPTH_LIMIT",
     SKIP_CODE_JSON_PARSE: "ERROR_JSON_PARSE",
     SKIP_CODE_XML_PARSE: "ERROR_XML_PARSE",
     SKIP_CODE_XML_UNSUPPORTED_DTD: "ERROR_XML_UNSUPPORTED_DTD",
@@ -209,11 +216,11 @@ def _decode_skip_reason(reason: Any) -> Tuple[str, str]:
     if "|" in reason_str:
         code, detail = reason_str.split("|", 1)
         code = code.strip().upper()
-        if code.startswith("ERR_"):
+        if code.startswith(("ERR_", "INFO_")):
             if code == "ERR_MAP": # Rust 구버전/오타 호환성 유지
                 code = "ERR_MMAP"
             return code, detail.strip()
-    bracket_match = re.match(r"^\[(ERR_[A-Z_]+)\]\s*(.*)$", reason_str)
+    bracket_match = re.match(r"^\[((?:ERR|INFO)_[A-Z_]+)\]\s*(.*)$", reason_str)
     if bracket_match:
         code = bracket_match.group(1)
         detail = bracket_match.group(2).lstrip(":").strip()
@@ -352,9 +359,16 @@ def format_skip_reason(reason: Any) -> str:
         safe_detail = _localize_json_error_detail(safe_detail)
     elif code == SKIP_CODE_TOO_LARGE:
         safe_detail = _localize_file_size_detail(safe_detail)
+    elif code == SKIP_CODE_JSON_SIZE_LIMIT:
+        _log_raw_skip_detail("json-size-limit", safe_detail)
+        safe_detail = AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT
     elif code == SKIP_CODE_MEMORY_GUARD:
-        _log_raw_skip_detail("memory-guard", safe_detail)
-        safe_detail = AppStrings.SKIP_DETAIL_LARGE_JSON
+        # Older Rust extensions used ERR_MEMORY_GUARD for the configured
+        # per-file JSON size limit. Keep it as a file-local skip so loading an
+        # old extension cannot stop the whole search.
+        _log_raw_skip_detail("legacy-json-size-limit", safe_detail)
+        template = AppStrings.SKIP_REASON_JSON_SIZE_LIMIT
+        safe_detail = AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT
     elif code in (SKIP_CODE_WALK, SKIP_CODE_OPEN, SKIP_CODE_METADATA, SKIP_CODE_MMAP):
         safe_detail = _localize_io_error_detail(safe_detail)
     elif code in (SKIP_CODE_PANIC, SKIP_CODE_CRITICAL, SKIP_CODE_UNKNOWN) or code not in _SKIP_REASON_TEMPLATE_NAMES:
@@ -422,6 +436,9 @@ _LOCALIZED_SKIP_MESSAGE_NAMES = (
     "SKIP_REASON_MMAP",
     "SKIP_REASON_TOO_LARGE",
     "SKIP_REASON_MEMORY_GUARD",
+    "SKIP_REASON_JSON_SIZE_LIMIT",
+    "SKIP_REASON_FILE_MATCH_LIMIT",
+    "SKIP_REASON_JSON_DEPTH_LIMIT",
     "SKIP_REASON_PANIC",
     "SKIP_REASON_CRITICAL",
     "SKIP_REASON_BATCH",
@@ -449,8 +466,14 @@ def _is_current_localized_skip_reason(reason: str) -> bool:
     return _match_localized_skip_resource(reason, current_catalog) is not None
 
 
-def _render_saved_skip_resource(resource_name: str) -> str:
+def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> str:
     """Re-render a categorized legacy-session reason with the active catalog."""
+    saved_limit_match = re.search(r"\(([0-9,]+)(?:건)?\)", source_reason)
+    saved_limit = (
+        saved_limit_match.group(1).replace(",", "")
+        if saved_limit_match
+        else None
+    )
     direct_resources = {
         "ERROR_EXCEL_SIGNATURE",
         "ERROR_EXCEL_CALAMINE",
@@ -483,7 +506,25 @@ def _render_saved_skip_resource(resource_name: str) -> str:
     if resource_name == "SKIP_REASON_TOO_LARGE":
         return AppStrings.SKIP_REASON_TOO_LARGE.format(AppStrings.SKIP_DETAIL_SIZE_LIMIT)
     if resource_name == "SKIP_REASON_MEMORY_GUARD":
-        return AppStrings.SKIP_REASON_MEMORY_GUARD.format(AppStrings.SKIP_DETAIL_LARGE_JSON)
+        return AppStrings.SKIP_REASON_JSON_SIZE_LIMIT.format(AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT)
+    if resource_name == "SKIP_REASON_JSON_SIZE_LIMIT":
+        return AppStrings.SKIP_REASON_JSON_SIZE_LIMIT.format(AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT)
+    if resource_name == "SKIP_REASON_FILE_MATCH_LIMIT":
+        return AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(
+            saved_limit
+            or _get_adv_setting(
+                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
+                Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+            )
+        )
+    if resource_name == "SKIP_REASON_JSON_DEPTH_LIMIT":
+        return AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(
+            saved_limit
+            or _get_adv_setting(
+                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
+                Constants.DEFAULT_MAX_JSON_DEPTH,
+            )
+        )
     if resource_name in {"SKIP_REASON_PANIC", "SKIP_REASON_CRITICAL"}:
         return getattr(AppStrings, resource_name).format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
     if resource_name == "SKIP_REASON_BATCH":
@@ -496,12 +537,24 @@ def localize_skip_reason_for_display(reason: Any) -> str:
     reason_text = str(reason or "").strip()
     if not reason_text:
         return ""
-    if reason_text.startswith("ERR_") and "|" in reason_text:
+    if "\n" in reason_text:
+        localized_lines = [
+            localize_skip_reason_for_display(line)
+            for line in reason_text.splitlines()
+            if line.strip()
+        ]
+        return "\n".join(dict.fromkeys(localized_lines))
+    if reason_text.startswith(("ERR_", "INFO_")) and "|" in reason_text:
         return format_skip_reason(reason_text)
     if reason_text.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
         return format_excel_panic_reason(reason_text[len(RUST_MATCH_MARKER_EXCEL_PANIC) :])
     if re.match(r"^(?:xlsx?|xlsm|xlsb)\|range start index ", reason_text, re.IGNORECASE):
         return format_excel_panic_reason(reason_text)
+    legacy_memory_prefix = AppStrings.SKIP_REASON_MEMORY_GUARD.split("{", 1)[0]
+    if legacy_memory_prefix and reason_text.startswith(legacy_memory_prefix):
+        return AppStrings.SKIP_REASON_JSON_SIZE_LIMIT.format(
+            AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT
+        )
     if _is_current_localized_skip_reason(reason_text):
         return reason_text
 
@@ -511,7 +564,7 @@ def localize_skip_reason_for_display(reason: Any) -> str:
     saved_resource = _match_localized_skip_resource(reason_text, other_catalog)
     if saved_resource:
         _log_raw_skip_detail("saved-session", reason_text)
-        return _render_saved_skip_resource(saved_resource)
+        return _render_saved_skip_resource(saved_resource, reason_text)
     if reason_text.startswith(("[오류]", "[안내]", "[건너뜀]", "[Error]", "[Info]", "[Skipped]")):
         _log_raw_skip_detail("saved-session", reason_text)
         return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
@@ -586,6 +639,9 @@ def _normalize_rust_matches(
                 res.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
                     _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
                 ), None, None))
+                continue
+            if c.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
+                # 파일 단위 부분 검색 안내로 별도 전달되며 결과 행에는 표시하지 않습니다.
                 continue
             if c == RUST_MATCH_MARKER_TRUNCATED:
                 # A real file match is identified by its positive line number;
@@ -668,13 +724,13 @@ def _normalize_rust_matches(
 
 
 def _visible_match_count(matches: List[Any]) -> int:
-    """내부 truncation marker를 제외한 사용자에게 표시할 매치 수를 반환합니다."""
+    """내부 부분 검색 안내 행을 제외한 사용자 표시 매치 수를 반환합니다."""
     return sum(
         1
         for match in matches
         if isinstance(match, (tuple, list))
         and match
-        and str(match[0]) != "-1"
+        and str(match[0]) not in {"-1", "-2"}
     )
 
 
@@ -716,6 +772,81 @@ def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
         if content.startswith("ERR_") and "|" in content:
             return format_skip_reason(content)
     return None
+
+
+def _positive_limit(value: Any, key: str, default: int) -> int:
+    """Return a safe positive limit from a marker or the active settings."""
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        try:
+            return max(1, int(_get_adv_setting(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+
+def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
+    """Build one localized file notice for non-fatal result omissions."""
+    reasons: List[str] = []
+
+    for match in matches or []:
+        line = _rust_match_field(match, 0, "line")
+        content = str(_rust_match_field(match, 1, "content", ""))
+        kind = getattr(match, "kind", None)
+        code = getattr(match, "code", None)
+        detail = getattr(match, "detail", None)
+
+        is_tuple_metadata = isinstance(match, (tuple, list)) and line == 0
+        if kind == "truncated" or (is_tuple_metadata and content == RUST_MATCH_MARKER_TRUNCATED):
+            limit = _positive_limit(
+                detail,
+                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
+                Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+            )
+            reasons.append(AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(limit))
+            continue
+
+        if code == "JSON_DEPTH_LIMIT" or kind == "partial":
+            if code != "JSON_DEPTH_LIMIT":
+                continue
+            limit = _positive_limit(
+                detail,
+                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
+                Constants.DEFAULT_MAX_JSON_DEPTH,
+            )
+            reasons.append(AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(limit))
+            continue
+
+        if is_tuple_metadata and content.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
+            limit = _positive_limit(
+                content[len(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT) :],
+                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
+                Constants.DEFAULT_MAX_JSON_DEPTH,
+            )
+            reasons.append(AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(limit))
+
+    unique_reasons = list(dict.fromkeys(reasons))
+    return "\n".join(unique_reasons) if unique_reasons else None
+
+
+def _extract_normalized_partial_skip_reason(matches: Any) -> Optional[str]:
+    """Extract partial-search notices from Python-normalized result rows."""
+    reasons: List[str] = []
+    for match in matches or []:
+        if not isinstance(match, (tuple, list)) or not match:
+            continue
+        marker_line = str(match[0])
+        if marker_line == "-1":
+            limit = _positive_limit(
+                None,
+                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
+                Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+            )
+            reasons.append(AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(limit))
+        elif marker_line == "-2" and len(match) > 1 and match[1]:
+            reasons.append(str(match[1]))
+    unique_reasons = list(dict.fromkeys(reasons))
+    return "\n".join(unique_reasons) if unique_reasons else None
 
 
 def normalize_unicode(text: Any) -> str:
@@ -1291,14 +1422,24 @@ def search_in_json_special(
                 max_json_size=max_json_size,
             )
             if results:
-                if existence_only:
-                    # [Boolean] 일치 항목 발견 시 즉시 반환
-                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
                 skip_reason = _extract_marker_skip_reason(results)
                 if skip_reason:
-                    if "ERR_MEMORY_GUARD" in skip_reason:
-                        logger.warning(AppStrings.LOG_SRCH_RUST_MEM_GUARD_WARN.format(file_path))
                     return (Constants.STATUS_SKIPPED, skip_reason)
+                partial_reason = _extract_partial_skip_reason(results)
+                if existence_only:
+                    has_match = any(
+                        getattr(match, "kind", None) == "match"
+                        or str(_rust_match_field(match, 1, "content", "")) == "MATCH"
+                        for match in results
+                    )
+                    processed = []
+                    if has_match:
+                        processed.append((1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None))
+                    if partial_reason:
+                        processed.append((-2, partial_reason, None, None))
+                    if processed:
+                        return (file_path, 1 if has_match else 0, processed)
+                    return None
                 processed: List[SearchMatch] = []
                 for m in results:
                     content = _rust_match_field(m, 1, "content", "")
@@ -1308,6 +1449,8 @@ def search_in_json_special(
                             _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
                         ), "", ""))
                         continue
+                    if line == 0 and content.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
+                        continue
                     if line == 0:
                         line = ""
                     parts = content.split("\t", 1)
@@ -1315,6 +1458,8 @@ def search_in_json_special(
                     json_path = parts[0].lstrip("/").replace("/", ".")
                     val = parts[1] if len(parts) > 1 else ""
                     processed.append((line, json_path, val, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
+                if partial_reason:
+                    processed.append((-2, partial_reason, "", None, None))
                 return (file_path, _visible_match_count(processed), processed)
             
             # 탐지 누락 방지: Rust 엔진이 결과를 찾지 못한 경우 Python 폴백으로 이어지도록 합니다.
@@ -1439,11 +1584,6 @@ def search_in_json_special(
                         AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT),
                     )
 
-            # 무결성 통과 후 매치가 없는 것이 확실하면 여기서 조기 종료
-            if skip_traversal:
-                # 모든 파일 규모에 대해 최적화 로직을 적용합니다.
-                return None
-
         except Exception as e:
             return (
                 Constants.STATUS_SKIPPED,
@@ -1461,6 +1601,8 @@ def search_in_json_special(
         except (TypeError, ValueError):
             MAX_JSON_DEPTH = Constants.DEFAULT_MAX_JSON_DEPTH
         total_count = 0
+        existence_found = False
+        depth_limit_reached = False
         _iter_count = 0  # independent iteration counter
 
         while stack:
@@ -1471,7 +1613,8 @@ def search_in_json_special(
                 break
             obj, path, depth = stack.pop()
 
-            if depth >= MAX_JSON_DEPTH:
+            if depth > MAX_JSON_DEPTH:
+                depth_limit_reached = True
                 continue
 
             if isinstance(obj, dict):
@@ -1490,12 +1633,15 @@ def search_in_json_special(
                 else:
                     val_raw = normalize_unicode(str(obj))
                 val_comp = val_raw.casefold()
-                is_match = (val_comp == search_string) if exact_match else (search_string in val_comp)
+                is_match = False if skip_traversal else (
+                    (val_comp == search_string) if exact_match else (search_string in val_comp)
+                )
                 if is_match:
                     total_count += 1
                     if existence_only:
-                        # [Boolean] 일치 항목 발견 시 즉시 반환
-                        return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
+                        # 깊이 제한 발생 여부도 끝까지 확인한 뒤 함께 안내합니다.
+                        existence_found = True
+                        continue
                     
                     # [상] Python 경로 매치 상한 적용
                     if total_count <= _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES):
@@ -1503,8 +1649,18 @@ def search_in_json_special(
                     elif total_count == _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1:
                         matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(_get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)), ""))
 
-        if total_count > 0:
+        if existence_only and existence_found:
+            matches = [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)]
+        if depth_limit_reached:
+            matches.append((
+                -2,
+                AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(MAX_JSON_DEPTH),
+                "",
+            ))
+        if total_count > 0 or existence_found or depth_limit_reached:
             final_count = min(total_count, _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES) + 1)
+            if existence_found:
+                final_count = 1
             return (file_path, final_count, matches)
         return None
     except (json.JSONDecodeError, ValueError) as e:
@@ -2106,7 +2262,23 @@ def search_in_files_batch(
         elif res == Constants.STATUS_SKIPPED:
             skipped.append((f_path, AppStrings.ERROR_UNKNOWN))
         elif res:
-            results.append(res)
+            result_matches = res[2] if len(res) > 2 else []
+            partial_reason = _extract_normalized_partial_skip_reason(result_matches)
+            if partial_reason:
+                skipped.append((f_path, partial_reason))
+                visible_rows = [
+                    match
+                    for match in result_matches
+                    if not (
+                        isinstance(match, (tuple, list))
+                        and match
+                        and str(match[0]) == "-2"
+                    )
+                ]
+                if visible_rows:
+                    results.append((res[0], _visible_match_count(visible_rows), visible_rows))
+            else:
+                results.append(res)
     return {"results": results, "skipped": skipped}
 
 
@@ -2185,6 +2357,13 @@ def search_directory_fast(
             # 여기서 전체 목록을 다시 정규화하는 중복 연산을 건너뜁니다.
             if not kwargs.get("results_callback"):
                 for path, matches in matches_list:
+                    skip_reason = _extract_marker_skip_reason(matches)
+                    if skip_reason:
+                        skipped_results.append((path, skip_reason))
+                        continue
+                    partial_reason = _extract_partial_skip_reason(matches)
+                    if partial_reason:
+                        skipped_results.append((path, partial_reason))
                     match_tuples, marker_binary_count, _ = _normalize_rust_matches(
                         matches, kwargs.get("special_mode"), existence_only=existence_only
                     )
@@ -2198,10 +2377,6 @@ def search_directory_fast(
                         )
                     elif match_tuples:
                         formatted_results.append((path, _visible_match_count(match_tuples), match_tuples))
-                    else:
-                        skip_reason = _extract_marker_skip_reason(matches)
-                        if skip_reason:
-                            skipped_results.append((path, skip_reason))
             
             for path, reason in skipped_list:
                 skipped_results.append((path, format_skip_reason(reason)))
@@ -2275,6 +2450,13 @@ def search_files_list_fast(
             # [Optim] results_callback이 제공된 경우 중복 처리 건너뜁니다.
             if not kwargs.get("results_callback"):
                 for path, matches in matches_list:
+                    skip_reason = _extract_marker_skip_reason(matches)
+                    if skip_reason:
+                        skipped_results.append((path, skip_reason))
+                        continue
+                    partial_reason = _extract_partial_skip_reason(matches)
+                    if partial_reason:
+                        skipped_results.append((path, partial_reason))
                     match_tuples, marker_binary_count, _ = _normalize_rust_matches(
                         matches, special_mode, existence_only=existence_only
                     )
@@ -2288,10 +2470,6 @@ def search_files_list_fast(
                         )
                     elif match_tuples:
                         formatted_results.append((path, _visible_match_count(match_tuples), match_tuples))
-                    else:
-                        skip_reason = _extract_marker_skip_reason(matches)
-                        if skip_reason:
-                            skipped_results.append((path, skip_reason))
             
             for path, reason in skipped_list:
                 skipped_results.append((path, format_skip_reason(reason)))

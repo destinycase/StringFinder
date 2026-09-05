@@ -12,6 +12,8 @@ def _configured_limits(monkeypatch):
         Constants.CONFIG_KEY_MAX_CHECK_CELLS: 23,
         Constants.CONFIG_KEY_MAX_JSON_DEPTH: 29,
         Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 31,
+        Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE: 37,
+        Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD: 41,
     }
     monkeypatch.setattr(
         search_engine.ConfigManager,
@@ -44,6 +46,8 @@ def test_single_file_rust_search_receives_configured_limits(tmp_path, monkeypatc
         "max_json_depth": 29,
         "max_json_size": 31 * 1024 * 1024,
     }
+    assert Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE not in captured["kwargs"]
+    assert Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD not in captured["kwargs"]
 
 
 def test_batch_rust_searches_receive_the_same_configured_limits(monkeypatch):
@@ -136,7 +140,44 @@ def test_real_rust_engine_enforces_configured_json_size_limit(tmp_path):
     )
 
     assert result
-    assert result[0][1] == "ERR_MEMORY_GUARD|Large JSON"
+    assert result[0][1] == "ERR_JSON_SIZE_LIMIT|1048576 bytes"
+
+
+def test_real_rust_json_size_limit_skips_only_large_file(tmp_path, monkeypatch):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    large_file = tmp_path / "large.json"
+    valid_file = tmp_path / "valid.json"
+    large_file.write_text(
+        '{"payload":"' + ("x" * (2 * 1024 * 1024)) + '"}',
+        encoding="utf-8",
+    )
+    valid_file.write_text('{"payload":"needle"}', encoding="utf-8")
+
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {
+            Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 1,
+            Constants.CONFIG_KEY_MAX_JSON_DEPTH: 29,
+            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 17,
+            Constants.CONFIG_KEY_MAX_CHECK_CELLS: 23,
+        },
+    )
+
+    response = search_engine.search_files_list_fast(
+        [str(large_file), str(valid_file)],
+        "needle",
+        special_mode=Constants.MODE_JSON,
+    )
+
+    assert [path for path, _count, _matches in response["results"]] == [
+        str(valid_file)
+    ]
+    assert len(response["skipped"]) == 1
+    assert response["skipped"][0][0] == str(large_file)
+    assert "JSON 파일 크기 제한 초과" in response["skipped"][0][1]
 
 
 def test_real_rust_engine_exposes_structured_match_metadata(tmp_path):
@@ -322,3 +363,205 @@ def test_visible_match_count_excludes_truncation_marker():
     assert search_engine._visible_match_count(
         [(1, "one", None, None), (-1, "(truncated)", None, None)]
     ) == 1
+
+
+def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {
+            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 2,
+            Constants.CONFIG_KEY_MAX_JSON_DEPTH: 3,
+        },
+    )
+
+    reason = search_engine._extract_partial_skip_reason(
+        [
+            (0, "__SF_TRUNCATED__", None, None),
+            (0, "__SF_JSON_DEPTH_LIMIT__|3", None, None),
+        ]
+    )
+
+    assert reason is not None
+    assert "파일당 최대 매치 수(2건)" in reason
+    assert "JSON 최대 깊이(3)" in reason
+    assert reason.count("\n") == 1
+
+
+def test_file_list_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
+    class FakeEngine:
+        @staticmethod
+        def search_files_list(*args, **kwargs):
+            return (
+                [
+                    (
+                        "limited.json",
+                        [
+                            (1, "/visible\tneedle", None, None),
+                            (0, "__SF_TRUNCATED__", None, None),
+                            (0, "__SF_JSON_DEPTH_LIMIT__|3", None, None),
+                        ],
+                    )
+                ],
+                [],
+            )
+
+    _configured_limits(monkeypatch)
+    monkeypatch.setattr(search_engine, "sf_engine", FakeEngine())
+
+    response = search_engine.search_files_list_fast(
+        ["limited.json"],
+        "needle",
+        special_mode=Constants.MODE_JSON,
+    )
+
+    assert response["results"][0][0] == "limited.json"
+    assert response["results"][0][1] == 1
+    assert len(response["skipped"]) == 1
+    assert response["skipped"][0][0] == "limited.json"
+    assert "파일당 최대 매치 수(17건)" in response["skipped"][0][1]
+    assert "JSON 최대 깊이(3)" in response["skipped"][0][1]
+
+
+def test_python_batch_reports_depth_only_notice_without_empty_result(tmp_path, monkeypatch):
+    file_path = tmp_path / "deep.json"
+    file_path.write_text('{"outer":{"value":"needle"}}', encoding="utf-8")
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_JSON_DEPTH: 1},
+    )
+
+    response = search_engine.search_in_files_batch(
+        [(str(file_path), file_path.stat().st_size)],
+        "needle",
+        Constants.MODE_JSON,
+        use_complex_search=True,
+    )
+
+    assert response["results"] == []
+    assert response["skipped"] == [
+        (str(file_path), search_engine.AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(1))
+    ]
+
+
+def test_python_batch_keeps_results_and_reports_match_limit(tmp_path, monkeypatch):
+    file_path = tmp_path / "many.txt"
+    file_path.write_text("needle\nneedle\nneedle\n", encoding="utf-8")
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 2},
+    )
+
+    response = search_engine.search_in_files_batch(
+        [(str(file_path), file_path.stat().st_size)],
+        "needle",
+        use_complex_search=True,
+    )
+
+    assert response["results"][0][0] == str(file_path)
+    assert response["results"][0][1] == 2
+    assert response["skipped"] == [
+        (str(file_path), search_engine.AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))
+    ]
+
+
+def test_real_rust_engine_marks_partial_json_depth_without_dropping_visible_match(tmp_path):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    file_path = tmp_path / "partial.json"
+    file_path.write_text(
+        '{"visible":"needle","nested":{"value":"needle"}}',
+        encoding="utf-8",
+    )
+
+    matches = search_engine.sf_engine.search_file(  # type: ignore
+        str(file_path),
+        "needle",
+        Constants.RUST_MODE_JSON,
+        max_json_depth=1,
+    )
+
+    assert any(match.kind == "match" for match in matches)
+    depth_notice = next(match for match in matches if match.code == "JSON_DEPTH_LIMIT")
+    assert depth_notice.kind == "partial"
+    assert depth_notice.detail == "1"
+
+
+def test_real_file_list_wrapper_reports_match_limit_and_keeps_results(tmp_path, monkeypatch):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    file_path = tmp_path / "many.txt"
+    file_path.write_text("needle\nneedle\nneedle\n", encoding="utf-8")
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 2},
+    )
+
+    response = search_engine.search_files_list_fast([str(file_path)], "needle")
+
+    assert response["results"][0][1] == 2
+    assert len(response["results"][0][2]) == 3  # two matches plus the result-row notice
+    assert response["skipped"] == [
+        (str(file_path), search_engine.AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))
+    ]
+
+
+def test_real_file_list_wrapper_reports_json_depth_and_keeps_shallow_match(tmp_path, monkeypatch):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    file_path = tmp_path / "partial.json"
+    file_path.write_text(
+        '{"visible":"needle","nested":{"value":"needle"}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_JSON_DEPTH: 1},
+    )
+
+    response = search_engine.search_files_list_fast(
+        [str(file_path)],
+        "needle",
+        special_mode=Constants.MODE_JSON,
+    )
+
+    assert response["results"][0][1] == 1
+    assert response["skipped"] == [
+        (str(file_path), search_engine.AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(1))
+    ]
+
+
+def test_real_excel_file_limit_is_reported_as_partial_file(tmp_path, monkeypatch):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    from openpyxl import Workbook
+
+    file_path = tmp_path / "many.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["needle", "needle", "needle"])
+    workbook.save(file_path)
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 2},
+    )
+
+    response = search_engine.search_files_list_fast(
+        [str(file_path)],
+        "needle",
+        special_mode=Constants.MODE_EXCEL,
+    )
+
+    assert response["results"][0][1] == 2
+    assert response["skipped"] == [
+        (str(file_path), search_engine.AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))
+    ]

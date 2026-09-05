@@ -176,6 +176,8 @@ impl From<RawMatch> for SearchMatch {
     fn from((line, content, offset, length): RawMatch) -> Self {
         let (kind, code, detail) = if content == "__SF_TRUNCATED__" {
             ("truncated", Some("TRUNCATED"), None)
+        } else if let Some(detail) = content.strip_prefix("__SF_JSON_DEPTH_LIMIT__|") {
+            ("partial", Some("JSON_DEPTH_LIMIT"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_BINARY_MATCH__|") {
             ("binary", Some("BINARY"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_LONG_LINE__|") {

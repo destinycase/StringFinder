@@ -246,11 +246,13 @@ class SearchWorker(QRunnable):
 
     @staticmethod
     def _is_memory_skip(skip_list) -> bool:
-        localized_memory_prefix = AppStrings.SKIP_REASON_MEMORY_GUARD.split("{", 1)[0]
+        """Return True only for a system-wide memory-pressure stop reason.
+
+        ERR_MEMORY_GUARD is intentionally excluded: older Rust extensions
+        emitted it when one JSON file exceeded its configured size limit.
+        """
         return any(
-            "ERR_MEMORY_GUARD" in str(reason)
-            or AppStrings.ERROR_MEMORY_CRITICAL in str(reason)
-            or str(reason).startswith(localized_memory_prefix)
+            str(reason).strip() == AppStrings.ERROR_MEMORY_CRITICAL
             for _, reason in skip_list
         )
     def _check_safety_limits(self, new_matches_count: int) -> bool:
@@ -341,7 +343,12 @@ class SearchWorker(QRunnable):
             # 검색 중지 직후에도 Rust 디스패처가 이미 발견한 마지막 배치를 전달할 수 있습니다.
             # 중지 플래그만으로 이 배치를 버리면 사용자에게 부분 검색 결과가 유실됩니다.
             # logger.debug(f"[Worker] results_callback received batch of {len(batch)}")
-            from core.search_engine import _normalize_rust_matches, _extract_marker_skip_reason
+            from core.search_engine import (
+                _extract_marker_skip_reason,
+                _extract_partial_skip_reason,
+                _normalize_rust_matches,
+                _visible_match_count,
+            )
             formatted_batch = []
             skipped_batch = []
             current_batch_matches = 0
@@ -352,6 +359,11 @@ class SearchWorker(QRunnable):
                     if hasattr(self, "all_skipped"):
                         self.all_skipped.append((path, skip_reason))
                     continue
+                partial_reason = _extract_partial_skip_reason(matches)
+                if partial_reason:
+                    skipped_batch.append((path, partial_reason))
+                    if hasattr(self, "all_skipped"):
+                        self.all_skipped.append((path, partial_reason))
                 match_tuples, marker_binary_count, sheet_skips = _normalize_rust_matches(matches, self.special_mode, existence_only=self.existence_only)
                 # 시트 스킵 정보를 별도 목록에 수집 (파일 스킵과 구분)
                 if sheet_skips and hasattr(self, "skipped_sheets_list"):
@@ -361,9 +373,9 @@ class SearchWorker(QRunnable):
                     formatted_batch.append((path, marker_binary_count, [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)]))
                     current_batch_matches += marker_binary_count
                 elif match_tuples:
-                    visible_matches = [match for match in match_tuples if str(match[0]) != "-1"]
-                    formatted_batch.append((path, len(visible_matches), match_tuples))
-                    current_batch_matches += len(visible_matches)
+                    visible_count = _visible_match_count(match_tuples)
+                    formatted_batch.append((path, visible_count, match_tuples))
+                    current_batch_matches += visible_count
             
             if not formatted_batch and not skipped_batch:
                 return
@@ -386,7 +398,8 @@ class SearchWorker(QRunnable):
                 search_res = search_files_list_fast(paths_only, self.search_string,
                     special_mode=self.special_mode, exclude_hidden=self.exclude_hidden,
                     exclude_binary=self.exclude_binary, stop_event=self.stop_event,
-                    progress_callback=progress_callback, results_callback=results_callback)
+                    progress_callback=progress_callback, results_callback=results_callback,
+                    existence_only=self.existence_only)
             else:
                 logger.info(AppStrings.LOG_WKR_RUST_ACT.format(len(self.search_paths)))
                 search_res = search_directory_fast(self.search_paths, self.search_string, self.extensions,

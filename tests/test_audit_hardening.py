@@ -19,7 +19,7 @@ from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
 
-def test_memory_guard_handling_json(tmp_path, monkeypatch):
+def test_legacy_json_size_limit_code_is_handled_as_file_skip(tmp_path, monkeypatch):
     file_path = tmp_path / "large.json"
     file_path.write_text('{"key": "value"}')
 
@@ -40,7 +40,8 @@ def test_memory_guard_handling_json(tmp_path, monkeypatch):
 
     assert isinstance(result, tuple)
     assert result[0] == Constants.STATUS_SKIPPED
-    assert "Size exceeds limit" in str(result[1]) or "메모리" in str(result[1])
+    assert "JSON 파일 크기 제한 초과" in str(result[1])
+    assert "메모리 보호" not in str(result[1])
 
 
 def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch, caplog):

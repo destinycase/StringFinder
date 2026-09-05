@@ -246,7 +246,17 @@ class SettingsDialog(QDialog):
 
         adv_settings = self.config_manager.get_advanced_settings()
         
-        def create_spinbox_row(label_text, key_name, min_val, max_val, unit_text):
+        def create_spinbox_row(
+            label_text,
+            key_name,
+            min_val,
+            max_val,
+            unit_text,
+            *,
+            target_layout=None,
+            description_text=None,
+        ):
+            target_layout = target_layout or advanced_layout
             row = QHBoxLayout()
             label = QLabel(label_text)
             
@@ -261,7 +271,13 @@ class SettingsDialog(QDialog):
             row.addWidget(label)
             row.addStretch()
             row.addWidget(spinbox)
-            advanced_layout.addLayout(row)
+            target_layout.addLayout(row)
+            if description_text:
+                description = QLabel(description_text)
+                description.setObjectName("advancedSettingDescription")
+                description.setWordWrap(True)
+                description.setStyleSheet("color: #888888; font-size: 11px; padding: 0 2px 4px 2px;")
+                target_layout.addWidget(description)
             return spinbox
             
         self.adv_spinboxes = {}
@@ -277,14 +293,27 @@ class SettingsDialog(QDialog):
             AppStrings.ADVANCED_MAX_JSON_DOM_SIZE,
             Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, 1, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB, AppStrings.UNIT_MB
         )
+
+        precise_group = QGroupBox(AppStrings.ADVANCED_PRECISE_SEARCH_GROUP)
+        precise_layout = QVBoxLayout(precise_group)
+        precise_description = QLabel(AppStrings.ADVANCED_PRECISE_SEARCH_DESCRIPTION)
+        precise_description.setObjectName("preciseSearchSettingsDescription")
+        precise_description.setWordWrap(True)
+        precise_description.setStyleSheet("color: #888888; font-size: 11px; padding-bottom: 4px;")
+        precise_layout.addWidget(precise_description)
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE,
-            Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, 1, 100, AppStrings.UNIT_MB
+            Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, 1, 100, AppStrings.UNIT_MB,
+            target_layout=precise_layout,
+            description_text=AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION,
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD] = create_spinbox_row(
             AppStrings.ADVANCED_JSON_MMAP_THRESHOLD,
-            Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, 1, 100, AppStrings.UNIT_MB
+            Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, 1, 100, AppStrings.UNIT_MB,
+            target_layout=precise_layout,
+            description_text=AppStrings.ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION,
         )
+        advanced_layout.addWidget(precise_group)
         self.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG] = create_spinbox_row(
             AppStrings.ADVANCED_TIMEOUT_WORKER_HANG,
             Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, 10, 3600, AppStrings.UNIT_SEC

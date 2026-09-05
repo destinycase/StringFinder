@@ -5,6 +5,13 @@ use std::fmt;
 
 use crate::types::RawMatch;
 
+pub const JSON_DEPTH_LIMIT_MARKER_PREFIX: &str = "__SF_JSON_DEPTH_LIMIT__|";
+
+pub struct JsonCheckResult {
+    pub found: bool,
+    pub depth_limit_reached: bool,
+}
+
 enum PathComponent {
     ObjectKey(String),
     ArrayIndex(usize),
@@ -26,6 +33,7 @@ struct JsonSearchState<'data> {
     collect_results: bool,
     found: bool,
     valid: bool,
+    depth_limit_reached: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -63,6 +71,7 @@ impl<'data> JsonSearchState<'data> {
             collect_results,
             found: false,
             valid: true,
+            depth_limit_reached: false,
         }
     }
 
@@ -226,6 +235,7 @@ impl<'de, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data> {
         D: serde::Deserializer<'de>,
     {
         if self.depth > self.state.max_json_depth {
+            self.state.depth_limit_reached = true;
             self.state.locations_reliable = false;
             IgnoredAny::deserialize(deserializer).map(|_| ())
         } else {
@@ -432,6 +442,17 @@ pub fn search_json_file(
     if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(Vec::new());
     }
+    if state.depth_limit_reached {
+        state.results.push((
+            0,
+            format!(
+                "{}{}",
+                JSON_DEPTH_LIMIT_MARKER_PREFIX, state.max_json_depth
+            ),
+            None,
+            None,
+        ));
+    }
     Ok(std::mem::take(&mut state.results))
 }
 
@@ -442,7 +463,7 @@ pub fn check_json_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_json_depth: usize,
-) -> Result<bool, String> {
+) -> Result<JsonCheckResult, String> {
     let state = parse_json(
         mmap,
         pattern,
@@ -454,9 +475,15 @@ pub fn check_json_file(
         false,
     )?;
     if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok(false);
+        return Ok(JsonCheckResult {
+            found: false,
+            depth_limit_reached: false,
+        });
     }
-    Ok(state.valid && state.found)
+    Ok(JsonCheckResult {
+        found: state.valid && state.found,
+        depth_limit_reached: state.depth_limit_reached,
+    })
 }
 
 #[cfg(test)]
@@ -483,13 +510,19 @@ mod tests {
                 .len(),
             1
         );
-        assert!(
-            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 1)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(!check_json_file(json, "needle", &ac, false, stop_flag.clone(), 1).unwrap());
-        assert!(check_json_file(json, "needle", &ac, false, stop_flag, 2).unwrap());
+        let limited =
+            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 1).unwrap();
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].1, "__SF_JSON_DEPTH_LIMIT__|1");
+
+        let limited_check =
+            check_json_file(json, "needle", &ac, false, stop_flag.clone(), 1).unwrap();
+        assert!(!limited_check.found);
+        assert!(limited_check.depth_limit_reached);
+
+        let allowed_check = check_json_file(json, "needle", &ac, false, stop_flag, 2).unwrap();
+        assert!(allowed_check.found);
+        assert!(!allowed_check.depth_limit_reached);
     }
 
     #[test]

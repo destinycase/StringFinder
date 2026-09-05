@@ -134,6 +134,43 @@ def test_worker_skipped_signal():
     assert len(skipped_received) == 1
 
 
+def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
+    worker = SearchWorker(
+        {
+            "file_list": [("limited.txt", 100)],
+            "search_string": "needle",
+        }
+    )
+    results_received = []
+    skipped_received = []
+    finished_received = []
+    worker.signals.results_found.connect(lambda batch: results_received.extend(batch))
+    worker.signals.skipped_found.connect(lambda batch: skipped_received.extend(batch))
+    worker.signals.search_finished.connect(lambda *values: finished_received.append(values))
+
+    def fake_search(*args, **kwargs):
+        kwargs["results_callback"](
+            [
+                (
+                    "limited.txt",
+                    [
+                        (1, "needle", None, None),
+                        (0, "__SF_TRUNCATED__", None, None),
+                    ],
+                )
+            ]
+        )
+        return {"results": [], "skipped": []}
+
+    monkeypatch.setattr("core.search_engine.search_files_list_fast", fake_search)
+    worker.run()
+
+    assert results_received[0][0] == "limited.txt"
+    assert skipped_received[0][0] == "limited.txt"
+    assert "파일당 최대 매치 수" in skipped_received[0][1]
+    assert finished_received == [(1, 1, 1)]
+
+
 def test_worker_exception_handling():
     file_list = [("error_file.txt", 100)]
     worker = SearchWorker({"file_list": file_list, "search_string": "search", "use_complex_search": True})

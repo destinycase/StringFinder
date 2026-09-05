@@ -61,3 +61,24 @@ def test_structured_search_preflight_returns_memory_skip(tmp_path, monkeypatch):
     result = search_engine.search_in_json_special(str(file_path), "needle")
 
     assert result == (Constants.STATUS_SKIPPED, AppStrings.ERROR_MEMORY_CRITICAL)
+
+
+def test_json_size_limit_does_not_trigger_global_memory_stop():
+    new_reason = search_engine.format_skip_reason(
+        "ERR_JSON_SIZE_LIMIT|1048576 bytes"
+    )
+    legacy_reason = search_engine.format_skip_reason(
+        "ERR_MEMORY_GUARD|Large JSON"
+    )
+
+    assert not SearchWorker._is_memory_skip([("large.json", new_reason)])
+    assert not SearchWorker._is_memory_skip([("legacy.json", legacy_reason)])
+    assert not SearchWorker._is_memory_skip(
+        [("legacy-raw.json", "ERR_MEMORY_GUARD|Large JSON")]
+    )
+
+
+def test_only_system_memory_pressure_reason_triggers_global_stop():
+    assert SearchWorker._is_memory_skip(
+        [("guarded.json", AppStrings.ERROR_MEMORY_CRITICAL)]
+    )

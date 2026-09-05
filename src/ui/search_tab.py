@@ -801,7 +801,9 @@ class SearchTab(QMainWindow):
 
     def _on_skipped_found(self, file_paths):
         """스킵된 파일 목록을 누적합니다."""
-        self.skipped_files_list.extend(normalize_skipped_files(file_paths))
+        self.skipped_files_list = normalize_skipped_files(
+            [*self.skipped_files_list, *normalize_skipped_files(file_paths)]
+        )
         self.skipped_count = len(self.skipped_files_list)
         self.result_view_panel.set_skipped_files(self.skipped_files_list, total_count=self.skipped_count)
         self.skipped_count_updated.emit(self.skipped_count)

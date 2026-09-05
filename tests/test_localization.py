@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from PySide6.QtWidgets import QGroupBox, QLabel
 
 from core.search_engine import (
     format_excel_panic_reason,
@@ -73,6 +74,90 @@ def test_language_switch_changes_ui_and_skip_reason_resources():
     assert korean_reason.startswith("[오류]")
     assert "운영체제가 접근을 허용하지 않았습니다." in korean_reason
     assert "Access denied" not in korean_reason
+
+
+def test_partial_search_reasons_follow_active_language():
+    set_language("ko")
+    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == (
+        "[안내] 파일당 최대 매치 수(25건)에 도달하여 이후 결과를 생략했습니다."
+    )
+    assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
+        "[안내] JSON 최대 깊이(40)를 초과한 하위 영역을 검색하지 않았습니다."
+    )
+
+    set_language("en")
+    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == (
+        "[Info] The per-file match limit (25) was reached; later results were omitted."
+    )
+    assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
+        "[Info] Nested content beyond the maximum JSON depth (40) was not searched."
+    )
+
+
+def test_json_size_limit_and_legacy_code_are_file_local_and_localized():
+    set_language("ko")
+    korean_new = format_skip_reason("ERR_JSON_SIZE_LIMIT|1048576 bytes")
+    korean_legacy = format_skip_reason("ERR_MEMORY_GUARD|Large JSON")
+
+    assert korean_new == korean_legacy
+    assert "JSON 파일 크기 제한 초과" in korean_new
+    assert "메모리 보호" not in korean_new
+
+    set_language("en")
+    english_new = format_skip_reason("ERR_JSON_SIZE_LIMIT|1048576 bytes")
+    english_legacy = format_skip_reason("ERR_MEMORY_GUARD|Large JSON")
+
+    assert english_new == english_legacy
+    assert "JSON file size limit exceeded" in english_new
+    assert "memory guard" not in english_new.casefold()
+
+
+def test_saved_legacy_memory_guard_reason_is_rewritten_in_same_language():
+    set_language("ko")
+    legacy_saved = AppStrings.SKIP_REASON_MEMORY_GUARD.format(
+        AppStrings.SKIP_DETAIL_LARGE_JSON
+    )
+
+    rendered = localize_skip_reason_for_display(legacy_saved)
+
+    assert "JSON 파일 크기 제한 초과" in rendered
+    assert "메모리 보호" not in rendered
+
+
+def test_precise_search_setting_labels_describe_actual_scope(qtbot, mock_config_manager):
+    set_language("en")
+    dialog = SettingsDialog(mock_config_manager)
+    qtbot.addWidget(dialog)
+
+    labels = [label.text() for label in dialog.findChildren(QLabel)]
+    assert AppStrings.ADVANCED_PRECISE_SEARCH_GROUP in [
+        group.title() for group in dialog.findChildren(QGroupBox)
+    ]
+    assert AppStrings.ADVANCED_PRECISE_SEARCH_DESCRIPTION in labels
+    assert AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE in labels
+    assert AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION in labels
+    assert AppStrings.ADVANCED_JSON_MMAP_THRESHOLD in labels
+    assert AppStrings.ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION in labels
+    assert all("streaming parser" not in text.casefold() for text in labels)
+
+
+def test_combined_partial_reasons_are_relocalized_line_by_line():
+    set_language("ko")
+    saved_reason = "\n".join(
+        (
+            format_skip_reason("INFO_FILE_MATCH_LIMIT|25"),
+            format_skip_reason("INFO_JSON_DEPTH_LIMIT|40"),
+        )
+    )
+
+    set_language("en")
+    localized = localize_skip_reason_for_display(saved_reason)
+
+    assert "per-file match limit" in localized
+    assert "maximum JSON depth" in localized
+    assert "(25)" in localized
+    assert "(40)" in localized
+    assert not re.search(r"[가-힣]", localized)
 
 
 def test_parser_and_engine_skip_details_follow_active_language():

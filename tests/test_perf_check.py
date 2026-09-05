@@ -13,18 +13,26 @@
 """
 
 import time
-from core.search_engine import search_in_file
+from core import search_engine
+from sf_utils.constants import Constants
 
 
-def test_performance_many_matches_on_one_line(tmp_path):
+def test_performance_many_matches_on_one_line(tmp_path, monkeypatch):
     # 1. 1MB 크기의 단일 라인 파일 생성 (10,000개의 매치 포함)
     file_path = tmp_path / "long_line_many_matches.txt"
     content = "target " * 10000 + "word " * 100000
     file_path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {
+            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: Constants.DEFAULT_MAX_PER_FILE_MATCHES
+        },
+    )
 
     # 2. 검색 수행 시간 측정
     start_time = time.time()
-    result = search_in_file(str(file_path), "target", use_complex_search=False)
+    result = search_engine.search_in_file(str(file_path), "target", use_complex_search=False)
     duration = time.time() - start_time
 
     print(f"\nSearch duration: {duration:.4f}s")
@@ -48,5 +56,5 @@ def test_panic_regression_check(tmp_path):
     with open(xml_path, "wb") as f:
         f.write(b"\xff\xfe" + chunk.encode("utf-16-le") + "Target</Root>".encode("utf-16-le"))
 
-    result = search_in_file(str(xml_path), "Target", use_complex_search=False)
+    result = search_engine.search_in_file(str(xml_path), "Target", use_complex_search=False)
     assert result is not None

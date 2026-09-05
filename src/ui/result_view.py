@@ -133,7 +133,7 @@ def normalize_skipped_files(skipped_files):
     """스킵 항목을 팝업과 세션 저장에 안전한 ``(경로, 사유)`` 튜플로 정규화합니다."""
     from core.search_engine import localize_skip_reason_for_display
 
-    normalized = []
+    normalized_by_path = {}
     for item in skipped_files or []:
         if isinstance(item, (list, tuple)):
             if not item:
@@ -143,8 +143,22 @@ def normalize_skipped_files(skipped_files):
         else:
             path = str(item)
             reason = ""
-        normalized.append((path, reason))
-    return normalized
+        previous_reason = normalized_by_path.get(path, "")
+        if previous_reason and reason:
+            reason_lines = list(
+                dict.fromkeys(
+                    [
+                        line
+                        for value in (previous_reason, reason)
+                        for line in value.splitlines()
+                        if line
+                    ]
+                )
+            )
+            normalized_by_path[path] = "\n".join(reason_lines)
+        elif reason or path not in normalized_by_path:
+            normalized_by_path[path] = reason
+    return list(normalized_by_path.items())
 
 
 def _format_skipped_files_text(skipped_files, total_count):

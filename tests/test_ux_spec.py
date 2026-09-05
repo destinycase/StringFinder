@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
-from ui.result_view import ResultView, SkippedFilesDialog
+from ui.result_view import ResultView, SkippedFilesDialog, normalize_skipped_files
 from ui.search_tab import SearchTab
 
 
@@ -150,6 +150,27 @@ def test_skipped_count_signal_is_updated(search_tab_fixture):
 
     assert search_tab_fixture.skipped_count == 1
     assert received == [1]
+
+
+def test_skipped_file_notices_are_deduplicated_by_path(search_tab_fixture):
+    match_limit_reason = AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(5)
+    depth_limit_reason = AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(10)
+    search_tab_fixture._on_skipped_found(
+        [("limited.json", match_limit_reason)]
+    )
+    search_tab_fixture._on_skipped_found(
+        [("limited.json", depth_limit_reason)]
+    )
+
+    assert search_tab_fixture.skipped_count == 1
+    assert search_tab_fixture.skipped_files_list == normalize_skipped_files(
+        [
+            (
+                "limited.json",
+                f"{match_limit_reason}\n{depth_limit_reason}",
+            )
+        ]
+    )
 
 
 def test_skipped_files_banner_is_emphasized_and_opens_list(search_tab_fixture):

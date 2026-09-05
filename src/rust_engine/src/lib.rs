@@ -22,7 +22,9 @@ use std::time::SystemTime;
 
 
 use crate::excel_search::{check_excel_file, search_excel_file};
-use crate::json_search::{check_json_file, search_json_file};
+use crate::json_search::{
+    check_json_file, search_json_file, JSON_DEPTH_LIMIT_MARKER_PREFIX,
+};
 use crate::utils::{
     build_glob_set, decode_bytes, detect_encoding, generate_search_patterns, is_binary,
     match_filename_glob, parse_search_mode,
@@ -43,10 +45,11 @@ const REASON_ERR_MMAP: &str = "ERR_MAP";
 const REASON_ERR_OPEN: &str = "ERR_OPEN";
 const REASON_ERR_METADATA: &str = "ERR_METADATA";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
-const REASON_ERR_MEMORY_GUARD: &str = "ERR_MEMORY_GUARD";
+const REASON_ERR_JSON_SIZE_LIMIT: &str = "ERR_JSON_SIZE_LIMIT";
 const REASON_ERR_JSON_PARSE: &str = "ERR_JSON_PARSE";
 const REASON_ERR_XML_PARSE: &str = "ERR_XML_PARSE";
 const REASON_ERR_XML_UNSUPPORTED_DTD: &str = "ERR_XML_UNSUPPORTED_DTD";
+const REASON_INFO_JSON_DEPTH_LIMIT: &str = "INFO_JSON_DEPTH_LIMIT";
 
 const DEFAULT_MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
 const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
@@ -339,13 +342,22 @@ fn do_search_with_mmap(
     results
 }
 
-fn apply_match_limit(mut matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatch> {
-    let is_single_error_marker = matches.len() == 1 && matches[0].1.starts_with("ERR_");
-    if matches.len() > max_per_file && !is_single_error_marker {
-        matches.truncate(max_per_file);
-        matches.push((0, MATCH_META_TRUNCATED.to_string(), None, None));
+fn apply_match_limit(matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatch> {
+    // line 0의 __SF_ 항목은 실제 매치가 아닌 파일 단위 메타데이터입니다.
+    // 매치 상한 계산에서 제외하고, 잘림 이후에도 반드시 보존합니다.
+    let (mut visible_matches, mut metadata): (Vec<_>, Vec<_>) = matches
+        .into_iter()
+        .partition(|item| !(item.0 == 0 && item.1.starts_with("__SF_")));
+    let is_single_error_marker =
+        visible_matches.len() == 1 && visible_matches[0].1.starts_with("ERR_");
+    if visible_matches.len() > max_per_file && !is_single_error_marker {
+        visible_matches.truncate(max_per_file);
+        if !metadata.iter().any(|item| item.1 == MATCH_META_TRUNCATED) {
+            metadata.insert(0, (0, MATCH_META_TRUNCATED.to_string(), None, None));
+        }
     }
-    matches
+    visible_matches.extend(metadata);
+    visible_matches
 }
 
 fn exact_line_matches(line: &[u8], pat_upper: &str) -> bool {
@@ -450,7 +462,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             return None;
         }
         let r_raw = search_excel_file(path, pattern, ac, is_exact, stop_flag, max_per_file, max_check_cells);
-        let r = r_raw;
+        let r = apply_match_limit(r_raw, max_per_file);
         return if r.is_empty() { None } else { Some(Ok(r)) };
     }
 
@@ -487,10 +499,32 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
     let res: Result<Vec<RawMatch>, String> = if is_json && ext_l == ".json" {
         if final_mmap.len() as u64 > max_json_size {
-            Ok(vec![(1, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON"), None, None)])
+            Ok(vec![(
+                1,
+                encode_skip_reason(
+                    REASON_ERR_JSON_SIZE_LIMIT,
+                    format!("{} bytes", max_json_size),
+                ),
+                None,
+                None,
+            )])
         } else if existence_only {
             check_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_json_depth)
-                .map(|found| if found { vec![(1, "MATCH".to_string(), None, None)] } else { Vec::new() })
+                .map(|outcome| {
+                    let mut matches = Vec::new();
+                    if outcome.found {
+                        matches.push((1, "MATCH".to_string(), None, None));
+                    }
+                    if outcome.depth_limit_reached {
+                        matches.push((
+                            0,
+                            format!("{}{}", JSON_DEPTH_LIMIT_MARKER_PREFIX, max_json_depth),
+                            None,
+                            None,
+                        ));
+                    }
+                    matches
+                })
                 .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
         } else {
             search_json_file(final_mmap, pattern, ac, is_exact, stop_flag.clone(), max_per_file, max_json_depth)
@@ -1144,7 +1178,13 @@ fn find_files_with_keyword(
                         if is_json_file && f_size > max_json_size {
                             let f_path = path.to_string_lossy().to_string();
                             let mut g = skipped_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                            g.push((f_path, encode_skip_reason(REASON_ERR_MEMORY_GUARD, "Large JSON")));
+                            g.push((
+                                f_path,
+                                encode_skip_reason(
+                                    REASON_ERR_JSON_SIZE_LIMIT,
+                                    format!("{} bytes", max_json_size),
+                                ),
+                            ));
                             return ignore::WalkState::Continue;
                         }
 
@@ -1158,7 +1198,7 @@ fn find_files_with_keyword(
                             }
                         };
                         let bytes = snapshot.as_slice();
-                        let match_result: Result<bool, String> = if is_json_file {
+                        let match_result: Result<(bool, bool), String> = if is_json_file {
                                  let encoding = detect_encoding(bytes);
                                  let decoded = if encoding == UTF_8 {
                                      None
@@ -1170,6 +1210,7 @@ fn find_files_with_keyword(
                                      .map(|value| value.as_bytes())
                                      .unwrap_or(bytes);
                                  check_json_file(searchable, &kw_inner, &ac_inner, is_exact, stop_inner.clone(), max_json_depth)
+                                     .map(|outcome| (outcome.found, outcome.depth_limit_reached))
                                      .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
                              } else if is_xml_file {
                                   let encoding = detect_encoding(bytes);
@@ -1183,21 +1224,30 @@ fn find_files_with_keyword(
                                      .map(|value| value.as_bytes())
                                       .unwrap_or(bytes);
                                   check_xml_file(searchable, &kw_inner, &ac_inner, is_exact, stop_inner.clone())
+                                      .map(|found| (found, false))
                                       .map_err(encode_xml_skip_reason)
                               } else if exclude_binary && is_binary(bytes) {
-                                  Ok(false)
+                                  Ok((false, false))
                               } else {
-                                  Ok(ac_inner.find(bytes).is_some())
+                                  Ok((ac_inner.find(bytes).is_some(), false))
                               };
 
-                            let is_match = match match_result {
-                                Ok(found) => found,
+                            let (is_match, depth_limit_reached) = match match_result {
+                                Ok(outcome) => outcome,
                                 Err(error) => {
                                     let mut g = skipped_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                                     g.push((f_path, error));
                                     return ignore::WalkState::Continue;
                                 }
                             };
+
+                            if depth_limit_reached {
+                                let mut g = skipped_inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                                g.push((
+                                    f_path.clone(),
+                                    encode_skip_reason(REASON_INFO_JSON_DEPTH_LIMIT, max_json_depth),
+                                ));
+                            }
 
                             if is_match {
                                 let f_path = path.to_string_lossy().to_string();
@@ -1341,6 +1391,49 @@ mod tests {
         assert_eq!(limited[0].1, "one");
         assert_eq!(limited[1].1, "two");
         assert_eq!(limited[2].1, MATCH_META_TRUNCATED);
+    }
+
+    #[test]
+    fn match_limit_preserves_json_depth_notice_without_counting_it() {
+        let matches = vec![
+            (1, "one".to_string(), None, None),
+            (2, "two".to_string(), None, None),
+            (3, "three".to_string(), None, None),
+            (
+                0,
+                format!("{}{}", JSON_DEPTH_LIMIT_MARKER_PREFIX, 20),
+                None,
+                None,
+            ),
+        ];
+
+        let limited = apply_match_limit(matches, 2);
+
+        assert_eq!(limited.len(), 4);
+        assert_eq!(limited[0].1, "one");
+        assert_eq!(limited[1].1, "two");
+        assert_eq!(limited[2].1, MATCH_META_TRUNCATED);
+        assert_eq!(limited[3].1, "__SF_JSON_DEPTH_LIMIT__|20");
+    }
+
+    #[test]
+    fn match_limit_does_not_treat_metadata_as_an_extra_match() {
+        let matches = vec![
+            (1, "one".to_string(), None, None),
+            (2, "two".to_string(), None, None),
+            (
+                0,
+                "__SF_EXCEL_SHEET_ERR__|Sheet2|parse failure".to_string(),
+                None,
+                None,
+            ),
+        ];
+
+        let limited = apply_match_limit(matches, 2);
+
+        assert_eq!(limited.len(), 3);
+        assert!(!limited.iter().any(|item| item.1 == MATCH_META_TRUNCATED));
+        assert!(limited[2].1.starts_with("__SF_EXCEL_SHEET_ERR__|"));
     }
 
     #[test]
