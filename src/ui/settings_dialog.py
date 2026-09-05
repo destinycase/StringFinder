@@ -230,9 +230,9 @@ class SettingsDialog(QDialog):
         tab_advanced = QWidget()
         tab_advanced_layout = QVBoxLayout(tab_advanced)
 
-        advanced_group = QGroupBox(AppStrings.SETTINGS_GROUP_ADVANCED)
-        advanced_layout = QVBoxLayout(advanced_group)
-        
+        common_group = QGroupBox(AppStrings.ADVANCED_COMMON_GROUP)
+        common_layout = QVBoxLayout(common_group)
+
         eb_row = QHBoxLayout()
         eb_label = QLabel(AppStrings.EXCLUDE_BINARY_LABEL)
         self.exclude_binary_check = QCheckBox()
@@ -242,7 +242,7 @@ class SettingsDialog(QDialog):
         eb_row.addWidget(eb_label)
         eb_row.addStretch()
         eb_row.addWidget(self.exclude_binary_check)
-        advanced_layout.addLayout(eb_row)
+        common_layout.addLayout(eb_row)
 
         adv_settings = self.config_manager.get_advanced_settings()
 
@@ -260,7 +260,7 @@ class SettingsDialog(QDialog):
             target_layout=None,
             description_text=None,
         ):
-            target_layout = target_layout or advanced_layout
+            target_layout = target_layout or common_layout
             row = QHBoxLayout()
             label = QLabel(label_text)
             
@@ -298,6 +298,11 @@ class SettingsDialog(QDialog):
             Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, *setting_bounds(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE), AppStrings.UNIT_MB,
             description_text=AppStrings.ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION,
         )
+        self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DEPTH] = create_spinbox_row(
+            AppStrings.ADVANCED_MAX_JSON_DEPTH,
+            Constants.CONFIG_KEY_MAX_JSON_DEPTH, *setting_bounds(Constants.CONFIG_KEY_MAX_JSON_DEPTH), AppStrings.UNIT_DEPTH
+        )
+        tab_advanced_layout.addWidget(common_group)
 
         precise_group = QGroupBox(AppStrings.ADVANCED_PRECISE_SEARCH_GROUP)
         precise_layout = QVBoxLayout(precise_group)
@@ -324,23 +329,23 @@ class SettingsDialog(QDialog):
             target_layout=precise_layout,
             description_text=AppStrings.ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION,
         )
-        advanced_layout.addWidget(precise_group)
+        tab_advanced_layout.addWidget(precise_group)
+
+        existence_only_group = QGroupBox(AppStrings.ADVANCED_EXISTENCE_ONLY_GROUP)
+        existence_only_layout = QVBoxLayout(existence_only_group)
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_CHECK_CELLS,
             Constants.CONFIG_KEY_MAX_CHECK_CELLS, *setting_bounds(Constants.CONFIG_KEY_MAX_CHECK_CELLS), AppStrings.UNIT_CELL,
+            target_layout=existence_only_layout,
             description_text=AppStrings.ADVANCED_MAX_CHECK_CELLS_DESCRIPTION,
         )
-        self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DEPTH] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_JSON_DEPTH,
-            Constants.CONFIG_KEY_MAX_JSON_DEPTH, *setting_bounds(Constants.CONFIG_KEY_MAX_JSON_DEPTH), AppStrings.UNIT_DEPTH
-        )
+        tab_advanced_layout.addWidget(existence_only_group)
 
-        advanced_layout.addSpacing(10)
+        tab_advanced_layout.addSpacing(10)
         reset_adv_btn = QPushButton(AppStrings.BTN_RESET_ADVANCED)
         reset_adv_btn.clicked.connect(self._reset_advanced_settings)
-        advanced_layout.addWidget(reset_adv_btn)
+        tab_advanced_layout.addWidget(reset_adv_btn)
 
-        tab_advanced_layout.addWidget(advanced_group)
         tab_advanced_layout.addStretch()
         self.tab_widget.addTab(tab_advanced, AppStrings.SETTINGS_GROUP_ADVANCED)
 
