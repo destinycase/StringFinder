@@ -62,24 +62,6 @@ class MatchProxyModel(QSortFilterProxyModel):
             sm.set_column_filter(column, text)
         self.invalidate()
 
-    def setFilter0(self, text):
-        self.setColumnFilter(0, text)
-
-    def setFilter1(self, text):
-        self.setColumnFilter(1, text)
-
-    def setFilter2(self, text):
-        self.setColumnFilter(2, text)
-
-    def clearFilters(self):
-        self.filters = {}
-        sm = self.sourceModel()
-        if sm and hasattr(sm, "set_column_filter"):
-            # 소스 모델의 필터도 개별적으로 초기화해야 함
-            for col in range(5):
-                sm.set_column_filter(col, "")
-        self.invalidate()
-
     def filterAcceptsRow(self, _source_row, _source_parent):
         """필터링은 소스 모델에서 직접 처리하므로 항상 True를 반환합니다."""
         return True

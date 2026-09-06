@@ -398,6 +398,17 @@ def test_literal_truncation_text_is_not_treated_as_metadata(monkeypatch):
     assert matches == [(1, "__SF_TRUNCATED__", None, None)]
 
 
+def test_legacy_excel_pipe_result_preserves_pipe_in_sheet_name():
+    matches, binary_count, sheet_skips = search_engine._normalize_rust_matches(
+        [(7, "Sales | Europe | A12 | needle", 10, 6)],
+        Constants.MODE_EXCEL,
+    )
+
+    assert matches == [(7, "Sales | Europe", "A12", "needle", 10, 6)]
+    assert binary_count == 0
+    assert sheet_skips == []
+
+
 def test_visible_match_count_excludes_truncation_marker():
     assert search_engine._visible_match_count(
         [(1, "one", None, None), (-1, "(truncated)", None, None)]

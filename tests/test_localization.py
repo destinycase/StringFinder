@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QGroupBox, QLabel
 from core.search_engine import (
     format_excel_panic_reason,
     format_skip_reason,
+    is_supported_skip_reason,
     localize_skip_reason_for_display,
 )
 from sf_utils.app_strings import AppStrings
@@ -101,22 +102,26 @@ def test_partial_search_reasons_follow_active_language():
     )
 
 
-def test_json_size_limit_and_legacy_code_are_file_local_and_localized():
+def test_json_size_limit_is_file_local_and_localized():
     set_language("ko")
     korean_new = format_skip_reason("ERR_JSON_SIZE_LIMIT|1048576 bytes")
-    korean_legacy = format_skip_reason("ERR_MEMORY_GUARD|Large JSON")
 
-    assert korean_new == korean_legacy
     assert "JSON 파일 크기 제한 초과" in korean_new
     assert "메모리 보호" not in korean_new
 
     set_language("en")
     english_new = format_skip_reason("ERR_JSON_SIZE_LIMIT|1048576 bytes")
-    english_legacy = format_skip_reason("ERR_MEMORY_GUARD|Large JSON")
 
-    assert english_new == english_legacy
     assert "JSON file size limit exceeded" in english_new
     assert "memory guard" not in english_new.casefold()
+
+
+@pytest.mark.parametrize("language", ["ko", "en"])
+def test_misspelled_mmap_reason_code_is_not_supported(language):
+    set_language(language)
+
+    assert not is_supported_skip_reason("ERR_MAP|mapping failed")
+    assert is_supported_skip_reason("ERR_MMAP|mapping failed")
 
 
 def test_projected_resource_budget_reason_follows_active_language():
@@ -131,18 +136,6 @@ def test_projected_resource_budget_reason_follows_active_language():
     assert "Insufficient file memory budget" in english_reason
     assert AppStrings.SKIP_DETAIL_RESOURCE_BUDGET in english_reason
     assert "123456" not in english_reason
-
-
-def test_saved_legacy_memory_guard_reason_is_rewritten_in_same_language():
-    set_language("ko")
-    legacy_saved = AppStrings.SKIP_REASON_MEMORY_GUARD.format(
-        AppStrings.SKIP_DETAIL_LARGE_JSON
-    )
-
-    rendered = localize_skip_reason_for_display(legacy_saved)
-
-    assert "JSON 파일 크기 제한 초과" in rendered
-    assert "메모리 보호" not in rendered
 
 
 def test_precise_search_setting_labels_describe_actual_scope(qtbot, mock_config_manager):

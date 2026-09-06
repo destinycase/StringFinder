@@ -29,10 +29,9 @@ _korean_strings = {
 def normalize_language(language: Any) -> str:
     """Return a supported two-letter language code."""
     normalized = str(language or "").strip().lower().replace("_", "-")
-    if normalized.startswith("en"):
-        return "en"
-    if normalized.startswith("ko"):
-        return "ko"
+    for supported in SUPPORTED_LANGUAGES:
+        if normalized.startswith(supported):
+            return supported
     return DEFAULT_LANGUAGE
 
 

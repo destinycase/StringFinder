@@ -246,7 +246,7 @@ class SettingsDialog(QDialog):
 
         adv_settings = self.config_manager.get_advanced_settings()
 
-        def setting_bounds(key_name):
+        def setting_bounds(key_name) -> tuple[int, int]:
             spec = Constants.ADVANCED_SETTING_SPECS[key_name]
             return int(spec["minimum"]), int(spec["maximum"])
         

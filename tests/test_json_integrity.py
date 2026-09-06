@@ -15,6 +15,8 @@
 """
 
 import json
+
+from core import search_engine
 from core.search_engine import search_in_json_special
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
@@ -88,3 +90,27 @@ def test_utf16_bom_json_search(tmp_path):
     first_match = matches[0]
     assert len(first_match) >= 3
     assert "안녕하세요" in str(first_match[2])
+
+
+def test_precise_json_reads_the_match_limit_once(tmp_path, monkeypatch):
+    file_path = tmp_path / "many-values.json"
+    file_path.write_text(json.dumps(["needle"] * 100), encoding="utf-8")
+    setting_reads = {}
+
+    def fake_setting(key, default):
+        setting_reads[key] = setting_reads.get(key, 0) + 1
+        if key == Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES:
+            return 5
+        return default
+
+    monkeypatch.setattr(search_engine, "_get_adv_setting", fake_setting)
+
+    result = search_in_json_special(
+        str(file_path),
+        "needle",
+        use_complex_search=True,
+    )
+
+    assert result is not None
+    assert result[1] == 6
+    assert setting_reads[Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES] == 1

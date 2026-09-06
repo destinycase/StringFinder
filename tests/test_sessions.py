@@ -168,3 +168,35 @@ def test_search_tab_load_state_uses_count_for_total_matches(qtbot, mock_config_m
 
     assert tab.total_files == 1
     assert tab.total_matches == 15000
+
+
+def test_search_tab_discards_invalid_saved_skip_and_log_records(qtbot, mock_config_manager):
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    state = {
+        Constants.PAYLOAD_INPUTS: {},
+        Constants.PAYLOAD_RESULTS: [],
+        Constants.PAYLOAD_SKIPPED: [
+            ["C:/valid.xml", "ERR_XML_PARSE|mismatched tag: line 1, column 4"],
+            ["C:/invalid.xml", "ERR_MAP|mapping failed"],
+            ["", "ERR_OPEN|Access denied"],
+            "not-a-pair",
+        ],
+        Constants.PAYLOAD_SUMMARY: {"skip_count": 99},
+        Constants.PAYLOAD_LOGS: "[INFO] valid\n[ERROR] ERR_MAP|bad\nbad\x00record",
+    }
+
+    tab.load_state(state)
+
+    assert [path for path, _ in tab.skipped_files_list] == ["C:/valid.xml"]
+    assert tab.skipped_count == 1
+    assert tab.logs_output.toPlainText() == "[INFO] valid"
+
+
+def test_search_tab_discards_non_text_saved_logs(qtbot, mock_config_manager):
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+
+    tab.load_state({Constants.PAYLOAD_INPUTS: {}, Constants.PAYLOAD_LOGS: {"bad": "data"}})
+
+    assert tab.logs_output.toPlainText() == ""

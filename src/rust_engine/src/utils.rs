@@ -66,9 +66,6 @@ pub fn decode_bytes(bytes: &[u8], encoding: &'static Encoding) -> String {
     res.into_owned()
 }
 
-// get_line_number: 코드에서 미사용 -> clippy 정리를 위해 제거
-// 필요 시 lib.rs의 do_search_with_mmap나 search_file_internal에서 직접 코드 삽입
-
 pub fn parse_search_mode(mode_bits: Option<u32>) -> (bool, bool, bool, bool, bool, bool) {
     let bits = mode_bits.unwrap_or(crate::types::MODE_NORMAL);
     (

@@ -19,7 +19,7 @@ from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
 
-def test_legacy_json_size_limit_code_is_handled_as_file_skip(tmp_path, monkeypatch):
+def test_json_size_limit_code_is_handled_as_file_skip(tmp_path, monkeypatch):
     file_path = tmp_path / "large.json"
     file_path.write_text('{"key": "value"}')
 
@@ -31,7 +31,7 @@ def test_legacy_json_size_limit_code_is_handled_as_file_skip(tmp_path, monkeypat
             self.length = 0
 
     def mock_search_file(path, _query, mode, stop_event=None, **_kwargs):
-        return [MockMatch("ERR_MEMORY_GUARD|Size exceeds limit")]
+        return [MockMatch("ERR_JSON_SIZE_LIMIT|Size exceeds limit")]
 
     import core.search_engine
     monkeypatch.setattr(core.search_engine, "sf_engine", type("obj", (object,), {"search_file": mock_search_file}))

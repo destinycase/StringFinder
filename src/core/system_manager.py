@@ -2,23 +2,13 @@ import os
 import glob
 import time
 import logging
-from PySide6.QtCore import QObject, Signal
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.logger import logger
 
 
-class SystemManager(QObject):
-    """시작 프로그램 설정 및 로그 파일 정리 등 시스템 관리 기능을 담당하는 클래스입니다."""
-
-    hotkey_pressed = Signal()
-
-    def __init__(self, app_name="StringFinder"):
-        """객체를 초기화합니다."""
-        super().__init__()
-        self.app_name = app_name
-
-
+class SystemManager:
+    """애플리케이션 로그 보관 정책을 적용합니다."""
 
     def cleanup_logs(self, log_dir, retention_config):
         """오래된 로그 파일을 정리합니다."""
@@ -69,14 +59,3 @@ class SystemManager(QObject):
                 logger.info(AppStrings.LOG_SYS_LOG_CLEANUP_DONE.format(deleted_count))
         except Exception as e:
             logger.error(AppStrings.LOG_RES_LOG_CLEANUP_FAIL.format(e))
-
-    def start_cleanup_async(self, log_dir, retention_config):
-        """백그라운드 스레드에서 로그 정리를 시작합니다."""
-        import threading
-        thread = threading.Thread(
-            target=self.cleanup_logs,
-            args=(log_dir, retention_config),
-            name="LogCleanupThread",
-            daemon=True
-        )
-        thread.start()

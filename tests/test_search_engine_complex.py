@@ -19,7 +19,13 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from core.search_engine import SearchResult, search_in_file, search_in_files_batch
+from core.search_engine import (
+    SearchResult,
+    _search_text_stream,
+    search_in_file,
+    search_in_files_batch,
+)
+from sf_utils.constants import Constants
 
 
 def _require_search_result(result: object) -> SearchResult:
@@ -56,3 +62,54 @@ def test_batch_search_complex(complex_file):
     res_on = search_in_files_batch(file_batch, "Masse", use_complex_search=True)
     assert len(res_on["results"]) == 1
     assert res_on["results"][0][0] == complex_file
+
+
+@pytest.mark.parametrize("exact_match", [False, True])
+def test_unicode_canonical_match_is_invariant_across_file_size_paths(tmp_path, exact_match):
+    file_path = tmp_path / "canonical-equivalence.txt"
+    file_path.write_text("e\u0301\n", encoding="utf-8")
+    special_mode = Constants.MODE_EXACT if exact_match else None
+
+    small_result = search_in_file(
+        str(file_path),
+        "\u00e9",
+        file_size=file_path.stat().st_size,
+        special_mode=special_mode,
+        use_complex_search=True,
+    )
+    large_result = search_in_file(
+        str(file_path),
+        "\u00e9",
+        file_size=11 * 1024 * 1024,
+        special_mode=special_mode,
+        use_complex_search=True,
+    )
+
+    assert _require_search_result(small_result)[1] == 1
+    assert _require_search_result(large_result)[1] == 1
+
+
+def test_text_stream_stops_reading_after_the_truncation_marker():
+    consumed = 0
+
+    def matching_lines():
+        nonlocal consumed
+        for _ in range(100):
+            consumed += 1
+            yield "needle\n"
+
+    matches, count, existence_found, stopped = _search_text_stream(
+        matching_lines(),
+        "needle",
+        exact_match=False,
+        existence_only=False,
+        stop_event=None,
+        max_per_file=2,
+    )
+
+    assert consumed == 3
+    assert count == 3
+    assert len(matches) == 3
+    assert matches[-1][0] == -1
+    assert existence_found is False
+    assert stopped is False

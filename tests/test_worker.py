@@ -45,7 +45,7 @@ def test_worker_result_batching():
 
         mock_executor.submit.side_effect = mock_futures
 
-        with patch("core.worker.search_in_files_batch"), patch("core.worker.wait", return_value=(mock_futures, [])):
+        with patch("core.worker.wait", return_value=(mock_futures, [])):
             worker.run()
 
     all_found = []
@@ -148,7 +148,7 @@ def test_worker_timeout_handling():
         )
         worker.signals.skipped_found.connect(lambda s: skipped_received.extend(s))
 
-        with patch("core.worker.search_in_files_batch"), patch("core.worker.wait", return_value=([mock_future], [])):
+        with patch("core.worker.wait", return_value=([mock_future], [])):
             worker.run()
 
         assert finished_called == [(0, 0, 1)]
@@ -170,7 +170,7 @@ def test_worker_skipped_signal():
         future.result.return_value = {"results": [], "skipped": [("skipped_file.xml", "Test reason")]}
         mock_executor.submit.return_value = future
 
-        with patch("core.worker.search_in_files_batch"), patch("core.worker.wait", return_value=([future], [])):
+        with patch("core.worker.wait", return_value=([future], [])):
             worker.run()
 
     assert any(s[0] == "skipped_file.xml" for s in skipped_received)
@@ -232,7 +232,7 @@ def test_worker_exception_handling():
         mock_future.result.side_effect = Exception("File processing error")
         mock_executor.submit.return_value = mock_future
 
-        with patch("core.worker.search_in_files_batch"), patch("core.worker.wait", return_value=([mock_future], [])):
+        with patch("core.worker.wait", return_value=([mock_future], [])):
             worker.run()
 
     assert any(s[0] == "error_file.txt" for s in skipped_received)

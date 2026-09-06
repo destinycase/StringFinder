@@ -63,8 +63,6 @@ class HtmlDelegate(QStyledItemDelegate):
 class HistoryItemDelegate(QStyledItemDelegate):
     """콤보박스 목록 우측에 삭제 버튼(X)을 표시하고 이벤트를 처리하는 델리게이트입니다."""
 
-    item_delete_requested = Signal(str)
-
     def paint(self, painter, option, index):
         """항목이 선택된 상태일 때 우측에 삭제 버튼을 그립니다."""
         super().paint(painter, option, index)
@@ -98,7 +96,7 @@ class HistoryItemDelegate(QStyledItemDelegate):
 class HistoryComboBox(QComboBox):
     """
     사용자의 검색 및 필터 기록을 관리하며, 리스트 내에서 개별 항목 삭제 기능을 제공하는 커스텀 콤보박스입니다.
-    데이터베이스와 연동되어 히스토리를 유지하고 자동 완성 기능을 지원합니다.
+    설정 저장소에서 전달받은 히스토리를 표시하고 자동 완성을 지원합니다.
     """
 
     history_item_deleted = Signal(str)

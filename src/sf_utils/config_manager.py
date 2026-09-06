@@ -588,12 +588,28 @@ class ConfigManager:
         try:
             with open(file_path, "r", encoding=Constants.ENC_UTF8) as f:
                 payload = json.load(f)
-                if isinstance(payload, dict):
-                    payload.pop(self._SESSION_NAME_META_KEY, None)
-                return payload
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error(AppStrings.LOG_SES_LOAD_FAIL.format(name, e))
+            self._remove_invalid_session_file(file_path, name)
+            return None
         except Exception as e:
             logger.error(AppStrings.LOG_SES_LOAD_FAIL.format(name, e))
             return None
+
+        if not isinstance(payload, dict):
+            logger.error(AppStrings.LOG_SES_LOAD_FAIL.format(name, "invalid root object"))
+            self._remove_invalid_session_file(file_path, name)
+            return None
+        payload.pop(self._SESSION_NAME_META_KEY, None)
+        return payload
+
+    @staticmethod
+    def _remove_invalid_session_file(file_path: str, name: str) -> None:
+        """Remove a session file only after its serialized data is proven invalid."""
+        try:
+            os.remove(file_path)
+        except OSError as e:
+            logger.error(AppStrings.LOG_SES_DELETE_FAIL.format(name, e))
 
     def delete_session(self, name):
         """세션 파일을 삭제한다."""

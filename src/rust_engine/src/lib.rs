@@ -43,7 +43,7 @@ type FileMatches = Vec<(String, Vec<SearchMatch>)>;
 type SkippedEntries = Vec<(String, String)>;
 type KeywordFileHits = Vec<(String, u64)>;
 
-const REASON_ERR_MMAP: &str = "ERR_MAP";
+const REASON_ERR_MMAP: &str = "ERR_MMAP";
 const REASON_ERR_OPEN: &str = "ERR_OPEN";
 const REASON_ERR_METADATA: &str = "ERR_METADATA";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
@@ -59,8 +59,7 @@ const REASON_INFO_JSON_DEPTH_LIMIT: &str = "INFO_JSON_DEPTH_LIMIT";
 const DEFAULT_MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
 const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
 const MATCH_META_TRUNCATED: &str = "__SF_TRUNCATED__";
-// Python 측에서 문자열 비교에 사용되므로 유지합니다.
-#[allow(dead_code)]
+// Shared marker for long-line result metadata and offset handling.
 const MATCH_META_LONG_LINE_PREFIX: &str = "__SF_LONG_LINE__|";
 
 const MONITOR_INTERVAL_MS: u64 = 100;
@@ -1365,8 +1364,7 @@ fn find_files_with_keyword(
         None
     };
 
-    // M1: `_results_dispatcher` → `results_dispatcher` (언더스코어 제거)
-    // `_` prefix 변수는 Rust 컴파일러에 의해 즉시 drop되므로 tx도 함께 소멸되어 콜백 스레드가 동작하지 않았음.
+    // Retain both the sender and join handle until all walker threads finish.
     let results_dispatcher = results_callback.as_ref().map(|cb| {
         let batch_size_limit = 100usize;
         let queue_capacity = batch_size_limit.saturating_mul(4).max(1);
@@ -1430,7 +1428,7 @@ fn find_files_with_keyword(
             let ext_s = exts.clone();
             let glob_s = glob_set.clone();
             let limiter_ref = structured_limiter.clone();
-            // M1: results_dispatcher에서 tx 채널 추출
+            // Clone the bounded-channel sender for this walker root.
             let tx_kw = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
 
             walker.run(move || {
@@ -1441,7 +1439,7 @@ fn find_files_with_keyword(
                 let kw_inner = kw_orig.clone();
                 let exts_inner = ext_s.clone();
                 let glob_inner = glob_s.clone();
-                let tx_inner = tx_kw.clone(); // M1: tx 채널 공유
+                let tx_inner = tx_kw.clone();
                 let limiter_inner = limiter_ref.clone();
 
                 Box::new(move |entry| {
@@ -1576,7 +1574,7 @@ fn find_files_with_keyword(
 
                             if is_match {
                                 let f_path = path.to_string_lossy().to_string();
-                                // M1: tx 채널이 있으면 스트리밍, 없으면 공유 벡터에 직접 저장
+                                // Stream through the callback queue when configured.
                                 if let Some(tx) = &tx_inner {
                                     let _ = tx.send((f_path, f_size));
                                 } else {
@@ -1666,7 +1664,7 @@ fn extract_line_content_bytes(
         };
         let prefix = if preview_start > start { "..." } else { "" };
         let suffix = if preview_end < line_end { "..." } else { "" };
-        return format!("__SF_LONG_LINE__|{}{}{}", prefix, preview_text, suffix);
+        return format!("{MATCH_META_LONG_LINE_PREFIX}{prefix}{preview_text}{suffix}");
     }
     let line_bytes = &mmap[start..line_end];
     match simdutf8::basic::from_utf8(line_bytes) {
@@ -1681,6 +1679,11 @@ mod tests {
 
     fn build_test_ac(pattern: &str) -> aho_corasick::AhoCorasick {
         AhoCorasickBuilder::new().ascii_case_insensitive(true).build([pattern]).unwrap()
+    }
+
+    #[test]
+    fn mmap_failures_use_the_correct_protocol_code() {
+        assert_eq!(encode_skip_reason(REASON_ERR_MMAP, "failed"), "ERR_MMAP|failed");
     }
 
     #[test]

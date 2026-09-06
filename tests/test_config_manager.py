@@ -19,6 +19,8 @@ import os
 import json
 from unittest.mock import patch
 
+import pytest
+
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
 
@@ -358,6 +360,20 @@ def test_save_session_sanitized_name_collision_isolated(temp_dir):
             if filename.startswith(safe_stem) and filename.endswith(Constants.JSON_EXTENSION)
         ]
         assert len(session_files) == 2
+
+
+@pytest.mark.parametrize("serialized", ["{ malformed", "[]", '"not-an-object"'])
+def test_load_session_removes_invalid_serialized_session(temp_dir, serialized):
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        config = ConfigManager()
+        session_name = "corrupted"
+        file_path = os.path.join(config.sessions_dir, "corrupted.json")
+        with open(file_path, "w", encoding=Constants.ENC_UTF8) as session_file:
+            session_file.write(serialized)
+
+        assert config.load_session(session_name) is None
+        assert not os.path.exists(file_path)
 
 
 def test_update_filters_does_not_alias_defaults(temp_dir):

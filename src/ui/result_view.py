@@ -125,20 +125,41 @@ class ContextPreviewWorker(QRunnable):
             self.signals.finished.emit(self.request_id, None, error, self.cancel_event.is_set())
 
 
-def normalize_skipped_files(skipped_files):
+def normalize_skipped_files(skipped_files, *, strict_session: bool = False):
     """스킵 항목을 팝업과 세션 저장에 안전한 ``(경로, 사유)`` 튜플로 정규화합니다."""
-    from core.search_engine import localize_skip_reason_for_display
+    from core.search_engine import is_supported_skip_reason, localize_skip_reason_for_display
 
-    normalized_by_path = {}
-    for item in skipped_files or []:
+    normalized_by_path: dict[str, str] = {}
+    if not isinstance(skipped_files, (list, tuple)):
+        return []
+    for item in skipped_files:
         if isinstance(item, (list, tuple)):
             if not item:
                 continue
-            path = str(item[0])
-            reason = localize_skip_reason_for_display(item[1]) if len(item) > 1 else ""
+            raw_path = item[0]
+            raw_reason = item[1] if len(item) > 1 else ""
         else:
-            path = str(item)
-            reason = ""
+            if strict_session:
+                continue
+            raw_path = item
+            raw_reason = ""
+
+        if strict_session:
+            if not isinstance(raw_path, str) or not isinstance(raw_reason, str):
+                continue
+            if (
+                not raw_path.strip()
+                or len(raw_path) > 32767
+                or any(character in raw_path for character in ("\x00", "\r", "\n"))
+                or len(raw_reason) > 65536
+                or not is_supported_skip_reason(raw_reason)
+            ):
+                continue
+
+        path = str(raw_path).strip()
+        if not path:
+            continue
+        reason = localize_skip_reason_for_display(raw_reason)
         previous_reason = normalized_by_path.get(path, "")
         if previous_reason and reason:
             reason_lines = list(
@@ -632,13 +653,13 @@ class ResultView(QWidget):
         self._adjust_match_column_widths()
 
     def _on_prev_page(self):
-        curr = self.result_model._current_page
+        curr = self.result_model.get_current_page()
         if curr > 1:
             self.result_model.go_to_page(curr - 1)
             self._update_pagination_ui()
 
     def _on_next_page(self):
-        curr = self.result_model._current_page
+        curr = self.result_model.get_current_page()
         total = self.result_model.get_total_pages()
         if curr < total:
             self.result_model.go_to_page(curr + 1)
@@ -652,9 +673,9 @@ class ResultView(QWidget):
                 self.result_model.go_to_page(val)
                 self._update_pagination_ui()
             else:
-                self.current_page_edit.setText(str(self.result_model._current_page))
+                self.current_page_edit.setText(str(self.result_model.get_current_page()))
         except ValueError:
-            self.current_page_edit.setText(str(self.result_model._current_page))
+            self.current_page_edit.setText(str(self.result_model.get_current_page()))
 
     def _on_page_size_changed(self, index):
         size_str = self.page_size_combo.itemText(index)
@@ -669,7 +690,7 @@ class ResultView(QWidget):
         """결과 목록의 현재 페이지와 총 페이지 수를 UI에 갱신합니다."""
         self.result_view.setUpdatesEnabled(False)
         try:
-            curr = self.result_model._current_page
+            curr = self.result_model.get_current_page()
             total = self.result_model.get_total_pages()
             self.current_page_edit.setText(str(curr))
             self.total_pages_label.setText(f"{AppStrings.PAGINATION_OF} {total}")
@@ -800,24 +821,6 @@ class ResultView(QWidget):
         self.context_highlighter.set_language("text")
         self.context_preview.setPlainText(preview)
         self.context_preview.setExtraSelections([])
-
-    def _detect_text_encoding(self, file_path):
-        """BOM을 우선 확인하고 일반 텍스트는 UTF-8로 읽습니다."""
-        return _detect_text_encoding(file_path)
-
-    def _read_context_lines(self, file_path, target_line):
-        """대상 줄 주변만 스트리밍으로 읽어 메모리 사용량을 제한합니다."""
-        if target_line > self.CONTEXT_MAX_SCAN_LINES:
-            return None
-        try:
-            before_lines = min(max(int(self.context_before_combo.currentText()), 0), self.CONTEXT_MAX_RADIUS)
-        except (AttributeError, TypeError, ValueError):
-            before_lines = self.CONTEXT_RADIUS
-        try:
-            after_lines = min(max(int(self.context_after_combo.currentText()), 0), self.CONTEXT_MAX_RADIUS)
-        except (AttributeError, TypeError, ValueError):
-            after_lines = self.CONTEXT_RADIUS
-        return _read_context_lines_from_file(file_path, target_line, before_lines, after_lines)
 
     def _cancel_context_preview(self):
         if self._context_cancel_event is not None:
@@ -1119,9 +1122,6 @@ class ResultView(QWidget):
             self.update_ui_visibility()
             QTimer.singleShot(0, self._select_first_row_safely)
         self._update_pagination_ui()
-
-    def get_results(self):
-        return self.result_model._data
 
     def save_state(self):
         self.config_manager.set_splitter_states(None, self.result_splitter.saveState(), None)

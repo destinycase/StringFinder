@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from sf_utils.file_helper import open_file, open_in_external_editor
+from sf_utils.file_helper import open_in_external_editor
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -44,6 +44,9 @@ class SearchTab(QMainWindow):
     skipped_count_updated = Signal(int)
     LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
     _LOG_LEVEL_PATTERN = re.compile(r"\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]")
+    _INVALID_STORED_LOG_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+    _INVALID_STORED_LOG_CODE_PATTERN = re.compile(r"(?<![A-Z0-9_])ERR_MAP(?![A-Z0-9_])")
+    _MAX_STORED_LOG_LINE_LENGTH = 65536
 
     def __init__(self, config_manager):
         """검색 탭 객체를 초기화하고 기본 변수들을 설정합니다."""
@@ -230,13 +233,29 @@ class SearchTab(QMainWindow):
             return "\n".join(msg for _, msg in self._log_entries)
         return self.logs_output.toPlainText().strip()  # 테스트 기대값 일치를 위해 strip 추가
 
-    def _restore_logs_from_text(self, logs_text: str):
+    def _sanitize_stored_logs(self, logs_text: Any) -> str:
+        """Discard malformed saved-log records before restoring them into the UI."""
+        if not isinstance(logs_text, str):
+            return ""
+        valid_lines: collections.deque[str] = collections.deque(maxlen=self._max_log_count)
+        for line in logs_text.splitlines():
+            if (
+                len(line) > self._MAX_STORED_LOG_LINE_LENGTH
+                or self._INVALID_STORED_LOG_CONTROL_PATTERN.search(line)
+                or self._INVALID_STORED_LOG_CODE_PATTERN.search(line)
+            ):
+                continue
+            valid_lines.append(line)
+        return "\n".join(valid_lines)
+
+    def _restore_logs_from_text(self, logs_text: Any):
         self._clear_logs()
-        if not logs_text:
+        sanitized_logs = self._sanitize_stored_logs(logs_text)
+        if not sanitized_logs:
             return
         pending_level: Optional[str] = None
         pending_lines: List[str] = []
-        for raw_line in str(logs_text).splitlines():
+        for raw_line in sanitized_logs.splitlines():
             level = self._extract_log_level_from_line(raw_line)
             has_level_tag = bool(self._LOG_LEVEL_PATTERN.search(raw_line))
             if has_level_tag:
@@ -469,9 +488,11 @@ class SearchTab(QMainWindow):
 
     def load_state(self, state):
         """저장된 세션 상태를 불러와 UI 항목들을 복원합니다."""
-        if not state:
+        if not isinstance(state, dict) or not state:
             return
         inputs = state.get(Constants.PAYLOAD_INPUTS, {})
+        if not isinstance(inputs, dict):
+            inputs = {}
         # 과거 키를 최신 키로 매핑
         if Constants.STATE_KEY_FILENAME in inputs and Constants.PAYLOAD_FILENAME_FILTER not in inputs:
             inputs[Constants.PAYLOAD_FILENAME_FILTER] = inputs[Constants.STATE_KEY_FILENAME]
@@ -491,7 +512,10 @@ class SearchTab(QMainWindow):
         self.total_matches = 0
         self.total_files = 0
         self.result_view_panel.clear()  # 기존 결과와 스킵 안내를 먼저 초기화합니다.
-        self.skipped_files_list = normalize_skipped_files(state.get(Constants.PAYLOAD_SKIPPED, []))
+        self.skipped_files_list = normalize_skipped_files(
+            state.get(Constants.PAYLOAD_SKIPPED, []),
+            strict_session=True,
+        )
         summary = state.get(Constants.PAYLOAD_SUMMARY, {})
         if not isinstance(summary, dict):
             summary = {}
@@ -499,11 +523,7 @@ class SearchTab(QMainWindow):
             self.last_search_duration = max(0.0, float(summary.get("total_elapsed", 0.0) or 0.0))
         except (TypeError, ValueError):
             self.last_search_duration = 0.0
-        try:
-            restored_skip_count = max(0, int(summary.get("skip_count", 0) or 0))
-        except (TypeError, ValueError):
-            restored_skip_count = 0
-        self.skipped_count = max(restored_skip_count, len(self.skipped_files_list))
+        self.skipped_count = len(self.skipped_files_list)
         self.skipped_count_updated.emit(self.skipped_count)
         if results:
             self.result_view_panel.set_results(results)
@@ -937,9 +957,3 @@ class SearchTab(QMainWindow):
         """매치 행을 설정된 외부 편집기의 해당 줄에서 엽니다."""
         editor_settings = self.config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR, {})
         open_in_external_editor(file_path, line, editor_settings)
-
-    def _run_open_file(self, file_path):
-        """파일 열기 실행."""
-        if not file_path:
-            return
-        open_file(file_path)

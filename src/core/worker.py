@@ -8,7 +8,7 @@ from typing import Any, List, Literal, Optional
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
-from core.search_engine import FileScanner, search_in_files_batch  # noqa: F401
+from core.search_engine import FileScanner
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
@@ -191,10 +191,8 @@ class WorkerSignals(QObject):
     results_found = Signal(list)
     skipped_found = Signal(list)
     search_finished = Signal(int, int, int)
-    scan_finished = Signal(list)
     error = Signal(str)
     finished = Signal()
-    scan_started = Signal()
 
 
 class SearchWorker(QRunnable):
@@ -246,11 +244,7 @@ class SearchWorker(QRunnable):
 
     @staticmethod
     def _is_memory_skip(skip_list) -> bool:
-        """Return True only for a system-wide memory-pressure stop reason.
-
-        ERR_MEMORY_GUARD is intentionally excluded: older Rust extensions
-        emitted it when one JSON file exceeded its configured size limit.
-        """
+        """Return True only for a system-wide memory-pressure stop reason."""
         return any(
             str(reason).strip() == AppStrings.ERROR_MEMORY_CRITICAL
             for _, reason in skip_list
@@ -517,7 +511,6 @@ class SearchWorker(QRunnable):
                 self._stop_for_total_match_limit()
             if skipped_batch:
                 self._safe_emit(self.signals.skipped_found, skipped_batch)
-            # logger.debug(f"[Worker] results_callback processing finished")
 
         try:
             if hasattr(self, Constants.PAYLOAD_FILE_LIST) and self.file_list:
@@ -551,10 +544,6 @@ class SearchWorker(QRunnable):
             if self._is_memory_skip(skipped_list):
                 self._stop_for_memory_pressure()
             self._safe_emit(self.signals.skipped_found, skipped_list)
-        # [Cleanup] 강제 100% 방출은 실제 스캔 수와 불일치할 수 있으므로 제거합니다.
-        # 실제 진행률은 이미 Rust 콜백을 통해 정확한 숫자로 전달되었습니다.
-        pass
-        
         self._safe_emit(self.signals.search_finished, total_found, total_matches, skipped_count)
         elapsed = time.time() - self.worker_start_time
         logger.info(AppStrings.LOG_WKR_DONE.format(total_found, total_matches, elapsed))

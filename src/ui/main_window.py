@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.system_manager import SystemManager
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
@@ -35,7 +34,7 @@ from ui.widgets import LoadingSpinner
 class MainWindow(QMainWindow):
     """
     애플리케이션의 메인 윈도우 클래스입니다.
-    창 관리, 시스템 트레이, 테마 전환 및 전역 단축키 설정을 담당합니다.
+    검색 탭, 창 상태, 테마 및 애플리케이션 종료 처리를 담당합니다.
     """
 
     def __init__(self):
@@ -54,8 +53,6 @@ class MainWindow(QMainWindow):
         else:
             self.resize(1200, 800)
         self.setMinimumSize(600, 400)
-        self.system_manager = SystemManager()
-
         self._search_lock_owner = None
         self._init_ui()
         from sf_utils.logger import qt_log_handler
@@ -64,7 +61,6 @@ class MainWindow(QMainWindow):
         self._last_error_time = 0.0
         self._last_error_msg = ""
 
-        self.tray_icon = None
         icon_path = get_resource_path(os.path.join("assets", "icon.svg"))
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
@@ -365,11 +361,6 @@ class MainWindow(QMainWindow):
             self.add_new_tab()
 
 
-    def show_normal_and_activate(self):
-        self.showNormal()
-        self.activateWindow()
-
-
     def _show_settings(self):
         """설정 다이얼로그를 모달 형식으로 띄우고 변경 사항을 반영합니다."""
         dialog = SettingsDialog(self.config_manager, self)
@@ -442,12 +433,6 @@ class MainWindow(QMainWindow):
                     pass
         except Exception as e:
             logger.debug(AppStrings.LOG_SYS_CLEANUP_SIGNALER_FAIL.format(e))
-        tray = getattr(self, "tray_icon", None)
-        if tray:
-            tray.hide()
-            tray.deleteLater()
-        if hasattr(self, "system_manager"):
-            logger.debug(AppStrings.LOG_SYS_CLEANUP_DEFERRED)
         # 탭들 정리
         for i in range(self.tab_widget.count()):
             tab = self.tab_widget.widget(i)

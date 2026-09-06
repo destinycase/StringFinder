@@ -911,25 +911,8 @@ class MatchDetailModel(QAbstractTableModel):
         self._current_page = 1
         self.endResetModel()
 
-    def get_line_no(self, row):
-        """특정 행의 실제 소스 코드 라인 번호를 반환합니다."""
-        if 0 <= row < len(self._data):
-            try:
-                # position 필드가 라인 번호일 경우
-                return int(self._data[row].position)
-            except (ValueError, TypeError, AttributeError):
-                return 1
-        return 1
-
     def get_match(self, row):
         """특정 행의 매치 데이터를 반환합니다."""
         if 0 <= row < len(self._data):
             return self._data[row]
         return None
-
-    def get_match_info(self, row):
-        """오프셋과 길이 정보를 반환합니다."""
-        if 0 <= row < len(self._data):
-            d = self._data[row]
-            return d.offset, d.length
-        return None, None

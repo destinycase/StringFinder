@@ -226,19 +226,6 @@ class FolderFilterPanel(QWidget):
                 folders.append(widget.text())
         return folders
 
-    def get_all_folders(self) -> List[str]:
-        folders = []
-        for i in range(self.folder_list.count()):
-            widget = self.folder_list.itemWidget(self.folder_list.item(i))
-            if isinstance(widget, FilterItemWidget):
-                folders.append(widget.text())
-        return folders
-
-    def set_items(self, folders: List[str]):
-        self.folder_list.clear()
-        for f in folders:
-            self.add_folder(f, checked=True)
-
     def restore_state(self, data: Union[List[str], Dict[str, bool]]):
         self.folder_list.clear()
         if isinstance(data, list):
@@ -390,21 +377,8 @@ class ExtensionFilterPanel(QWidget):
                 return [special_mode.lower()]
         return exts
 
-    def get_all_extensions(self) -> List[str]:
-        exts = []
-        for i in range(self.ext_list.count()):
-            widget = self.ext_list.itemWidget(self.ext_list.item(i))
-            if isinstance(widget, FilterItemWidget):
-                exts.append(widget.text())
-        return exts
-
     def get_special_mode(self) -> str:
         return self.special_combo.currentText()
-
-    def set_items(self, exts: List[str]):
-        self.ext_list.clear()
-        for e in exts:
-            self.add_extension(e)
 
     def restore_state(self, data: Union[List[str], Dict[str, Any]]):
         self.ext_list.clear()
@@ -544,19 +518,6 @@ class FilenameFilterPanel(QWidget):
             if isinstance(widget, FilterItemWidget) and widget.isChecked():
                 filenames.append(widget.text())
         return filenames
-
-    def get_all_list_filenames(self) -> List[str]:
-        fns = []
-        for i in range(self.filename_list.count()):
-            widget = self.filename_list.itemWidget(self.filename_list.item(i))
-            if isinstance(widget, FilterItemWidget):
-                fns.append(widget.text())
-        return fns
-
-    def set_items(self, items: List[str]):
-        self.filename_list.clear()
-        for i in items:
-            self.add_filename(i)
 
     def restore_state(self, data: Union[List[str], Dict[str, Any]]):
         self.filename_list.clear()
