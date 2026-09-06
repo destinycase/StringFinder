@@ -112,7 +112,6 @@ impl SearchOptions {
     }
 }
 
-
 #[pyclass]
 #[derive(Clone, Debug)]
 pub struct SearchMatch {
@@ -156,7 +155,9 @@ impl SearchMatch {
         }
     }
 
-    fn __len__(&self) -> usize { 4 }
+    fn __len__(&self) -> usize {
+        4
+    }
 
     fn __getitem__(&self, index: isize, py: Python<'_>) -> PyResult<PyObject> {
         let index = if index < 0 { index + 4 } else { index };
@@ -193,7 +194,10 @@ impl From<RawMatch> for SearchMatch {
             ("sheet_error", Some("EXCEL_SHEET_ERROR"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_EXCEL_PANIC__|") {
             ("error", Some("ERR_EXCEL_PANIC"), Some(detail))
-        } else if let Some((code, detail)) = content.split_once('|').filter(|(code, _)| code.starts_with("ERR_")) {
+        } else if let Some((code, detail)) = content
+            .split_once('|')
+            .filter(|(code, _)| code.starts_with("ERR_"))
+        {
             ("error", Some(code), Some(detail))
         } else {
             ("match", None, None)

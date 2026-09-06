@@ -493,10 +493,7 @@ pub fn search_json_file(
     if state.depth_limit_reached {
         state.results.push((
             0,
-            format!(
-                "{}{}",
-                JSON_DEPTH_LIMIT_MARKER_PREFIX, state.max_json_depth
-            ),
+            format!("{}{}", JSON_DEPTH_LIMIT_MARKER_PREFIX, state.max_json_depth),
             None,
             None,
         ));
@@ -594,16 +591,8 @@ mod tests {
         let ac = test_ac("needle");
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-        let matches = search_json_file(
-            json.as_bytes(),
-            "needle",
-            &ac,
-            false,
-            stop_flag,
-            10,
-            depth,
-        )
-        .expect("deep JSON should be parsed with stack growth");
+        let matches = search_json_file(json.as_bytes(), "needle", &ac, false, stop_flag, 10, depth)
+            .expect("deep JSON should be parsed with stack growth");
 
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.ends_with("\tneedle"));

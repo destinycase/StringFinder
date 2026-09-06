@@ -1,6 +1,6 @@
 use encoding_rs::{Encoding, EUC_KR, UTF_16BE, UTF_16LE, UTF_8};
-use std::collections::HashSet;
 use simdutf8::basic::from_utf8 as simd_from_utf8;
+use std::collections::HashSet;
 use unicode_normalization::UnicodeNormalization;
 
 use globset::{GlobSet, GlobSetBuilder};
@@ -29,8 +29,12 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         let mut zero_odd = 0;
         let check_limit = (sample.len() / 2) * 2;
         for i in (0..check_limit).step_by(2) {
-            if sample[i] == 0 { zero_even += 1; }
-            if sample[i + 1] == 0 { zero_odd += 1; }
+            if sample[i] == 0 {
+                zero_even += 1;
+            }
+            if sample[i + 1] == 0 {
+                zero_odd += 1;
+            }
         }
         let half = (check_limit / 2) as f32;
         // 특정 오프셋에 NUL 바이트가 70% 이상 집중되어 있으면 UTF-16으로 간주
@@ -55,8 +59,10 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         return UTF_8;
     }
     let (_res, _, has_error) = EUC_KR.decode(sample);
-    if !has_error { return EUC_KR; }
-    
+    if !has_error {
+        return EUC_KR;
+    }
+
     // 기본값으로 UTF-8 반환
     UTF_8
 }
@@ -92,7 +98,7 @@ pub fn build_glob_set(filters: &[String]) -> Option<GlobSet> {
         // GlobBuilder를 사용하여 대소문자 무시 속성을 직접 부여하여 힙 할당을 줄입니다.
         if let Ok(glob) = globset::GlobBuilder::new(&pattern)
             .case_insensitive(true)
-            .build() 
+            .build()
         {
             builder.add(glob);
         }
@@ -109,19 +115,15 @@ pub fn match_filename_glob(filename: &str, glob_set: &Option<GlobSet>) -> bool {
     }
 }
 
-pub fn generate_search_patterns(
-    keyword: &str,
-    is_xml: bool,
-    is_json: bool,
-) -> Vec<String> {
+pub fn generate_search_patterns(keyword: &str, is_xml: bool, is_json: bool) -> Vec<String> {
     let mut patterns = HashSet::new();
     patterns.insert(keyword.to_string());
-    
+
     // Unicode Casefold 정합성을 위해 다양한 변형을 추가하여 검색 누락을 방지합니다.
     let lower = keyword.to_lowercase();
     let upper = keyword.to_uppercase();
     let lower_upper = lower.to_uppercase();
-    
+
     patterns.insert(lower);
     patterns.insert(upper);
     patterns.insert(lower_upper);
@@ -134,15 +136,25 @@ pub fn generate_search_patterns(
                 for c in p.chars() {
                     let mut buf = [0; 4];
                     let s = c.encode_utf8(&mut buf);
-                    if s == "<" { encoded.push_str("&lt;"); }
-                    else if s == ">" { encoded.push_str("&gt;"); }
-                    else if s == "&" { encoded.push_str("&amp;"); }
-                    else if s == "\"" { encoded.push_str("&quot;"); }
-                    else if s == "'" { encoded.push_str("&apos;"); }
-                    else if c.is_ascii() { encoded.push_str(s); }
-                    else { encoded.push_str(&format!("&#{};", c as u32)); }
+                    if s == "<" {
+                        encoded.push_str("&lt;");
+                    } else if s == ">" {
+                        encoded.push_str("&gt;");
+                    } else if s == "&" {
+                        encoded.push_str("&amp;");
+                    } else if s == "\"" {
+                        encoded.push_str("&quot;");
+                    } else if s == "'" {
+                        encoded.push_str("&apos;");
+                    } else if c.is_ascii() {
+                        encoded.push_str(s);
+                    } else {
+                        encoded.push_str(&format!("&#{};", c as u32));
+                    }
                 }
-                if encoded != *p { variants.push(encoded); }
+                if encoded != *p {
+                    variants.push(encoded);
+                }
             }
             if is_json {
                 let mut encoded_lower = String::new();
@@ -151,15 +163,16 @@ pub fn generate_search_patterns(
                     if c.is_ascii() {
                         encoded_lower.push(c);
                         encoded_upper.push(c);
-                    }
-                    else {
+                    } else {
                         // 대문자(\uXXXX)와 소문자(\uxxxx) 양쪽 모두 추가합니다.
                         push_json_unicode_escape(&mut encoded_lower, c, false);
                         push_json_unicode_escape(&mut encoded_upper, c, true);
                         // encoded는 소문자 패턴으로 기본 빌드
                     }
                 }
-                if encoded_lower != *p { variants.push(encoded_lower.clone()); }
+                if encoded_lower != *p {
+                    variants.push(encoded_lower.clone());
+                }
                 if encoded_upper != *p && encoded_upper != encoded_lower {
                     variants.push(encoded_upper);
                 }
