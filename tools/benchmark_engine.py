@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,7 @@ class BenchmarkCase:
     special_mode: str | None = None
     existence_only: bool = False
     expect_match: bool = True
+    with_stop_event: bool = False
 
 
 def _rss_bytes() -> int | None:
@@ -49,7 +51,10 @@ def _measure(
     *,
     existence_only: bool = False,
     expect_match: bool = True,
+    with_stop_event: bool = False,
 ) -> tuple[float, float | None, int]:
+    stop_event = threading.Event() if with_stop_event else None
+
     def run_search():
         return search_in_file(
             str(path),
@@ -57,6 +62,7 @@ def _measure(
             special_mode=special_mode,
             use_complex_search=False,
             existence_only=existence_only,
+            stop_event=stop_event,
         )
 
     run_search()
@@ -100,6 +106,7 @@ def _write_cases(root: Path) -> list[BenchmarkCase]:
 
     return [
         BenchmarkCase("plain-1MiB", plain_1m, "needle"),
+        BenchmarkCase("plain-1MiB-with-cancel-monitor", plain_1m, "needle", with_stop_event=True),
         BenchmarkCase("plain-32MiB", plain_32m, "needle"),
         BenchmarkCase("json-streaming-repeated", json_path, "present", Constants.MODE_JSON),
         BenchmarkCase("json-streaming-sparse", json_path, "119999", Constants.MODE_JSON),
@@ -132,6 +139,7 @@ def main() -> None:
                 case.special_mode,
                 existence_only=case.existence_only,
                 expect_match=case.expect_match,
+                with_stop_event=case.with_stop_event,
             )
             rss_text = "n/a" if rss_delta is None else f"{rss_delta:.2f}"
             print(f"{case.name},{size / (1024 * 1024):.2f},{median:.4f},{rss_text}")

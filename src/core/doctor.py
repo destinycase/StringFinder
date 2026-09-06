@@ -1,12 +1,46 @@
+import atexit
 import os
 import sys
 import platform
-import subprocess
+import tempfile
+import time
 from typing import List, Dict, Any
 
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
+from sf_utils.file_helper import open_file
 from sf_utils.logger import logger
+
+
+_DOCTOR_REPORT_PREFIX = "sf_doctor_"
+_DOCTOR_REPORT_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+
+
+def _remove_report(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        logger.debug("Failed to remove diagnostic report %s: %s", path, error)
+
+
+def _cleanup_stale_reports(temp_dir: str) -> None:
+    """StringFinder가 만든 오래된 진단서만 제한적으로 정리합니다."""
+    cutoff = time.time() - _DOCTOR_REPORT_MAX_AGE_SECONDS
+    try:
+        names = os.listdir(temp_dir)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(_DOCTOR_REPORT_PREFIX) or not name.endswith(".md"):
+            continue
+        path = os.path.join(temp_dir, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                _remove_report(path)
+        except OSError:
+            continue
 
 class SystemDoctor:
     """시스템 환경을 진단하고 보고서를 생성하는 클래스."""
@@ -109,24 +143,32 @@ class SystemDoctor:
         return "\n".join(report)
 
 def run_doctor_and_open():
-    """진단을 실행하고 결과를 텍스트 파일로 저장한 후 메모장으로 연다."""
+    """진단을 실행하고 고유 임시 파일에 저장한 후 기본 편집기로 엽니다."""
     doctor = SystemDoctor()
     report_content = doctor.run_full_diagnosis()
-    
-    # 임시 디렉토리에 보고서 저장
-    import tempfile
-    temp_path = os.path.join(tempfile.gettempdir(), "sf_doctor_report.md")
-    
+
+    temp_dir = tempfile.gettempdir()
+    _cleanup_stale_reports(temp_dir)
+    temp_path = ""
     try:
-        with open(temp_path, "w", encoding="utf-8") as f:
-            f.write(report_content)
-        
-        # 시스템 기본 편집기(메모장 등)로 열기
-        if os.name == "nt":
-            os.startfile(temp_path)
-        else:
-            subprocess.run(["open", temp_path])
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            prefix=_DOCTOR_REPORT_PREFIX,
+            suffix=".md",
+            dir=temp_dir,
+            delete=False,
+            encoding="utf-8",
+        ) as report_file:
+            report_file.write(report_content)
+            temp_path = report_file.name
+
+        if not open_file(temp_path):
+            _remove_report(temp_path)
+            return False
+        atexit.register(_remove_report, temp_path)
         return True
     except Exception as e:
+        if temp_path:
+            _remove_report(temp_path)
         logger.error(f"Failed to save or open doctor report: {e}")
         return False

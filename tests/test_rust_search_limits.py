@@ -337,6 +337,32 @@ def test_real_rust_smart_scan_finds_escaped_json_unicode(tmp_path):
     assert str(partial_file) not in found_paths
 
 
+def test_real_rust_smart_scan_preserves_results_from_multiple_roots(tmp_path):
+    """단일 병렬 워커가 등록된 모든 검색 루트를 빠짐없이 순회하는지 검증합니다."""
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    root_a = tmp_path / "root_a"
+    root_b = tmp_path / "root_b"
+    root_a.mkdir()
+    root_b.mkdir()
+    match_a = root_a / "a.txt"
+    match_b = root_b / "b.txt"
+    non_match = root_b / "other.txt"
+    match_a.write_text("needle in first root", encoding="utf-8")
+    match_b.write_text("needle in second root", encoding="utf-8")
+    non_match.write_text("unrelated", encoding="utf-8")
+
+    found = search_engine.find_files_with_keyword_fast(
+        [str(root_a), str(root_b)],
+        "needle",
+        extensions=["txt"],
+    )
+
+    found_paths = {path for path, _size in found}
+    assert found_paths == {str(match_a), str(match_b)}
+
+
 def test_real_rust_smart_scan_callback_has_single_result_contract(tmp_path):
     if not search_engine.HAS_RUST_ENGINE:
         pytest.skip("compiled Rust engine is unavailable")

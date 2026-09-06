@@ -148,9 +148,11 @@ class AppStrings:
     # =========================================================================
     COMPLEX_SEARCH_LABEL = " (느림)"
     COMPLEX_SEARCH_TOOLTIP = (
-        "영어, 한글, 일반 특수 문자가 아닌 경우까지 검색 합니다.\n"
-        "예: 독일어(ß↔ss), 프랑스어(Œ↔oe), 원문자(㉮↔가) 및 복잡한 유니코드 변형\n"
-        "정밀 하게 검사하는 대신, 속도가 느립니다."
+        "다음 경우에 정밀 검색을 사용하세요.\n"
+        "• macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
+        "• 독일어 ß↔ss 등 다국어 특수 대소문자·분음 기호\n"
+        "• 기본 검색에서 누락된 비표준 또는 일부 손상 인코딩 텍스트\n"
+        "일반적인 한글·영문 검색은 더 빠른 기본 검색을 권장합니다."
     )
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_HIDDEN_TOOLTIP = (
@@ -305,6 +307,11 @@ class AppStrings:
     DOCTOR_REPORT_DATE = "진단 일시"
     DOCTOR_REPORT_FOOTER = "*StringFinder 시스템 자가 진단에서 생성됨*"
     RESULT_TABLE_TOOLTIP = "검색 결과 행을 더블 클릭하면 파일을 기본 프로그램으로 엽니다. (Ctrl+C: 경로 복사)"
+    EXECUTABLE_OPEN_WARNING_TITLE = "실행 가능한 파일 열기"
+    EXECUTABLE_OPEN_WARNING = (
+        "이 파일 형식은 시스템 연결 프로그램을 통해 실행될 수 있습니다.\n\n{}\n\n"
+        "출처를 신뢰하고 파일을 여시겠습니까?"
+    )
     SKIP_EMPTY_FILE = "[건너뜀] 빈 파일"
 
     # 기존 검색 모드명 (안전성 확보를 위해 확인)

@@ -6,6 +6,63 @@ import sys
 from sf_utils.app_strings import AppStrings
 
 
+POTENTIALLY_EXECUTABLE_EXTENSIONS = frozenset(
+    {
+        ".appref-ms",
+        ".bash",
+        ".bat",
+        ".chm",
+        ".cmd",
+        ".command",
+        ".com",
+        ".cpl",
+        ".desktop",
+        ".exe",
+        ".fish",
+        ".hta",
+        ".jar",
+        ".js",
+        ".jse",
+        ".ksh",
+        ".lnk",
+        ".msi",
+        ".msp",
+        ".msix",
+        ".pif",
+        ".ps1",
+        ".psm1",
+        ".py",
+        ".pyw",
+        ".reg",
+        ".run",
+        ".scf",
+        ".scr",
+        ".sh",
+        ".url",
+        ".vbe",
+        ".vbs",
+        ".wsf",
+        ".wsh",
+        ".zsh",
+    }
+)
+
+
+def is_potentially_executable_file(file_path: str) -> bool:
+    """시스템 연결 프로그램이 코드를 실행할 수 있는 파일 형식인지 판정합니다."""
+    extension = os.path.splitext(str(file_path))[1].casefold()
+    if extension in POTENTIALLY_EXECUTABLE_EXTENSIONS:
+        return True
+    path_extensions = {
+        item.strip().casefold()
+        for item in os.environ.get("PATHEXT", "").split(os.pathsep)
+        if item.strip()
+    }
+    if extension in path_extensions:
+        return True
+    return os.name != "nt" and os.path.isfile(file_path) and os.access(file_path, os.X_OK)
+
+
 def _split_windows_command_line(arguments: str) -> list[str]:
     """쉘을 실행하지 않고 Windows 명령행 인자를 안전하게 분리합니다."""
     tokens = []
@@ -64,7 +121,7 @@ def _build_custom_editor_arguments(template: str, file_path: str, line_number: i
 
 
 def open_file(file_path: str) -> bool:
-    """시스템 기본 프로그램으로 지정된 파일을 실행합니다."""
+    """시스템 기본 프로그램으로 파일을 엽니다. 호출자는 실행 위험 확인을 담당합니다."""
     try:
         if os.name == "nt":
             os.startfile(file_path)
@@ -86,7 +143,13 @@ def open_file(file_path: str) -> bool:
     return True
 
 
-def open_in_external_editor(file_path: str, line: int = 1, editor_settings=None) -> bool:
+def open_in_external_editor(
+    file_path: str,
+    line: int = 1,
+    editor_settings=None,
+    *,
+    allow_system_fallback: bool = True,
+) -> bool:
     """설정된 편집기로 파일을 열고, 가능한 경우 지정한 줄로 이동합니다."""
     if not file_path:
         return False
@@ -94,7 +157,10 @@ def open_in_external_editor(file_path: str, line: int = 1, editor_settings=None)
     settings = editor_settings if isinstance(editor_settings, dict) else {}
     editor_type = settings.get("editor_type", "system")
     if editor_type == "system":
-        return open_file(file_path)
+        return open_file(file_path) if allow_system_fallback else False
+
+    def fallback() -> bool:
+        return open_file(file_path) if allow_system_fallback else False
 
     executables = {
         "vscode": "code",
@@ -104,15 +170,15 @@ def open_in_external_editor(file_path: str, line: int = 1, editor_settings=None)
     }
     executable = settings.get("custom_path", "") if editor_type == "custom" else executables.get(editor_type)
     if not executable:
-        return open_file(file_path)
+        return fallback()
     if editor_type == "custom":
         executable = os.path.abspath(os.path.expandvars(os.path.expanduser(str(executable))))
         if not os.path.isfile(executable):
-            return open_file(file_path)
+            return fallback()
     else:
         executable = shutil.which(executable)
         if not executable:
-            return open_file(file_path)
+            return fallback()
 
     try:
         try:
@@ -132,7 +198,7 @@ def open_in_external_editor(file_path: str, line: int = 1, editor_settings=None)
         subprocess.Popen(command, shell=False)
         return True
     except (OSError, PermissionError, FileNotFoundError, subprocess.SubprocessError, ValueError):
-        return open_file(file_path)
+        return fallback()
 
 
 def sanitize_filename(name: str, replacement: str = "_") -> str:

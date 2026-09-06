@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from sf_utils.file_helper import open_in_external_editor
+from sf_utils.file_helper import is_potentially_executable_file, open_in_external_editor
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -951,9 +951,37 @@ class SearchTab(QMainWindow):
         """결과 테이블 특정 항목 더블클릭 시 해당 파일을 연결 프로그램으로 실행합니다."""
         from sf_utils.file_helper import open_file
 
+        if not self._confirm_potentially_executable_open(file_path):
+            return
         open_file(file_path)
 
     def _open_match_in_editor(self, file_path, line=0):
         """매치 행을 설정된 외부 편집기의 해당 줄에서 엽니다."""
         editor_settings = self.config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR, {})
+        if is_potentially_executable_file(file_path):
+            if editor_settings.get(Constants.CONFIG_KEY_EDITOR_TYPE, "system") == "system":
+                if not self._confirm_potentially_executable_open(file_path):
+                    return
+            else:
+                # 명시적으로 선택한 텍스트 편집기가 없을 때 시스템 실행으로 폴백하지 않습니다.
+                open_in_external_editor(
+                    file_path,
+                    line,
+                    editor_settings,
+                    allow_system_fallback=False,
+                )
+                return
         open_in_external_editor(file_path, line, editor_settings)
+
+    def _confirm_potentially_executable_open(self, file_path: str) -> bool:
+        """검색 결과를 통한 실행 가능 파일 열기를 명시적으로 확인합니다."""
+        if not is_potentially_executable_file(file_path):
+            return True
+        answer = QMessageBox.warning(
+            self,
+            AppStrings.EXECUTABLE_OPEN_WARNING_TITLE,
+            AppStrings.EXECUTABLE_OPEN_WARNING.format(file_path),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes

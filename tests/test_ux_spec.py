@@ -166,6 +166,9 @@ def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture
     assert search_panel.search_btn.toolTip() == ""
     assert search_panel.stop_btn.toolTip() == ""
     assert search_panel.complex_search_check.toolTip() == ""
+    assert search_panel.complex_search_warning.toolTip() == AppStrings.COMPLEX_SEARCH_TOOLTIP
+    assert "한글 자모가 분리된(NFD)" in search_panel.complex_search_warning.toolTip()
+    assert "손상 인코딩" in search_panel.complex_search_warning.toolTip()
     assert search_panel.boolean_search_check.toolTip() == ""
     assert result_panel.result_view.toolTip() == ""
     assert result_panel.match_view.toolTip() == ""
@@ -181,20 +184,24 @@ def test_search_options_use_user_facing_label_and_requested_order(search_tab_fix
 
     option_widgets = [
         search_panel.complex_search_check,
+        search_panel.complex_search_warning,
         search_panel.boolean_search_check,
         search_panel.exclude_hidden_check,
     ]
     option_layout = search_panel.layout().itemAt(3).layout()
-    assert [option_layout.itemAt(i).widget() for i in range(3)] == option_widgets
+    assert [option_layout.itemAt(i).widget() for i in range(4)] == option_widgets
 
 
-def test_ui_source_does_not_restore_tooltips():
-    """사용자 UI에 설명/경로 호버 툴팁이 다시 추가되지 않도록 보장한다."""
+def test_ui_source_does_not_restore_item_tooltips():
+    """목록 항목의 설명/경로 툴팁이 다시 추가되지 않도록 보장한다."""
     from pathlib import Path
 
     source_root = Path(__file__).resolve().parents[1] / "src" / "ui"
     ui_source = "\n".join(path.read_text(encoding="utf-8") for path in source_root.glob("*.py"))
-    assert ".setToolTip(" not in ui_source
+    tooltip_lines = [line.strip() for line in ui_source.splitlines() if ".setToolTip(" in line]
+    assert tooltip_lines == [
+        "self.complex_search_warning.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)"
+    ]
     assert "ItemDataRole.ToolTipRole" not in ui_source
 
 

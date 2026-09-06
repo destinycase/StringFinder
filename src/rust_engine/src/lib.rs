@@ -307,14 +307,13 @@ fn metadata_matches(file: &File, expected_len: u64, expected_modified: Option<Sy
 }
 
 fn load_file_snapshot(
-    file: File,
+    mut file: File,
     expected_len: u64,
     expected_modified: Option<SystemTime>,
 ) -> Result<FileSnapshot, String> {
     if expected_len < 16 * 1024 {
         let mut bytes = Vec::new();
-        let mut reader = file;
-        reader.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         return Ok(FileSnapshot::Owned(bytes));
     }
 
@@ -331,8 +330,7 @@ fn load_file_snapshot(
     }
 
     let mut bytes = Vec::new();
-    let mut reader = file.try_clone().map_err(|e| e.to_string())?;
-    reader.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
     Ok(FileSnapshot::Owned(bytes))
 }
 
@@ -370,20 +368,17 @@ fn search_file(
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
 
     let stop_flag = Arc::new(AtomicBool::new(false));
-    let done_flag = Arc::new(AtomicBool::new(false));
-    // C2: JoinHandle을 보관하여 done_flag 설정 후 스레드가 완전히 종료됨을 보장합니다.
-    let monitor_handle = if let Some(evt) = stop_event {
+    // 검색 중에는 100ms 간격의 취소 확인을 유지하되, 정상 완료 시 채널로 즉시 깨워
+    // 짧은 파일 검색이 감시 스레드의 sleep 종료를 기다리지 않도록 합니다.
+    let (monitor_handle, monitor_done) = if let Some(evt) = stop_event {
         let flag_clone = stop_flag.clone();
-        let done_clone = done_flag.clone();
-        Some(std::thread::spawn(move || {
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let handle = std::thread::spawn(move || {
             loop {
-                if done_clone.load(Ordering::Relaxed) || flag_clone.load(Ordering::Relaxed) {
+                if flag_clone.load(Ordering::Relaxed) {
                     break;
                 }
                 let is_stopped = Python::with_gil(|py| {
-                    if done_clone.load(Ordering::Relaxed) {
-                        return false;
-                    }
                     if let Ok(res) = evt.bind(py).call_method0("is_set") {
                         if let Ok(true) = res.extract::<bool>() {
                             return true;
@@ -395,11 +390,15 @@ fn search_file(
                     flag_clone.store(true, Ordering::SeqCst);
                     break;
                 }
-                std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
+                match done_rx.recv_timeout(std::time::Duration::from_millis(MONITOR_INTERVAL_MS)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
             }
-        }))
+        });
+        (Some(handle), Some(done_tx))
     } else {
-        None
+        (None, None)
     };
 
     let pat_upper = norm_pattern.to_lowercase().to_uppercase();
@@ -427,7 +426,7 @@ fn search_file(
         })
     });
 
-    done_flag.store(true, Ordering::SeqCst);
+    if let Some(done_tx) = monitor_done { let _ = done_tx.send(()); }
     if let Some(h) = monitor_handle { let _ = h.join(); }
 
     match res {
@@ -865,6 +864,7 @@ pub fn search_dir(
     let done_flag = Arc::new(AtomicBool::new(false));
     let callback_state = Arc::new(CallbackState::new());
     let processed_files = Arc::new(AtomicU64::new(0)); // M4: 실제 처리 파일 수 카운터
+    let (monitor_done_tx, monitor_done_rx) = std::sync::mpsc::channel::<()>();
 
     // N2: JoinHandle을 보관하여 done_flag 설정 후 모니터 스레드가 완전히 종료됨을 보장합니다.
     let monitor_handle = if stop_event.is_some() || progress_callback.is_some() {
@@ -895,7 +895,10 @@ pub fn search_dir(
                     false
                 });
                 if is_stopped { flag_clone.store(true, Ordering::SeqCst); break; }
-                std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
+                match monitor_done_rx.recv_timeout(std::time::Duration::from_millis(MONITOR_INTERVAL_MS)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
             }
         }))
     } else {
@@ -1069,6 +1072,7 @@ pub fn search_dir(
         }
         // A3: done_flag를 먼저 설정하여 dispatcher와 monitor 스레드가 종료 루프에 진입할 수 있도록 합니다.
         done_flag.store(true, Ordering::SeqCst);
+        let _ = monitor_done_tx.send(());
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
         if let Some(h) = monitor_handle { let _ = h.join(); }
     });
@@ -1125,6 +1129,7 @@ fn search_files_list(
     let done_flag = Arc::new(AtomicBool::new(false));
     let progress_counter = Arc::new(AtomicU64::new(0));
     let callback_state = Arc::new(CallbackState::new());
+    let (monitor_done_tx, monitor_done_rx) = std::sync::mpsc::channel::<()>();
 
     let stop_flag_mon = stop_flag.clone();
     let done_mon = done_flag.clone();
@@ -1152,7 +1157,10 @@ fn search_files_list(
                     false
                 });
                 if is_stopped { stop_flag_mon.store(true, Ordering::SeqCst); break; }
-                std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
+                match monitor_done_rx.recv_timeout(std::time::Duration::from_millis(MONITOR_INTERVAL_MS)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
             }
         }))
     } else {
@@ -1281,6 +1289,7 @@ fn search_files_list(
 
         // B1: done_flag를 먼저 설정하여 dispatcher와 monitor 스레드가 종료 루프에 진입할 수 있도록 합니다.
         done_flag.store(true, Ordering::SeqCst);
+        let _ = monitor_done_tx.send(());
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
         if let Some(h) = monitor_handle { let _ = h.join(); }
         let final_res = to_python_file_matches(results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone());
@@ -1344,6 +1353,7 @@ fn find_files_with_keyword(
     let stop_flag_mon = stop_flag.clone();
     let is_done_mon = is_done.clone();
     let stop_evt_mon = stop_event.as_ref().map(|obj| obj.clone_ref(py));
+    let (monitor_done_tx, monitor_done_rx) = std::sync::mpsc::channel::<()>();
 
     let monitor_handle = if stop_event.is_some() {
         Some(std::thread::spawn(move || {
@@ -1357,7 +1367,10 @@ fn find_files_with_keyword(
                     false
                 });
                 if is_stopped { stop_flag_mon.store(true, Ordering::SeqCst); break; }
-                std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
+                match monitor_done_rx.recv_timeout(std::time::Duration::from_millis(MONITOR_INTERVAL_MS)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
             }
         }))
     } else {
@@ -1416,8 +1429,14 @@ fn find_files_with_keyword(
         let exts = extensions.map(|v| v.iter().map(|s| s.trim_start_matches('.').to_lowercase()).collect::<HashSet<String>>());
         let glob_set = build_glob_set(&filename_filter.unwrap_or_default());
 
-        paths.into_par_iter().for_each(|root| {
-            let mut builder = WalkBuilder::new(&root);
+        let mut roots = paths.into_iter();
+        if let Some(first_root) = roots.next() {
+            // 모든 루트를 하나의 ignore 병렬 워커에 등록합니다. 루트마다 별도
+            // 워커 풀을 만들면 바깥 Rayon 풀과 중첩되어 스레드가 과도하게 늘어납니다.
+            let mut builder = WalkBuilder::new(first_root);
+            for root in roots {
+                builder.add(root);
+            }
             builder.hidden(exclude_hidden).ignore(false).git_ignore(false);
             let walker = builder.build_parallel();
             let res_ref = Arc::clone(&results);
@@ -1586,10 +1605,11 @@ fn find_files_with_keyword(
                     ignore::WalkState::Continue
                 })
             });
-        });
+        }
 
         // N1: is_done을 먼저 설정하여 dispatcher가 종료 루프에 진입할 수 있도록 합니다.
         is_done.store(true, Ordering::SeqCst);
+        let _ = monitor_done_tx.send(());
         if let Some((_, handle)) = results_dispatcher { let _ = handle.join(); }
         if let Some(handle) = monitor_handle { let _ = handle.join(); }
         let final_res = results.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();

@@ -37,7 +37,7 @@ where
     WB: Reader<R>,
 {
     let mut results: Vec<RawMatch> = Vec::new();
-    for sheet_name in wb.sheet_names().to_vec() {
+    for sheet_name in wb.sheet_names() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
@@ -88,7 +88,7 @@ where
     let mut cell_count: u64 = 0;
     let mut first_sheet_error = None;
     
-    for sheet_name in wb.sheet_names().to_vec() {
+    for sheet_name in wb.sheet_names() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             return ExcelCheckOutcome::default();
         }
@@ -236,7 +236,7 @@ fn cell_matches_val(val: &str, ctx: &ExcelCtx<'_>) -> bool {
     }
 }
 
-/// 셀 데이터를 문자열로 변환합니다.
+/// 셀 데이터를 검색·표시용 문자열로 변환합니다.
 fn cell_to_string(cell: &Data) -> Option<String> {
     let s = match cell {
         Data::String(s) => s.to_string(),
@@ -263,6 +263,25 @@ fn panic_to_string(p: Box<dyn std::any::Any + Send>) -> String {
 mod tests {
     use super::*;
 
+    fn assert_cell_match(cell: Data, pattern: &str, exact: bool, expected: bool) {
+        let pat_nfc: String = pattern.chars().nfc().collect();
+        let pat_upper = pat_nfc.to_lowercase().to_uppercase();
+        let ac = aho_corasick::AhoCorasickBuilder::new()
+            .ascii_case_insensitive(true)
+            .match_kind(aho_corasick::MatchKind::LeftmostFirst)
+            .build([pat_nfc])
+            .expect("valid test pattern");
+        let ctx = ExcelCtx {
+            pat_upper: &pat_upper,
+            ac: &ac,
+            is_exact: exact,
+            stop_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            max_per_file: 5_000,
+            max_check_cells: 500_000,
+        };
+        assert_eq!(cell_matches(&cell, &ctx), expected);
+    }
+
     #[test]
     fn iso_date_and_duration_cells_are_searchable() {
         assert_eq!(
@@ -273,5 +292,26 @@ mod tests {
             cell_to_string(&Data::DurationIso("PT1H30M".to_string())),
             Some("PT1H30M".to_string())
         );
+    }
+
+    #[test]
+    fn empty_string_cells_stay_excluded() {
+        assert!(cell_to_string(&Data::String(String::new())).is_none());
+    }
+
+    #[test]
+    fn string_path_preserves_exact_unicode_matching() {
+        assert_cell_match(Data::String("STRASSE".to_string()), "straße", true, true);
+        assert_cell_match(Data::String("k".to_string()), "K", true, true);
+        assert_cell_match(Data::String("e\u{301}".to_string()), "é", true, true);
+        assert_cell_match(Data::String("needle suffix".to_string()), "needle", false, true);
+        assert_cell_match(Data::String(String::new()), "needle", false, false);
+    }
+
+    #[test]
+    fn owned_non_string_path_preserves_display_normalization() {
+        assert_cell_match(Data::Float(10.0), "10", true, true);
+        assert_cell_match(Data::Float(10.5), "10.5", true, true);
+        assert_cell_match(Data::Bool(true), "true", true, true);
     }
 }

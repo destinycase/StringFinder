@@ -4,7 +4,7 @@ import os
 from unittest.mock import patch
 
 import pytest
-from PySide6.QtWidgets import QPlainTextEdit
+from PySide6.QtWidgets import QMessageBox, QPlainTextEdit
 
 from sf_utils.constants import Constants
 from sf_utils.file_helper import open_in_external_editor
@@ -47,6 +47,24 @@ def test_external_editor_missing_program_falls_back_to_system_default(tmp_path):
     ):
         assert open_in_external_editor(file_path, 12, {"editor_type": "vscode"}) is True
     open_file.assert_called_once_with(file_path)
+
+
+def test_external_editor_can_disable_system_fallback_for_executable_files(tmp_path):
+    file_path = str(tmp_path / "sample.py")
+    with (
+        patch("sf_utils.file_helper.shutil.which", return_value=None),
+        patch("sf_utils.file_helper.open_file") as open_file,
+    ):
+        assert (
+            open_in_external_editor(
+                file_path,
+                12,
+                {"editor_type": "vscode"},
+                allow_system_fallback=False,
+            )
+            is False
+        )
+    open_file.assert_not_called()
 
 
 def test_external_editor_custom_template_preserves_windows_paths(tmp_path):
@@ -99,12 +117,60 @@ def test_settings_dialog_external_editor_defaults_to_system(qtbot, mock_config_m
 
 def test_search_tab_passes_match_location_to_configured_editor(search_tab_fixture):
     with patch("ui.search_tab.open_in_external_editor") as open_editor:
-        search_tab_fixture._open_match_in_editor("C:/data/sample.py", 27)
+        search_tab_fixture._open_match_in_editor("C:/data/sample.txt", 27)
 
     open_editor.assert_called_once_with(
-        "C:/data/sample.py",
+        "C:/data/sample.txt",
         27,
         search_tab_fixture.config_manager.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR, {}),
+    )
+
+
+def test_search_tab_blocks_executable_open_by_default(search_tab_fixture):
+    with (
+        patch("ui.search_tab.QMessageBox.warning", return_value=QMessageBox.StandardButton.No),
+        patch("sf_utils.file_helper.open_file") as open_file,
+    ):
+        search_tab_fixture._open_file_from_view("C:/downloads/tool.exe")
+
+    open_file.assert_not_called()
+
+
+def test_search_tab_opens_executable_after_confirmation(search_tab_fixture):
+    with (
+        patch("ui.search_tab.QMessageBox.warning", return_value=QMessageBox.StandardButton.Yes),
+        patch("sf_utils.file_helper.open_file") as open_file,
+    ):
+        search_tab_fixture._open_file_from_view("C:/downloads/tool.exe")
+
+    open_file.assert_called_once_with("C:/downloads/tool.exe")
+
+
+def test_search_tab_blocks_executable_match_with_system_editor(search_tab_fixture):
+    editor_settings = {Constants.CONFIG_KEY_EDITOR_TYPE: "system"}
+    with (
+        patch.object(search_tab_fixture.config_manager, "get", return_value=editor_settings),
+        patch("ui.search_tab.QMessageBox.warning", return_value=QMessageBox.StandardButton.No),
+        patch("ui.search_tab.open_in_external_editor") as open_editor,
+    ):
+        search_tab_fixture._open_match_in_editor("C:/downloads/script.ps1", 8)
+
+    open_editor.assert_not_called()
+
+
+def test_search_tab_never_falls_back_from_editor_to_executable_system_handler(search_tab_fixture):
+    editor_settings = {Constants.CONFIG_KEY_EDITOR_TYPE: "vscode"}
+    with (
+        patch.object(search_tab_fixture.config_manager, "get", return_value=editor_settings),
+        patch("ui.search_tab.open_in_external_editor") as open_editor,
+    ):
+        search_tab_fixture._open_match_in_editor("C:/downloads/script.py", 9)
+
+    open_editor.assert_called_once_with(
+        "C:/downloads/script.py",
+        9,
+        editor_settings,
+        allow_system_fallback=False,
     )
 
 

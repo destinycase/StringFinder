@@ -19,7 +19,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from sf_utils.app_strings import AppStrings
-from sf_utils.file_helper import open_file
+from sf_utils.file_helper import is_potentially_executable_file, open_file
 from ui.widgets import HistoryComboBox
 
 
@@ -95,3 +95,15 @@ def test_open_file_linux_uses_xdg_open(monkeypatch, tmp_path):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def test_potentially_executable_file_classification(monkeypatch):
+    monkeypatch.setenv("PATHEXT", ".EXE;.COM;.CUSTOM")
+
+    assert is_potentially_executable_file("C:/downloads/tool.EXE")
+    assert is_potentially_executable_file("C:/downloads/script.ps1")
+    assert is_potentially_executable_file("C:/downloads/link.lnk")
+    assert is_potentially_executable_file("/tmp/install.command")
+    assert is_potentially_executable_file("/tmp/install.sh")
+    assert is_potentially_executable_file("C:/downloads/tool.custom")
+    assert not is_potentially_executable_file("C:/documents/report.txt")
