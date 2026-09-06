@@ -427,7 +427,9 @@ fn search_file(
     });
 
     if let Some(done_tx) = monitor_done { let _ = done_tx.send(()); }
-    if let Some(h) = monitor_handle { let _ = h.join(); }
+    // The monitor needs the GIL to check the Python cancellation event.
+    // Release it while joining, including when the search returns an error.
+    if let Some(h) = monitor_handle { let _ = py.allow_threads(|| h.join()); }
 
     match res {
         Some(Ok(m)) => {
