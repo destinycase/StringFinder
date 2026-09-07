@@ -33,5 +33,5 @@ def test_benchmark_special_dataset_generation_and_hits(tmp_path):
         benchmark_performance.SET_J_KEYWORD,
         special_mode=Constants.MODE_EXCEL,
     )
-    assert int(excel_result["results_count"]) >= 1
+    assert int(excel_result["results_count"]) == 2
     assert int(excel_result.get("skipped_count", 0)) == 0

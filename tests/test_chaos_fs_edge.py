@@ -37,3 +37,7 @@ def test_chaos_long_path_search(tmp_path):
 
     assert "results" in result
     assert "skipped" in result
+    assert len(result["results"]) == 1
+    assert result["results"][0][0] == file_path
+    assert result["results"][0][1] == 1
+    assert result["skipped"] == []

@@ -1,1 +1,0 @@
-<!DOCTYPE root [<!ENTITY company "ACME">]><root>&company;</root>

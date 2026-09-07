@@ -30,6 +30,8 @@ htmlcov/
 
 # Local data
 data/
+/.qa_593_ui/
+/.test_remediation_full/
 
 # Logs and History
 *.log
