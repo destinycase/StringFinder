@@ -122,8 +122,8 @@ def build(clean_first=False):
         f.write(version_file_content)
     print(f"Created temporary version file: {version_file_path}")
 
-    # 시작 시 기존 build/dist 폴더 정리
-    for folder in ["build", "dist", "rust_bin"]:
+    # 임시 빌드 폴더만 정리하고 기존 dist 배포본은 성공적으로 교체할 때까지 보존
+    for folder in ["build", "rust_bin"]:
         abs_folder = os.path.join(PROJECT_ROOT, folder)
         if os.path.exists(abs_folder):
             shutil.rmtree(abs_folder, ignore_errors=True)
@@ -182,7 +182,7 @@ def build(clean_first=False):
     # (API 호출로 전환하기 위해 cmd 리스트에서 sys.executable 및 -m PyInstaller 제거)
     assets_dir = os.path.join(PROJECT_ROOT, "src", "assets")
     main_path = os.path.join(PROJECT_ROOT, "src", "sf_main.py")
-    dist_dir = os.path.join(PROJECT_ROOT, "dist")
+    dist_dir = os.path.join(PROJECT_ROOT, "build", "release")
     build_dir = os.path.join(PROJECT_ROOT, "build")
 
     pyi_args = [
@@ -252,6 +252,13 @@ def build(clean_first=False):
 
         # PyInstaller API 호출
         PyInstaller.__main__.run(pyi_args)
+
+        from build_rust import install_binary
+
+        install_binary(
+            os.path.join(dist_dir, "StringFinder.exe"),
+            os.path.join(PROJECT_ROOT, "dist", "StringFinder.exe"),
+        )
 
         print("\n--- Build Successful! ---")
         print(f"Executable location: {os.path.abspath(os.path.join('dist', 'StringFinder.exe'))}")

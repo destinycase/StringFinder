@@ -71,20 +71,27 @@ class SearchResultModel(QAbstractTableModel):
         self._pagination_enabled = True
         self._is_sorting = False
         self._sort_worker = None
+        self._data_revision = 0
+        self._sort_request = 0
+        self._active_sort = None
+        self._pending_sort = None
+        self._sort_workers = {}
         self._file_filter = ""
         self._folder_filter = ""
         self.search_mode = Constants.MODE_NORMAL
 
     class SortWorkerSignals(QObject):
-        finished = Signal(list)
+        finished = Signal(int, int, object)
 
     class SortWorker(QRunnable):
-        def __init__(self, data, column, reverse, callback):
+        def __init__(self, data, key, reverse, request, revision, callback):
             super().__init__()
             self.setAutoDelete(True)
             self.data = data
-            self.column = column
+            self.key = key
             self.reverse = reverse
+            self.request = request
+            self.revision = revision
             self.callback = callback
             self.signals = SearchResultModel.SortWorkerSignals()
             self.signals.finished.connect(self.callback)
@@ -92,29 +99,46 @@ class SearchResultModel(QAbstractTableModel):
         def run(self):
             # 대규모 데이터 정렬 수행 (메모리 중복 방지를 위해 in-place 정렬 시도)
             try:
-                self.data.sort(key=lambda x: x[self.column], reverse=self.reverse)
-                self.signals.finished.emit(self.data)
+                self.data.sort(key=self.key, reverse=self.reverse)
+                self.signals.finished.emit(self.request, self.revision, self.data)
             except Exception as e:
                 logger.error(AppStrings.ERROR_SORT_WORKER.format(e))
-                self.signals.finished.emit([])
+                self.signals.finished.emit(self.request, self.revision, None)
 
     def sort(self, column, order=Qt.SortOrder.AscendingOrder):
         """비동기 방식으로 데이터를 정렬합니다."""
-        if not self._result_buffer or self._is_sorting:
+        self._start_sort(lambda row: row[column], order == Qt.SortOrder.DescendingOrder)
+
+    def _start_sort(self, key, reverse=False):
+        if not self._result_buffer:
             return
+        if self._is_sorting:
+            self._pending_sort = (key, reverse)
+            return
+        self._sort_request += 1
+        self._active_sort = self._sort_request
         self._is_sorting = True
-        self.layoutAboutToBeChanged.emit()
-        reverse = order == Qt.SortOrder.DescendingOrder
-        # 정렬 워커 생성 및 실행
-        self._sort_worker = self.SortWorker(list(self._result_buffer), column, reverse, self._on_sort_finished)
+        self._sort_worker = self.SortWorker(
+            list(self._result_buffer), key, reverse, self._sort_request,
+            self._data_revision, self._on_sort_finished,
+        )
+        self._sort_workers[self._sort_request] = self._sort_worker
         QThreadPool.globalInstance().start(self._sort_worker)
-    def _on_sort_finished(self, sorted_data):
-        self._result_buffer = sorted_data
-        self._apply_filters(reset_page=False)
+
+    def _on_sort_finished(self, request, revision, sorted_data):
+        self._sort_workers.pop(request, None)
+        if request != self._active_sort:
+            return
+        self._active_sort = None
         self._sort_worker = None
         self._is_sorting = False
-        self.layoutChanged.emit()
-        self.sort_completed.emit()
+        if revision == self._data_revision and sorted_data is not None:
+            self._result_buffer = sorted_data
+            self._apply_filters(reset_page=False)
+            self.sort_completed.emit()
+        pending, self._pending_sort = self._pending_sort, None
+        if pending is not None:
+            self._start_sort(*pending)
 
     def add_results(self, results: list):
         """배치 단위로 결과를 일괄 추가하여 UI 갱신 빈도를 줄입니다."""
@@ -163,6 +187,7 @@ class SearchResultModel(QAbstractTableModel):
                 return
 
         self._result_buffer.extend(new_items)
+        self._data_revision += 1
 
         # 새로운 항목들 중 필터에 부합하는 항목만 filtered_buffer에 추가
         for item in new_items:
@@ -212,7 +237,7 @@ class SearchResultModel(QAbstractTableModel):
 
     def sort_results(self):
         """전체 데이터를 전역 규칙에 따라 정렬합니다 (비동기)."""
-        if not self._result_buffer or self._is_sorting:
+        if not self._result_buffer:
             return
         # 동기 정렬 대신 성능을 위해 비동기 전역 정렬 메서드를 호출합니다.
         self.sort_globally()
@@ -271,6 +296,12 @@ class SearchResultModel(QAbstractTableModel):
         return self._result_buffer
 
     def clear(self):
+        # Running workers keep their lifetime, but cannot publish into a new search.
+        self._data_revision += 1
+        self._active_sort = None
+        self._pending_sort = None
+        self._is_sorting = False
+        self._sort_worker = None
         self._data = []
         self._result_buffer = []
         self._filtered_buffer = []
@@ -337,12 +368,6 @@ class SearchResultModel(QAbstractTableModel):
 
     def sort_globally(self):
         """전체 데이터를 매치 수 DESC, 경로 ASC 순으로 정렬합니다 (비동기)."""
-        if not self._result_buffer or self._is_sorting:
-            return
-
-        self._is_sorting = True
-        self.layoutAboutToBeChanged.emit()
-
         # 전역 정렬 규칙: 매치 수(0번 컬럼) DESC, 경로(3번 컬럼) ASC
         def global_key(x):
             try:
@@ -354,26 +379,7 @@ class SearchResultModel(QAbstractTableModel):
             except (IndexError, AttributeError):
                 return (0, "", "")
 
-        class GlobalSortWorker(QRunnable):
-            def __init__(self, data, key, callback):
-                super().__init__()
-                self.setAutoDelete(True)
-                self.data = data
-                self.key = key
-                self.callback = callback
-                self.signals = SearchResultModel.SortWorkerSignals()
-                self.signals.finished.connect(self.callback)
-
-            def run(self):
-                try:
-                    self.data.sort(key=self.key)
-                    self.signals.finished.emit(self.data)
-                except Exception as e:
-                    logger.error(AppStrings.ERROR_GLOBAL_SORT_WORKER.format(e))
-                    self.signals.finished.emit([])
-
-        self._sort_worker = GlobalSortWorker(list(self._result_buffer), global_key, self._on_sort_finished)
-        QThreadPool.globalInstance().start(self._sort_worker)
+        self._start_sort(global_key)
 
     def _load_all_from_buffer(self):
         """버퍼의 모든 결과를 즉시 로드합니다 (페이지네이션 비활성화 시)."""

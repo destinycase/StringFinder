@@ -1,4 +1,3 @@
-// 전역 allow 설정: 유지보수 시 미사용 코드가 CI를 통과하는 것을 방지합니다.
 mod excel_search;
 mod json_search;
 mod types;
@@ -24,7 +23,7 @@ use crate::excel_search::{
     check_excel_file, search_excel_file, ExcelFileError, EXCEL_CELL_LIMIT_MARKER_PREFIX,
 };
 use crate::json_search::{check_json_file, search_json_file, JSON_DEPTH_LIMIT_MARKER_PREFIX};
-use crate::types::{SearchMatch, SearchOptions};
+use crate::types::{RawMatch, SearchMatch, SearchOptions};
 use crate::utils::{
     build_glob_set, decode_bytes, detect_encoding, generate_search_patterns, is_binary,
     match_filename_glob, parse_search_mode,
@@ -34,7 +33,6 @@ use crate::xml_search::{check_xml_file, search_xml_file, XmlSearchError};
 const MAX_FILE_SIZE: u64 = 1024 * 1024 * 1024; // 1GB 제한
 
 // 내부 타입 에일리어스 및 에러 마커 정의
-type RawMatch = (usize, String, Option<usize>, Option<usize>);
 type RawFileMatches = Vec<(String, Vec<RawMatch>)>;
 type FileMatches = Vec<(String, Vec<SearchMatch>)>;
 type SkippedEntries = Vec<(String, String)>;
@@ -432,14 +430,12 @@ fn search_file(
     };
 
     let pat_upper = norm_pattern.to_lowercase().to_uppercase();
-    let pat_bytes = norm_pattern.to_lowercase().as_bytes().to_vec();
 
     let res = py.allow_threads(|| {
         search_file_internal(InternalSearchParams {
             path: Path::new(&path),
             pattern: &pattern,
             pat_upper: &pat_upper,
-            pat_bytes: &pat_bytes,
             ac: &ac,
             is_exact,
             is_json,
@@ -558,7 +554,7 @@ fn do_search_with_mmap(
                     .unwrap_or(mmap.len());
             }
 
-            // 라인당 한 번만 FFI 호출을 수행하도록 최적화합니다.
+            // Each hit retains its line preview and byte range.
             let content = extract_line_content_bytes(
                 mmap,
                 last_nl_pos,
@@ -648,8 +644,12 @@ fn search_non_utf8_chunks(
     let mut pending = String::new();
     let mut input_offset = 0usize;
     let mut line_number = 1usize;
+    let mut next_search = 0usize;
 
     while input_offset < mmap.len() {
+        if stop_flag.load(Ordering::Relaxed) {
+            return;
+        }
         let end = (input_offset + DECODE_CHUNK_SIZE).min(mmap.len());
         let last = end == mmap.len();
         // encoding_rs는 출력 버퍼가 가득 차면 입력을 소비하지 않으므로 충분한
@@ -664,16 +664,18 @@ fn search_non_utf8_chunks(
         input_offset += consumed;
         pending.push_str(&decoded);
 
-        while let Some(newline) = pending.find('\n') {
+        let mut line_start = 0usize;
+        while let Some(relative_newline) = pending[next_search..].find('\n') {
+            let newline = next_search + relative_newline;
             if results.len() > max_per_file {
                 return;
             }
             if line_number.is_multiple_of(1000) && stop_flag.load(Ordering::Relaxed) {
                 return;
             }
-            let line = pending[..newline]
+            let line = pending[line_start..newline]
                 .strip_suffix('\r')
-                .unwrap_or(&pending[..newline]);
+                .unwrap_or(&pending[line_start..newline]);
             if decoded_line_matches(line, pat_upper, ac, is_exact) {
                 if existence_only {
                     results.push((line_number, "MATCH".to_string(), None, None));
@@ -681,8 +683,14 @@ fn search_non_utf8_chunks(
                 }
                 results.push((line_number, line.to_string(), None, None));
             }
-            pending.drain(..newline + 1);
+            line_start = newline + 1;
+            next_search = line_start;
             line_number += 1;
+        }
+        // Only new bytes can contain the next newline. Compact once per chunk.
+        next_search = pending.len() - line_start;
+        if line_start > 0 {
+            pending.drain(..line_start);
         }
 
         if consumed == 0 {
@@ -706,7 +714,6 @@ struct InternalSearchParams<'a> {
     path: &'a Path,
     pattern: &'a str,
     pat_upper: &'a str,
-    pat_bytes: &'a [u8],
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
     is_json: bool,
@@ -727,7 +734,6 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         path,
         pattern,
         pat_upper,
-        pat_bytes: _pat_bytes,
         ac,
         is_exact,
         is_json,
@@ -982,7 +988,16 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     };
 
     let res = match res {
-        Ok(matches) => apply_match_limit(matches, max_per_file),
+        Ok(mut matches) => {
+            if is_xml && decoded.is_some() {
+                // UTF-8 conversion preserves line numbers, not original byte offsets.
+                for item in &mut matches {
+                    item.2 = None;
+                    item.3 = None;
+                }
+            }
+            apply_match_limit(matches, max_per_file)
+        }
         Err(error) => return Some(Err(error)),
     };
     if res.is_empty() {
@@ -1076,7 +1091,6 @@ pub fn search_dir(
     );
 
     let pat_upper = norm_pattern.to_lowercase().to_uppercase();
-    let pat_bytes = norm_pattern.to_lowercase().as_bytes().to_vec();
 
     let extensions_set = extensions.map(|exts| {
         exts.into_iter()
@@ -1218,7 +1232,6 @@ pub fn search_dir(
                     let ac_ref = ac.clone();
                     let stop_ref = stop_flag.clone();
                     let p_upper = pat_upper.clone();
-                    let p_bytes = pat_bytes.clone();
                     let pat_orig = pattern.clone();
                     let tx_worker = tx_main.clone();
                     let ext_s = extensions_set.as_ref();
@@ -1296,7 +1309,6 @@ pub fn search_dir(
                             path,
                             pattern: &pat_orig,
                             pat_upper: &p_upper,
-                            pat_bytes: &p_bytes,
                             ac: &ac_ref,
                             is_exact,
                             is_json,
@@ -1545,7 +1557,6 @@ fn search_files_list(
     py.allow_threads(|| {
         let norm_pattern = crate::utils::normalize_unicode(&search_string);
         let pat_upper = norm_pattern.to_lowercase().to_uppercase();
-        let pat_bytes_v = norm_pattern.to_lowercase().as_bytes().to_vec();
         let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
             parse_search_mode(mode_bits);
         let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
@@ -1593,7 +1604,6 @@ fn search_files_list(
                 path,
                 pattern: &search_string,
                 pat_upper: &pat_upper,
-                pat_bytes: &pat_bytes_v,
                 ac: &ac,
                 is_exact,
                 is_json,
@@ -2168,6 +2178,100 @@ mod tests {
             .ascii_case_insensitive(true)
             .build([pattern])
             .unwrap()
+    }
+
+    #[test]
+    fn non_utf8_chunk_boundaries_preserve_lines_and_matches() {
+        let ac = build_test_ac("needle");
+        for encoding in [UTF_16LE, UTF_16BE, encoding_rs::EUC_KR] {
+            // Include a split CRLF, a split hit, short lines, and a final long line.
+            let text = format!(
+                "{}\r\nneedle\r\n{}needle\n{}needle",
+                "x".repeat(32767),
+                "한\n".repeat(20000),
+                "x".repeat(65533)
+            );
+            let bytes = if encoding == encoding_rs::EUC_KR {
+                encoding.encode(&text).0.into_owned()
+            } else {
+                text.encode_utf16()
+                    .flat_map(|unit| {
+                        if encoding == UTF_16LE {
+                            unit.to_le_bytes()
+                        } else {
+                            unit.to_be_bytes()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+            for exact in [false, true] {
+                let expected: Vec<_> = text
+                    .lines()
+                    .enumerate()
+                    .filter_map(|(i, line)| {
+                        let matched = if exact {
+                            line == "needle"
+                        } else {
+                            line.contains("needle")
+                        };
+                        matched.then(|| (i + 1, line.to_string(), None, None))
+                    })
+                    .collect();
+                let mut actual = Vec::new();
+                search_non_utf8_chunks(
+                    &bytes,
+                    encoding,
+                    "NEEDLE",
+                    &ac,
+                    exact,
+                    false,
+                    &Arc::new(AtomicBool::new(false)),
+                    5000,
+                    &mut actual,
+                );
+                assert_eq!(actual, expected, "encoding={encoding:?}, exact={exact}");
+                let mut existence = Vec::new();
+                search_non_utf8_chunks(
+                    &bytes,
+                    encoding,
+                    "NEEDLE",
+                    &ac,
+                    exact,
+                    true,
+                    &Arc::new(AtomicBool::new(false)),
+                    5000,
+                    &mut existence,
+                );
+                assert_eq!(
+                    existence,
+                    vec![(expected[0].0, "MATCH".to_string(), None, None)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_utf8_cancelled_search_preserves_previously_collected_results() {
+        let ac = build_test_ac("needle");
+        let bytes = "needle\n"
+            .repeat(20000)
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let original = vec![(1, "already delivered".to_string(), None, None)];
+        let mut actual = original.clone();
+        search_non_utf8_chunks(
+            &bytes,
+            UTF_16LE,
+            "NEEDLE",
+            &ac,
+            false,
+            false,
+            &Arc::new(AtomicBool::new(true)),
+            5000,
+            &mut actual,
+        );
+        assert_eq!(actual, original);
     }
 
     #[test]
