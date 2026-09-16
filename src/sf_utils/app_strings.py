@@ -194,6 +194,7 @@ class AppStrings:
     FILENAME_EDIT_PLACEHOLDER = "파일명 필터 (예: npc, fo / 콤마 구분)..."
     FILENAME_LIST_PLACEHOLDER = "필터 단어 (예: npc)"
     RESULT_FILTER_FILE_PLACEHOLDER = "파일 필터..."
+    RESULT_COMPACT_ROWS = "목록 조밀하게"
     RESULT_FILTER_FOLDER_PLACEHOLDER = "폴더 필터..."
     MATCH_FILTER_LIST_PLACEHOLDER = "목록 필터..."
     MATCH_FILTER_LINE_PLACEHOLDER = "라인 필터..."

@@ -327,7 +327,9 @@ class ResultView(QWidget):
         self.proxy_model.setSourceModel(self.result_model)
         self.proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.result_view.setModel(self.proxy_model)
-        self.result_view.setItemDelegate(HtmlDelegate(self.result_view))
+        self.result_delegate = HtmlDelegate(self.result_view)
+        self.result_view.setItemDelegate(self.result_delegate)
+        self._normal_result_row_height = self.result_view.verticalHeader().defaultSectionSize()
         self.result_model.sort_completed.connect(self._select_first_row_safely)
         self.result_model.limit_reached.connect(self._on_limit_reached)
 
@@ -395,6 +397,7 @@ class ResultView(QWidget):
         self.match_proxy_model.setSourceModel(self.match_model)
         self.match_view.setModel(self.match_proxy_model)
         self.match_view.setItemDelegate(HtmlDelegate(self.match_view))
+        self._normal_match_row_height = self.match_view.verticalHeader().defaultSectionSize()
         self.match_view.setFrameShape(QFrame.Shape.NoFrame)  # 디자인 일관성을 위해 매치 뷰의 프레임 테두리를 제거합니다.
         # 검색 모드에 따라 필터링 대상 컬럼이 달라지므로 전용 핸들러로 연결
         self.match_filter_1_edit.textChanged.connect(self._on_match_filter_1_changed)
@@ -477,6 +480,7 @@ class ResultView(QWidget):
         main_layout.insertWidget(2, self.empty_label, 1)
         self.result_splitter.setVisible(False)
         self._apply_theme_style()
+        self.apply_display_density()
         for i in range(self.result_filter_layout.count()):
             item = self.result_filter_layout.itemAt(i)
             if item:
@@ -1122,6 +1126,20 @@ class ResultView(QWidget):
             self.update_ui_visibility()
             QTimer.singleShot(0, self._select_first_row_safely)
         self._update_pagination_ui()
+
+    def apply_display_density(self):
+        """공통 표시 설정을 두 표에 적용하며 문맥 미리보기는 유지합니다."""
+        compact = self.config_manager.get(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, True) is True
+        for view, normal_height in (
+            (self.result_view, self._normal_result_row_height),
+            (self.match_view, self._normal_match_row_height),
+        ):
+            delegate = view.itemDelegate()
+            if isinstance(delegate, HtmlDelegate):
+                delegate.compact = compact
+            height = max(22, view.fontMetrics().height() + 6) if compact else normal_height
+            view.verticalHeader().setDefaultSectionSize(height)
+            view.viewport().update()
 
     def save_state(self):
         self.config_manager.set_splitter_states(None, self.result_splitter.saveState(), None)

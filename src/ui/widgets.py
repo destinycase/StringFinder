@@ -25,11 +25,15 @@ from sf_utils.constants import Constants
 class HtmlDelegate(QStyledItemDelegate):
     """텍스트 내 HTML 태그를 해석하여 하이라이팅된 결과를 렌더링하는 델리게이트입니다."""
 
+    compact = False
+
     def paint(self, painter, option, index):
         options = QStyleOptionViewItem(option)
         self.initStyleOption(options, index)
         painter.save()
         doc = QTextDocument()
+        if self.compact:
+            doc.setDocumentMargin(1)
         doc.setDefaultFont(options.font)  # type: ignore
 
         # 현재 셀이 선택되었는지 확인하여 테마에 맞는 하이라이트 색상을 적용합니다.
@@ -55,6 +59,8 @@ class HtmlDelegate(QStyledItemDelegate):
         options = QStyleOptionViewItem(option)
         self.initStyleOption(options, index)
         doc = QTextDocument()
+        if self.compact:
+            doc.setDocumentMargin(1)
         doc.setDefaultFont(options.font)  # type: ignore
         doc.setHtml(options.text)  # type: ignore
         return QSize(int(doc.idealWidth()), int(doc.size().height()))

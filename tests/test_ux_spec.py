@@ -188,7 +188,8 @@ def test_search_options_use_user_facing_label_and_requested_order(search_tab_fix
         search_panel.boolean_search_check,
         search_panel.exclude_hidden_check,
     ]
-    option_layout = search_panel.layout().itemAt(3).layout()
+    # Search and stop now share the input row; options remain on the next row.
+    option_layout = search_panel.layout().itemAt(1).layout()
     assert [option_layout.itemAt(i).widget() for i in range(4)] == option_widgets
 
 

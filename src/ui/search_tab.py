@@ -191,6 +191,13 @@ class SearchTab(QMainWindow):
                 self.restoreState(QByteArray.fromHex(default_dock_state.encode()))
         self._apply_lock_layout()
         self.search_panel.search_combo.setFocus()
+        self.apply_display_density()
+
+    def apply_display_density(self):
+        compact = self.config_manager.get(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, True) is True
+        self.result_view_panel.apply_display_density()
+        for panel in (self.folder_panel, self.ext_panel, self.filename_panel):
+            panel.apply_display_density(compact)
 
     @classmethod
     def _extract_log_level_from_line(cls, line: str) -> str:

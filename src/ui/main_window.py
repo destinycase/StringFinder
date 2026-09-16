@@ -364,8 +364,15 @@ class MainWindow(QMainWindow):
     def _show_settings(self):
         """설정 다이얼로그를 모달 형식으로 띄우고 변경 사항을 반영합니다."""
         dialog = SettingsDialog(self.config_manager, self)
+        dialog.display_density_changed.connect(self._apply_display_density)
         if dialog.exec():
             self._apply_theme()
+
+    def _apply_display_density(self):
+        for index in range(self.tab_widget.count()):
+            tab = self.tab_widget.widget(index)
+            if isinstance(tab, SearchTab):
+                tab.apply_display_density()
 
     def _apply_theme(self):
         """설정된 테마(Dark/Light)를 애플리케이션에 적용합니다."""

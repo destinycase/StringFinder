@@ -99,6 +99,7 @@ class Constants:
     CONFIG_KEY_RESULT_COLUMN_WIDTHS = "result_column_widths"
     CONFIG_KEY_MATCH_COLUMN_WIDTHS = "match_column_widths"
     CONFIG_KEY_CONTEXT_BEFORE_LINES = "context_before_lines"
+    CONFIG_KEY_COMPACT_RESULT_ROWS = "compact_result_rows"
     CONFIG_KEY_CONTEXT_AFTER_LINES = "context_after_lines"
     CONFIG_KEY_EXTERNAL_EDITOR = "external_editor"
     CONFIG_KEY_EDITOR_TYPE = "editor_type"

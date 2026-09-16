@@ -50,6 +50,11 @@ class FilterItemWidget(QWidget):
         layout.addStretch()
         layout.addWidget(self.delete_btn)
 
+    def set_compact(self, compact):
+        layout = self.layout()
+        if layout is not None:
+            layout.setContentsMargins(4, 0 if compact else 2, 4, 0 if compact else 2)
+
     def text(self):
         return self.checkbox.text()
 
@@ -82,16 +87,14 @@ class SearchOptionsPanel(QWidget):
         input_layout.addWidget(self.search_combo, 1)
         layout.addLayout(input_layout)
         self.search_btn = QPushButton(AppStrings.SEARCH_BTN)
-        self.search_btn.setMinimumHeight(40)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)
         self.search_btn.clicked.connect(self.search_started.emit)
-        layout.addWidget(self.search_btn)
+        input_layout.addWidget(self.search_btn)
         self.stop_btn = QPushButton(AppStrings.SEARCH_BTN_STOP)
-        self.stop_btn.setMinimumHeight(40)
         self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_ACTIVE)  # 사용자가 쉽게 인지할 수 있도록 중지 버튼에 강조 색상을 적용합니다.
         self.stop_btn.clicked.connect(self.stop_requested.emit)
         self.stop_btn.setVisible(False)
-        layout.addWidget(self.stop_btn)
+        input_layout.addWidget(self.stop_btn)
         options_layout = QHBoxLayout()
         self.complex_search_check = QCheckBox(AppStrings.SEARCH_MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
         self.complex_search_warning = QLabel("⚠")
@@ -165,7 +168,29 @@ class SearchOptionsPanel(QWidget):
         self.boolean_search_check.setChecked(state.get(Constants.PAYLOAD_EXISTENCE_ONLY, False))
 
 
-class FolderFilterPanel(QWidget):
+class DenseFilterPanel(QWidget):
+    """공통 목록 밀도와 이후 추가되는 항목의 표시 상태를 관리합니다."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._compact_rows = True
+
+    def apply_display_density(self, compact):
+        self._compact_rows = compact
+        margins = (6, 6, 6, 6) if compact else (10, 15, 10, 10)
+        layout = self.layout()
+        if layout is not None:
+            layout.setContentsMargins(*margins)
+        for listing in self.findChildren(QListWidget):
+            for index in range(listing.count()):
+                item = listing.item(index)
+                widget = listing.itemWidget(item)
+                if isinstance(widget, FilterItemWidget):
+                    widget.set_compact(compact)
+                    item.setSizeHint(widget.sizeHint())
+
+
+class FolderFilterPanel(DenseFilterPanel):
     filter_changed = Signal()
 
     def __init__(self, parent=None):
@@ -208,6 +233,7 @@ class FolderFilterPanel(QWidget):
         widget = FilterItemWidget(
             folder, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self.filter_changed.emit()
         )
+        widget.set_compact(self._compact_rows)
         item.setSizeHint(widget.sizeHint())
         self.folder_list.addItem(item)
         self.folder_list.setItemWidget(item, widget)
@@ -259,7 +285,7 @@ class FolderFilterPanel(QWidget):
                 widget.checkbox.setChecked(state[widget.text()])
 
 
-class ExtensionFilterPanel(QWidget):
+class ExtensionFilterPanel(DenseFilterPanel):
     filter_changed = Signal()
     special_mode_changed = Signal(str)
 
@@ -347,6 +373,7 @@ class ExtensionFilterPanel(QWidget):
         widget = FilterItemWidget(
             ext, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self.filter_changed.emit()
         )
+        widget.set_compact(self._compact_rows)
         item.setSizeHint(widget.sizeHint())
         self.ext_list.addItem(item)
         self.ext_list.setItemWidget(item, widget)
@@ -427,7 +454,7 @@ class ExtensionFilterPanel(QWidget):
                 widget.checkbox.setChecked(ext_states[widget.text()])
 
 
-class FilenameFilterPanel(QWidget):
+class FilenameFilterPanel(DenseFilterPanel):
     filter_changed = Signal()
     search_triggered = Signal()  # 입력창에서 Enter로 검색 트리거
     history_deleted = Signal(str, str)
@@ -494,6 +521,7 @@ class FilenameFilterPanel(QWidget):
         widget = FilterItemWidget(
             fn, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self.filter_changed.emit()
         )
+        widget.set_compact(self._compact_rows)
         item.setSizeHint(widget.sizeHint())
         self.filename_list.addItem(item)
         self.filename_list.setItemWidget(item, widget)

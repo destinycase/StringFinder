@@ -157,6 +157,7 @@ ENGLISH_STRINGS = {
     "FILENAME_EDIT_PLACEHOLDER": "Filename filter (for example: npc, fo / comma-separated)...",
     "FILENAME_LIST_PLACEHOLDER": "Filter term (for example: npc)",
     "RESULT_FILTER_FILE_PLACEHOLDER": "Filter files...",
+    "RESULT_COMPACT_ROWS": "Compact lists",
     "RESULT_FILTER_FOLDER_PLACEHOLDER": "Filter folders...",
     "MATCH_FILTER_LIST_PLACEHOLDER": "Filter list...",
     "MATCH_FILTER_LINE_PLACEHOLDER": "Filter lines...",

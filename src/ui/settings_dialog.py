@@ -31,6 +31,7 @@ from ui.styles import UIStyles
 
 class SettingsDialog(QDialog):
     doctor_finished = Signal(bool)
+    display_density_changed = Signal()
 
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
@@ -85,6 +86,20 @@ class SettingsDialog(QDialog):
         theme_row.addStretch()
         theme_row.addWidget(self.theme_combo)
         appearance_layout.addLayout(theme_row)
+        compact_rows_row = QHBoxLayout()
+        compact_rows_label = QLabel(AppStrings.RESULT_COMPACT_ROWS + ":")
+        self.compact_rows_combo = QComboBox()
+        self.compact_rows_combo.addItem(AppStrings.COMBO_DISABLE, False)
+        self.compact_rows_combo.addItem(AppStrings.COMBO_ENABLE, True)
+        compact = self.config_manager.get(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, True) is True
+        self.compact_rows_combo.setCurrentIndex(self.compact_rows_combo.findData(compact))
+        self.compact_rows_combo.setFixedWidth(INPUT_WIDTH)
+        self.compact_rows_combo.currentIndexChanged.connect(self._on_display_density_changed)
+        compact_rows_label.setBuddy(self.compact_rows_combo)
+        compact_rows_row.addWidget(compact_rows_label)
+        compact_rows_row.addStretch()
+        compact_rows_row.addWidget(self.compact_rows_combo)
+        appearance_layout.addLayout(compact_rows_row)
         layout_lock_row = QHBoxLayout()
         layout_lock_label = QLabel(AppStrings.MENU_LOCK_LAYOUT + ":")
         self.lock_layout_combo = QComboBox()
@@ -392,6 +407,13 @@ class SettingsDialog(QDialog):
             QMessageBox.information(self, AppStrings.INFO_TITLE, AppStrings.LOG_SYS_DOCTOR_DONE)
         else:
             QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.LOG_SYS_DOCTOR_FAIL.format("Internal Error"))
+
+    def _on_display_density_changed(self, index):
+        compact = self.compact_rows_combo.itemData(index)
+        if not isinstance(compact, bool):
+            return
+        self.config_manager.set(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, compact)
+        self.display_density_changed.emit()
 
     def _on_theme_changed(self, index):
         theme = self.theme_combo.itemData(index)
