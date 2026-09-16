@@ -2,6 +2,27 @@ import multiprocessing
 import os
 import sys
 
+# Run before normal imports/exception dialogs, and never open user sessions.
+if __name__ == "__main__" and sys.argv[1:] == ["--smoke-test"]:
+    try:
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication
+        import qdarktheme
+        from rust_engine import sf_engine  # type: ignore[attr-defined]  # Native extension.
+        from sf_utils._version import VERSION
+
+        if sf_engine.ENGINE_VERSION != VERSION:
+            raise RuntimeError("Python/Rust version mismatch")
+        smoke_app = QApplication([sys.argv[0]])
+        smoke_app.setStyleSheet(qdarktheme.load_stylesheet("dark"))
+        from ui.main_window import MainWindow  # noqa: F401
+
+        QTimer.singleShot(0, smoke_app.quit)
+        smoke_code = smoke_app.exec()
+    except Exception:
+        sys.exit(1)
+    sys.exit(smoke_code)
+
 import qdarktheme
 from PySide6.QtWidgets import QApplication
 

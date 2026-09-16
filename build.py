@@ -225,6 +225,7 @@ def build(clean_first=False):
     # [격리 강화] 화이트리스트 방식으로 sys.path 재구성 (외부 site-packages 차단)
     # 표준 라이브러리 경로와 현재 프로젝트 경로, 그리고 PyInstaller 관련 경로만 허용합니다.
     original_path = list(sys.path)
+    original_environment = os.environ.copy()
     try:
         # 안전한 경로 패턴: 파이썬 홈 디렉토리, 프로젝트 루트, 빌드 임시 디렉토리
         python_home = os.path.normpath(sys.prefix).lower()
@@ -249,11 +250,22 @@ def build(clean_first=False):
         os.environ.pop("PYTHONPATH", None)
         os.environ.pop("PYTHONHOME", None)
         os.environ["PYTHONNOUSERSITE"] = "1"  # 사용자 레벨 site-packages 무시
+        from build_support import isolated_packaging_path, smoke_test_executable, verify_qt_icu
+
+        os.environ["PATH"] = isolated_packaging_path()
+        for key in tuple(os.environ):
+            if key.startswith(("QT_", "QML")):
+                os.environ.pop(key)
 
         # PyInstaller API 호출
         PyInstaller.__main__.run(pyi_args)
 
         from build_rust import install_binary
+
+        candidate = os.path.join(dist_dir, "StringFinder.exe")
+        verify_qt_icu(candidate)
+        smoke_test_executable(candidate)
+        print("Frozen Qt/theme/engine smoke test passed.")
 
         install_binary(
             os.path.join(dist_dir, "StringFinder.exe"),
@@ -268,6 +280,8 @@ def build(clean_first=False):
     finally:
         # sys.path 복구 (빌드 이후 사후 정리를 위해)
         sys.path = original_path
+        os.environ.clear()
+        os.environ.update(original_environment)
 
     # 최종 정리 실행
     cleanup()
