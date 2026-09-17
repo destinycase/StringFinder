@@ -30,6 +30,8 @@ htmlcov/
 
 # Local data
 data/
+/sample/
+/samples/
 /.qa_593_ui/
 /.test_remediation_full/
 
