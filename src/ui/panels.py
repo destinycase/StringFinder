@@ -89,7 +89,16 @@ class SearchOptionsPanel(QWidget):
             (AppStrings.SEARCH_PROFILE_PRECISE, (True, False)),
             (AppStrings.SEARCH_PROFILE_PRECISE_EXISTENCE, (True, True)),
         ):
-            self.search_profile_combo.addItem(label_text, data)
+            display_text = f"⚠ {label_text}" if data[0] else label_text
+            self.search_profile_combo.addItem(display_text, data)
+        # Keep the guidance available after the former precise-search checkbox
+        # was replaced by a profile selector.  Item-level tooltips work for
+        # both the popup list and the currently selected value.
+        self.search_profile_combo.setAccessibleName(AppStrings.SEARCH_PROFILE_LABEL)
+        for index in (2, 3):
+            self.search_profile_combo.setItemData(
+                index, AppStrings.COMPLEX_SEARCH_TOOLTIP, Qt.ItemDataRole.ToolTipRole
+            )
         self.search_profile_combo.setMinimumWidth(190)
         input_layout.addWidget(self.search_profile_combo)
         input_layout.addWidget(self.complex_search_warning)

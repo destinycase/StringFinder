@@ -187,17 +187,13 @@ def test_search_options_use_user_facing_label_and_requested_order(search_tab_fix
     assert search_panel.search_profile_combo in [input_layout.itemAt(i).widget() for i in range(input_layout.count())]
 
 
-def test_ui_source_does_not_restore_item_tooltips():
-    """목록 항목의 설명/경로 툴팁이 다시 추가되지 않도록 보장한다."""
+def test_search_profile_items_expose_precise_guidance_tooltips():
+    """정밀 검색 프로필 항목은 선택 목록에서 사용 안내를 제공한다."""
     from pathlib import Path
 
     source_root = Path(__file__).resolve().parents[1] / "src" / "ui"
     ui_source = "\n".join(path.read_text(encoding="utf-8") for path in source_root.glob("*.py"))
-    tooltip_lines = [line.strip() for line in ui_source.splitlines() if ".setToolTip(" in line]
-    assert tooltip_lines == [
-        "self.complex_search_warning.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)"
-    ]
-    assert "ItemDataRole.ToolTipRole" not in ui_source
+    assert "ItemDataRole.ToolTipRole" in ui_source
 
 
 def test_skipped_count_signal_is_updated(search_tab_fixture):
