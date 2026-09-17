@@ -91,7 +91,7 @@ class SearchTab(QMainWindow):
         # 검색 조건 입력 도크
         self.search_dock = QDockWidget(AppStrings.DOCK_SEARCH_TITLE, self)
         self.search_dock.setObjectName(Constants.OBJ_NAME_SEARCH_DOCK)
-        self.search_panel = SearchOptionsPanel()
+        self.search_panel = SearchOptionsPanel(config_manager=self.config_manager)
         self.search_dock.setWidget(self.search_panel)
         self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.search_dock)
         self.search_panel.search_started.connect(self.start_search)
@@ -901,7 +901,6 @@ class SearchTab(QMainWindow):
                 msg = None
 
             if msg:
-                self.status_message_requested.emit(msg, 5000)
                 logger.info(msg)
                 # 스킵 된 파일 목록을 계층적으로 출력 (파일 경로 + 원인)
                 if hasattr(self, "skipped_files_list") and self.skipped_files_list:
@@ -916,7 +915,7 @@ class SearchTab(QMainWindow):
                     detail = str(sheet_item[2]) if len(sheet_item) > 2 else ""
                     logger.info(AppStrings.LOG_SCH_SKIPPED_SHEET_ITEM.format(fp, sn, detail))
             else:
-                self.status_message_requested.emit(AppStrings.STATUS_FOUND_COUNT.format(found_count), 5000)
+                logger.info(AppStrings.STATUS_FOUND_COUNT.format(found_count))
 
             if hasattr(self, "scan_start_time"):
                 total_elapsed = time.time() - self.scan_start_time

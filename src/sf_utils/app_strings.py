@@ -165,6 +165,11 @@ class AppStrings:
         "항상 검색이 필요한 특수 모드(Excel 등)나 직접 지정한 확장자는 제외 대상에서 보호됩니다."
     )
     BOOLEAN_SEARCH_LABEL = "존재 여부만 확인 (고속)"
+    SEARCH_PROFILE_LABEL = "검색 방식"
+    SEARCH_PROFILE_NORMAL = "일반 검색"
+    SEARCH_PROFILE_NORMAL_EXISTENCE = "일반 검색 + 존재 여부만 확인 (고속)"
+    SEARCH_PROFILE_PRECISE = "정밀 검색 (느림)"
+    SEARCH_PROFILE_PRECISE_EXISTENCE = "정밀 검색 + 존재 여부만 확인 (느림)"
     BOOLEAN_SEARCH_TOOLTIP = (
         "파일 내에 해당 텍스트가 존재하는지만 빠르게 확인합니다.\n"
         "첫 번째 일치 항목을 찾으면 즉시 다음 파일로 넘어가므로 매우 빠릅니다.\n"

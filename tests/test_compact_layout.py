@@ -85,6 +85,8 @@ def test_settings_density_applies_to_all_lists(qtbot, mock_config_manager):
     dialog = SettingsDialog(mock_config_manager)
     qtbot.addWidget(dialog)
     assert dialog.compact_rows_combo.currentData() is True
+    assert dialog.minimumWidth() >= 520
+    assert dialog.minimumHeight() >= 560
     assert dialog.compact_rows_combo.width() == dialog.theme_combo.width()
     group = dialog.compact_rows_combo.parentWidget()
     assert isinstance(group, QGroupBox)

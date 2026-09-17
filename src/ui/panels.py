@@ -68,13 +68,31 @@ class SearchOptionsPanel(QWidget):
     history_deleted = Signal(str, str)  # 유형, 텍스트
     history_cleared = Signal(str)  # 유형
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, config_manager=None):
         super().__init__(parent)
+        self.config_manager = config_manager
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         input_layout = QHBoxLayout()
+        self.complex_search_warning = QLabel("⚠")
+        self.complex_search_warning.setObjectName("complexSearchWarning")
+        self.complex_search_warning.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
+        self.complex_search_warning.setAccessibleName(AppStrings.COMPLEX_SEARCH_TOOLTIP)
+        self.complex_search_warning.setCursor(Qt.CursorShape.WhatsThisCursor)
+        self.complex_search_warning.setStyleSheet("color: #e0a020; font-weight: bold;")
+        self.search_profile_combo = QComboBox()
+        for label_text, data in (
+            (AppStrings.SEARCH_PROFILE_NORMAL, (False, False)),
+            (AppStrings.SEARCH_PROFILE_NORMAL_EXISTENCE, (False, True)),
+            (AppStrings.SEARCH_PROFILE_PRECISE, (True, False)),
+            (AppStrings.SEARCH_PROFILE_PRECISE_EXISTENCE, (True, True)),
+        ):
+            self.search_profile_combo.addItem(label_text, data)
+        self.search_profile_combo.setMinimumWidth(190)
+        input_layout.addWidget(self.search_profile_combo)
+        input_layout.addWidget(self.complex_search_warning)
         label = QLabel(AppStrings.SEARCH_LABEL)
         self.search_combo = HistoryComboBox()
         self.search_combo.setPlaceholderText(AppStrings.SEARCH_EDIT_PLACEHOLDER)
@@ -97,12 +115,6 @@ class SearchOptionsPanel(QWidget):
         input_layout.addWidget(self.stop_btn)
         options_layout = QHBoxLayout()
         self.complex_search_check = QCheckBox(AppStrings.SEARCH_MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
-        self.complex_search_warning = QLabel("⚠")
-        self.complex_search_warning.setObjectName("complexSearchWarning")
-        self.complex_search_warning.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
-        self.complex_search_warning.setAccessibleName(AppStrings.COMPLEX_SEARCH_TOOLTIP)
-        self.complex_search_warning.setCursor(Qt.CursorShape.WhatsThisCursor)
-        self.complex_search_warning.setStyleSheet("color: #e0a020; font-weight: bold;")
         self.exclude_hidden_check = QCheckBox(AppStrings.EXCLUDE_HIDDEN_LABEL)
         self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
         self.boolean_search_check = QCheckBox(AppStrings.BOOLEAN_SEARCH_LABEL)
@@ -112,6 +124,10 @@ class SearchOptionsPanel(QWidget):
         options_layout.addWidget(self.boolean_search_check)
         options_layout.addWidget(self.exclude_hidden_check)
         options_layout.addStretch()
+        self.complex_search_check.setVisible(False)
+        self.complex_search_warning.setVisible(False)
+        self.boolean_search_check.setVisible(False)
+        self.exclude_hidden_check.setVisible(False)
         layout.addLayout(options_layout)
 
     def set_searching(self, searching: bool):
@@ -141,13 +157,15 @@ class SearchOptionsPanel(QWidget):
         return self.search_combo.currentText().strip()
 
     def is_complex_search(self) -> bool:
-        return self.complex_search_check.isChecked()
+        return bool(self.search_profile_combo.currentData()[0])
 
     def is_exclude_hidden(self) -> bool:
+        if self.config_manager is not None:
+            return bool(self.config_manager.get(Constants.CONFIG_KEY_EXCLUDE_HIDDEN, True))
         return self.exclude_hidden_check.isChecked()
 
     def is_existence_only(self) -> bool:
-        return self.boolean_search_check.isChecked()
+        return bool(self.search_profile_combo.currentData()[1])
 
     def set_search_history(self, items: List[str]):
         self.search_combo.addItems(items)
@@ -163,9 +181,9 @@ class SearchOptionsPanel(QWidget):
 
     def load_state(self, state: dict):
         self.search_combo.set_current_text(state.get(Constants.STATE_KEY_SEARCH, ""))
-        self.complex_search_check.setChecked(state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH, False))
+        profile = (bool(state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH, False)), bool(state.get(Constants.PAYLOAD_EXISTENCE_ONLY, False)))
+        self.search_profile_combo.setCurrentIndex(dict(zip(((False, False), (False, True), (True, False), (True, True)), range(4))).get(profile, 0))
         self.exclude_hidden_check.setChecked(state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True))
-        self.boolean_search_check.setChecked(state.get(Constants.PAYLOAD_EXISTENCE_ONLY, False))
 
 
 class DenseFilterPanel(QWidget):

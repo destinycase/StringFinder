@@ -177,7 +177,7 @@ def test_advanced_tab_groups_settings_by_runtime_scope(qtbot, mock_config_manage
         for index in range(dialog.tab_widget.count())
         if dialog.tab_widget.tabText(index) == AppStrings.SETTINGS_GROUP_ADVANCED
     )
-    advanced_tab = dialog.tab_widget.widget(advanced_index)
+    advanced_tab = dialog.tab_widget.widget(advanced_index).widget()
     group_titles = [
         advanced_tab.layout().itemAt(index).widget().title()
         for index in range(advanced_tab.layout().count())

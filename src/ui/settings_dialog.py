@@ -4,9 +4,9 @@ import sys
 from PySide6.QtCore import Signal, Qt
 
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
+    QFrame,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QVBoxLayout,
     QTabWidget,
+    QScrollArea,
     QWidget,
 )
 
@@ -37,7 +38,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config_manager = config_manager
         self.setWindowTitle(AppStrings.SETTINGS_TITLE)
-        self.setMinimumWidth(420)
+        self.setMinimumSize(520, 560)
+        self.resize(560, 720)
         self._doctor_msg_box = None
         self.doctor_finished.connect(self._on_doctor_finished)
         self._init_ui()
@@ -47,6 +49,14 @@ class SettingsDialog(QDialog):
         main_layout = QVBoxLayout(self)
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
+
+        def add_scrollable_tab(content, title):
+            """배율이 커도 설정 내용이 잘리지 않도록 탭을 스크롤 영역으로 감쌉니다."""
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setWidget(content)
+            self.tab_widget.addTab(scroll, title)
 
         # 1. 일반 설정 탭
         tab_general = QWidget()
@@ -239,7 +249,7 @@ class SettingsDialog(QDialog):
         tab_general_layout.addWidget(clear_data_btn)
         tab_general_layout.addStretch()
         
-        self.tab_widget.addTab(tab_general, AppStrings.SETTINGS_GROUP_GENERAL)
+        add_scrollable_tab(tab_general, AppStrings.SETTINGS_GROUP_GENERAL)
 
         # 2. 고급 설정 탭
         tab_advanced = QWidget()
@@ -249,15 +259,35 @@ class SettingsDialog(QDialog):
         common_layout = QVBoxLayout(common_group)
 
         eb_row = QHBoxLayout()
-        eb_label = QLabel(AppStrings.EXCLUDE_BINARY_LABEL)
-        self.exclude_binary_check = QCheckBox()
-        self.exclude_binary_check.setChecked(self.config_manager.get_exclude_binary())
-        self.exclude_binary_check.stateChanged.connect(self._on_exclude_binary_changed)
-        self.exclude_binary_check.setFixedWidth(INPUT_WIDTH)
+        eb_label = QLabel(AppStrings.EXCLUDE_BINARY_LABEL + ":")
+        self.exclude_binary_combo = QComboBox()
+        self.exclude_binary_combo.addItem(AppStrings.COMBO_DISABLE, False)
+        self.exclude_binary_combo.addItem(AppStrings.COMBO_ENABLE, True)
+        self.exclude_binary_combo.setCurrentIndex(
+            self.exclude_binary_combo.findData(self.config_manager.get_exclude_binary())
+        )
+        self.exclude_binary_combo.currentIndexChanged.connect(
+            lambda i: self.config_manager.set_exclude_binary(bool(self.exclude_binary_combo.itemData(i)))
+        )
+        self.exclude_binary_combo.setFixedWidth(INPUT_WIDTH)
+        # 기존 테스트·외부 호출자의 이름 호환성을 유지합니다.
+        self.exclude_binary_check = self.exclude_binary_combo
         eb_row.addWidget(eb_label)
         eb_row.addStretch()
-        eb_row.addWidget(self.exclude_binary_check)
+        eb_row.addWidget(self.exclude_binary_combo)
         common_layout.addLayout(eb_row)
+        hidden_row = QHBoxLayout()
+        hidden_row.addWidget(QLabel(AppStrings.EXCLUDE_HIDDEN_LABEL + ":"))
+        hidden_row.addStretch()
+        self.exclude_hidden_combo = QComboBox()
+        self.exclude_hidden_combo.addItem(AppStrings.COMBO_DISABLE, False)
+        self.exclude_hidden_combo.addItem(AppStrings.COMBO_ENABLE, True)
+        hidden = self.config_manager.get(Constants.CONFIG_KEY_EXCLUDE_HIDDEN, True) is True
+        self.exclude_hidden_combo.setCurrentIndex(self.exclude_hidden_combo.findData(hidden))
+        self.exclude_hidden_combo.setFixedWidth(INPUT_WIDTH)
+        self.exclude_hidden_combo.currentIndexChanged.connect(lambda i: self.config_manager.set(Constants.CONFIG_KEY_EXCLUDE_HIDDEN, self.exclude_hidden_combo.itemData(i)))
+        hidden_row.addWidget(self.exclude_hidden_combo)
+        common_layout.addLayout(hidden_row)
 
         adv_settings = self.config_manager.get_advanced_settings()
 
@@ -362,7 +392,7 @@ class SettingsDialog(QDialog):
         tab_advanced_layout.addWidget(reset_adv_btn)
 
         tab_advanced_layout.addStretch()
-        self.tab_widget.addTab(tab_advanced, AppStrings.SETTINGS_GROUP_ADVANCED)
+        add_scrollable_tab(tab_advanced, AppStrings.SETTINGS_GROUP_ADVANCED)
 
         close_btn = QPushButton(AppStrings.BTN_CLOSE)
         close_btn.clicked.connect(self.accept)

@@ -133,6 +133,11 @@ ENGLISH_STRINGS = {
         "Required special formats such as Excel and explicitly selected extensions remain included."
     ),
     "BOOLEAN_SEARCH_LABEL": "Existence only (fast)",
+    "SEARCH_PROFILE_LABEL": "Search mode",
+    "SEARCH_PROFILE_NORMAL": "Normal search",
+    "SEARCH_PROFILE_NORMAL_EXISTENCE": "Normal search + existence only (fast)",
+    "SEARCH_PROFILE_PRECISE": "Precise search (slow)",
+    "SEARCH_PROFILE_PRECISE_EXISTENCE": "Precise search + existence only (slow)",
     "BOOLEAN_SEARCH_TOOLTIP": (
         "Checks only whether the text exists in each file.\n"
         "The search moves to the next file after the first match, making it very fast.\n"

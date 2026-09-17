@@ -182,15 +182,9 @@ def test_search_options_use_user_facing_label_and_requested_order(search_tab_fix
     assert search_panel.exclude_hidden_check.text() == "숨김 파일/폴더 제외"
     assert search_panel.exclude_hidden_check.text() == AppStrings.EXCLUDE_HIDDEN_LABEL
 
-    option_widgets = [
-        search_panel.complex_search_check,
-        search_panel.complex_search_warning,
-        search_panel.boolean_search_check,
-        search_panel.exclude_hidden_check,
-    ]
-    # Search and stop now share the input row; options remain on the next row.
-    option_layout = search_panel.layout().itemAt(1).layout()
-    assert [option_layout.itemAt(i).widget() for i in range(4)] == option_widgets
+    # Search profile, text input, and action button share the first row.
+    input_layout = search_panel.layout().itemAt(0).layout()
+    assert search_panel.search_profile_combo in [input_layout.itemAt(i).widget() for i in range(input_layout.count())]
 
 
 def test_ui_source_does_not_restore_item_tooltips():

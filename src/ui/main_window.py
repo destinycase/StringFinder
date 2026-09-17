@@ -64,21 +64,8 @@ class MainWindow(QMainWindow):
         icon_path = get_resource_path(os.path.join("assets", "icon.svg"))
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        # 타이틀에 Rust 엔진 버전을 함께 표시합니다.
-        # 버전 불일치 여부를 한눈에 확인할 수 있습니다.
-        try:
-            import importlib
-
-            sf_engine = importlib.import_module("rust_engine.sf_engine")
-            engine_ver = getattr(sf_engine, "ENGINE_VERSION", None)
-        except Exception:
-            engine_ver = None
-
-        if engine_ver:
-            title = f"{Constants.APP_NAME} v{Constants.APP_VERSION}  (Rust {engine_ver})"
-        else:
-            title = f"{Constants.APP_NAME} v{Constants.APP_VERSION}"
-        self.setWindowTitle(title)
+        # 사용자에게는 프로그램명과 앱 버전만 표시합니다. 엔진 버전은 진단 정보로만 사용합니다.
+        self.setWindowTitle(f"{Constants.APP_NAME} v{Constants.APP_VERSION}")
         self._apply_theme()
         self.new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
         self.new_tab_shortcut.activated.connect(lambda: self.add_new_tab())
@@ -162,6 +149,7 @@ class MainWindow(QMainWindow):
         self.skip_badge_btn.setFlat(True)
         self.skip_badge_btn.clicked.connect(self._on_skip_badge_clicked)
         self.skip_badge_btn.hide()
+        self.skip_badge_btn.setVisible(False)
         sb.addPermanentWidget(self.skip_badge_btn)
 
         # 검색 중임을 나타내는 회전하는 스피너 위젯을 추가합니다.
