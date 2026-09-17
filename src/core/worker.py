@@ -440,8 +440,8 @@ class SearchWorker(QRunnable):
             now = time.time()
             # [성능] 시그널 스패밍 방지: 동일 값은 500ms, 변화하는 값은 최소 100ms 간격으로 제한
             if count == self._last_progress_count:
-                # 3초 이상 경과 시(하트비트 로그 목적) 가드 통과
-                if now - self._last_progress_emit_time < 0.5 and (now - self._last_progress_emit_time) < 3.0:
+                # 동일 카운트는 3초마다 하트비트로 갱신
+                if now - self._last_progress_emit_time < 3.0:
                     return
             else:
                 if now - self._last_progress_emit_time < 0.1:

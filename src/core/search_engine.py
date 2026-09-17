@@ -1521,7 +1521,7 @@ def search_in_excel_special(
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
             Constants.DEFAULT_MAX_PER_FILE_MATCHES,
         )
-        search_string_norm = re.sub(r"\s+", " ", search_string).strip()
+        search_string_norm = re.sub(r"\s+", " ", search_string).casefold().strip()
         search_string_lower = search_string.casefold()
 
         for sheet_name in workbook.sheet_names:

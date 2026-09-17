@@ -183,9 +183,9 @@ class SearchOptionsPanel(QWidget):
     def get_state(self) -> dict:
         return {
             Constants.STATE_KEY_SEARCH: self.search_combo.currentText(),
-            Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.complex_search_check.isChecked(),
-            Constants.PAYLOAD_EXCLUDE_HIDDEN: self.exclude_hidden_check.isChecked(),
-            Constants.PAYLOAD_EXISTENCE_ONLY: self.boolean_search_check.isChecked(),
+            Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.is_complex_search(),
+            Constants.PAYLOAD_EXCLUDE_HIDDEN: self.is_exclude_hidden(),
+            Constants.PAYLOAD_EXISTENCE_ONLY: self.is_existence_only(),
         }
 
     def load_state(self, state: dict):

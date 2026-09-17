@@ -1389,6 +1389,11 @@ class ResultView(QWidget):
                 self._export_to_text(file_path)
         except Exception as e:
             logger.error(AppStrings.ERROR_EXPORT_FAIL.format(str(e)))
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, AppStrings.RESULT_EXPORT_TITLE, AppStrings.ERROR_EXPORT_FAIL.format(str(e)))
+        else:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, AppStrings.RESULT_EXPORT_TITLE, AppStrings.EXPORT_SUCCESS.format(file_path))
 
     def _export_to_excel(self, file_path):
         import openpyxl

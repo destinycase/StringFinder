@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QStatusBar,
     QTabWidget,
@@ -72,7 +73,19 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """창을 닫을 때 호출되어 애플리케이션 종료 절차를 수행합니다."""
+        active = any(
+            isinstance(self.tab_widget.widget(i), SearchTab)
+            and self.tab_widget.widget(i).search_state
+            not in (Constants.SearchState.IDLE, Constants.SearchState.STOPPING)
+            for i in range(self.tab_widget.count())
+        )
+        if active:
+            answer = QMessageBox.question(self, AppStrings.TAB_CLOSE_MENU, AppStrings.CONFIRM_EXIT_DURING_SEARCH)
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
         self._quit_application()
+        event.accept()
 
     def _quit_application(self):
         """애플리케이션을 안전하게 종료하고 현재 상태를 저장합니다."""
@@ -237,6 +250,10 @@ class MainWindow(QMainWindow):
             from sf_utils.file_helper import sanitize_filename
 
             new_name = sanitize_filename(new_name)
+            existing = [self.tab_widget.tabText(i) for i in range(self.tab_widget.count()) if i != index]
+            if not new_name or new_name in existing:
+                QMessageBox.warning(self, AppStrings.TAB_RENAME_TITLE, AppStrings.ERROR_TAB_NAME_DUPLICATE)
+                return
             self.config_manager.delete_session(old_name)
             self.tab_widget.setTabText(index, new_name)
             self._save_tab(index)
