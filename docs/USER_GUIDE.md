@@ -1,7 +1,7 @@
 # StringFinder 사용자 가이드 (User Guide)
 
-- **버전:** StringFinder v5.9.5
-- **최종 수정일:** 2026-09-17
+- **버전:** StringFinder v5.9.6
+- **최종 수정일:** 2026-09-18
 - **공식 지원 OS:** Windows 10/11 (64-bit)
 
 ---

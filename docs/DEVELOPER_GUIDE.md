@@ -1,7 +1,7 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.3 (StringFinder v5.9.5 기준)
-- **최종 수정일:** 2026-09-17
+- **문서 버전:** 1.4 (StringFinder v5.9.6 기준)
+- **최종 수정일:** 2026-09-18
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
 ---
@@ -75,7 +75,8 @@ StringFinder/
 ├── src/
 │   ├── sf_main.py                 # 애플리케이션 진입점, 싱글톤 잠금, 경고 필터
 │   ├── core/                      # Python 코어 계층
-│   │   ├── search_engine.py       # Rust FFI 연동 래퍼, 정규화 및 폴백 로직
+│   │   ├── search_engine.py       # Rust FFI 연동 래퍼, 검색 디스패치 및 폴백 로직
+│   │   ├── skip_reason_codes.py   # 검색 경로 공통 스킵 코드 계약
 │   │   ├── worker.py              # 백그라운드 SearchWorker, 풀 관리 및 시그널
 │   │   └── system_manager.py      # 애플리케이션 로그 보관·정리 정책
 │   ├── rust_engine/               # Rust 네이티브 크레이트 (sf_engine)
@@ -249,6 +250,14 @@ XML 파서 변경 시에는 최소한 다음 회귀 조건도 확인합니다.
 python tools/benchmark_engine.py
 ```
 
+개발 환경을 처음 구성했거나 빌드 오류 원인을 확인할 때는 다음 사전 점검을 실행합니다.
+
+```bash
+python tools/check_dev_environment.py
+```
+
+Python 3.12 이상, Cargo/Rustc, PySide6, PyInstaller가 모두 `[OK]`여야 로컬 배포 빌드를 진행할 수 있습니다.
+
 ### 6.6 Windows 배포본 빌드
 
 `build.py`는 `pyproject.toml`의 버전을 읽고 Rust 엔진을 다시 빌드한 뒤 PyInstaller 단일 실행 파일을 생성합니다. 결과물은 `dist/StringFinder.exe`입니다. 현재 이 절차는 Windows 배포를 기준으로 합니다.
@@ -324,6 +333,18 @@ python tools/validate_parallel_resources.py
 ```
 
 `--basetemp`는 pytest가 내용을 정리하는 전용 임시 경로여야 합니다. 생성된 fixture와 실행 로그를 Git에 추가하지 않습니다. 리소스 검증 도구는 생성한 파일만 검색하고 자체 자식 프로세스만 시간·메모리 한도로 종료합니다. 결과를 전체 장비/입력의 OOM 방지 보장으로 해석하지 않습니다.
+
+### 7.3 검색 계약 회귀 검증
+
+Rust 기본 검색과 Python 정밀 검색은 구현을 분리하되, 다음 계약을 공통 테스트로 고정합니다.
+
+- 검색 결과의 파일 경로·매치 수·구조화 데이터 직렬화 형식
+- `max_per_file`, 존재 여부 확인, 취소 시 이미 수집된 결과 보존
+- JSON/XML/Excel 오류와 `skipped` 사유의 정규화
+- XML·JSON 손상 입력의 결과 폐기 및 스킵 처리
+- 검색 프로필의 세션 저장·복원
+
+새 엔진 옵션이나 파서 변경은 동일 fixture를 두 경로에 적용하고, 의도된 차이만 허용해야 합니다. 결과 계약을 바꾸는 경우 Rust 생성부, Python 정규화 계층, UI 모델과 회귀 테스트를 함께 수정합니다.
 
 배포 EXE 검증은 개발 소스 테스트와 별도로 수행합니다. 전용 검색 탭과 시험 폴더에서 검색 → 정렬/미리보기 → 중지/재검색 → 내보내기 → 종료/세션 복원을 확인하고, 가능하면 Python 미설치 Windows에서 반복합니다. 미실행 항목은 통과로 기록하지 않습니다.
 

@@ -14,6 +14,8 @@ from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
 from sf_utils.english_strings import ENGLISH_STRINGS
 from sf_utils.localization import get_korean_strings, get_language
+from core.skip_reason_codes import *
+from core.skip_reason_formatter import format_excel_panic_reason as _format_excel_panic_reason
 
 def _get_adv_setting(key, default):
     return ConfigManager().get_advanced_settings().get(key, default)
@@ -193,30 +195,10 @@ SearchMatch = Tuple[Any, ...]
 SearchResult = Tuple[str, int, List[SearchMatch]]
 SkippedResult = Tuple[str, str]
 FileInfo = Tuple[str, int]
-SKIP_CODE_WALK = "ERR_WALK"
-SKIP_CODE_OPEN = "ERR_OPEN"
-SKIP_CODE_METADATA = "ERR_METADATA"
-SKIP_CODE_MMAP = "ERR_MMAP"
-SKIP_CODE_TOO_LARGE = "ERR_TOO_LARGE"
-SKIP_CODE_JSON_SIZE_LIMIT = "ERR_JSON_SIZE_LIMIT"
-SKIP_CODE_RESOURCE_BUDGET = "ERR_RESOURCE_BUDGET"
-SKIP_CODE_JSON_PARSE = "ERR_JSON_PARSE"
-SKIP_CODE_XML_PARSE = "ERR_XML_PARSE"
-SKIP_CODE_XML_UNSUPPORTED_DTD = "ERR_XML_UNSUPPORTED_DTD"
-SKIP_CODE_EXCEL_PROCESS = "ERR_EXCEL_PROCESS"
-SKIP_CODE_EXCEL_PANIC = "ERR_EXCEL_PANIC"
-SKIP_CODE_PANIC = "ERR_PANIC"
-SKIP_CODE_CRITICAL = "ERR_CRITICAL"
-SKIP_CODE_FILE_MATCH_LIMIT = "INFO_FILE_MATCH_LIMIT"
-SKIP_CODE_JSON_DEPTH_LIMIT = "INFO_JSON_DEPTH_LIMIT"
-SKIP_CODE_EXCEL_CELL_LIMIT = "INFO_EXCEL_CELL_LIMIT"
-
-
 class _UnsupportedXmlDtd(Exception):
     """XML DTD 및 엔터티 확장을 명시적으로 거부하기 위한 내부 신호입니다."""
 
 
-SKIP_CODE_UNKNOWN = "ERR_UNKNOWN"
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
 RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
 RUST_MATCH_MARKER_TRUNCATED = "__SF_TRUNCATED__"
@@ -224,87 +206,20 @@ RUST_MATCH_MARKER_JSON_DEPTH_LIMIT = "__SF_JSON_DEPTH_LIMIT__|"
 RUST_MATCH_MARKER_EXCEL_CELL_LIMIT = "__SF_EXCEL_CELL_LIMIT__|"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
-_SKIP_REASON_TEMPLATE_NAMES = {
-    SKIP_CODE_WALK: "SKIP_REASON_WALK",
-    SKIP_CODE_OPEN: "SKIP_REASON_OPEN",
-    SKIP_CODE_METADATA: "SKIP_REASON_METADATA",
-    SKIP_CODE_MMAP: "SKIP_REASON_MMAP",
-    SKIP_CODE_TOO_LARGE: "SKIP_REASON_TOO_LARGE",
-    SKIP_CODE_JSON_SIZE_LIMIT: "SKIP_REASON_JSON_SIZE_LIMIT",
-    SKIP_CODE_RESOURCE_BUDGET: "SKIP_REASON_RESOURCE_BUDGET",
-    SKIP_CODE_FILE_MATCH_LIMIT: "SKIP_REASON_FILE_MATCH_LIMIT",
-    SKIP_CODE_JSON_DEPTH_LIMIT: "SKIP_REASON_JSON_DEPTH_LIMIT",
-    SKIP_CODE_EXCEL_CELL_LIMIT: "SKIP_REASON_EXCEL_CELL_LIMIT",
-    SKIP_CODE_JSON_PARSE: "ERROR_JSON_PARSE",
-    SKIP_CODE_XML_PARSE: "ERROR_XML_PARSE",
-    SKIP_CODE_XML_UNSUPPORTED_DTD: "ERROR_XML_UNSUPPORTED_DTD",
-    SKIP_CODE_EXCEL_PROCESS: "ERROR_EXCEL_PROCESS",
-    SKIP_CODE_EXCEL_PANIC: "ERROR_EXCEL_PANIC",
-    SKIP_CODE_PANIC: "SKIP_REASON_PANIC",
-    SKIP_CODE_CRITICAL: "SKIP_REASON_CRITICAL",
-    SKIP_CODE_UNKNOWN: "SKIP_REASON_UNKNOWN",
-}
+_SKIP_REASON_TEMPLATE_NAMES = TEMPLATE_NAMES
 # Keep accepting skip reasons saved by releases predating the structured
 # ``ERR_*|detail`` protocol. Session files can outlive the application version.
-_LEGACY_SKIP_MARKERS = (
-    ("walker error", SKIP_CODE_WALK),
-    ("walk error", SKIP_CODE_WALK),
-    ("open error", SKIP_CODE_OPEN),
-    ("metadata error", SKIP_CODE_METADATA),
-    ("mmap error", SKIP_CODE_MMAP),
-    ("file too large", SKIP_CODE_TOO_LARGE),
-    ("panic", SKIP_CODE_PANIC),
-    ("critical error", SKIP_CODE_CRITICAL),
-)
+_LEGACY_SKIP_MARKERS = LEGACY_MARKERS
 
-_XML_DETAIL_TRANSLATION_NAMES = {
-    "XML declaration must appear exactly once at the beginning of the document": "XML_DETAIL_DECLARATION_POSITION",
-    "DOCTYPE declaration must appear before the root element": "XML_DETAIL_DOCTYPE_POSITION",
-    "DTD declarations and entity expansion are not supported": "XML_DETAIL_DTD_UNSUPPORTED",
-    "multiple root elements": "XML_DETAIL_MULTIPLE_ROOTS",
-    "unexpected closing element": "XML_DETAIL_UNEXPECTED_CLOSING",
-    "text outside the root element": "XML_DETAIL_TEXT_OUTSIDE_ROOT",
-    "CDATA outside the root element": "XML_DETAIL_CDATA_OUTSIDE_ROOT",
-    "XML document is incomplete or has no root element": "XML_DETAIL_INCOMPLETE_DOCUMENT",
-    "Malformed input, decoding impossible": "XML_DETAIL_INVALID_ENCODING",
-    "DOCTYPE declaration must not be empty": "XML_DETAIL_EMPTY_DOCTYPE",
-}
-
-_EXPAT_XML_DETAIL_TRANSLATION_NAMES = {
-    "mismatched tag": "XML_DETAIL_MISMATCHED_TAG",
-    "junk after document element": "XML_DETAIL_MULTIPLE_ROOTS",
-    "not well-formed (invalid token)": "XML_DETAIL_INVALID_TOKEN",
-    "no element found": "XML_DETAIL_INCOMPLETE_DOCUMENT",
-    "unclosed token": "XML_DETAIL_INCOMPLETE_DOCUMENT",
-    "duplicate attribute": "XML_DETAIL_INVALID_ATTRIBUTE",
-    "XML or text declaration not at start of entity": "XML_DETAIL_DECLARATION_POSITION",
-}
-
+_XML_DETAIL_TRANSLATION_NAMES = XML_DETAIL_TRANSLATION_NAMES
+_EXPAT_XML_DETAIL_TRANSLATION_NAMES = EXPAT_XML_DETAIL_TRANSLATION_NAMES
 
 def _build_skip_reason(code: str, detail: Any) -> str:
-    return "{}|{}".format(code, "" if detail is None else str(detail))
+    return build_skip_reason(code, detail)
 
 
 def _decode_skip_reason(reason: Any) -> Tuple[str, str]:
-    reason_str = str(reason or "").strip()
-    if not reason_str:
-        return SKIP_CODE_UNKNOWN, ""
-    if "|" in reason_str:
-        code, detail = reason_str.split("|", 1)
-        code = code.strip().upper()
-        if code.startswith(("ERR_", "INFO_")):
-            return code, detail.strip()
-    bracket_match = re.match(r"^\[((?:ERR|INFO)_[A-Z_]+)\]\s*(.*)$", reason_str)
-    if bracket_match:
-        code = bracket_match.group(1)
-        detail = bracket_match.group(2).lstrip(":").strip()
-        return code, detail
-    lower_reason = reason_str.lower()
-    for marker, code in _LEGACY_SKIP_MARKERS:
-        if marker in lower_reason:
-            detail = reason_str.split(":", 1)[1].strip() if ":" in reason_str else reason_str
-            return code, detail
-    return SKIP_CODE_UNKNOWN, reason_str
+    return decode_skip_reason(reason)
 
 
 def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) -> str:
@@ -454,38 +369,9 @@ def format_skip_reason(reason: Any) -> str:
 
 
 def format_excel_panic_reason(detail: Any) -> str:
-    """Convert internal Excel panic diagnostics into a localized user message."""
-    raw_detail = str(detail or "").strip()
-    if raw_detail:
-        logger.warning(AppStrings.LOG_SCH_EXCEL_ENGINE_PANIC.format(raw_detail))
-    format_name = ""
-    engine_detail = raw_detail
-    if "|" in raw_detail:
-        candidate, engine_detail = raw_detail.split("|", 1)
-        if candidate.strip().lower() in Constants.EXT_EXCEL:
-            format_name = candidate.strip().upper()
-        else:
-            engine_detail = raw_detail
-    elif raw_detail.lower() in Constants.EXT_EXCEL:
-        format_name = raw_detail.upper()
-        engine_detail = ""
-
-    range_error = re.fullmatch(
-        r"range start index (\d+) out of range for slice of length (\d+)",
-        engine_detail.strip(),
-        flags=re.IGNORECASE,
+    return _format_excel_panic_reason(
+        detail, app_strings=AppStrings, constants=Constants, logger=logger
     )
-    if range_error:
-        display_format = format_name or "Excel"
-        localized_detail = AppStrings.EXCEL_DETAIL_RANGE_OUT_OF_BOUNDS.format(
-            display_format,
-            *range_error.groups(),
-        )
-    elif format_name:
-        localized_detail = AppStrings.EXCEL_DETAIL_ENGINE_FAILURE.format(format_name)
-    else:
-        localized_detail = AppStrings.EXCEL_DETAIL_UNKNOWN_FORMAT
-    return AppStrings.ERROR_EXCEL_PANIC.format(localized_detail)
 
 
 _LOCALIZED_SKIP_MESSAGE_NAMES = (
