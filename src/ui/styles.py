@@ -9,6 +9,21 @@ class UIStyles:
     STYLE_DANGER_TEXT = "color: #ff5555;"
     STYLE_SELECTION_INFO = "color: #888; font-size: 14px; margin: 20px;"
     STYLE_EMPTY_LABEL = "color: {}; font-size: 16px; font-weight: bold;"
+
+    @classmethod
+    def get_empty_message_style(cls, is_dark_mode: bool) -> str:
+        """검색 진행/결과 없음 안내를 테마에 맞는 고대비 배지로 표시합니다."""
+        if is_dark_mode:
+            return (
+                "color: #B9E6FF; background-color: #123047; "
+                "border: 1px solid #2B78A0; border-radius: 6px; "
+                "font-size: 15px; font-weight: 700; padding: 12px 18px; margin: 20px;"
+            )
+        return (
+            "color: #0B5394; background-color: #EAF4FF; "
+            "border: 1px solid #70A9D6; border-radius: 6px; "
+            "font-size: 15px; font-weight: 700; padding: 12px 18px; margin: 20px;"
+        )
     STYLE_STOP_BTN_ACTIVE = """
         QPushButton {
             background-color: #ff4d4d;

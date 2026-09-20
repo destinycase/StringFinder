@@ -352,7 +352,7 @@ fn load_file_snapshot(
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=5000, max_check_cells=500000, max_json_depth=20000, max_json_size=524288000, options=None))]
+#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=10000, max_check_cells=500000, max_json_depth=20000, max_json_size=1073741824, options=None))]
 #[allow(clippy::too_many_arguments)]
 fn search_file(
     py: Python,
@@ -1318,7 +1318,7 @@ pub fn search_dir(
                             exclude_binary,
                             existence_only,
                             stop_flag: stop_ref.clone(),
-                            max_per_file: max_per_file.unwrap_or(5000),
+                            max_per_file: max_per_file.unwrap_or(10_000),
                             max_check_cells: max_check_cells.unwrap_or(500_000),
                             max_json_depth: max_json_depth.unwrap_or(20_000),
                             max_json_size: max_json_size.unwrap_or(DEFAULT_MAX_JSON_SIZE),
@@ -1613,7 +1613,7 @@ fn search_files_list(
                 exclude_binary,
                 existence_only,
                 stop_flag: stop_flag.clone(),
-                max_per_file: max_per_file.unwrap_or(5000),
+                max_per_file: max_per_file.unwrap_or(10_000),
                 max_check_cells: max_check_cells.unwrap_or(500_000),
                 max_json_depth: max_json_depth.unwrap_or(20_000),
                 max_json_size: max_json_size.unwrap_or(DEFAULT_MAX_JSON_SIZE),
@@ -1669,7 +1669,7 @@ fn search_files_list(
 }
 
 #[pyfunction]
-#[pyo3(signature = (paths, keyword, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, results_callback=None, max_json_depth=20000, max_json_size=524288000, options=None))]
+#[pyo3(signature = (paths, keyword, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, results_callback=None, max_json_depth=20000, max_json_size=1073741824, options=None))]
 #[allow(clippy::too_many_arguments)]
 /// When `results_callback` is provided, matching `(path, size)` entries are
 /// delivered in callback batches and are intentionally omitted from the

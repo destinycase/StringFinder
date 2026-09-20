@@ -205,7 +205,7 @@ def test_projected_structured_memory_is_a_local_skip(tmp_path, monkeypatch):
 def test_configured_json_size_limit_precedes_projected_budget(tmp_path, monkeypatch):
     file_path = tmp_path / "configured-limit.json"
     file_path.write_text('{"value": "needle"}', encoding="utf-8")
-    monkeypatch.setattr(search_engine.os.path, "getsize", lambda _path: 600 * MIB)
+    monkeypatch.setattr(search_engine.os.path, "getsize", lambda _path: 1100 * MIB)
     monkeypatch.setattr(
         resource_guard,
         "memory_snapshot",

@@ -665,7 +665,9 @@ class SearchTab(QMainWindow):
             exclude_binary = self.config_manager.get_exclude_binary()
             self.result_view_panel.clear()
             self.result_view_panel.set_searching_state(True)  # 검색 중 버튼 비활성화
-            self.result_view_panel.show_empty_message(AppStrings.RESULT_SEARCHING_MSG.format(search_text))
+            self.result_view_panel.show_empty_message(
+                AppStrings.RESULT_SEARCHING_MSG.format(search_text), emphasized=True
+            )
             existence_only = self.search_panel.is_existence_only()
             self.result_view_panel.set_search_context(search_text, special_mode, existence_only=existence_only)
 
@@ -925,7 +927,8 @@ class SearchTab(QMainWindow):
                 self.result_view_panel.auto_select_first_result()
             else:
                 self.result_view_panel.show_empty_message(
-                    AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text())
+                    AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text()),
+                    emphasized=True,
                 )
             self.tab_widget.setCurrentIndex(0)
             self.search_finished_with_data.emit()

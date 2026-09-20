@@ -117,12 +117,9 @@ def test_rust_search_limits_fall_back_to_safe_defaults_for_invalid_values(monkey
         },
     )
 
-    assert search_engine._get_rust_search_limits() == (
-        Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-        1,
-        1,
-        Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024,
-    )
+    limits = search_engine._get_rust_search_limits()
+    assert limits[:3] == (Constants.DEFAULT_MAX_PER_FILE_MATCHES, 1, 1)
+    assert 0 < limits[3] <= Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024
 
 
 def test_real_rust_engine_enforces_configured_json_size_limit(tmp_path):

@@ -17,6 +17,7 @@
 
 import os
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -38,7 +39,7 @@ def test_config_initialization(temp_dir):
 
 
 def test_json_dom_limit_migrates_previous_default(temp_dir):
-    """기존 기본값 80MB 설정은 새 기본값 500MB로 마이그레이션한다."""
+    """기존 기본값 80MB 설정은 새 기본값 1GB로 마이그레이션한다."""
     config_dir = os.path.join(temp_dir, "StringFinder")
     os.makedirs(config_dir, exist_ok=True)
     config_path = os.path.join(config_dir, "config.json")
@@ -55,8 +56,8 @@ def test_json_dom_limit_migrates_previous_default(temp_dir):
         ConfigManager._instance = None
         cm = ConfigManager()
 
-    assert cm.get_advanced_settings()[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] == 500
-    assert cm.config[Constants.CONFIG_KEY_VERSION] == 3
+    assert cm.get_advanced_settings()[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] == 1024
+    assert cm.config[Constants.CONFIG_KEY_VERSION] == Constants.CONFIG_SCHEMA_VERSION
 
 
 def test_v2_migration_removes_unused_case_setting_and_normalizes_advanced_bounds(temp_dir):
@@ -86,7 +87,7 @@ def test_v2_migration_removes_unused_case_setting_and_normalizes_advanced_bounds
 
     config = cm.config
     advanced = cm.get_advanced_settings()
-    assert config[Constants.CONFIG_KEY_VERSION] == 3
+    assert config[Constants.CONFIG_KEY_VERSION] == Constants.CONFIG_SCHEMA_VERSION
     assert "case_insensitive" not in config
     assert "unknown_advanced_option" not in advanced
     for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
@@ -409,3 +410,32 @@ def test_get_filters_self_heals_invalid_structure(temp_dir):
         assert "folders" in healed
         assert "extensions" in healed
         assert "filenames" in healed
+
+
+def test_default_version_updates_reset_only_changed_settings(temp_dir):
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        config_path = Path(temp_dir) / Constants.APP_NAME / Constants.CONFIG_FILENAME
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    Constants.CONFIG_KEY_VERSION: Constants.CONFIG_SCHEMA_VERSION,
+                    Constants.CONFIG_KEY_ADVANCED: {
+                        Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 777,
+                        Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 321,
+                    },
+                    Constants.CONFIG_KEY_SETTING_DEFAULT_VERSIONS: {
+                        Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 1,
+                        Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 2,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        config = ConfigManager()
+
+        advanced = config.get_advanced_settings()
+        assert advanced[Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES] == Constants.DEFAULT_MAX_PER_FILE_MATCHES
+        assert advanced[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] == Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB
+        assert config.config[Constants.CONFIG_KEY_SETTING_DEFAULT_VERSIONS] == Constants.SETTING_DEFAULT_VERSIONS

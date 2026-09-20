@@ -1,6 +1,6 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.4 (StringFinder v5.9.8 기준)
+- **문서 버전:** 1.4 (StringFinder v5.9.9 기준)
 - **최종 수정일:** 2026-09-18
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
@@ -129,10 +129,10 @@ options = sf_engine.SearchOptions(
     results_callback=callback_fn,   # 실시간 배치 수신 콜백
     batch_size=100,                 # 디스패치 배치 크기
     flush_ms=20,                    # 플러시 주기 (ms)
-    max_per_file=5000,              # 파일당 최대 매치 수
+    max_per_file=10000,             # 파일당 최대 매치 수
     max_check_cells=500000,         # 엑셀 셀 검사 상한
     max_json_depth=20000,           # JSON 탐색 깊이 제한
-    max_json_size=524288000,        # JSON 크기 제한 (500MB)
+    max_json_size=1073741824,       # JSON 크기 제한 (1GB)
 )
 ```
 

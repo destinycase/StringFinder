@@ -1092,10 +1092,12 @@ class ResultView(QWidget):
                 if w:
                     w.setVisible(has_results)
 
-    def show_empty_message(self, text, is_error=False):
+    def show_empty_message(self, text, is_error=False, emphasized=False):
         self.empty_label.setText(text)
         if is_error:
             self.empty_label.setStyleSheet(UIStyles.STYLE_EMPTY_LABEL.format(Constants.COLOR_RED))
+        elif emphasized:
+            self.empty_label.setStyleSheet(UIStyles.get_empty_message_style(self._is_dark_theme()))
         else:
             self.empty_label.setStyleSheet(UIStyles.STYLE_SELECTION_INFO)
         self.empty_label.setVisible(True)

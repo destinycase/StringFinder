@@ -54,7 +54,7 @@ class ConfigManager:
             # AppData 접근이 실패하면 임시 폴더로 전환한다.
             logger.warning(AppStrings.LOG_CFG_APPDATA_FALLBACK.format(e, self.config_dir))
         self.config_path = os.path.join(self.config_dir, Constants.CONFIG_FILENAME)
-        self.CURRENT_CONFIG_VERSION = 3
+        self.CURRENT_CONFIG_VERSION = Constants.CONFIG_SCHEMA_VERSION
         self.last_load_error: Optional[Exception] = None
         self.last_save_error: Optional[Exception] = None
         self._defaults: Dict[str, Any] = {
@@ -97,6 +97,7 @@ class ConfigManager:
                 key: spec["default"]
                 for key, spec in Constants.ADVANCED_SETTING_SPECS.items()
             },
+            Constants.CONFIG_KEY_SETTING_DEFAULT_VERSIONS: dict(Constants.SETTING_DEFAULT_VERSIONS),
         }
         self._config_lock = threading.RLock()
         self._save_lock = threading.Lock()
@@ -173,6 +174,7 @@ class ConfigManager:
                     merged[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(
                         merged.get(Constants.CONFIG_KEY_ADVANCED),
                     )
+                    merged = self._apply_default_version_updates(merged, data)
                     return merged
             except json.JSONDecodeError as e:
                 self.last_load_error = e
@@ -184,6 +186,31 @@ class ConfigManager:
                 self.last_load_error = e
                 logger.error(AppStrings.LOG_CFG_UNEXPECTED_LOAD_ERROR.format(e))
         return copy.deepcopy(self._defaults)
+
+    def _apply_default_version_updates(self, merged: dict, loaded: dict) -> dict:
+        """Reset only settings whose shipped default version advanced.
+
+        Settings without metadata are treated as version 1. This preserves
+        existing user values on first adoption while allowing future default
+        changes to be explicit and deterministic.
+        """
+        stored_versions = loaded.get(Constants.CONFIG_KEY_SETTING_DEFAULT_VERSIONS, {})
+        if not isinstance(stored_versions, dict):
+            stored_versions = {}
+        advanced = merged.get(Constants.CONFIG_KEY_ADVANCED)
+        if not isinstance(advanced, dict):
+            advanced = {}
+        for key, current_version in Constants.SETTING_DEFAULT_VERSIONS.items():
+            try:
+                previous_version = int(stored_versions.get(key, 1))
+            except (TypeError, ValueError):
+                previous_version = 1
+            if previous_version < current_version:
+                advanced[key] = Constants.ADVANCED_SETTING_SPECS[key]["default"]
+        merged[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(advanced)
+        merged[Constants.CONFIG_KEY_SETTING_DEFAULT_VERSIONS] = dict(Constants.SETTING_DEFAULT_VERSIONS)
+        merged[Constants.CONFIG_KEY_VERSION] = self.CURRENT_CONFIG_VERSION
+        return merged
 
     def _migrate_config(self, config: dict, from_version: int) -> dict:
         """구버전 설정을 현재 버전 스키마로 마이그레이션한다."""

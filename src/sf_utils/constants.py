@@ -1,4 +1,5 @@
 from sf_utils.app_strings import AppStrings
+from sf_utils.settings_defaults import CONFIG_SCHEMA_VERSION, DEFAULTS, DEFAULT_VERSIONS
 
 
 class Constants:
@@ -16,14 +17,16 @@ class Constants:
     BACKUP_FILE_SUFFIX = ".old"
     # 하드코딩되었던 상수들은 고급 설정의 '기본값'으로 사용되며, 
     # UI 편집용 수치(MB 단위)와 내부 바이트 계산용 수치로 적절히 분리됩니다.
-    DEFAULT_MAX_JSON_DOM_SIZE_MB = 500
-    DEFAULT_MAX_SMALL_FILE_SIZE_MB = 10
-    DEFAULT_JSON_MMAP_THRESHOLD_MB = 5
-    DEFAULT_MAX_TOTAL_MATCHES = 500_000
-    DEFAULT_MAX_PER_FILE_MATCHES = 5_000
-    DEFAULT_TIMEOUT_WORKER_HANG = 600
-    DEFAULT_MAX_CHECK_CELLS = 500_000
-    DEFAULT_MAX_JSON_DEPTH = 20_000
+    CONFIG_SCHEMA_VERSION = CONFIG_SCHEMA_VERSION
+    SETTING_DEFAULT_VERSIONS = DEFAULT_VERSIONS
+    DEFAULT_MAX_JSON_DOM_SIZE_MB = DEFAULTS["max_json_dom_size"]
+    DEFAULT_MAX_SMALL_FILE_SIZE_MB = DEFAULTS["max_small_file_size"]
+    DEFAULT_JSON_MMAP_THRESHOLD_MB = DEFAULTS["json_mmap_threshold"]
+    DEFAULT_MAX_TOTAL_MATCHES = DEFAULTS["max_total_matches"]
+    DEFAULT_MAX_PER_FILE_MATCHES = DEFAULTS["max_per_file_matches"]
+    DEFAULT_TIMEOUT_WORKER_HANG = DEFAULTS["timeout_worker_hang"]
+    DEFAULT_MAX_CHECK_CELLS = DEFAULTS["max_check_cells"]
+    DEFAULT_MAX_JSON_DEPTH = DEFAULTS["max_json_depth"]
 
     # 유지보수 호환상 기존 상수를 기본값 기반 동적 연산 프로퍼티가 아닌 형태로 남길 경우:
     MAX_JSON_DOM_SIZE = DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024
@@ -120,6 +123,7 @@ class Constants:
     
     # 고급 설정용 키
     CONFIG_KEY_ADVANCED = "advanced"
+    CONFIG_KEY_SETTING_DEFAULT_VERSIONS = "setting_default_versions"
     CONFIG_KEY_MAX_TOTAL_MATCHES = "max_total_matches"
     CONFIG_KEY_MAX_PER_FILE_MATCHES = "max_per_file_matches"
     CONFIG_KEY_MAX_JSON_DOM_SIZE = "max_json_dom_size"

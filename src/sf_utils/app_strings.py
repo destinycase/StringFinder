@@ -98,7 +98,7 @@ class AppStrings:
     ADVANCED_MAX_TOTAL_MATCHES = "전체 최대 매치 수 제한"
     ADVANCED_MAX_PER_FILE_MATCHES = "파일당 최대 매치 수 제한"
     ADVANCED_MAX_JSON_DOM_SIZE = "JSON/XML 파일 크기 제한"
-    ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION = "모든 JSON 검색과 정밀 XML 검색에 적용되는 입력 파일 크기 상한입니다. Rust 기본 XML 검색에는 적용되지 않습니다."
+    ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION = "모든 JSON 검색과 누락 방지 검색의 Python XML 경로에 적용되는 입력 파일 크기 상한입니다. Rust 기본 XML 검색에는 적용되지 않습니다."
     ADVANCED_PRECISE_SEARCH_GROUP = "누락 방지 검색 전용"
     ADVANCED_PRECISE_SEARCH_DESCRIPTION = "아래 세 설정은 누락 방지 검색의 Python 처리 경로에만 적용되며 Rust 기본 검색에는 적용되지 않습니다."
     ADVANCED_MAX_SMALL_FILE_SIZE = "일반 텍스트 소형 파일 경로 기준"
@@ -114,7 +114,7 @@ class AppStrings:
 
     TOOLTIP_MAX_TOTAL_MATCHES = "프로그램 전체에서 한 번의 검색에 표시할 수 있는 총 매치 허용 개수입니다."
     TOOLTIP_MAX_PER_FILE_MATCHES = "하나의 파일 내에서 허용되는 최대 결과 수입니다. 초과 시 경고와 함께 스킵합니다."
-    TOOLTIP_MAX_JSON_DOM_SIZE = "JSON 파일 크기가 이 값을 넘으면 시스템 OOM 방지를 위해 정밀 파싱을 생략합니다."
+    TOOLTIP_MAX_JSON_DOM_SIZE = "JSON/XML 파일 크기가 이 값을 넘으면 시스템 OOM 방지를 위해 구조 파싱을 생략합니다."
     TOOLTIP_MAX_SMALL_FILE_SIZE = "이 크기 미만의 작은 파일은 Mmap 대신 일반 파일 읽기로 통째로 올려 검색 속도를 높입니다."
     TOOLTIP_JSON_MMAP_THRESHOLD = "이 크기를 넘는 JSON 파일은 RAM을 절약하기 위해 Mmap 기반의 스트리밍 파서로 처리됩니다."
     TOOLTIP_TIMEOUT_WORKER_HANG = "단일 파일 검색 프로세스가 이 시간 동안 무응답일 경우 데드락으로 간주하고 죽입니다."

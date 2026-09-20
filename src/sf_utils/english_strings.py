@@ -88,7 +88,7 @@ ENGLISH_STRINGS = {
     "ADVANCED_MAX_JSON_DEPTH": "Maximum JSON nesting depth",
     "TOOLTIP_MAX_TOTAL_MATCHES": "Maximum number of matches displayed for one search across the application.",
     "TOOLTIP_MAX_PER_FILE_MATCHES": "Maximum results allowed in one file. Excess matches are limited with a warning.",
-    "TOOLTIP_MAX_JSON_DOM_SIZE": "JSON files larger than this are not parsed deeply to prevent out-of-memory errors.",
+    "TOOLTIP_MAX_JSON_DOM_SIZE": "JSON/XML files larger than this are not parsed structurally to prevent out-of-memory errors.",
     "TOOLTIP_MAX_SMALL_FILE_SIZE": "Files below this size are read directly instead of using mmap for faster searches.",
     "TOOLTIP_JSON_MMAP_THRESHOLD": "JSON files above this size use an mmap-based streaming parser to conserve RAM.",
     "TOOLTIP_TIMEOUT_WORKER_HANG": "Terminates a single-file search process if it remains unresponsive for this duration.",
