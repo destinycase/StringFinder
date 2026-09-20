@@ -12,18 +12,18 @@ class TestQAEdgeFixesVerification:
     """수정 버전에 대한 QA 재검증 테스트"""
 
     def test_search_options_panel_profile_session_persistence(self, qtbot):
-        """검색 패널 프로필(정밀 검색 / 존재 확인) 선택 시 get_state 직렬화 정확성 검증"""
+        """검색 패널 프로필(누락 방지 검색 / 존재 확인) 선택 시 get_state 직렬화 정확성 검증"""
         panel = SearchOptionsPanel()
         qtbot.addWidget(panel)
 
-        # 프로필 2: 정밀 검색 (True, False)
-        panel.search_profile_combo.setCurrentIndex(2)
+        # 누락 방지 검색 경로
+        panel.search_profile_combo.setCurrentIndex(1)
         state = panel.get_state()
         assert state[Constants.PAYLOAD_USE_COMPLEX_SEARCH] is True
         assert state[Constants.PAYLOAD_EXISTENCE_ONLY] is False
 
-        # 프로필 3: 정밀 검색 + 존재 확인 (True, True)
-        panel.search_profile_combo.setCurrentIndex(3)
+        # 존재만 확인은 검색 방식과 독립적인 체크 박스로 선택합니다.
+        panel.boolean_search_check.setChecked(True)
         state_both = panel.get_state()
         assert state_both[Constants.PAYLOAD_USE_COMPLEX_SEARCH] is True
         assert state_both[Constants.PAYLOAD_EXISTENCE_ONLY] is True

@@ -73,15 +73,15 @@ ENGLISH_STRINGS = {
     "ADVANCED_MAX_TOTAL_MATCHES": "Total match limit",
     "ADVANCED_MAX_PER_FILE_MATCHES": "Per-file match limit",
     "ADVANCED_MAX_JSON_DOM_SIZE": "JSON/XML file size limit",
-    "ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION": "This input-file size limit applies to all JSON searches and precise XML searches. It does not apply to default Rust XML searches.",
-    "ADVANCED_PRECISE_SEARCH_GROUP": "Precise search only",
-    "ADVANCED_PRECISE_SEARCH_DESCRIPTION": "The following three settings apply only to the Python path used by precise search, not to the default Rust search.",
+    "ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION": "This input-file size limit applies to all JSON searches and the XML path used by miss-prevention search. It does not apply to default Rust XML searches.",
+    "ADVANCED_PRECISE_SEARCH_GROUP": "Miss-prevention search only",
+    "ADVANCED_PRECISE_SEARCH_DESCRIPTION": "The following three settings apply only to the Python path used by miss-prevention search, not to the default Rust search.",
     "ADVANCED_MAX_SMALL_FILE_SIZE": "Small-text-file path threshold",
     "ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION": "Plain-text files below this size use the small-file path with a 64 KB encoding sample and line-by-line search.",
     "ADVANCED_JSON_MMAP_THRESHOLD": "JSON mmap read threshold",
     "ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION": "JSON files at or above this size are read through mmap, but the entire document is still parsed as JSON.",
-    "ADVANCED_TIMEOUT_WORKER_HANG": "Precise-search batch completion timeout",
-    "ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION": "Terminates the entire Python worker pool if no file batch completes within this time during precise search.",
+    "ADVANCED_TIMEOUT_WORKER_HANG": "Miss-prevention search batch completion timeout",
+    "ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION": "Terminates the entire Python worker pool if no file batch completes within this time during miss-prevention search.",
     "ADVANCED_EXISTENCE_ONLY_GROUP": "Existence-only search",
     "ADVANCED_MAX_CHECK_CELLS": "Maximum Excel cells checked in existence mode",
     "ADVANCED_MAX_CHECK_CELLS_DESCRIPTION": "Maximum cells checked per file in existence-only mode. Reaching the limit is reported as a partial search for that file.",
@@ -116,9 +116,9 @@ ENGLISH_STRINGS = {
     "COMBO_DISABLE": "Disabled",
     "COMBO_LOCKED": "Locked",
     "COMBO_UNLOCKED": "Unlocked",
-    "COMPLEX_SEARCH_LABEL": " (slower)",
+    "COMPLEX_SEARCH_LABEL": " (very slow)",
     "COMPLEX_SEARCH_TOOLTIP": (
-        "Use precise search in these cases:\n"
+        "Use miss-prevention search in these cases:\n"
         "• Decomposed (NFD) text, such as Korean text in files created on macOS\n"
         "• Special multilingual case or diacritic variants, such as German ß↔ss\n"
         "• Nonstandard or partially damaged encodings missed by the default search\n"
@@ -138,8 +138,8 @@ ENGLISH_STRINGS = {
     "SEARCH_PROFILE_LABEL": "Search mode",
     "SEARCH_PROFILE_NORMAL": "Normal search",
     "SEARCH_PROFILE_NORMAL_EXISTENCE": "Normal search + existence only (fast)",
-    "SEARCH_PROFILE_PRECISE": "Precise search (slow)",
-    "SEARCH_PROFILE_PRECISE_EXISTENCE": "Precise search + existence only (slow)",
+    "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
+    "SEARCH_PROFILE_PRECISE_EXISTENCE": "Miss-prevention search (very slow)",
     "BOOLEAN_SEARCH_TOOLTIP": (
         "Checks only whether the text exists in each file.\n"
         "The search moves to the next file after the first match, making it very fast.\n"
@@ -159,7 +159,7 @@ ENGLISH_STRINGS = {
     "SPECIAL_SEARCH_XML": "XML (contains)",
     "SPECIAL_SEARCH_JSON": "JSON (contains)",
     "SPECIAL_SEARCH_EXCEL": "Excel (contains)",
-    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use Deep search for complex Unicode variants)",
+    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use miss-prevention search for complex Unicode variants)",
     "EXT_EDIT_PLACEHOLDER": "Extension (for example: txt)",
     "FILENAME_EDIT_PLACEHOLDER": "Filename filter (for example: npc, fo / comma-separated)...",
     "FILENAME_LIST_PLACEHOLDER": "Filter term (for example: npc)",
@@ -199,7 +199,12 @@ ENGLISH_STRINGS = {
     "RESULT_EMPTY_MSG": "Start a search to see results.",
     "RESULT_SEARCHING_MSG": "Searching for \"{}\"...",
     "RESULT_EMPTY_NO_FOLDER": "Add a folder to search.",
-    "RESULT_EMPTY_NO_MATCH": "No results found for '{}'. Use Deep search if text may have been missed.",
+    "RESULT_EMPTY_NO_MATCH": (
+        "No results found for '{}'. Miss-prevention search is recommended for:\n\n"
+        "Decomposed (NFD) text, such as Korean text in files created on macOS\n"
+        "Special multilingual case or diacritic variants, such as German ß↔ss\n"
+        "Nonstandard or partially damaged encodings"
+    ),
     "RESULT_SUMMARY_FORMAT": "Files containing text: {file_count} | Total matches: {match_count} | Time: {duration}s",
     "SKIPPED_FILES_COUNT": "⚠ Skipped files: {}",
     "SKIPPED_FILES_VIEW_BUTTON": "View file list",
@@ -280,7 +285,7 @@ ENGLISH_STRINGS = {
     ),
     "SKIP_EMPTY_FILE": "[Skipped] Empty file",
     "SEARCH_MODE_EXACT": "exact",
-    "SEARCH_MODE_COMPLEX": "Deep search",
+    "SEARCH_MODE_COMPLEX": "Miss-prevention search",
     "BOOLEAN_SEARCH_MATCH_CONTENT": "[Matching item exists in file]",
     "RESULT_EXPORT_TITLE": "Export results",
     "RESULT_EXPORT_FILTER": "Excel files (*.xlsx);;Text files (*.txt)",

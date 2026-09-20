@@ -85,9 +85,7 @@ class SearchOptionsPanel(QWidget):
         self.search_profile_combo = QComboBox()
         for label_text, data in (
             (AppStrings.SEARCH_PROFILE_NORMAL, (False, False)),
-            (AppStrings.SEARCH_PROFILE_NORMAL_EXISTENCE, (False, True)),
             (AppStrings.SEARCH_PROFILE_PRECISE, (True, False)),
-            (AppStrings.SEARCH_PROFILE_PRECISE_EXISTENCE, (True, True)),
         ):
             display_text = f"⚠ {label_text}" if data[0] else label_text
             self.search_profile_combo.addItem(display_text, data)
@@ -95,7 +93,7 @@ class SearchOptionsPanel(QWidget):
         # was replaced by a profile selector.  Item-level tooltips work for
         # both the popup list and the currently selected value.
         self.search_profile_combo.setAccessibleName(AppStrings.SEARCH_PROFILE_LABEL)
-        for index in (2, 3):
+        for index in (1,):
             self.search_profile_combo.setItemData(
                 index, AppStrings.COMPLEX_SEARCH_TOOLTIP, Qt.ItemDataRole.ToolTipRole
             )
@@ -130,12 +128,12 @@ class SearchOptionsPanel(QWidget):
         self.boolean_search_check.setChecked(False)  # 기본적으로 검색 결과 요약 확인 모드는 해제 상태로 시작합니다.
         options_layout.addWidget(self.complex_search_check)
         options_layout.addWidget(self.complex_search_warning)
-        options_layout.addWidget(self.boolean_search_check)
+        input_layout.insertWidget(input_layout.count() - 2, self.boolean_search_check)
         options_layout.addWidget(self.exclude_hidden_check)
         options_layout.addStretch()
         self.complex_search_check.setVisible(False)
         self.complex_search_warning.setVisible(False)
-        self.boolean_search_check.setVisible(False)
+        self.boolean_search_check.setVisible(True)
         self.exclude_hidden_check.setVisible(False)
         layout.addLayout(options_layout)
 
@@ -143,6 +141,7 @@ class SearchOptionsPanel(QWidget):
         self.search_btn.setVisible(not searching)
         self.stop_btn.setVisible(searching)
         self.search_combo.setEnabled(not searching)
+        self.search_profile_combo.setEnabled(not searching)
         self.complex_search_check.setEnabled(not searching)
         self.exclude_hidden_check.setEnabled(not searching)
         self.boolean_search_check.setEnabled(not searching)
@@ -174,7 +173,7 @@ class SearchOptionsPanel(QWidget):
         return self.exclude_hidden_check.isChecked()
 
     def is_existence_only(self) -> bool:
-        return bool(self.search_profile_combo.currentData()[1])
+        return self.boolean_search_check.isChecked()
 
     def set_search_history(self, items: List[str]):
         self.search_combo.addItems(items)
@@ -190,8 +189,8 @@ class SearchOptionsPanel(QWidget):
 
     def load_state(self, state: dict):
         self.search_combo.set_current_text(state.get(Constants.STATE_KEY_SEARCH, ""))
-        profile = (bool(state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH, False)), bool(state.get(Constants.PAYLOAD_EXISTENCE_ONLY, False)))
-        self.search_profile_combo.setCurrentIndex(dict(zip(((False, False), (False, True), (True, False), (True, True)), range(4))).get(profile, 0))
+        self.search_profile_combo.setCurrentIndex(1 if state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH, False) else 0)
+        self.boolean_search_check.setChecked(bool(state.get(Constants.PAYLOAD_EXISTENCE_ONLY, False)))
         self.exclude_hidden_check.setChecked(state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True))
 
 

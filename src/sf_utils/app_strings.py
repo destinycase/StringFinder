@@ -99,14 +99,14 @@ class AppStrings:
     ADVANCED_MAX_PER_FILE_MATCHES = "파일당 최대 매치 수 제한"
     ADVANCED_MAX_JSON_DOM_SIZE = "JSON/XML 파일 크기 제한"
     ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION = "모든 JSON 검색과 정밀 XML 검색에 적용되는 입력 파일 크기 상한입니다. Rust 기본 XML 검색에는 적용되지 않습니다."
-    ADVANCED_PRECISE_SEARCH_GROUP = "정밀 검색 전용"
-    ADVANCED_PRECISE_SEARCH_DESCRIPTION = "아래 세 설정은 정밀 검색의 Python 처리 경로에만 적용되며 Rust 기본 검색에는 적용되지 않습니다."
+    ADVANCED_PRECISE_SEARCH_GROUP = "누락 방지 검색 전용"
+    ADVANCED_PRECISE_SEARCH_DESCRIPTION = "아래 세 설정은 누락 방지 검색의 Python 처리 경로에만 적용되며 Rust 기본 검색에는 적용되지 않습니다."
     ADVANCED_MAX_SMALL_FILE_SIZE = "일반 텍스트 소형 파일 경로 기준"
     ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION = "이 크기 미만의 일반 텍스트는 64KB 인코딩 검사 후 줄 단위 소형 파일 경로로 검색합니다."
     ADVANCED_JSON_MMAP_THRESHOLD = "JSON Mmap 읽기 전환 크기"
     ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION = "이 크기 이상의 JSON은 Mmap으로 읽지만, JSON 문서 분석은 전체 문서를 대상으로 수행합니다."
-    ADVANCED_TIMEOUT_WORKER_HANG = "정밀 검색 배치 완료 대기 제한"
-    ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION = "정밀 검색에서 어떤 파일 배치도 이 시간 안에 완료되지 않으면 전체 Python 작업 풀을 종료합니다."
+    ADVANCED_TIMEOUT_WORKER_HANG = "누락 방지 검색 배치 완료 대기 제한"
+    ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION = "누락 방지 검색에서 어떤 파일 배치도 이 시간 안에 완료되지 않으면 전체 Python 작업 풀을 종료합니다."
     ADVANCED_EXISTENCE_ONLY_GROUP = "존재 여부만 확인 전용"
     ADVANCED_MAX_CHECK_CELLS = "Excel 존재 확인 최대 검사 셀 수"
     ADVANCED_MAX_CHECK_CELLS_DESCRIPTION = "존재 여부만 확인할 때 파일별로 검사할 셀 수입니다. 한도에 도달하면 해당 파일을 부분 검색으로 안내합니다."
@@ -150,11 +150,11 @@ class AppStrings:
     # =========================================================================
     COMPLEX_SEARCH_LABEL = " (느림)"
     COMPLEX_SEARCH_TOOLTIP = (
-        "다음 경우에 정밀 검색을 사용하세요.\n"
+        "다음 경우에 누락 방지 검색을 사용하세요.\n\n"
         "• macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
-        "• 독일어 ß↔ss 등 다국어 특수 대소문자·분음 기호\n"
-        "• 기본 검색에서 누락된 비표준 또는 일부 손상 인코딩 텍스트\n"
-        "일반적인 한글·영문 검색은 더 빠른 기본 검색을 권장합니다."
+        "• 독일어 ß↔ss 등 다국어 특수 대소문자 · 분음 기호\n"
+        "• 기본 검색에서 누락된 비표준 또는 일부 손상 인코딩 텍스트\n\n"
+        "일반적인 한글·영문 검색은 일반 검색을 권장합니다."
     )
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_HIDDEN_TOOLTIP = (
@@ -166,12 +166,12 @@ class AppStrings:
         "이미지, 실행 파일(exe, dll) 등 바이너리 파일을 검색 대상에서 제외합니다.\n"
         "항상 검색이 필요한 특수 모드(Excel 등)나 직접 지정한 확장자는 제외 대상에서 보호됩니다."
     )
-    BOOLEAN_SEARCH_LABEL = "존재 여부만 확인 (고속)"
+    BOOLEAN_SEARCH_LABEL = "존재 여부만 확인"
     SEARCH_PROFILE_LABEL = "검색 방식"
     SEARCH_PROFILE_NORMAL = "일반 검색"
-    SEARCH_PROFILE_NORMAL_EXISTENCE = "일반 검색 + 존재 여부만 확인 (고속)"
-    SEARCH_PROFILE_PRECISE = "정밀 검색 (느림)"
-    SEARCH_PROFILE_PRECISE_EXISTENCE = "정밀 검색 + 존재 여부만 확인 (느림)"
+    SEARCH_PROFILE_NORMAL_EXISTENCE = "일반 검색 + 존재 여부만 확인"
+    SEARCH_PROFILE_PRECISE = "누락 방지 검색(매우 느림)"
+    SEARCH_PROFILE_PRECISE_EXISTENCE = "누락 방지 검색(매우 느림)"
     BOOLEAN_SEARCH_TOOLTIP = (
         "파일 내에 해당 텍스트가 존재하는지만 빠르게 확인합니다.\n"
         "첫 번째 일치 항목을 찾으면 즉시 다음 파일로 넘어가므로 매우 빠릅니다.\n"
@@ -195,7 +195,7 @@ class AppStrings:
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)
     # =========================================================================
     SEARCH_EDIT_PLACEHOLDER = (
-        "검색할 문자열 입력...(검색을 원하는 문자열이 '한글', '영어', '일반 특수 문자'가 아닌 경우. 정밀 검색 사용)"
+        "검색할 문자열 입력...(검색을 원하는 문자열이 '한글', '영어', '일반 특수 문자'가 아닌 경우. 누락 방지 검색 사용)"
     )
     EXT_EDIT_PLACEHOLDER = "확장자 (예: txt)"
     FILENAME_EDIT_PLACEHOLDER = "파일명 필터 (예: npc, fo / 콤마 구분)..."
@@ -242,7 +242,12 @@ class AppStrings:
     RESULT_EMPTY_MSG = "검색을 시작 해주세요."
     RESULT_SEARCHING_MSG = '"{}" 검색 중 입니다.'
     RESULT_EMPTY_NO_FOLDER = "검색할 폴더를 추가해주세요."
-    RESULT_EMPTY_NO_MATCH = "'{}'에 대한 검색 결과가 없습니다. 누락된 문자열이 있을 경우 정밀 검색을 사용해주세요."
+    RESULT_EMPTY_NO_MATCH = (
+                                "'{}'에 대한 검색 결과가 없습니다. 아래 검색어의 경우에는 누락 방지 검색을 권장합니다.\n\n"
+                                "macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
+                                "독일어 ß↔ss 등 다국어 특수 대소문자 · 분음 기호\n"
+                                "비표준 또는 일부 손상 인코딩 텍스트\n"
+                            )
     RESULT_SUMMARY_FORMAT = "문자열 포함 파일 수 : {file_count} | 전체 매칭된 문자열의 수 : {match_count} | 시간 : {duration}s"
     SKIPPED_FILES_COUNT = "⚠ 건너뛴 파일 수: {}"
     SKIPPED_FILES_VIEW_BUTTON = "파일 목록 보기"
@@ -324,7 +329,7 @@ class AppStrings:
 
     # 기존 검색 모드명 (안전성 확보를 위해 확인)
     SEARCH_MODE_EXACT = "정확히 일치"
-    SEARCH_MODE_COMPLEX = "정밀 검색"
+    SEARCH_MODE_COMPLEX = "누락 방지 검색"
     BOOLEAN_SEARCH_MATCH_CONTENT = "[파일 내 일치하는 항목 존재]"
     # =========================================================================
     # [7] 내보내기 (Export)
@@ -470,7 +475,7 @@ class AppStrings:
     LOG_WKR_STARTED = "[엔진] 병렬 검색 데이터 처리 시작 ('{}' | 필터: {} | {})"
     LOG_WKR_RUNNING = "  └─ 현재 처리 중: {}개 파일..."
     LOG_WKR_PROGRESS = "  └─ 검색 진행률: {}% ({}/{})"
-    LOG_WKR_COMPLEX_ACT = "[엔진] 유니코드 정밀 검색 모드(Python) 가동."
+    LOG_WKR_COMPLEX_ACT = "[엔진] 유니코드 누락 방지 검색 모드(Python) 가동."
     LOG_WKR_PYTHON_ACT = "[엔진] Python 엔진 기반 검색 수행 중..."
     LOG_WKR_RUST_ACT = "[엔진] Rust 통합 엔진 활성화 중 (대상: {}개 경로)."
     LOG_WKR_DONE = "[엔진] 병렬 검색 처리 종료 (발견: {}, 매치: {}, {:.3f}초)."
@@ -504,7 +509,7 @@ class AppStrings:
     LOG_SCH_RUST_SMART_SCAN_FATAL = "[오류] 스마트 스캔 중 치명적 예외 발생: {}"
     LOG_SCH_BINARY_COUNT_PARSE_FAIL = "[엔진] 바이너리 매치 카운트 분석 실패 (길이 {}): {}"
     LOG_SCH_EXISTENCE_DECODE_FAIL = "[엔진] 조기 존재 여부 확인 중 디코딩 실패: {}"
-    LOG_SCH_EXISTENCE_JSON_FALLBACK = "[엔진] JSON 존재 확인 실패: 정밀 검색으로 폴백합니다. ('{}'): {}"
+    LOG_SCH_EXISTENCE_JSON_FALLBACK = "[엔진] JSON 존재 확인 실패: 누락 방지 검색으로 폴백합니다. ('{}'): {}"
     LOG_SCH_EXISTENCE_UNEXPECTED = "[엔진] 일치 여부 확인 중 예기치 못한 오류 ('{}'): {}"
     LOG_SYS_RUST_NO_FALLBACK = "[시스템] Rust 엔진 로딩 실패 (Python 폴백 정책 미적용 환경)."
     # =========================================================================

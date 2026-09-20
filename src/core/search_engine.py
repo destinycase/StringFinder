@@ -2103,7 +2103,7 @@ def search_in_file(
     t_rust = 0.0
     t_norm = 0.0
     rust_results = None
-    # Default searches use the fast Rust engine. Precise searches intentionally
+    # Default searches use the fast Rust engine. Miss-prevention searches intentionally
     # use Python so Unicode case folding and normalization follow one policy.
     # Cache the binary classification only on paths that may need Python.
     is_binary = is_binary_file(file_path) if not HAS_RUST_ENGINE or use_complex_search else False
@@ -2186,7 +2186,7 @@ def search_in_file(
                 ),
             )
 
-    # Python handles precise searches and the limited compatibility cases that
+    # Python handles miss-prevention searches and the limited compatibility cases that
     # cannot be completed by the Rust path.
     exclude_binary = bool(kwargs.get("exclude_binary", False))
     if exclude_binary and is_binary:

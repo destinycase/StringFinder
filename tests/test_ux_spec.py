@@ -188,7 +188,7 @@ def test_search_options_use_user_facing_label_and_requested_order(search_tab_fix
 
 
 def test_search_profile_items_expose_precise_guidance_tooltips():
-    """정밀 검색 프로필 항목은 선택 목록에서 사용 안내를 제공한다."""
+    """누락 방지 검색 프로필 항목은 선택 목록에서 사용 안내를 제공한다."""
     from pathlib import Path
 
     source_root = Path(__file__).resolve().parents[1] / "src" / "ui"
