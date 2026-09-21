@@ -1,11 +1,12 @@
 import os
 import subprocess
 import sys
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QThread
 
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QProgressDialog,
     QFrame,
     QFileDialog,
     QGroupBox,
@@ -20,6 +21,28 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QWidget,
 )
+
+
+class DiagnosticThread(QThread):
+    progress = Signal(int, int, str, str)
+    finished_report = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, folder, repeats=5, cancel_event=None, parent=None):
+        super().__init__(parent)
+        self.folder = folder
+        self.repeats = repeats
+        self.cancel_event = cancel_event
+
+    def run(self):
+        try:
+            from tools.diagnostic_benchmark import run
+            from pathlib import Path
+            report = run(Path(self.folder), self.repeats, progress_callback=self.progress.emit,
+                         cancel_event=self.cancel_event, max_seconds=1800)
+            self.finished_report.emit(report)
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 from sf_utils.app_strings import AppStrings
@@ -237,6 +260,10 @@ class SettingsDialog(QDialog):
         doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
         doctor_btn.clicked.connect(self._run_system_doctor)
         doctor_layout.addWidget(doctor_btn)
+        diagnostic_btn = QPushButton("성능 진단")
+        diagnostic_btn.setToolTip("선택한 폴더를 5회 반복 검사합니다. 최대 30분까지 실행됩니다.")
+        diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
+        doctor_layout.addWidget(diagnostic_btn)
         tab_general_layout.addWidget(doctor_group)
 
         tab_general_layout.addSpacing(10)
@@ -432,12 +459,65 @@ class SettingsDialog(QDialog):
             self._doctor_msg_box.accept()
             self._doctor_msg_box.deleteLater()
             self._doctor_msg_box = None
-        
         if success:
             QMessageBox.information(self, AppStrings.INFO_TITLE, AppStrings.LOG_SYS_DOCTOR_DONE)
         else:
             QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.LOG_SYS_DOCTOR_FAIL.format("Internal Error"))
 
+    def _run_performance_diagnostic(self):
+        folder = QFileDialog.getExistingDirectory(self, "성능 진단 폴더 선택")
+        if not folder:
+            return
+        import json
+        import threading
+        from pathlib import Path
+        from tools.diagnostic_benchmark import _markdown
+
+        progress = QProgressDialog("성능 진단 준비 중...", "취소", 0, 100, self)
+        progress.setWindowTitle("성능 진단 진행 중")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setAutoClose(False)
+        progress.setMinimumDuration(0)
+        cancel_event = threading.Event()
+        thread = DiagnosticThread(folder, repeats=5, cancel_event=cancel_event, parent=self)
+        self._diagnostic_thread = thread
+
+        def update(done, total, scenario, path):
+            progress.setValue(min(99, int(done * 100 / max(1, total))))
+            progress.setLabelText(f"{scenario} 진행 중\n{done}/{total}\n{path}")
+
+        def cancel():
+            cancel_event.set()
+            progress.setLabelText("취소 요청을 처리하는 중입니다...")
+            progress.setCancelButton(None)
+
+        def failed(message):
+            progress.close()
+            if message == "DIAGNOSTIC_CANCELLED":
+                QMessageBox.information(self, "성능 진단", "성능 진단을 취소했습니다.")
+            elif message == "DIAGNOSTIC_TIMEOUT":
+                QMessageBox.warning(self, "성능 진단", "최대 실행 시간(30분)을 초과하여 중단했습니다.")
+            else:
+                QMessageBox.critical(self, "성능 진단 실패", message)
+
+        def completed(report):
+            progress.setValue(100)
+            progress.close()
+            target, _ = QFileDialog.getSaveFileName(self, "성능 진단 리포트 저장", "stringfinder_diagnostic.json", "JSON (*.json)")
+            if not target:
+                return
+            output = Path(target)
+            output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            output.with_suffix(".md").write_text(_markdown(report), encoding="utf-8")
+            QMessageBox.information(self, "성능 진단 완료", f"리포트를 저장했습니다.\n{output}")
+
+        progress.canceled.connect(cancel)
+        thread.progress.connect(update)
+        thread.failed.connect(failed)
+        thread.finished_report.connect(completed)
+        thread.finished.connect(lambda: progress.close() if not progress.wasCanceled() else None)
+        progress.show()
+        thread.start()
     def _on_display_density_changed(self, index):
         compact = self.compact_rows_combo.itemData(index)
         if not isinstance(compact, bool):
