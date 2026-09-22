@@ -26,6 +26,7 @@ class HtmlDelegate(QStyledItemDelegate):
     """텍스트 내 HTML 태그를 해석하여 하이라이팅된 결과를 렌더링하는 델리게이트입니다."""
 
     compact = False
+    cell_left_margin = 6
 
     def paint(self, painter, option, index):
         options = QStyleOptionViewItem(option)
@@ -48,6 +49,12 @@ class HtmlDelegate(QStyledItemDelegate):
         options.text = ""  # type: ignore
         option.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, options, painter)
         rect = getattr(options, "rect")
+        rect = QRect(
+            rect.left() + self.cell_left_margin,
+            rect.top(),
+            max(0, rect.width() - (self.cell_left_margin * 2)),
+            rect.height(),
+        )
         painter.translate(rect.left(), rect.top())  # HTML 렌더링을 위해 좌표계를 셀 위치로 이동합니다.
         clip = QRectF(0, 0, rect.width(), rect.height())
         painter.setClipRect(clip)
@@ -63,7 +70,7 @@ class HtmlDelegate(QStyledItemDelegate):
             doc.setDocumentMargin(1)
         doc.setDefaultFont(options.font)  # type: ignore
         doc.setHtml(options.text)  # type: ignore
-        return QSize(int(doc.idealWidth()), int(doc.size().height()))
+        return QSize(int(doc.idealWidth()) + (self.cell_left_margin * 2), int(doc.size().height()))
 
 
 class HistoryItemDelegate(QStyledItemDelegate):
