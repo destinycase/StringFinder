@@ -8,7 +8,6 @@ from PySide6.QtCore import QByteArray, Qt, QThread, QTimer
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QHBoxLayout,
     QInputDialog,
     QLabel,
     QMainWindow,
@@ -16,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QStatusBar,
+    QToolButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -141,16 +141,6 @@ class MainWindow(QMainWindow):
         self.add_button.setFixedWidth(30)
         self.add_button.clicked.connect(lambda: self.add_new_tab())
         self.tab_widget.setCornerWidget(self.add_button, Qt.Corner.TopLeftCorner)
-        settings_container = QWidget()
-        settings_layout = QHBoxLayout(settings_container)
-        settings_layout.setContentsMargins(0, 0, 10, 0)
-        settings_layout.setSpacing(0)
-        settings_btn = QPushButton(AppStrings.SETTINGS_TITLE)
-        settings_btn.setFixedWidth(80)
-        settings_btn.setObjectName("settingsBtn")
-        settings_btn.clicked.connect(self._show_settings)
-        settings_layout.addWidget(settings_btn)
-        self.tab_widget.setCornerWidget(settings_container, Qt.Corner.TopRightCorner)
         layout.addWidget(self.tab_widget)
         self.setCentralWidget(central_widget)
         sb = QStatusBar()
@@ -158,12 +148,31 @@ class MainWindow(QMainWindow):
         self.status_timer_label = QLabel()
         self.status_timer_label.setStyleSheet("padding-right: 10px;")
         sb.addPermanentWidget(self.status_timer_label)
-        self.skip_badge_btn = QPushButton()
-        self.skip_badge_btn.setFlat(True)
-        self.skip_badge_btn.clicked.connect(self._on_skip_badge_clicked)
-        self.skip_badge_btn.hide()
-        self.skip_badge_btn.setVisible(False)
-        sb.addPermanentWidget(self.skip_badge_btn)
+        self.log_button = QToolButton()
+        self.log_button.setObjectName("statusLogButton")
+        self.log_button.setText(AppStrings.TAB_LOGS)
+        self.log_button.setToolTip(AppStrings.TAB_LOGS)
+        self.log_button.setStyleSheet(
+            "QToolButton { background-color: #3a3d41; color: #f0f0f0; "
+            "border: 1px solid #60656b; border-radius: 3px; padding: 2px 8px; }"
+            "QToolButton:hover { background-color: #4a4f55; }"
+            "QToolButton:pressed { background-color: #2f3337; }"
+        )
+        self.log_button.clicked.connect(self._show_active_tab_logs)
+        sb.addPermanentWidget(self.log_button)
+        self.settings_button = QToolButton()
+        self.settings_button.setObjectName("statusSettingsButton")
+        self.settings_button.setText(AppStrings.SETTINGS_TITLE)
+        self.settings_button.setToolTip(AppStrings.SETTINGS_TITLE)
+        self.settings_button.setAccessibleName(AppStrings.SETTINGS_TITLE)
+        self.settings_button.setStyleSheet(
+            "QToolButton { background-color: #3a3d41; color: #f0f0f0; "
+            "border: 1px solid #60656b; border-radius: 3px; padding: 2px 7px; }"
+            "QToolButton:hover { background-color: #4a4f55; }"
+            "QToolButton:pressed { background-color: #2f3337; }"
+        )
+        self.settings_button.clicked.connect(self._show_settings)
+        sb.addPermanentWidget(self.settings_button)
 
         # 검색 중임을 나타내는 회전하는 스피너 위젯을 추가합니다.
         self.status_spinner = LoadingSpinner(self, size=18)
@@ -210,9 +219,8 @@ class MainWindow(QMainWindow):
             self.add_button.setEnabled(not locked)
         if hasattr(self, "new_tab_shortcut"):
             self.new_tab_shortcut.setEnabled(not locked)
-        settings_btn = self.tab_widget.findChild(QPushButton, "settingsBtn")
-        if settings_btn:
-            settings_btn.setEnabled(not locked)
+        self.log_button.setEnabled(not locked)
+        self.settings_button.setEnabled(not locked)
 
     def _on_tab_search_status_changed(self, tab, locked):
         """검색 중에는 다른 탭에서 검색을 시작하지 못하도록 전역 잠금을 관리합니다."""
@@ -317,6 +325,8 @@ class MainWindow(QMainWindow):
 
     def _update_skip_badge(self, count):
         """현재 탭의 건너뛴 파일 수를 클릭 가능한 상태 표시로 반영합니다."""
+        return
+        return
         count = max(0, int(count or 0))
         if count:
             self.skip_badge_btn.setText(AppStrings.SKIP_BADGE_TEMPLATE.format(count))
@@ -325,11 +335,17 @@ class MainWindow(QMainWindow):
             self.skip_badge_btn.setText("")
             self.skip_badge_btn.hide()
 
+    def _show_active_tab_logs(self):
+        """Open the active tab's logs in a separate window."""
+        tab = self.tab_widget.currentWidget()
+        if isinstance(tab, SearchTab):
+            tab.show_log_window()
+
     def _on_skip_badge_clicked(self):
         """상태 표시를 누르면 현재 검색 탭의 로그 화면으로 이동합니다."""
         tab = self.tab_widget.currentWidget()
         if isinstance(tab, SearchTab):
-            tab.tab_widget.setCurrentWidget(tab.logs_tab)
+            tab.show_log_window()
 
     def _update_status_bar_widgets(self, is_running, sec):
         """상태 표시줄의 진행바와 타이머 위젯의 상태를 실제 업데이트합니다."""

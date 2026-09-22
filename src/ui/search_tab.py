@@ -8,6 +8,7 @@ from PySide6.QtCore import QByteArray, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QDockWidget,
     QFileIconProvider,
     QHBoxLayout,
@@ -16,7 +17,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -126,21 +126,29 @@ class SearchTab(QMainWindow):
         # 중앙 결과 영역
         self.result_container = QWidget()
         result_layout = QVBoxLayout(self.result_container)
-        result_layout.setContentsMargins(10, 15, 10, 10)
-        self.tab_widget = QTabWidget()
+        result_layout.setContentsMargins(0, 0, 0, 0)
+        self.results_dock = QDockWidget(AppStrings.TAB_RESULTS, self)
+        self.results_dock.setObjectName("resultsDock")
+        self.results_dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
+        title_bar = QWidget()
+        title_bar.setFixedHeight(0)
+        self.results_dock.setTitleBarWidget(title_bar)
         # 결과 탭
         self.results_tab = QWidget()
         results_tab_layout = QVBoxLayout(self.results_tab)
-        results_tab_layout.setContentsMargins(0, 5, 0, 0)
+        results_tab_layout.setContentsMargins(0, 0, 0, 0)
         self.result_view_panel = ResultView(self.icon_provider, self.config_manager)
         results_tab_layout.addWidget(self.result_view_panel)
         # 결과 뷰 시그널 연결
         self.result_view_panel.file_double_clicked.connect(self._open_file_from_view)
         self.result_view_panel.match_double_clicked.connect(self._open_match_in_editor)
-        self.tab_widget.addTab(self.results_tab, AppStrings.TAB_RESULTS)
-        # 로그 탭
-        self.logs_tab = QWidget()
-        logs_tab_layout = QVBoxLayout(self.logs_tab)
+        self.results_dock.setWidget(self.results_tab)
+        # 로그는 결과 탭과 분리된 독립 창으로 표시합니다.
+        self.log_dialog = QDialog(self)
+        self.log_dialog.setWindowTitle(AppStrings.TAB_LOGS)
+        self.log_dialog.setModal(False)
+        self.log_dialog.setMinimumSize(760, 420)
+        logs_tab_layout = QVBoxLayout(self.log_dialog)
         logs_tab_layout.setContentsMargins(0, 5, 0, 0)
         self.logs_output = QPlainTextEdit()
         self.logs_output.setReadOnly(True)
@@ -164,8 +172,7 @@ class SearchTab(QMainWindow):
         from sf_utils.logger import qt_log_handler
 
         qt_log_handler.signaler.level_message_logged.connect(self._on_log_message)
-        self.tab_widget.addTab(self.logs_tab, AppStrings.TAB_LOGS)
-        result_layout.addWidget(self.tab_widget)
+        result_layout.addWidget(self.results_dock)
         self.setCentralWidget(self.result_container)
         # 설정에서 필터 복원
         self.folder_panel.blockSignals(True)
@@ -192,6 +199,12 @@ class SearchTab(QMainWindow):
         self._apply_lock_layout()
         self.search_panel.search_combo.setFocus()
         self.apply_display_density()
+
+    def show_log_window(self):
+        """Show this search tab's logs in a separate modeless window."""
+        self.log_dialog.show()
+        self.log_dialog.raise_()
+        self.log_dialog.activateWindow()
 
     def apply_display_density(self):
         compact = self.config_manager.get(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, True) is True
@@ -930,7 +943,6 @@ class SearchTab(QMainWindow):
                     AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text()),
                     emphasized=True,
                 )
-            self.tab_widget.setCurrentIndex(0)
             self.search_finished_with_data.emit()
         except Exception as e:
             logger.error(f"Error in _on_search_finished: {e}")
