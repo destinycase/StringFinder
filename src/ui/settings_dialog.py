@@ -39,7 +39,7 @@ class DiagnosticThread(QThread):
             from tools.diagnostic_benchmark import run
             from pathlib import Path
             report = run(Path(self.folder), self.repeats, progress_callback=self.progress.emit,
-                         cancel_event=self.cancel_event, max_seconds=1800)
+                         cancel_event=self.cancel_event, max_seconds=7200)
             self.finished_report.emit(report)
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -261,7 +261,7 @@ class SettingsDialog(QDialog):
         doctor_btn.clicked.connect(self._run_system_doctor)
         doctor_layout.addWidget(doctor_btn)
         diagnostic_btn = QPushButton("성능 진단")
-        diagnostic_btn.setToolTip("선택한 폴더를 5회 반복 검사합니다. 최대 30분까지 실행됩니다.")
+        diagnostic_btn.setToolTip("선택한 폴더를 5회 반복 검사합니다. 최대 120분까지 실행됩니다.")
         diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
         doctor_layout.addWidget(diagnostic_btn)
         tab_general_layout.addWidget(doctor_group)
@@ -496,20 +496,24 @@ class SettingsDialog(QDialog):
             if message == "DIAGNOSTIC_CANCELLED":
                 QMessageBox.information(self, "성능 진단", "성능 진단을 취소했습니다.")
             elif message == "DIAGNOSTIC_TIMEOUT":
-                QMessageBox.warning(self, "성능 진단", "최대 실행 시간(30분)을 초과하여 중단했습니다.")
+                QMessageBox.warning(self, "성능 진단", "최대 실행 시간(120분)을 초과하여 중단했습니다.")
             else:
                 QMessageBox.critical(self, "성능 진단 실패", message)
 
         def completed(report):
-            progress.setValue(100)
+            is_complete = report.get("status") == "completed"
+            if is_complete:
+                progress.setValue(100)
             progress.close()
-            target, _ = QFileDialog.getSaveFileName(self, "성능 진단 리포트 저장", "stringfinder_diagnostic.json", "JSON (*.json)")
+            suggested_name = "stringfinder_diagnostic.json" if is_complete else "stringfinder_diagnostic_partial.json"
+            target, _ = QFileDialog.getSaveFileName(self, "성능 진단 리포트 저장", suggested_name, "JSON (*.json)")
             if not target:
                 return
             output = Path(target)
             output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             output.with_suffix(".md").write_text(_markdown(report), encoding="utf-8")
-            QMessageBox.information(self, "성능 진단 완료", f"리포트를 저장했습니다.\n{output}")
+            title = "성능 진단 완료" if is_complete else "부분 진단 리포트 저장"
+            QMessageBox.information(self, title, f"리포트를 저장했습니다.\n{output}")
 
         progress.canceled.connect(cancel)
         thread.progress.connect(update)
