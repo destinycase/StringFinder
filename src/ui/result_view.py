@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import threading
+from pathlib import Path
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
 from PySide6.QtCore import QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
@@ -1379,13 +1380,17 @@ class ResultView(QWidget):
     def _export_results(self):
         if self.result_model.rowCount() == 0:
             return
-        file_path, _ = QFileDialog.getSaveFileName(
+        file_path, selected_filter = QFileDialog.getSaveFileName(
             self, AppStrings.RESULT_EXPORT_TITLE, "", AppStrings.RESULT_EXPORT_FILTER
         )
         if not file_path:
             return
+        export_path = Path(file_path)
+        if not export_path.suffix:
+            export_path = export_path.with_suffix(".xlsx" if "*.xlsx" in selected_filter else ".txt")
+        file_path = str(export_path)
         try:
-            if file_path.endswith(".xlsx"):
+            if Path(file_path).suffix.lower() == ".xlsx":
                 self._export_to_excel(file_path)
             else:
                 self._export_to_text(file_path)
@@ -1413,7 +1418,9 @@ class ResultView(QWidget):
         # 모드별 헤더 설정
         mode = self.search_mode or Constants.MODE_NORMAL
         mode_upper = str(mode).upper()
-        if Constants.MODE_EXCEL.upper() in mode_upper:
+        if getattr(self, "existence_only", False):
+            headers = [AppStrings.HEADER_FILE, AppStrings.HEADER_CONTENT]
+        elif Constants.MODE_EXCEL.upper() in mode_upper:
             headers = [
                 AppStrings.HEADER_FILE,
                 AppStrings.HEADER_EXCEL_SHEET,
@@ -1449,7 +1456,9 @@ class ResultView(QWidget):
             for m in matches:
                 row = [full_path]
                 # m의 구조는 models.py의 MatchDetailModel.set_matches 로직과 계약됨
-                if Constants.MODE_EXCEL.upper() in mode_upper:
+                if getattr(self, "existence_only", False):
+                    row.append("" if len(m) < 2 or m[1] is None else str(m[1]))
+                elif Constants.MODE_EXCEL.upper() in mode_upper:
                     # [Line, Sheet, Cell, Val, ...]
                     row.extend([str(m[1]), str(m[2]), str(m[3])])
                 elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
@@ -1470,11 +1479,29 @@ class ResultView(QWidget):
             for count, path, folder, full_path, matches in all_results:
                 f.write(f"[{count}] {full_path}\n")
                 for item in matches:
-                    if len(item) >= 2:
-                        line_no = item[0]
-                        content = item[1]
+                    fields = self._match_fields_for_export(item)
+                    if fields:
+                        line_no, content = fields[0], "\t".join(fields[1:])
                         f.write(AppStrings.EXPORT_TEXT_LINE_PREFIX.format(line_no, content) + "\n")
                 f.write(AppStrings.EXPORT_TEXT_SEPARATOR + "\n")
+
+    @staticmethod
+    def _export_value(value):
+        return "" if value is None else str(value)
+
+    def _match_fields_for_export(self, item):
+        """Return the meaningful fields for the active search mode."""
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            return ()
+        values = [self._export_value(value) for value in item]
+        mode = str(self.search_mode or "").upper()
+        if getattr(self, "existence_only", False):
+            return tuple(values[:2])
+        if Constants.MODE_EXCEL.upper() in mode:
+            return tuple(values[:4])
+        if Constants.MODE_JSON.upper() in mode or Constants.MODE_XML.upper() in mode:
+            return tuple(values[:3])
+        return tuple(values[:2])
 
     def _adjust_column_widths(self):
         """[REQ 2.1 / M-04] 컬럼 폭을 최적화합니다. 샘플링 및 호출 빈도 제한이 적용됩니다."""

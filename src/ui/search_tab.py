@@ -707,6 +707,7 @@ class SearchTab(QMainWindow):
         except Exception as e:
             # [하] L-02: 예외 처리 단일화 및 메시지 정책 정리
             logger.error(AppStrings.LOG_SCH_ERROR_START.format(e), exc_info=True)
+            QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.MSG_SEARCH_START_FAILED)
             self._set_inputs_enabled(True)
             self.search_status_changed.emit(False)
             self.search_state = Constants.SearchState.IDLE

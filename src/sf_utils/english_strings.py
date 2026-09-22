@@ -384,6 +384,7 @@ ENGLISH_STRINGS = {
     "LOG_CFG_LOG_FILE_CLEANUP_FAIL": "[Settings] Automatic log cleanup failed ('{}'): {}",
     "LOG_SCH_STARTED": "=== [Search] Starting task (initializing...) ===",
     "LOG_SCH_ERROR_START": "[Search] Initialization failed: {}",
+    "MSG_SEARCH_START_FAILED": "The search could not be started. Check the settings and input, then try again.\nSee the log for details.",
     "LOG_SCH_COND_QUERY": "  └─ Search term: '{}'",
     "LOG_SCH_COND_FOLDER": "  └─ Target folder: {}",
     "LOG_SCH_COND_FILENAME": "  └─ Filename filter: '{}'",

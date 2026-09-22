@@ -439,6 +439,7 @@ class AppStrings:
     # =========================================================================
     LOG_SCH_STARTED = "=== [검색] 작업 시작 (초기화 중...) ==="
     LOG_SCH_ERROR_START = "[검색] 초기화 실패: {}"
+    MSG_SEARCH_START_FAILED = "검색을 시작하지 못했습니다. 설정과 입력을 확인한 뒤 다시 시도해 주세요.\n자세한 내용은 로그에서 확인할 수 있습니다."
     LOG_SCH_COND_QUERY = "  └─ 검색어: '{}'"
     LOG_SCH_COND_FOLDER = "  └─ 대상 폴더: {}"
     LOG_SCH_COND_FILENAME = "  └─ 파일명 필터: '{}'"
