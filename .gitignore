@@ -35,6 +35,9 @@ data/
 /.qa_593_ui/
 /.test_remediation_full/
 
+# Local PC performance diagnostic reports
+/docs/PC*/
+
 # Logs and History
 *.log
 
