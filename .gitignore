@@ -37,6 +37,7 @@ data/
 
 # Local PC performance diagnostic reports
 /docs/PC*/
+/docs/diagnostic/
 
 # Logs and History
 *.log
