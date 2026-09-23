@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import threading
+import tempfile
 from pathlib import Path
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
 from PySide6.QtCore import QObject, QRunnable, QThreadPool
@@ -306,10 +307,12 @@ class ResultView(QWidget):
         self.summary_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.summary_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(self._is_dark_theme()))
+        self.summary_label.setFixedHeight(32)
         self.summary_label.setVisible(False)
         self.skipped_files_banner = QFrame()
         self.skipped_files_banner.setObjectName("skippedFilesBanner")
         self.skipped_files_banner.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.skipped_files_banner.setFixedHeight(32)
         skipped_banner_layout = QHBoxLayout(self.skipped_files_banner)
         skipped_banner_layout.setContentsMargins(10, 5, 6, 5)
         self.skipped_files_label = QLabel()
@@ -1036,6 +1039,14 @@ class ResultView(QWidget):
             if self.result_model.has_truncated_results:
                 summary_text += f" {AppStrings.MSG_MATCH_TRUNCATION_NOTICE}"
                 
+            state = "finished"
+            if AppStrings.SUMMARY_PREFIX_SEARCHING in state_prefix:
+                state = "searching"
+            elif AppStrings.SUMMARY_PREFIX_STOPPED in state_prefix:
+                state = "stopped"
+            self.summary_label.setStyleSheet(
+                UIStyles.get_summary_label_style(self._is_dark_theme(), state)
+            )
             self.summary_label.setText(state_prefix + summary_text)
             self.summary_label.setVisible(True)
         else:
@@ -1405,6 +1416,14 @@ class ResultView(QWidget):
     def _export_to_excel(self, file_path):
         import openpyxl
 
+        temp_path = None
+        target = Path(file_path)
+        temp_file = tempfile.NamedTemporaryFile(
+                prefix=f".{target.stem}_", suffix=target.suffix, dir=target.parent,
+                delete=False,
+        )
+        temp_path = temp_file.name
+        temp_file.close()
         wb = openpyxl.Workbook()
 
         # [Sheet 1] 검색 파일 목록
@@ -1469,21 +1488,46 @@ class ResultView(QWidget):
                     row.extend([str(m[0]), str(m[1])])
                 _append_excel_row(ws2, row)
 
-        wb.save(file_path)
+        try:
+            wb.save(temp_path)
+            os.replace(temp_path, file_path)
+        except Exception:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+            raise
 
     def _export_to_text(self, file_path):
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(AppStrings.EXPORT_TEXT_HEADER.format(AppStrings.APP_TITLE) + "\n")
-            f.write(f"{AppStrings.EXPORT_SUMMARY_PREFIX}{AppStrings.DOCK_RESULT_TITLE}\n\n")
-            all_results = self.result_model.get_all_results()
-            for count, path, folder, full_path, matches in all_results:
-                f.write(f"[{count}] {full_path}\n")
-                for item in matches:
-                    fields = self._match_fields_for_export(item)
-                    if fields:
-                        line_no, content = fields[0], "\t".join(fields[1:])
-                        f.write(AppStrings.EXPORT_TEXT_LINE_PREFIX.format(line_no, content) + "\n")
-                f.write(AppStrings.EXPORT_TEXT_SEPARATOR + "\n")
+        target = Path(file_path)
+        temp_path = None
+        try:
+            temp_file = tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="", prefix=f".{target.stem}_",
+                suffix=target.suffix, dir=target.parent, delete=False,
+            )
+            temp_path = temp_file.name
+            temp_file.close()
+            with open(temp_path, "w", encoding="utf-8") as f:
+                f.write(AppStrings.EXPORT_TEXT_HEADER.format(AppStrings.APP_TITLE) + "\n")
+                f.write(f"{AppStrings.EXPORT_SUMMARY_PREFIX}{AppStrings.DOCK_RESULT_TITLE}\n\n")
+                all_results = self.result_model.get_all_results()
+                for count, path, folder, full_path, matches in all_results:
+                    f.write(f"[{count}] {full_path}\n")
+                    for item in matches:
+                        fields = self._match_fields_for_export(item)
+                        if fields:
+                            line_no, content = fields[0], "\t".join(fields[1:])
+                            f.write(AppStrings.EXPORT_TEXT_LINE_PREFIX.format(line_no, content) + "\n")
+                    f.write(AppStrings.EXPORT_TEXT_SEPARATOR + "\n")
+            os.replace(temp_path, file_path)
+            temp_path = None
+        finally:
+            if temp_path:
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     @staticmethod
     def _export_value(value):

@@ -171,6 +171,21 @@ class ConfigManager:
                             if isinstance(merged[k], dict) and not isinstance(v, dict):
                                 continue
                             merged[k] = v
+                    # Validate scalar settings before UI code consumes them.
+                    # A malformed JSON value must not prevent application start.
+                    theme = merged.get(Constants.CONFIG_KEY_THEME)
+                    if not isinstance(theme, str) or theme.lower() not in {"dark", "light", "auto"}:
+                        merged[Constants.CONFIG_KEY_THEME] = self._defaults.get(
+                            Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME
+                        )
+                    for key in (
+                        Constants.CONFIG_KEY_MAIN_SPLITTER_STATE,
+                        Constants.CONFIG_KEY_RESULT_SPLITTER_STATE,
+                        Constants.CONFIG_KEY_FILTER_SPLITTER_STATE,
+                    ):
+                        value = merged.get(key)
+                        if value is not None and not isinstance(value, str):
+                            merged[key] = self._defaults.get(key)
                     merged[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(
                         merged.get(Constants.CONFIG_KEY_ADVANCED),
                     )

@@ -146,7 +146,6 @@ class MainWindow(QMainWindow):
         self.log_button = QToolButton()
         self.log_button.setObjectName("statusLogButton")
         self.log_button.setText(AppStrings.TAB_LOGS)
-        self.log_button.setToolTip(AppStrings.TAB_LOGS)
         self.log_button.setStyleSheet(
             "QToolButton { background-color: #3a3d41; color: #f0f0f0; "
             "border: 1px solid #60656b; border-radius: 3px; padding: 2px 8px; }"
@@ -158,7 +157,6 @@ class MainWindow(QMainWindow):
         self.settings_button = QToolButton()
         self.settings_button.setObjectName("statusSettingsButton")
         self.settings_button.setText(AppStrings.SETTINGS_TITLE)
-        self.settings_button.setToolTip(AppStrings.SETTINGS_TITLE)
         self.settings_button.setAccessibleName(AppStrings.SETTINGS_TITLE)
         self.settings_button.setStyleSheet(
             "QToolButton { background-color: #3a3d41; color: #f0f0f0; "
@@ -255,9 +253,13 @@ class MainWindow(QMainWindow):
             if not new_name or new_name in existing:
                 QMessageBox.warning(self, AppStrings.TAB_RENAME_TITLE, AppStrings.ERROR_TAB_NAME_DUPLICATE)
                 return
-            self.config_manager.delete_session(old_name)
+            # Write the new session first.  Removing the old session before a
+            # failed save could permanently lose the user's session.
             self.tab_widget.setTabText(index, new_name)
-            self._save_tab(index)
+            if not self._save_tab(index):
+                self.tab_widget.setTabText(index, old_name)
+                return
+            self.config_manager.delete_session(old_name)
             self._save_tab_order()
 
     def _show_tab_context_menu(self, pos):
@@ -291,6 +293,9 @@ class MainWindow(QMainWindow):
             state["title"] = name
             if not self.config_manager.save_session(name, state):
                 self.statusBar().showMessage(AppStrings.ERROR_SESSION_SAVE.format(name), 3000)
+                return False
+            return True
+        return False
 
     def _save_tab_order(self):
         """열려 있는 모든 탭의 이름과 순서를 저장합니다."""

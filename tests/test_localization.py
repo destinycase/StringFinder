@@ -147,7 +147,6 @@ def test_precise_search_setting_labels_describe_actual_scope(qtbot, mock_config_
     assert AppStrings.ADVANCED_PRECISE_SEARCH_GROUP in [
         group.title() for group in dialog.findChildren(QGroupBox)
     ]
-    assert AppStrings.ADVANCED_PRECISE_SEARCH_DESCRIPTION in labels
     assert AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE in labels
     assert AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION in labels
     assert AppStrings.ADVANCED_JSON_MMAP_THRESHOLD in labels

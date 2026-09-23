@@ -78,7 +78,6 @@ class SearchOptionsPanel(QWidget):
         input_layout = QHBoxLayout()
         self.complex_search_warning = QLabel("⚠")
         self.complex_search_warning.setObjectName("complexSearchWarning")
-        self.complex_search_warning.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
         self.complex_search_warning.setAccessibleName(AppStrings.COMPLEX_SEARCH_TOOLTIP)
         self.complex_search_warning.setCursor(Qt.CursorShape.WhatsThisCursor)
         self.complex_search_warning.setStyleSheet("color: #e0a020; font-weight: bold;")
@@ -494,7 +493,6 @@ class FilenameFilterPanel(DenseFilterPanel):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         combo_layout = QHBoxLayout()
-        label = QLabel(AppStrings.FILENAME_FILTER_LABEL)
         self.filename_combo = HistoryComboBox()
         self.filename_combo.setPlaceholderText(AppStrings.FILENAME_EDIT_PLACEHOLDER)
         le = self.filename_combo.lineEdit()
@@ -504,7 +502,6 @@ class FilenameFilterPanel(DenseFilterPanel):
             lambda t: self.history_deleted.emit(t, Constants.TYPE_FILENAME)
         )
         self.filename_combo.history_cleared.connect(lambda: self.history_cleared.emit(Constants.TYPE_FILENAME))
-        combo_layout.addWidget(label)
         combo_layout.addWidget(self.filename_combo, 1)
         main_layout.addLayout(combo_layout)
 

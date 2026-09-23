@@ -258,7 +258,6 @@ class SettingsDialog(QDialog):
         doctor_btn.clicked.connect(self._run_system_doctor)
         doctor_layout.addWidget(doctor_btn)
         diagnostic_btn = QPushButton("성능 진단")
-        diagnostic_btn.setToolTip("선택한 폴더를 5회 반복 검사합니다. 최대 120분까지 실행됩니다.")
         diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
         doctor_layout.addWidget(diagnostic_btn)
         tab_general_layout.addWidget(doctor_group)
@@ -283,7 +282,7 @@ class SettingsDialog(QDialog):
         common_layout = QVBoxLayout(common_group)
 
         eb_row = QHBoxLayout()
-        eb_label = QLabel(AppStrings.EXCLUDE_BINARY_LABEL + ":")
+        eb_label = QLabel(AppStrings.EXCLUDE_BINARY_LABEL)
         self.exclude_binary_combo = QComboBox()
         self.exclude_binary_combo.addItem(AppStrings.COMBO_DISABLE, False)
         self.exclude_binary_combo.addItem(AppStrings.COMBO_ENABLE, True)
@@ -301,7 +300,7 @@ class SettingsDialog(QDialog):
         eb_row.addWidget(self.exclude_binary_combo)
         common_layout.addLayout(eb_row)
         hidden_row = QHBoxLayout()
-        hidden_row.addWidget(QLabel(AppStrings.EXCLUDE_HIDDEN_LABEL + ":"))
+        hidden_row.addWidget(QLabel(AppStrings.EXCLUDE_HIDDEN_LABEL))
         hidden_row.addStretch()
         self.exclude_hidden_combo = QComboBox()
         self.exclude_hidden_combo.addItem(AppStrings.COMBO_DISABLE, False)
@@ -375,11 +374,6 @@ class SettingsDialog(QDialog):
 
         precise_group = QGroupBox(AppStrings.ADVANCED_PRECISE_SEARCH_GROUP)
         precise_layout = QVBoxLayout(precise_group)
-        precise_description = QLabel(AppStrings.ADVANCED_PRECISE_SEARCH_DESCRIPTION)
-        precise_description.setObjectName("preciseSearchSettingsDescription")
-        precise_description.setWordWrap(True)
-        precise_description.setStyleSheet("color: #888888; font-size: 11px; padding-bottom: 4px;")
-        precise_layout.addWidget(precise_description)
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE,
             Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, *setting_bounds(Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE), AppStrings.UNIT_MB,
@@ -407,7 +401,7 @@ class SettingsDialog(QDialog):
             Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY,
             *setting_bounds(Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY),
             AppStrings.UNIT_COUNT,
-            target_layout=existence_only_layout,
+            target_layout=precise_layout,
             description_text=AppStrings.ADVANCED_EXCEL_MAX_CONCURRENCY_DESCRIPTION,
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB] = create_spinbox_row(
@@ -415,7 +409,7 @@ class SettingsDialog(QDialog):
             Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB,
             *setting_bounds(Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB),
             AppStrings.UNIT_MB,
-            target_layout=existence_only_layout,
+            target_layout=precise_layout,
             description_text=AppStrings.ADVANCED_EXCEL_SERIALIZATION_THRESHOLD_DESCRIPTION,
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS] = create_spinbox_row(

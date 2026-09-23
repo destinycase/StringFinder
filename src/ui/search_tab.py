@@ -526,7 +526,10 @@ class SearchTab(QMainWindow):
         search_mode = self.ext_panel.get_special_mode()
         filename_filters = inputs.get(Constants.PAYLOAD_FILENAME_FILTER, [])
 
-        self.result_view_panel.set_search_context(search_text, search_mode)
+        existence_only = bool(inputs.get(Constants.PAYLOAD_EXISTENCE_ONLY, False))
+        self.result_view_panel.set_search_context(
+            search_text, search_mode, existence_only=existence_only
+        )
         self.result_view_panel.set_filename_filters(filename_filters)
         results = self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
         self.total_matches = 0

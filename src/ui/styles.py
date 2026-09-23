@@ -73,18 +73,34 @@ class UIStyles:
     """
 
     @classmethod
-    def get_summary_label_style(cls, is_dark_mode: bool) -> str:
+    def get_summary_label_style(cls, is_dark_mode: bool, state: str = "") -> str:
         """테마(다크/라이트)에 대응하는 검색 결과 요약 레이블 스타일을 반환합니다."""
+        colors = {
+            "finished": ("#E4EFFB", "#2563A8"),
+            "stopped": ("#EEF0F3", "#4B5563"),
+        }
         if is_dark_mode:
-            return (
-                "font-weight: bold; color: #E0E0E0; padding: 6px 10px; "
-                "background-color: #2D2D2D; border: 1px solid #3E3E3E; "
-                "border-radius: 4px; margin-bottom: 4px;"
+            colors.update(
+                {
+                    "finished": ("#1E3A5F", "#8CB8E8"),
+                    "stopped": ("#30343B", "#AEB7C4"),
+                }
             )
+        background, border = colors.get(state, colors["finished"])
+        text_color = border
+        if state == "searching":
+            # Match the skipped-file warning banner so an active search and
+            # its partial-result warning read as one consistent state.
+            background, border = (
+                ("#3B3020", "#D69E2E")
+                if is_dark_mode
+                else ("#FFF7E0", "#C47B00")
+            )
+            text_color = border
         return (
-            "font-weight: bold; color: #333333; padding: 6px 10px; "
-            "background-color: #F0F4F8; border: 1px solid #D0D7DE; "
-            "border-radius: 4px; margin-bottom: 4px;"
+            f"font-weight: bold; color: {text_color}; padding: 6px 10px; "
+            f"background-color: {background}; border: 1px solid {border}; "
+            "border-radius: 4px; margin-bottom: 4px; min-height: 18px;"
         )
 
     @classmethod
