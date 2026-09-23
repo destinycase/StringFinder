@@ -27,6 +27,8 @@ class Constants:
     DEFAULT_TIMEOUT_WORKER_HANG = DEFAULTS["timeout_worker_hang"]
     DEFAULT_MAX_CHECK_CELLS = DEFAULTS["max_check_cells"]
     DEFAULT_MAX_JSON_DEPTH = DEFAULTS["max_json_depth"]
+    DEFAULT_EXCEL_MAX_CONCURRENCY = DEFAULTS["excel_max_concurrency"]
+    DEFAULT_EXCEL_SERIALIZATION_THRESHOLD_MB = DEFAULTS["excel_serialization_threshold_mb"]
 
     # 유지보수 호환상 기존 상수를 기본값 기반 동적 연산 프로퍼티가 아닌 형태로 남길 경우:
     MAX_JSON_DOM_SIZE = DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024
@@ -132,6 +134,8 @@ class Constants:
     CONFIG_KEY_TIMEOUT_WORKER_HANG = "timeout_worker_hang"
     CONFIG_KEY_MAX_CHECK_CELLS = "max_check_cells"
     CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
+    CONFIG_KEY_EXCEL_MAX_CONCURRENCY = "excel_max_concurrency"
+    CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB = "excel_serialization_threshold_mb"
     # 고급 설정의 기본값과 허용 범위는 ConfigManager와 UI가 함께 사용하는
     # 단일 계약입니다. 두 계층에 숫자를 중복 선언하면 수동 편집된 설정이
     # 화면과 실제 검색에서 서로 다르게 적용될 수 있습니다.
@@ -175,6 +179,16 @@ class Constants:
             "default": DEFAULT_MAX_JSON_DEPTH,
             "minimum": 10,
             "maximum": DEFAULT_MAX_JSON_DEPTH,
+        },
+        CONFIG_KEY_EXCEL_MAX_CONCURRENCY: {
+            "default": DEFAULTS["excel_max_concurrency"],
+            "minimum": 1,
+            "maximum": 4,
+        },
+        CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB: {
+            "default": DEFAULTS["excel_serialization_threshold_mb"],
+            "minimum": 1,
+            "maximum": 100,
         },
     }
     DEFAULT_CONTEXT_PREVIEW_LINES = 5

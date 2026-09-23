@@ -1,10 +1,10 @@
 # StringFinder
 
-> Current version: **5.9.14** · Languages: **Korean / English** · OS: **Windows**
+> Current version: **5.9.15** · Languages: **Korean / English** · OS: **Windows**
 
 대용량 파일과 구조화 문서에서 원하는 문자열을 빠르게 찾는 Windows 데스크톱 검색 도구입니다. Python·PySide6로 사용자 인터페이스를 구성하고, Rust 검색 엔진으로 파일 탐색과 문자열 검색을 가속합니다.
 
-> 현재 버전: **5.9.14** · 지원 언어: **한국어 / English** · 운영체제: **Windows**
+> 현재 버전: **5.9.15** · 지원 언어: **한국어 / English** · 운영체제: **Windows**
 
 ## 프로젝트 개요
 

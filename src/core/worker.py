@@ -647,6 +647,31 @@ class SearchWorker(QRunnable):
         try:
             executor_workers = max(1, int(getattr(executor, "_max_workers", 1)))
             max_in_flight = self._recommended_structured_in_flight(batches, executor_workers)
+            # Excel parsing is memory-heavy and internally allocates per workbook.
+            # Keep only one Excel batch in flight so ProcessPool workers cannot
+            # inflate RSS concurrently. Other formats retain the adaptive policy.
+            if Constants.MODE_EXCEL.upper() in str(self.special_mode or "").upper():
+                try:
+                    excel_concurrency = max(
+                        1,
+                        min(4, int(_get_adv_setting(Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY, 2))),
+                    )
+                except (TypeError, ValueError):
+                    excel_concurrency = 2
+                try:
+                    threshold_mb = max(
+                        1,
+                        min(100, int(_get_adv_setting(Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB, 20))),
+                    )
+                except (TypeError, ValueError):
+                    threshold_mb = 20
+                threshold_bytes = threshold_mb * 1024 * 1024
+                has_large_excel = any(
+                    size >= threshold_bytes
+                    for batch in batches
+                    for _path, size in batch
+                )
+                max_in_flight = 1 if has_large_excel else min(max_in_flight, excel_concurrency)
             for _ in range(min(max_in_flight, len(batches))):
                 if not submit_next_batch():
                     break

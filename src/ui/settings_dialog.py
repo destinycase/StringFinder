@@ -21,6 +21,11 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QWidget,
 )
+from sf_utils.app_strings import AppStrings
+from sf_utils.constants import Constants
+from sf_utils.localization import LANGUAGE_LABELS
+from sf_utils.logger import logger
+from ui.styles import UIStyles
 
 
 class DiagnosticThread(QThread):
@@ -43,14 +48,6 @@ class DiagnosticThread(QThread):
             self.finished_report.emit(report)
         except Exception as exc:
             self.failed.emit(str(exc))
-
-
-from sf_utils.app_strings import AppStrings
-from sf_utils.constants import Constants
-from sf_utils.localization import LANGUAGE_LABELS
-from sf_utils.logger import logger
-from ui.styles import UIStyles
-
 
 
 class SettingsDialog(QDialog):
@@ -405,6 +402,22 @@ class SettingsDialog(QDialog):
 
         existence_only_group = QGroupBox(AppStrings.ADVANCED_EXISTENCE_ONLY_GROUP)
         existence_only_layout = QVBoxLayout(existence_only_group)
+        self.adv_spinboxes[Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY] = create_spinbox_row(
+            AppStrings.ADVANCED_EXCEL_MAX_CONCURRENCY,
+            Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY,
+            *setting_bounds(Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY),
+            AppStrings.UNIT_COUNT,
+            target_layout=existence_only_layout,
+            description_text=AppStrings.ADVANCED_EXCEL_MAX_CONCURRENCY_DESCRIPTION,
+        )
+        self.adv_spinboxes[Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB] = create_spinbox_row(
+            AppStrings.ADVANCED_EXCEL_SERIALIZATION_THRESHOLD,
+            Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB,
+            *setting_bounds(Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB),
+            AppStrings.UNIT_MB,
+            target_layout=existence_only_layout,
+            description_text=AppStrings.ADVANCED_EXCEL_SERIALIZATION_THRESHOLD_DESCRIPTION,
+        )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_CHECK_CELLS,
             Constants.CONFIG_KEY_MAX_CHECK_CELLS, *setting_bounds(Constants.CONFIG_KEY_MAX_CHECK_CELLS), AppStrings.UNIT_CELL,

@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
-    QPushButton,
     QStatusBar,
     QToolButton,
     QTabWidget,
@@ -137,10 +136,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.tabBar().customContextMenuRequested.connect(self._show_tab_context_menu)
         self.tab_widget.tabBarDoubleClicked.connect(self._rename_tab)
         self.tab_widget.tabBar().tabMoved.connect(self._save_tab_order)
-        self.add_button = QPushButton(AppStrings.ADD_TAB_BTN)
-        self.add_button.setFixedWidth(30)
-        self.add_button.clicked.connect(lambda: self.add_new_tab())
-        self.tab_widget.setCornerWidget(self.add_button, Qt.Corner.TopLeftCorner)
         layout.addWidget(self.tab_widget)
         self.setCentralWidget(central_widget)
         sb = QStatusBar()
@@ -215,8 +210,6 @@ class MainWindow(QMainWindow):
         """검색 중 UI 상호작용을 제한하거나 해제합니다."""
         self.tab_widget.tabBar().setEnabled(not locked)
         self.tab_widget.setTabsClosable(not locked)
-        if hasattr(self, "add_button"):
-            self.add_button.setEnabled(not locked)
         if hasattr(self, "new_tab_shortcut"):
             self.new_tab_shortcut.setEnabled(not locked)
         self.log_button.setEnabled(not locked)
@@ -269,10 +262,16 @@ class MainWindow(QMainWindow):
 
     def _show_tab_context_menu(self, pos):
         """탭 바에서 우클릭 시 호출되는 컨텍스트 메뉴입니다."""
+        menu = QMenu(self)
+        add_action = QAction(AppStrings.ADD_TAB_MENU, self)
+        add_action.setEnabled(self._search_lock_owner is None)
+        add_action.triggered.connect(self.add_new_tab)
+        menu.addAction(add_action)
         index = self.tab_widget.tabBar().tabAt(pos)
         if index < 0:
+            menu.exec(self.tab_widget.tabBar().mapToGlobal(pos))
             return
-        menu = QMenu(self)
+        menu.addSeparator()
         rename_action = QAction(AppStrings.TAB_RENAME_TITLE, self)
         rename_action.triggered.connect(lambda: self._rename_tab(index))
         close_action = QAction(AppStrings.TAB_CLOSE_MENU, self)

@@ -4,7 +4,7 @@ Keep user-facing setting defaults here so a default change is explicit and can
 be migrated without overwriting values that users intentionally chose.
 """
 
-CONFIG_SCHEMA_VERSION = 4
+CONFIG_SCHEMA_VERSION = 5
 
 DEFAULTS = {
     "max_total_matches": 500_000,
@@ -15,6 +15,8 @@ DEFAULTS = {
     "timeout_worker_hang": 600,
     "max_check_cells": 500_000,
     "max_json_depth": 20_000,
+    "excel_max_concurrency": 2,
+    "excel_serialization_threshold_mb": 20,
 }
 
 # Increment only when the shipped default for that setting changes.
@@ -27,4 +29,6 @@ DEFAULT_VERSIONS = {
     "timeout_worker_hang": 1,
     "max_check_cells": 1,
     "max_json_depth": 1,
+    "excel_max_concurrency": 1,
+    "excel_serialization_threshold_mb": 1,
 }

@@ -291,7 +291,7 @@ class ResultView(QWidget):
         main_layout.setSpacing(5)
         self.result_list_container = QWidget()
         result_list_layout = QVBoxLayout(self.result_list_container)
-        result_list_layout.setContentsMargins(5, 5, 5, 5)  # (0, 0, 0, 0)에서 (5, 5, 5, 5)로 변경됨
+        result_list_layout.setContentsMargins(0, 0, 0, 0)
         result_list_layout.setSpacing(2)
         self.result_filter_layout = QHBoxLayout()
         self.result_file_filter_edit = QLineEdit()
@@ -429,7 +429,7 @@ class ResultView(QWidget):
         self.match_view.doubleClicked.connect(self._on_match_double_clicked)
         self.match_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.match_view.customContextMenuRequested.connect(self._show_match_context_menu)
-        match_area_layout.setContentsMargins(5, 5, 5, 5)
+        match_area_layout.setContentsMargins(0, 0, 0, 0)
         match_area_layout.setSpacing(5)
         match_area_layout.addWidget(self.file_info_header)
         match_area_layout.addLayout(self.match_filter_layout)

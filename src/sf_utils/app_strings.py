@@ -27,6 +27,7 @@ class AppStrings:
     # =========================================================================
     SEARCH_LABEL = "문자열 검색"
     ADD_TAB_BTN = "+"
+    ADD_TAB_MENU = "새 탭 추가"
     ADD_FOLDER_BTN = "폴더 추가"
     ADD_EXT_BTN = "추가"
     SELECT_ALL_BTN = "전체 선택"
@@ -110,6 +111,10 @@ class AppStrings:
     ADVANCED_EXISTENCE_ONLY_GROUP = "존재 여부만 확인 전용"
     ADVANCED_MAX_CHECK_CELLS = "Excel 존재 확인 최대 검사 셀 수"
     ADVANCED_MAX_CHECK_CELLS_DESCRIPTION = "존재 여부만 확인할 때 파일별로 검사할 셀 수입니다. 한도에 도달하면 해당 파일을 부분 검색으로 안내합니다."
+    ADVANCED_EXCEL_MAX_CONCURRENCY = "Excel 최대 동시 처리 수"
+    ADVANCED_EXCEL_MAX_CONCURRENCY_DESCRIPTION = "작은 Excel 파일을 동시에 처리할 수입니다. 큰 파일이 포함되면 안전을 위해 한 개씩 처리합니다."
+    ADVANCED_EXCEL_SERIALIZATION_THRESHOLD = "대형 Excel 직렬화 기준"
+    ADVANCED_EXCEL_SERIALIZATION_THRESHOLD_DESCRIPTION = "이 크기 이상의 Excel 파일이 검색 대상에 포함되면 Excel 처리를 한 개씩 실행합니다. 최대 100MB까지 설정할 수 있습니다."
     ADVANCED_MAX_JSON_DEPTH = "JSON 최대 깊이 제한"
 
     TOOLTIP_MAX_TOTAL_MATCHES = "프로그램 전체에서 한 번의 검색에 표시할 수 있는 총 매치 허용 개수입니다."
