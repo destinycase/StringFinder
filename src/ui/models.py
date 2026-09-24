@@ -196,8 +196,19 @@ class SearchResultModel(QAbstractTableModel):
 
         # 초기 200건에 대해서만 실시간 정렬 (첫 화면 반응성 확보)
         if len(self._filtered_buffer) <= 200:
+            def sort_count(item):
+                value = item[0] if item else 0
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return 0
+
             self._filtered_buffer.sort(
-                key=lambda x: (-x[0], x[3].lower(), x[1].lower() if isinstance(x[1], str) else "")
+                key=lambda x: (
+                    -sort_count(x),
+                    str(x[3]).lower() if len(x) > 3 and x[3] is not None else "",
+                    str(x[1]).lower() if len(x) > 1 and x[1] is not None else "",
+                )
             )
 
         # go_to_page는 내부적으로 beginResetModel/endResetModel을 호출하므로
@@ -556,28 +567,43 @@ class MatchDetailModel(QAbstractTableModel):
         if not self.search_text:
             return escape(val)
 
+        # Bound HTML rendering for huge single-line files. Keep the complete
+        # value in the model, but show only a context window in the detail view.
+        display_val = val
+        context_limit = 8192
+        if len(display_val) > context_limit:
+            try:
+                first_match = self.highlight_pattern.search(display_val) if self.highlight_pattern else None
+                center = first_match.start() if first_match else 0
+                start = max(0, center - context_limit // 2)
+                end = min(len(display_val), start + context_limit)
+                start = max(0, end - context_limit)
+                display_val = ("..." if start else "") + display_val[start:end] + ("..." if end < len(val) else "")
+            except Exception:
+                display_val = display_val[:context_limit] + "..."
+
         binary_prefix = AppStrings.MSG_BINARY_FILE.rstrip("]")
-        if binary_prefix in val or val.startswith(binary_prefix):
-            return escape(val)
+        if binary_prefix in display_val or display_val.startswith(binary_prefix):
+            return escape(display_val)
 
         search_mode = str(self.search_mode or Constants.MODE_NORMAL)
         if Constants.MODE_EXACT in search_mode:
-            if val.strip().lower() == self.search_text.strip().lower():
-                return f"<span style='color: #ff9900; font-weight: bold;'>{escape(val)}</span>"
+            if display_val.strip().lower() == self.search_text.strip().lower():
+                return f"<span style='color: #ff9900; font-weight: bold;'>{escape(display_val)}</span>"
         else:
             if self.highlight_pattern:
                 try:
                     parts = []
                     last_end = 0
-                    for match in self.highlight_pattern.finditer(val):
-                        parts.append(escape(val[last_end : match.start()]))
+                    for match in self.highlight_pattern.finditer(display_val):
+                        parts.append(escape(display_val[last_end : match.start()]))
                         parts.append(f"<span style='color: #ff9900; font-weight: bold;'>{escape(match.group())}</span>")
                         last_end = match.end()
-                    parts.append(escape(val[last_end:]))
+                    parts.append(escape(display_val[last_end:]))
                     return "".join(parts)
                 except Exception:
                     pass
-        return escape(val)
+        return escape(display_val)
 
     def set_page_size(self, size: int):
         """페이지당 행 수를 설정하고 데이터를 다시 로드합니다."""

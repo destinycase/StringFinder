@@ -244,6 +244,9 @@ class ResultView(QWidget):
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
     CONTEXT_MAX_SCAN_LINES = 200_000
     CONTEXT_MAX_LINE_CHARS = 4_000
+    # Long-line previews show a compact asymmetric window around the match.
+    CONTEXT_TRUNCATED_BEFORE_CHARS = 20
+    CONTEXT_TRUNCATED_AFTER_CHARS = 500
     EXCEL_PREVIEW_EXTENSIONS = (".xlsx", ".xlsm", ".xls", ".xlsb", ".ods")
     """
     검색 결과 테이블, 상세 매치 테이블, 미리보기 패널을 관리하는 복합 뷰입니다.
@@ -869,7 +872,24 @@ class ResultView(QWidget):
         target_line = int(self._context_target_line)
         for block, (line_number, line) in enumerate(lines):
             if len(line) > self.CONTEXT_MAX_LINE_CHARS:
-                line = line[: self.CONTEXT_MAX_LINE_CHARS]
+                # Center the bounded preview on the selected match instead of
+                # always showing the beginning of a minified/long line.
+                folded_line = line.casefold()
+                folded_query = str(self.search_text or "").casefold()
+                match_start = folded_line.find(folded_query) if folded_query else 0
+                # Use the selected detail row as a hint so repeated matches on
+                # the same line do not always preview the first occurrence.
+                hint = str(getattr(self, "_context_match_content", "") or "").strip(".")
+                if hint and folded_query:
+                    hint_pos = folded_line.find(hint.casefold())
+                    query_in_hint = hint.casefold().find(folded_query)
+                    if hint_pos >= 0 and query_in_hint >= 0:
+                        match_start = hint_pos + query_in_hint
+                if match_start < 0:
+                    match_start = 0
+                start = max(0, match_start - self.CONTEXT_TRUNCATED_BEFORE_CHARS)
+                end = min(len(line), match_start + self.CONTEXT_TRUNCATED_AFTER_CHARS)
+                line = ("..." if start else "") + line[start:end] + ("..." if end < len(line) else "")
                 truncated = True
             marker = "▶" if line_number == target_line else " "
             if line_number == target_line:
@@ -898,6 +918,7 @@ class ResultView(QWidget):
         self._set_context_line_settings_visible(True)
         position = str(getattr(match_item, "position", match_item[0]))
         content = str(getattr(match_item, "content", match_item[1]))
+        self._context_match_content = content
         try:
             target_line = int(position)
         except (TypeError, ValueError):

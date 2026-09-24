@@ -1,6 +1,4 @@
-import re
-import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox, QFileIconProvider
+from PySide6.QtWidgets import QMessageBox, QFileIconProvider
 from sf_utils.constants import Constants
 from ui.panels import SearchOptionsPanel
 from core.search_engine import search_in_excel_special
@@ -51,7 +49,7 @@ class TestQAEdgeFixesVerification:
         file_path, match_count, matches = result
         assert match_count >= 1
 
-    def test_export_results_feedback_called(self, monkeypatch, qtbot):
+    def test_export_results_feedback_called(self, monkeypatch, qtbot, tmp_path):
         """내보내기 실패 시 critical 팝업, 성공 시 information 팝업 호출 검증"""
         icon_provider = QFileIconProvider()
         view = ResultView(icon_provider=icon_provider, config_manager=ConfigManager())
@@ -61,7 +59,7 @@ class TestQAEdgeFixesVerification:
         # 1. 실패 시나리오
         monkeypatch.setattr(
             "PySide6.QtWidgets.QFileDialog.getSaveFileName",
-            lambda *args, **kwargs: ("C:/fake/path.xlsx", "Excel (*.xlsx)")
+            lambda *args, **kwargs: (str(tmp_path / "export_test.xlsx"), "Excel (*.xlsx)")
         )
         def mock_save_fail(*args, **kwargs):
             raise PermissionError("Locked file")

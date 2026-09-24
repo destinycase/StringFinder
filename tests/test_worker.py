@@ -16,6 +16,7 @@
 from unittest.mock import MagicMock, patch
 
 from core.worker import SearchWorker
+from sf_utils.app_strings import AppStrings
 
 
 def test_worker_result_batching():
@@ -210,7 +211,7 @@ def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
 
     assert results_received[0][0] == "limited.txt"
     assert skipped_received[0][0] == "limited.txt"
-    assert "파일당 최대 매치 수" in skipped_received[0][1]
+    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.split("{}")[0] in skipped_received[0][1]
     assert finished_received == [(1, 1, 1)]
 
 

@@ -3,6 +3,7 @@ import json
 import pytest
 
 from core import search_engine
+from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
 
@@ -401,7 +402,7 @@ def test_rust_truncation_marker_is_normalized(monkeypatch):
     assert matches == [
         (1, "one", None, None),
         (2, "two", None, None),
-        (-1, "(파일당 최대 매치 도달: 2건)", None, None),
+        (-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(2), None, None),
     ]
     assert binary_count == 0
     assert sheet_skips == []
@@ -456,8 +457,8 @@ def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
     )
 
     assert reason is not None
-    assert "파일당 최대 매치 수(2건)" in reason
-    assert "JSON 최대 깊이(3)" in reason
+    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2) in reason
+    assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in reason
     assert reason.count("\n") == 1
 
 
@@ -511,8 +512,8 @@ def test_file_list_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
     assert response["results"][0][1] == 1
     assert len(response["skipped"]) == 1
     assert response["skipped"][0][0] == "limited.json"
-    assert "파일당 최대 매치 수(17건)" in response["skipped"][0][1]
-    assert "JSON 최대 깊이(3)" in response["skipped"][0][1]
+    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(17) in response["skipped"][0][1]
+    assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in response["skipped"][0][1]
 
 
 def test_python_batch_reports_depth_only_notice_without_empty_result(tmp_path, monkeypatch):

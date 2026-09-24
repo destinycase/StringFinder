@@ -907,6 +907,28 @@ def _search_text_stream(
     search_fold = search_string_nfc.casefold()
     normalize_nfc = unicodedata.normalize
 
+    def detail_texts(line: str, folded: str, occurrences: int):
+        """Keep detail rows bounded for huge single-line documents."""
+        text = line.strip()
+        limit = 1024
+        if len(text) <= limit:
+            return [text] * occurrences
+        positions = []
+        cursor = 0
+        for _ in range(occurrences):
+            found = folded.find(search_fold, cursor)
+            if found < 0:
+                break
+            positions.append(found)
+            cursor = found + max(1, len(search_fold))
+        result = []
+        for start in positions:
+            left = max(0, start - limit // 2)
+            right = min(len(text), left + limit)
+            left = max(0, right - limit)
+            result.append(("..." if left else "") + text[left:right] + ("..." if right < len(text) else ""))
+        return result or [text[:limit] + "..."] * occurrences
+
     # Hoist the search-mode branch out of the line loop. Checking ``stop_event``
     # first also avoids the modulo operation for synchronous callers without one.
     if exact_match:
@@ -914,15 +936,20 @@ def _search_text_stream(
             if stop_event and (line_number - 1) % 1000 == 0 and stop_event.is_set():
                 return matches, count, False, True
             normalized_line = line if line.isascii() else normalize_nfc("NFC", line)
-            if normalized_line.casefold().strip() != search_fold:
+            folded_line = normalized_line.casefold()
+            if folded_line.strip() != search_fold:
                 continue
 
-            count += 1
+            occurrences = 1 if exact_match else normalized_line.casefold().count(search_fold)
+            count += occurrences
             if existence_only:
                 return matches, count, True, False
-            if count <= max_per_file:
-                matches.append((line_number, line.strip()))
-            else:
+            available = max_per_file - (count - occurrences)
+            if available > 0:
+                matches.extend((line_number, detail) for detail in detail_texts(
+                    line, folded_line, min(occurrences, available)
+                ))
+            if occurrences > available:
                 matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file)))
                 break
     else:
@@ -930,15 +957,20 @@ def _search_text_stream(
             if stop_event and (line_number - 1) % 1000 == 0 and stop_event.is_set():
                 return matches, count, False, True
             normalized_line = line if line.isascii() else normalize_nfc("NFC", line)
-            if search_fold not in normalized_line.casefold():
+            folded_line = normalized_line.casefold()
+            if search_fold not in folded_line:
                 continue
 
-            count += 1
+            occurrences = normalized_line.casefold().count(search_fold)
+            count += occurrences
             if existence_only:
                 return matches, count, True, False
-            if count <= max_per_file:
-                matches.append((line_number, line.strip()))
-            else:
+            available = max_per_file - (count - occurrences)
+            if available > 0:
+                matches.extend((line_number, detail) for detail in detail_texts(
+                    line, folded_line, min(occurrences, available)
+                ))
+            if occurrences > available:
                 matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file)))
                 break
 
