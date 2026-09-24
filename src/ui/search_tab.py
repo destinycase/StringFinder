@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from sf_utils.file_helper import is_potentially_executable_file, open_in_external_editor
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
+from sf_utils.localization import get_korean_strings
 from sf_utils.constants import Constants
 from sf_utils.logger import logger, normalize_log_level
 from ui.panels import ExtensionFilterPanel, FilenameFilterPanel, FolderFilterPanel, SearchOptionsPanel
@@ -57,6 +58,10 @@ class SearchTab(QMainWindow):
         self.total_matches = 0
         self.total_files = 0
         self.skipped_count = 0
+        # The mode that produced the currently displayed results. This is kept
+        # separately from the editable search controls so changing an option
+        # before saving a session cannot reinterpret old result content.
+        self.result_existence_only = False
         self.skipped_files_list: List[Tuple[str, str]] = []
         self.scanned_count = 0
         self.results_buffer = []
@@ -96,8 +101,6 @@ class SearchTab(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.search_dock)
         self.search_panel.search_started.connect(self.start_search)
         self.search_panel.stop_requested.connect(self.stop)
-        self.search_panel.history_deleted.connect(self._remove_history_item)
-        self.search_panel.history_cleared.connect(self._clear_history)
         self.status_message_requested.emit(AppStrings.STATUS_READY, 0)
         # 폴더 필터 도크
         self.folder_dock = QDockWidget(AppStrings.DOCK_FOLDER_TITLE, self)
@@ -121,8 +124,6 @@ class SearchTab(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.filename_dock)
         self.filename_panel.filter_changed.connect(self._sync_filters_to_config)
         self.filename_panel.search_triggered.connect(self.start_search)
-        self.filename_panel.history_deleted.connect(self._remove_history_item)
-        self.filename_panel.history_cleared.connect(self._clear_history)
         # 중앙 결과 영역
         self.result_container = QWidget()
         result_layout = QVBoxLayout(self.result_container)
@@ -354,11 +355,7 @@ class SearchTab(QMainWindow):
     def _load_histories(self):
         """설정 파일에서 검색어 및 파일명 필터 히스토리를 불러와 콤보박스에 로드합니다."""
         current_search = self.search_panel.get_search_text()
-        current_filename = self.filename_panel.get_filename_filter_text()
-        self.search_panel.set_search_history(self.config_manager.get_history())
-        self.filename_panel.set_history(self.config_manager.get_filename_history())
         self.search_panel.search_combo.setEditText(current_search)
-        self.filename_panel.filename_combo.setEditText(current_filename)
 
     def _remove_history_item(self, text, history_type):
         """검색어나 파일명 필터의 특정 히스토리 항목을 삭제합니다."""
@@ -459,6 +456,7 @@ class SearchTab(QMainWindow):
             Constants.PAYLOAD_RESULTS: self.result_view_panel.result_model.get_all_results()
             if self.result_view_panel.result_model
             else [],
+            "results_existence_only": self.result_existence_only,
             Constants.PAYLOAD_SUMMARY: {
                 "total_files": self.total_files,
                 "total_matches": self.total_matches,
@@ -526,12 +524,32 @@ class SearchTab(QMainWindow):
         search_mode = self.ext_panel.get_special_mode()
         filename_filters = inputs.get(Constants.PAYLOAD_FILENAME_FILTER, [])
 
-        existence_only = bool(inputs.get(Constants.PAYLOAD_EXISTENCE_ONLY, False))
+        has_result_mode = "results_existence_only" in state
+        existence_only = bool(state.get("results_existence_only", False))
+        results = self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
+        if not has_result_mode:
+            # Legacy sessions have no mode metadata. Only reinterpret rows when
+            # every stored detail is an unmistakable generated marker; real
+            # search content must always be preserved.
+            markers = {
+                AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT,
+                get_korean_strings().get("BOOLEAN_SEARCH_MATCH_CONTENT"),
+                "[Matching item exists in file]",
+                "[파일 내 일치하는 항목 존재]",
+            }
+            legacy_matches = [
+                match[1]
+                for row in results
+                if isinstance(row, (list, tuple)) and len(row) >= 5
+                for match in (row[4] if isinstance(row[4], (list, tuple)) else [])
+                if isinstance(match, (list, tuple)) and len(match) >= 2 and isinstance(match[1], str)
+            ]
+            existence_only = bool(legacy_matches) and all(value in markers for value in legacy_matches)
+        self.result_existence_only = existence_only
         self.result_view_panel.set_search_context(
             search_text, search_mode, existence_only=existence_only
         )
         self.result_view_panel.set_filename_filters(filename_filters)
-        results = self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
         self.total_matches = 0
         self.total_files = 0
         self.result_view_panel.clear()  # 기존 결과와 스킵 안내를 먼저 초기화합니다.
@@ -634,10 +652,6 @@ class SearchTab(QMainWindow):
                 QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.RESULT_EMPTY_NO_FOLDER)
                 return
             # 일반 모드에서는 최소 1개 확장자가 필요
-            if not special_mode or special_mode == AppStrings.SPECIAL_SEARCH_OFF:
-                if not selected_exts:
-                    QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.ERROR_NO_EXTENSION)
-                    return
             filename_filter = self.filename_panel.get_filename_filter_text()
             # 파일명 필터는 선택 사항
             if not filename_filter:
@@ -661,9 +675,6 @@ class SearchTab(QMainWindow):
             self._liveliness_seconds = 0  # 검색 시작 시 타이머 초기화
             self._liveliness_timer.start()  # 타이머 시작
             self.liveliness_updated.emit(True, 0)  # 타이머 시작 시그널
-            self.config_manager.add_history(search_text)
-            if filename_filter:
-                self.config_manager.add_filename_history(filename_filter)
             self._load_histories()
             special_mode = self.ext_panel.get_special_mode()
             selected_filenames = self.current_filename_filters
@@ -685,6 +696,7 @@ class SearchTab(QMainWindow):
                 AppStrings.RESULT_SEARCHING_MSG.format(search_text), emphasized=True
             )
             existence_only = self.search_panel.is_existence_only()
+            self.result_existence_only = existence_only
             self.result_view_panel.set_search_context(search_text, special_mode, existence_only=existence_only)
 
             # [Optimization] Unified Scan & Search

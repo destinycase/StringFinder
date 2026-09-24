@@ -1,65 +1,49 @@
 # StringFinder
 
-> Current version: **5.9.16** · Languages: **Korean / English** · OS: **Windows**
+StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색하는 데스크톱 애플리케이션입니다.
 
-대용량 파일과 구조화 문서에서 원하는 문자열을 빠르게 찾는 Windows 데스크톱 검색 도구입니다. Python·PySide6로 사용자 인터페이스를 구성하고, Rust 검색 엔진으로 파일 탐색과 문자열 검색을 가속합니다.
-
-> 현재 버전: **5.9.16** · 지원 언어: **한국어 / English** · 운영체제: **Windows**
-
-## 프로젝트 개요
-
-StringFinder는 여러 폴더와 하위 폴더를 한 번에 탐색하며 일반 텍스트뿐 아니라 JSON, XML, Excel 문서의 구조를 해석해 검색합니다. 검색 결과에서 파일 위치와 일치 내용을 확인하고, 필요한 경우 원본 파일이나 해당 줄을 외부 편집기로 바로 열 수 있습니다.
-
-접근할 수 없거나 손상된 문서는 검색 전체를 중단시키지 않고 건너뛴 파일로 구분합니다. 건너뛴 원인은 현재 언어 설정에 맞춰 표시되며, 세부 진단은 로그에서 확인할 수 있습니다.
+현재 버전은 **5.9.17**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
 
 ## 주요 기능
 
-- Rust 기반 고속 파일 탐색 및 문자열 검색
-- 여러 폴더와 하위 폴더 동시 검색
-- 확장자, 파일명, 숨김 항목, 바이너리 파일 필터
-- JSON·XML·Excel 구조 기반 검색과 정확히 일치 검색
-- 검색 결과, 일치 위치, 전후 문맥 미리보기
-- 다중 검색 탭과 세션 저장·복원
-- 검색 결과를 Excel 또는 텍스트 파일로 내보내기
-- 건너뛴 파일 목록 확인 및 클립보드 복사
-- 한국어·영어 인터페이스
+- Rust 기반 병렬 검색 엔진과 Python/PySide6 GUI
+- 일반 검색, 누락 방지 검색(매우 느림), 존재만 확인 검색
+- JSON·XML 구조 검색 및 Excel 시트/셀 결과 표시
+- 검색 결과 필터링·정렬, 문맥 미리보기, 외부 편집기 연동
+- 탭별 세션 저장·복원과 검색 결과 내보내기(TXT/XLSX)
+- 접근 오류·손상 문서·안전 한도 초과 파일의 분리 안내 및 원인 표시
+- 한국어/English 현지화와 설정 기반 성능 진단 리포트
 
-## 지원 형식
+## 실행
 
-| 형식 | 검색 단위 |
-|---|---|
-| 일반 텍스트 및 사용자 지정 확장자 | 파일과 줄 |
-| JSON | 키 경로와 스칼라 값 |
-| XML | 태그·속성 경로와 값 |
-| Excel (`.xlsx`, `.xlsm`, `.xls`, `.xlsb`) | 워크시트, 셀 주소, 값 |
-
-## 구성
-
-| 영역 | 역할 |
-|---|---|
-| Python · PySide6 | 화면, 설정, 세션, 결과 표시 |
-| Rust · PyO3 | 파일 순회, 문자열 검색, JSON·XML·Excel 처리 |
-| PyInstaller | Windows 단일 실행 파일 패키징 |
-
-## 빠른 시작
-
-### 배포본 실행
-
-[StringFinder.exe](dist/StringFinder.exe)를 실행한 뒤 검색할 폴더와 확장자를 선택하고 검색어를 입력합니다. 별도 설치 과정은 필요하지 않습니다.
-
-### 소스에서 실행
-
-Python 3.12 이상과 Rust 도구 체인이 필요합니다.
+배포본은 `dist/StringFinder.exe`입니다. 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
 
 ```powershell
-pip install -e ".[dev]"
-python build_rust.py
-python run.py
+python sf_main.py
 ```
+
+## 기술 구성
+
+| 구성 | 역할 |
+| --- | --- |
+| Python / PySide6 | GUI, 설정, 세션, 결과 표시·내보내기 |
+| Rust / PyO3 | 파일 순회, 텍스트 검색, 구조화 문서 처리 |
+| Calamine | Excel 통합 문서 읽기 |
+
+검색 엔진은 검색 중 UI를 차단하지 않으며, 처리할 수 없는 파일은 전체 검색을 중단하지 않고 건너뛴 파일 목록과 로그에 기록합니다.
 
 ## 문서
 
-- [사용자 가이드](docs/USER_GUIDE.md) — 검색 방법, 화면 구성, 설정 및 문제 해결
-- [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 아키텍처, 개발 환경, 테스트 및 빌드
-- [엔진 성능 기준선](docs/ENGINE_PERFORMANCE_BASELINE.md) — 검색 엔진 성능 측정 기준
-- [벤치마크 기록](docs/benchmark_history.md) — 성능 측정 이력
+- [사용자 가이드](docs/USER_GUIDE.md) — 화면, 검색 방식, 설정, 결과 및 문제 해결
+- [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 검색 계약, 현지화, 테스트와 릴리스 절차
+- [성능 기준](docs/ENGINE_PERFORMANCE_BASELINE.md) — 공식 벤치마크 기준과 해석 방법
+
+## 검증
+
+```powershell
+pytest -q
+cargo test --manifest-path src/rust_engine/Cargo.toml
+ruff check src tests
+```
+
+성능 진단은 설정 → 일반 하단의 **성능 진단**에서 실행할 수 있습니다. 진단 결과에는 경로·본문·검색어를 넣지 않지만, 리포트를 공유하기 전 환경 정보와 파일 분포를 확인하십시오.

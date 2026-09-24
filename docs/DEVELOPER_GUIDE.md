@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.5 (StringFinder v5.9.16 기준)
+- **문서 버전:** 1.5 (StringFinder v5.9.17 기준)
 - **최종 수정일:** 2026-09-18
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 5.9.16** · Updated: **2026-09-24**
+> Documentation baseline: **StringFinder 5.9.17** · Updated: **2026-09-24**
 
 ---
 
@@ -131,7 +131,7 @@ options = sf_engine.SearchOptions(
     results_callback=callback_fn,   # 실시간 배치 수신 콜백
     batch_size=100,                 # 디스패치 배치 크기
     flush_ms=20,                    # 플러시 주기 (ms)
-    max_per_file=10000,             # 파일당 최대 매치 수
+    max_per_file=10000,             # 파일당 최대 검색 결과 수
     max_check_cells=500000,         # 엑셀 셀 검사 상한
     max_json_depth=20000,           # JSON 탐색 깊이 제한
     max_json_size=1073741824,       # JSON 크기 제한 (1GB)
@@ -362,7 +362,7 @@ python tools/validate_parallel_resources.py
 
 Rust 기본 검색과 Python 누락 방지 검색은 구현을 분리하되, 다음 계약을 공통 테스트로 고정합니다.
 
-- 검색 결과의 파일 경로·매치 수·구조화 데이터 직렬화 형식
+- 검색 결과의 파일 경로·검색 결과 수·구조화 데이터 직렬화 형식
 - `max_per_file`, 존재 여부 확인, 취소 시 이미 수집된 결과 보존
 - JSON/XML/Excel 오류와 `skipped` 사유의 정규화
 - XML·JSON 손상 입력의 결과 폐기 및 스킵 처리

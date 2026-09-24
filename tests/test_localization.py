@@ -80,9 +80,7 @@ def test_language_switch_changes_ui_and_skip_reason_resources():
 
 def test_partial_search_reasons_follow_active_language():
     set_language("ko")
-    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == (
-        "[안내] 파일당 최대 매치 수(25건)에 도달하여 이후 결과를 생략했습니다."
-    )
+    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(25)
     assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
         "[안내] JSON 최대 깊이(40)를 초과한 하위 영역을 검색하지 않았습니다."
     )

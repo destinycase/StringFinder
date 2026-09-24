@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 from PySide6.QtCore import Signal, Qt, QThread
 
 from PySide6.QtWidgets import (
@@ -257,7 +258,7 @@ class SettingsDialog(QDialog):
         doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
         doctor_btn.clicked.connect(self._run_system_doctor)
         doctor_layout.addWidget(doctor_btn)
-        diagnostic_btn = QPushButton("성능 진단")
+        diagnostic_btn = QPushButton(AppStrings.BTN_PERFORMANCE_DIAGNOSTIC)
         diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
         doctor_layout.addWidget(diagnostic_btn)
         tab_general_layout.addWidget(doctor_group)
@@ -472,7 +473,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.LOG_SYS_DOCTOR_FAIL.format("Internal Error"))
 
     def _run_performance_diagnostic(self):
-        folder = QFileDialog.getExistingDirectory(self, "성능 진단 폴더 선택")
+        folder = QFileDialog.getExistingDirectory(self, AppStrings.PERFORMANCE_DIAGNOSTIC_SELECT_FOLDER)
         if not folder:
             return
         import json
@@ -480,8 +481,8 @@ class SettingsDialog(QDialog):
         from pathlib import Path
         from tools.diagnostic_benchmark import _markdown
 
-        progress = QProgressDialog("성능 진단 준비 중...", "취소", 0, 100, self)
-        progress.setWindowTitle("성능 진단 진행 중")
+        progress = QProgressDialog(AppStrings.PERFORMANCE_DIAGNOSTIC_PREPARING, AppStrings.PERFORMANCE_DIAGNOSTIC_CANCEL, 0, 100, self)
+        progress.setWindowTitle(AppStrings.PERFORMANCE_DIAGNOSTIC_RUNNING)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setAutoClose(False)
         progress.setMinimumDuration(0)
@@ -491,41 +492,74 @@ class SettingsDialog(QDialog):
 
         def update(done, total, scenario, path):
             progress.setValue(min(99, int(done * 100 / max(1, total))))
-            progress.setLabelText(f"{scenario} 진행 중\n{done}/{total}\n{path}")
+            progress.setLabelText(AppStrings.PERFORMANCE_DIAGNOSTIC_PROGRESS.format(scenario, done, total, path))
 
         def cancel():
             cancel_event.set()
-            progress.setLabelText("취소 요청을 처리하는 중입니다...")
+            progress.setLabelText(AppStrings.PERFORMANCE_DIAGNOSTIC_CANCEL_REQUESTED)
             progress.setCancelButton(None)
 
         def failed(message):
             progress.close()
             if message == "DIAGNOSTIC_CANCELLED":
-                QMessageBox.information(self, "성능 진단", "성능 진단을 취소했습니다.")
+                QMessageBox.information(self, AppStrings.PERFORMANCE_DIAGNOSTIC_TITLE, AppStrings.PERFORMANCE_DIAGNOSTIC_CANCELLED)
             elif message == "DIAGNOSTIC_TIMEOUT":
-                QMessageBox.warning(self, "성능 진단", "최대 실행 시간(120분)을 초과하여 중단했습니다.")
+                QMessageBox.warning(self, AppStrings.PERFORMANCE_DIAGNOSTIC_TITLE, AppStrings.PERFORMANCE_DIAGNOSTIC_TIMEOUT)
             else:
-                QMessageBox.critical(self, "성능 진단 실패", message)
+                QMessageBox.critical(self, AppStrings.PERFORMANCE_DIAGNOSTIC_FAILED, message)
 
-        def completed(report):
+        def completed_localized(report):
             is_complete = report.get("status") == "completed"
             if is_complete:
                 progress.setValue(100)
             progress.close()
             suggested_name = "stringfinder_diagnostic.json" if is_complete else "stringfinder_diagnostic_partial.json"
-            target, _ = QFileDialog.getSaveFileName(self, "성능 진단 리포트 저장", suggested_name, "JSON (*.json)")
+            target, _ = QFileDialog.getSaveFileName(
+                self, AppStrings.PERFORMANCE_DIAGNOSTIC_SAVE, suggested_name, "JSON (*.json)"
+            )
             if not target:
                 return
             output = Path(target)
-            output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            output.with_suffix(".md").write_text(_markdown(report), encoding="utf-8")
-            title = "성능 진단 완료" if is_complete else "부분 진단 리포트 저장"
-            QMessageBox.information(self, title, f"리포트를 저장했습니다.\n{output}")
+            try:
+                payloads = {
+                    output: json.dumps(report, ensure_ascii=False, indent=2),
+                    output.with_suffix(".md"): _markdown(report),
+                }
+                temporary_paths = []
+                replaced_destinations = []
+                for destination, content in payloads.items():
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", encoding="utf-8", dir=destination.parent,
+                        prefix=f".{destination.stem}_", suffix=destination.suffix,
+                        delete=False,
+                    ) as temporary:
+                        temporary_paths.append((Path(temporary.name), destination))
+                        temporary.write(content)
+                for temporary, destination in temporary_paths:
+                    os.replace(temporary, destination)
+                    replaced_destinations.append(str(destination))
+            except OSError as exc:
+                for temporary, _ in locals().get("temporary_paths", []):
+                    try:
+                        temporary.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                logger.error("Performance diagnostic report save failed: %s", exc, exc_info=True)
+                QMessageBox.critical(
+                    self,
+                    AppStrings.PERFORMANCE_DIAGNOSTIC_FAILED,
+                    AppStrings.PERFORMANCE_DIAGNOSTIC_SAVE_FAILED.format(
+                        f"{exc}\n{AppStrings.PERFORMANCE_DIAGNOSTIC_SAVED_PATHS.format(', '.join(replaced_destinations) or '-')}"
+                    ),
+                )
+                return
+            title = AppStrings.PERFORMANCE_DIAGNOSTIC_DONE if is_complete else AppStrings.PERFORMANCE_DIAGNOSTIC_PARTIAL
+            QMessageBox.information(self, title, AppStrings.PERFORMANCE_DIAGNOSTIC_SAVED.format(output))
 
         progress.canceled.connect(cancel)
         thread.progress.connect(update)
         thread.failed.connect(failed)
-        thread.finished_report.connect(completed)
+        thread.finished_report.connect(completed_localized)
         thread.finished.connect(lambda: progress.close() if not progress.wasCanceled() else None)
         progress.show()
         thread.start()

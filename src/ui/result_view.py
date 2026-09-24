@@ -432,7 +432,8 @@ class ResultView(QWidget):
         self.match_view.doubleClicked.connect(self._on_match_double_clicked)
         self.match_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.match_view.customContextMenuRequested.connect(self._show_match_context_menu)
-        match_area_layout.setContentsMargins(0, 0, 0, 0)
+        # 세로 스플릿 핸들과 상세 결과 영역이 붙어 보이지 않도록 상단 여백을 둡니다.
+        match_area_layout.setContentsMargins(0, 6, 0, 0)
         match_area_layout.setSpacing(5)
         match_area_layout.addWidget(self.file_info_header)
         match_area_layout.addLayout(self.match_filter_layout)
@@ -1140,6 +1141,31 @@ class ResultView(QWidget):
         """세션 로드 등 대량의 결과를 한꺼번에 설정할 때 사용합니다."""
         self.clear()
         if results:
+            # Session data may contain an existence-only message localized in a
+            # previous language. Regenerate only this engine-created field;
+            # ordinary user/file content remains untouched.
+            if self.existence_only:
+                localized_results = []
+                for row in results:
+                    if not isinstance(row, (list, tuple)) or len(row) < 5:
+                        localized_results.append(row)
+                        continue
+                    matches = row[4]
+                    if not isinstance(matches, (list, tuple)):
+                        localized_results.append(row)
+                        continue
+                    localized_matches = []
+                    for match in matches:
+                        if isinstance(match, (list, tuple)) and len(match) >= 2:
+                            normalized_match = list(match)
+                            normalized_match[1] = AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT
+                            localized_matches.append(normalized_match)
+                        else:
+                            localized_matches.append(match)
+                    normalized_row = list(row)
+                    normalized_row[4] = localized_matches
+                    localized_results.append(normalized_row)
+                results = localized_results
             self.result_model.add_results(results)
             self.update_ui_visibility()
             QTimer.singleShot(0, self._select_first_row_safely)
@@ -1418,12 +1444,6 @@ class ResultView(QWidget):
 
         temp_path = None
         target = Path(file_path)
-        temp_file = tempfile.NamedTemporaryFile(
-                prefix=f".{target.stem}_", suffix=target.suffix, dir=target.parent,
-                delete=False,
-        )
-        temp_path = temp_file.name
-        temp_file.close()
         wb = openpyxl.Workbook()
 
         # [Sheet 1] 검색 파일 목록
@@ -1488,6 +1508,12 @@ class ResultView(QWidget):
                     row.extend([str(m[0]), str(m[1])])
                 _append_excel_row(ws2, row)
 
+        temp_file = tempfile.NamedTemporaryFile(
+            prefix=f".{target.stem}_", suffix=target.suffix, dir=target.parent,
+            delete=False,
+        )
+        temp_path = temp_file.name
+        temp_file.close()
         try:
             wb.save(temp_path)
             os.replace(temp_path, file_path)

@@ -179,6 +179,8 @@ class ConfigManager:
                             Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME
                         )
                     for key in (
+                        Constants.CONFIG_KEY_GEOMETRY,
+                        Constants.CONFIG_KEY_WINDOW_STATE,
                         Constants.CONFIG_KEY_MAIN_SPLITTER_STATE,
                         Constants.CONFIG_KEY_RESULT_SPLITTER_STATE,
                         Constants.CONFIG_KEY_FILTER_SPLITTER_STATE,

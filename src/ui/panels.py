@@ -19,7 +19,13 @@ from PySide6.QtWidgets import (
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from ui.styles import UIStyles
-from ui.widgets import HistoryComboBox
+
+
+class SearchInputComboBox(QComboBox):
+    """Editable search input without persistent history."""
+
+    def set_current_text(self, text: str):
+        self.setCurrentText(text)
 
 
 class FilterItemWidget(QWidget):
@@ -100,13 +106,12 @@ class SearchOptionsPanel(QWidget):
         input_layout.addWidget(self.search_profile_combo)
         input_layout.addWidget(self.complex_search_warning)
         label = QLabel(AppStrings.SEARCH_LABEL)
-        self.search_combo = HistoryComboBox()
+        self.search_combo = SearchInputComboBox()
+        self.search_combo.setEditable(True)
         self.search_combo.setPlaceholderText(AppStrings.SEARCH_EDIT_PLACEHOLDER)
         le = self.search_combo.lineEdit()
         if le:
             le.returnPressed.connect(self.search_started.emit)
-        self.search_combo.history_item_deleted.connect(lambda t: self.history_deleted.emit(t, Constants.TYPE_SEARCH))
-        self.search_combo.history_cleared.connect(lambda: self.history_cleared.emit(Constants.TYPE_SEARCH))
         input_layout.addWidget(label)
         input_layout.addWidget(self.search_combo, 1)
         layout.addLayout(input_layout)
@@ -173,10 +178,6 @@ class SearchOptionsPanel(QWidget):
 
     def is_existence_only(self) -> bool:
         return self.boolean_search_check.isChecked()
-
-    def set_search_history(self, items: List[str]):
-        self.search_combo.addItems(items)
-        self.search_combo.setCurrentIndex(-1)
 
     def get_state(self) -> dict:
         return {
@@ -482,8 +483,6 @@ class ExtensionFilterPanel(DenseFilterPanel):
 class FilenameFilterPanel(DenseFilterPanel):
     filter_changed = Signal()
     search_triggered = Signal()  # 입력창에서 Enter로 검색 트리거
-    history_deleted = Signal(str, str)
-    history_cleared = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -492,19 +491,11 @@ class FilenameFilterPanel(DenseFilterPanel):
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
-        combo_layout = QHBoxLayout()
-        self.filename_combo = HistoryComboBox()
-        self.filename_combo.setPlaceholderText(AppStrings.FILENAME_EDIT_PLACEHOLDER)
-        le = self.filename_combo.lineEdit()
-        if le:
-            le.returnPressed.connect(self.search_triggered.emit)
-        self.filename_combo.history_item_deleted.connect(
-            lambda t: self.history_deleted.emit(t, Constants.TYPE_FILENAME)
-        )
-        self.filename_combo.history_cleared.connect(lambda: self.history_cleared.emit(Constants.TYPE_FILENAME))
-        combo_layout.addWidget(self.filename_combo, 1)
-        main_layout.addLayout(combo_layout)
-
+        # Compatibility holder for old session data; it is intentionally not
+        # added to the layout, so users only see the list-add workflow.
+        self.filename_combo = SearchInputComboBox()
+        self.filename_combo.setEditable(True)
+        self.filename_combo.setVisible(False)
         self.filename_list = QListWidget()
         self.filename_list.setMinimumHeight(50)
         main_layout.addWidget(self.filename_list, 1)
@@ -567,10 +558,6 @@ class FilenameFilterPanel(DenseFilterPanel):
 
     def get_selected_filenames(self) -> List[str]:
         filenames = []
-        combo_text = self.get_filename_filter_text()
-        if combo_text:
-            splits = [s.strip() for s in combo_text.split(",") if s.strip()]
-            filenames.extend(splits)
         for i in range(self.filename_list.count()):
             widget = self.filename_list.itemWidget(self.filename_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.isChecked():
@@ -581,18 +568,18 @@ class FilenameFilterPanel(DenseFilterPanel):
         self.filename_list.clear()
         target_data = data
         if isinstance(data, dict) and Constants.CONFIG_KEY_FILENAMES in data:
-            self.filename_combo.setEditText(data.get(Constants.PAYLOAD_FILENAME_FILTER, ""))
             target_data = data.get(Constants.CONFIG_KEY_FILENAMES, {})
+            legacy_text = str(data.get(Constants.PAYLOAD_FILENAME_FILTER, "") or "")
+            if legacy_text.strip():
+                for fn in (part.strip() for part in legacy_text.split(",")):
+                    if fn and not (isinstance(target_data, dict) and fn in target_data):
+                        self.add_filename(fn, checked=True)
         if isinstance(target_data, list):
             for fn in target_data:
                 self.add_filename(fn, checked=True)
         elif isinstance(target_data, dict):
             for fn, checked in target_data.items():
                 self.add_filename(fn, checked=checked)
-
-    def set_history(self, items: List[str]):
-        self.filename_combo.addItems(items)
-        self.filename_combo.setCurrentIndex(-1)
 
     def get_state(self) -> dict:
         filename_states = {}
@@ -602,13 +589,26 @@ class FilenameFilterPanel(DenseFilterPanel):
             if isinstance(widget, FilterItemWidget):
                 filename_states[widget.text()] = widget.checkbox.isChecked()
         return {
-            Constants.PAYLOAD_FILENAME_FILTER: self.filename_combo.currentText(),
+            Constants.PAYLOAD_FILENAME_FILTER: "",
             Constants.CONFIG_KEY_FILENAMES: filename_states,
         }
 
     def load_state(self, state: dict):
-        self.filename_combo.set_current_text(state.get(Constants.PAYLOAD_FILENAME_FILTER, ""))
+        legacy_text = str(state.get(Constants.PAYLOAD_FILENAME_FILTER, "") or "")
         filename_states = state.get(Constants.CONFIG_KEY_FILENAMES, {})
+        if legacy_text.strip():
+            for fn in (part.strip() for part in legacy_text.split(",")):
+                if fn and not (isinstance(filename_states, dict) and fn in filename_states):
+                    self.add_filename(fn, checked=True)
+        if isinstance(filename_states, dict):
+            existing = {
+                self.filename_list.itemWidget(self.filename_list.item(i)).text()
+                for i in range(self.filename_list.count())
+                if isinstance(self.filename_list.itemWidget(self.filename_list.item(i)), FilterItemWidget)
+            }
+            for fn in filename_states:
+                if fn not in existing:
+                    self.add_filename(str(fn), checked=bool(filename_states[fn]))
         for i in range(self.filename_list.count()):
             item = self.filename_list.item(i)
             widget = self.filename_list.itemWidget(item)

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QDockWidget
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
+from sf_utils.localization import set_language
 from ui.main_window import MainWindow
 from ui.search_tab import SearchTab
 
@@ -168,6 +169,49 @@ def test_search_tab_load_state_uses_count_for_total_matches(qtbot, mock_config_m
 
     assert tab.total_files == 1
     assert tab.total_matches == 15000
+
+
+def test_existence_session_message_uses_current_language(qtbot, mock_config_manager):
+    """Generated existence-only 안내문은 세션 복원 시 현재 언어로 표시한다."""
+    original = set_language("ko")
+    try:
+        korean_message = AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT
+        state = {
+            Constants.PAYLOAD_INPUTS: {
+                Constants.PAYLOAD_EXISTENCE_ONLY: True,
+                Constants.STATE_KEY_SEARCH: "needle",
+            },
+            Constants.PAYLOAD_RESULTS: [[
+                1, "file.txt", "C:/", "C:/file.txt",
+                [[1, korean_message]],
+            ]],
+        }
+        set_language("en")
+        tab = SearchTab(mock_config_manager)
+        qtbot.addWidget(tab)
+        tab.load_state(state)
+
+        restored = tab.result_view_panel.result_model.get_all_results()[0][4][0]
+        assert restored[1] == AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT
+        assert restored[1] != korean_message
+    finally:
+        set_language(original)
+
+
+def test_session_preserves_normal_result_after_option_toggle(qtbot, mock_config_manager):
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    state = {
+        Constants.PAYLOAD_INPUTS: {
+            Constants.PAYLOAD_EXISTENCE_ONLY: True,
+            Constants.STATE_KEY_SEARCH: "needle",
+        },
+        Constants.PAYLOAD_RESULTS: [[1, "file.txt", "C:/", "C:/file.txt", [[1, "needle actual content"]]]],
+        "results_existence_only": False,
+    }
+    tab.load_state(state)
+    restored = tab.result_view_panel.result_model.get_all_results()[0][4][0]
+    assert restored[1] == "needle actual content"
 
 
 def test_search_tab_discards_invalid_saved_skip_and_log_records(qtbot, mock_config_manager):
