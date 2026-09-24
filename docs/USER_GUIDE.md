@@ -1,10 +1,10 @@
 # StringFinder 사용자 가이드 (User Guide)
 
-- **버전:** StringFinder v5.9.17
+- **버전:** StringFinder v5.9.18
 - **최종 수정일:** 2026-09-18
 - **공식 지원 OS:** Windows 10/11 (64-bit)
 
-> Current application version: **5.9.17** · Updated: **2026-09-24**
+> Current application version: **5.9.18** · Updated: **2026-09-24**
 
 ---
 
