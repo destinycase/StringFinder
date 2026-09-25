@@ -57,6 +57,7 @@ ENGLISH_STRINGS = {
     "TAB_LOGS": "Logs",
     "SETTINGS_TITLE": "Settings",
     "SETTINGS_GROUP_GENERAL": "General",
+    "SETTINGS_USER_GUIDE_BUTTON": "Open GitHub user guide",
     "SETTINGS_GROUP_APPEARANCE": "Appearance",
     "SETTINGS_GROUP_LOG": "Logs",
     "SETTINGS_GROUP_DATA": "Data",

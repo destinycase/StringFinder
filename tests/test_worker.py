@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
+from sf_utils.constants import Constants
 
 
 def test_worker_result_batching():
@@ -57,10 +58,10 @@ def test_worker_result_batching():
     assert len(all_found) == 3
 
 
-def test_worker_total_limit_keeps_exact_allowed_prefix(monkeypatch):
+def test_worker_total_limit_keeps_exact_allowed_prefix():
     worker = SearchWorker({"file_list": [], "search_string": "needle"})
     worker._total_matches_accumulated = 7
-    monkeypatch.setattr("core.worker._get_adv_setting", lambda *_args: 10)
+    worker.search_settings_snapshot[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] = 10
 
     batch = [
         (
@@ -76,9 +77,9 @@ def test_worker_total_limit_keeps_exact_allowed_prefix(monkeypatch):
     assert accepted == [("many.txt", 3, [(1, "one"), (2, "two"), (3, "three")])]
 
 
-def test_worker_emits_global_limit_for_result_banner(monkeypatch):
+def test_worker_emits_global_limit_for_result_banner():
     worker = SearchWorker({"file_list": [], "search_string": "needle"})
-    monkeypatch.setattr("core.worker._get_adv_setting", lambda *_args: 500_000)
+    worker.search_settings_snapshot[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] = 500_000
     emitted = []
     worker.signals.total_match_limit_reached.connect(emitted.append)
 

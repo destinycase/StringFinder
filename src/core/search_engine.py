@@ -1,4 +1,6 @@
 import ctypes
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import logging
 import mmap
@@ -39,7 +41,25 @@ from core.skip_reason_codes import (
 )
 from core.skip_reason_formatter import format_excel_panic_reason as _format_excel_panic_reason
 
+_SEARCH_SETTINGS_SNAPSHOT: ContextVar[Optional[dict[str, Any]]] = ContextVar(
+    "search_settings_snapshot", default=None
+)
+
+
+@contextmanager
+def use_search_settings_snapshot(settings: Optional[dict[str, Any]]):
+    """Use one immutable-for-this-search advanced-settings snapshot."""
+    token = _SEARCH_SETTINGS_SNAPSHOT.set(settings)
+    try:
+        yield
+    finally:
+        _SEARCH_SETTINGS_SNAPSHOT.reset(token)
+
+
 def _get_adv_setting(key, default):
+    snapshot = _SEARCH_SETTINGS_SNAPSHOT.get()
+    if snapshot is not None:
+        return snapshot.get(key, default)
     return ConfigManager().get_advanced_settings().get(key, default)
 
 
@@ -80,7 +100,9 @@ def _get_rust_search_limits() -> Tuple[int, int, int, int]:
     malformed.  The defaults match the Rust API defaults, preserving existing
     behavior when users have not customized these settings.
     """
-    settings = ConfigManager().get_advanced_settings()
+    settings = _SEARCH_SETTINGS_SNAPSHOT.get()
+    if settings is None:
+        settings = ConfigManager().get_advanced_settings()
 
     def positive_int(key: str, default: int) -> int:
         try:
@@ -2415,7 +2437,7 @@ def search_in_file(
     return None
 
 
-def search_in_files_batch(
+def _search_in_files_batch_impl(
     file_batch: List[FileInfo],
     search_string: str,
     special_mode: Optional[str] = None,
@@ -2469,6 +2491,29 @@ def search_in_files_batch(
             else:
                 results.append(cast(SearchResult, res))
     return {"results": results, "skipped": skipped}
+
+
+def search_in_files_batch(
+    file_batch: List[FileInfo],
+    search_string: str,
+    special_mode: Optional[str] = None,
+    use_complex_search: bool = False,
+    stop_event=None,
+    force_python: bool = False,
+    **kwargs,
+) -> Dict[str, List]:
+    """Search one batch using the settings snapshot captured by its parent worker."""
+    settings_snapshot = kwargs.pop("search_settings_snapshot", None)
+    with use_search_settings_snapshot(settings_snapshot):
+        return _search_in_files_batch_impl(
+            file_batch,
+            search_string,
+            special_mode,
+            use_complex_search,
+            stop_event,
+            force_python,
+            **kwargs,
+        )
 
 
 def _deduplicate_overlapping_roots(search_paths: List[str]) -> List[str]:

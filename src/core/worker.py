@@ -14,8 +14,12 @@ from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
 from sf_utils.logger import logger
 
-def _get_adv_setting(key, default):
+
+def _get_adv_setting(key, default, settings_snapshot=None):
+    if settings_snapshot is not None:
+        return settings_snapshot.get(key, default)
     return ConfigManager().get_advanced_settings().get(key, default)
+
 
 _global_manager = None
 _manager_lock = threading.Lock()
@@ -221,6 +225,9 @@ class SearchWorker(QRunnable):
         self.is_running.set()
         self.existence_only = params.get(Constants.PAYLOAD_EXISTENCE_ONLY, False)
         self.config_manager: ConfigManager = ConfigManager()
+        # Freeze search-affecting advanced settings for this search. Changes made
+        # in Settings are picked up when the next SearchWorker is created.
+        self.search_settings_snapshot = self.config_manager.get_advanced_settings()
         self._total_matches_accumulated = 0
         self._total_limit_alert_emitted = False
         self._last_mem_check: Optional[float] = None
@@ -304,6 +311,7 @@ class SearchWorker(QRunnable):
         maximum = _get_adv_setting(
             Constants.CONFIG_KEY_MAX_TOTAL_MATCHES,
             Constants.DEFAULT_MAX_TOTAL_MATCHES,
+            self.search_settings_snapshot,
         )
         remaining = max(0, maximum - self._total_matches_accumulated)
         accepted = []
@@ -350,6 +358,7 @@ class SearchWorker(QRunnable):
         maximum = _get_adv_setting(
             Constants.CONFIG_KEY_MAX_TOTAL_MATCHES,
             Constants.DEFAULT_MAX_TOTAL_MATCHES,
+            self.search_settings_snapshot,
         )
         err_msg = AppStrings.ERROR_LIMIT_REACHED.format(maximum)
         logger.warning(err_msg)
@@ -458,7 +467,7 @@ class SearchWorker(QRunnable):
             self._last_progress_count = count
             self._last_progress_emit_time = now
 
-        def results_callback(batch):
+        def process_results_batch(batch):
             # 검색 중지 직후에도 Rust 디스패처가 이미 발견한 마지막 배치를 전달할 수 있습니다.
             # 중지 플래그만으로 이 배치를 버리면 사용자에게 부분 검색 결과가 유실됩니다.
             # logger.debug(f"[Worker] results_callback received batch of {len(batch)}")
@@ -517,21 +526,47 @@ class SearchWorker(QRunnable):
             if skipped_batch:
                 self._safe_emit(self.signals.skipped_found, skipped_batch)
 
+        def results_callback(batch):
+            from core.search_engine import use_search_settings_snapshot
+
+            with use_search_settings_snapshot(self.search_settings_snapshot):
+                process_results_batch(batch)
+
         try:
             if hasattr(self, Constants.PAYLOAD_FILE_LIST) and self.file_list:
                 paths_only = [f[0] for f in self.file_list]
-                search_res = search_files_list_fast(paths_only, self.search_string,
-                    special_mode=self.special_mode, exclude_hidden=self.exclude_hidden,
-                    exclude_binary=self.exclude_binary, stop_event=self.stop_event,
-                    progress_callback=progress_callback, results_callback=results_callback,
-                    existence_only=self.existence_only)
+                from core.search_engine import use_search_settings_snapshot
+
+                with use_search_settings_snapshot(self.search_settings_snapshot):
+                    search_res = search_files_list_fast(
+                        paths_only,
+                        self.search_string,
+                        special_mode=self.special_mode,
+                        exclude_hidden=self.exclude_hidden,
+                        exclude_binary=self.exclude_binary,
+                        stop_event=self.stop_event,
+                        progress_callback=progress_callback,
+                        results_callback=results_callback,
+                        existence_only=self.existence_only,
+                    )
             else:
                 logger.info(AppStrings.LOG_WKR_RUST_ACT.format(len(self.search_paths)))
-                search_res = search_directory_fast(self.search_paths, self.search_string, self.extensions,
-                    filename_filter=self.filename_filter, special_mode=self.special_mode,
-                    exclude_hidden=self.exclude_hidden, exclude_binary=self.exclude_binary,
-                    stop_event=self.stop_event, progress_callback=progress_callback,
-                    results_callback=results_callback, existence_only=self.existence_only)
+                from core.search_engine import use_search_settings_snapshot
+
+                with use_search_settings_snapshot(self.search_settings_snapshot):
+                    search_res = search_directory_fast(
+                        self.search_paths,
+                        self.search_string,
+                        self.extensions,
+                        filename_filter=self.filename_filter,
+                        special_mode=self.special_mode,
+                        exclude_hidden=self.exclude_hidden,
+                        exclude_binary=self.exclude_binary,
+                        stop_event=self.stop_event,
+                        progress_callback=progress_callback,
+                        results_callback=results_callback,
+                        existence_only=self.existence_only,
+                    )
         except Exception as e:
             error_msg = AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format("SearchWorker.Batch", e)
             logger.error(error_msg, exc_info=True)
@@ -644,6 +679,7 @@ class SearchWorker(QRunnable):
                 force_python,
                 exclude_binary=self.exclude_binary,
                 existence_only=self.existence_only,
+                search_settings_snapshot=self.search_settings_snapshot,
             )
             future_to_batch[future] = batch
             pending_futures.add(future)
@@ -659,14 +695,22 @@ class SearchWorker(QRunnable):
                 try:
                     excel_concurrency = max(
                         1,
-                        min(4, int(_get_adv_setting(Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY, 2))),
+                        min(4, int(_get_adv_setting(
+                            Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY,
+                            2,
+                            self.search_settings_snapshot,
+                        ))),
                     )
                 except (TypeError, ValueError):
                     excel_concurrency = 2
                 try:
                     threshold_mb = max(
                         1,
-                        min(100, int(_get_adv_setting(Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB, 20))),
+                        min(100, int(_get_adv_setting(
+                            Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB,
+                            20,
+                            self.search_settings_snapshot,
+                        ))),
                     )
                 except (TypeError, ValueError):
                     threshold_mb = 20
@@ -695,6 +739,7 @@ class SearchWorker(QRunnable):
         timeout_setting = _get_adv_setting(
             Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG,
             Constants.DEFAULT_TIMEOUT_WORKER_HANG,
+            self.search_settings_snapshot,
         )
         try:
             timeout_seconds = float(timeout_setting)

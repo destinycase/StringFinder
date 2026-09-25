@@ -416,3 +416,29 @@ def test_legacy_korean_special_mode_is_restored_in_english(qtbot):
     panel.load_state({"special_mode": "XML (정확히 일치)"})
 
     assert panel.get_special_mode() == "XML (exact)"
+
+
+def test_general_settings_label_spacing_and_user_guide_button(
+    qtbot, mock_config_manager, monkeypatch
+):
+    set_language("en")
+    dialog = SettingsDialog(mock_config_manager)
+    qtbot.addWidget(dialog)
+
+    labels = [label.text() for label in dialog.findChildren(QLabel)]
+    assert AppStrings.RESULT_COMPACT_ROWS in labels
+    assert AppStrings.MENU_LOCK_LAYOUT in labels
+    assert AppStrings.RESULT_COMPACT_ROWS + ":" not in labels
+    assert AppStrings.MENU_LOCK_LAYOUT + ":" not in labels
+    assert dialog.user_guide_button.text() == AppStrings.SETTINGS_USER_GUIDE_BUTTON
+
+    opened_urls = []
+    monkeypatch.setattr(
+        "ui.settings_dialog.QDesktopServices.openUrl",
+        lambda url: opened_urls.append(url.toString()) or True,
+    )
+    dialog.user_guide_button.click()
+
+    assert opened_urls == [
+        "https://github.com/destinycase/StringFinder/blob/main/docs/USER_GUIDE.md"
+    ]

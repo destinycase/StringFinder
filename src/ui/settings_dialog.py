@@ -2,7 +2,8 @@ import os
 import subprocess
 import sys
 import tempfile
-from PySide6.QtCore import Signal, Qt, QThread
+from PySide6.QtCore import QUrl, Signal, Qt, QThread
+from PySide6.QtGui import QDesktopServices
 
 from PySide6.QtWidgets import (
     QComboBox,
@@ -118,7 +119,7 @@ class SettingsDialog(QDialog):
         theme_row.addWidget(self.theme_combo)
         appearance_layout.addLayout(theme_row)
         compact_rows_row = QHBoxLayout()
-        compact_rows_label = QLabel(AppStrings.RESULT_COMPACT_ROWS + ":")
+        compact_rows_label = QLabel(AppStrings.RESULT_COMPACT_ROWS)
         self.compact_rows_combo = QComboBox()
         self.compact_rows_combo.addItem(AppStrings.COMBO_DISABLE, False)
         self.compact_rows_combo.addItem(AppStrings.COMBO_ENABLE, True)
@@ -132,7 +133,7 @@ class SettingsDialog(QDialog):
         compact_rows_row.addWidget(self.compact_rows_combo)
         appearance_layout.addLayout(compact_rows_row)
         layout_lock_row = QHBoxLayout()
-        layout_lock_label = QLabel(AppStrings.MENU_LOCK_LAYOUT + ":")
+        layout_lock_label = QLabel(AppStrings.MENU_LOCK_LAYOUT)
         self.lock_layout_combo = QComboBox()
         self.lock_layout_combo.addItem(AppStrings.COMBO_UNLOCKED, False)
         self.lock_layout_combo.addItem(AppStrings.COMBO_LOCKED, True)
@@ -147,6 +148,9 @@ class SettingsDialog(QDialog):
         reset_layout_btn = QPushButton(AppStrings.MENU_RESET_LAYOUT)
         reset_layout_btn.clicked.connect(self._reset_layout)
         appearance_layout.addWidget(reset_layout_btn)
+        self.user_guide_button = QPushButton(AppStrings.SETTINGS_USER_GUIDE_BUTTON)
+        self.user_guide_button.clicked.connect(self._open_user_guide)
+        appearance_layout.addWidget(self.user_guide_button)
         tab_general_layout.addWidget(appearance_group)
 
         editor_group = QGroupBox(AppStrings.EXTERNAL_EDITOR_GROUP)
@@ -422,6 +426,12 @@ class SettingsDialog(QDialog):
         close_btn = QPushButton(AppStrings.BTN_CLOSE)
         close_btn.clicked.connect(self.accept)
         main_layout.addWidget(close_btn)
+
+    def _open_user_guide(self):
+        """Open the public user guide using the system's default browser."""
+        QDesktopServices.openUrl(
+            QUrl("https://github.com/destinycase/StringFinder/blob/main/docs/USER_GUIDE.md")
+        )
 
     def _run_system_doctor(self):
         """시스템 자가 진단을 실행하고 결과를 보여줍니다."""

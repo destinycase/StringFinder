@@ -81,12 +81,9 @@ def test_real_worker_stop_then_search_again(tmp_path, monkeypatch):
 
 
 @pytest.mark.integration
-def test_real_worker_timeout_then_search_again(tmp_path, monkeypatch):
+def test_real_worker_timeout_then_search_again(tmp_path):
     files = _make_files(tmp_path)
     timeout_key = Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG
-
-    def immediate_timeout(key, default):
-        return 0 if key == timeout_key else default
 
     try:
         first = SearchWorker(
@@ -96,14 +93,13 @@ def test_real_worker_timeout_then_search_again(tmp_path, monkeypatch):
                 Constants.PAYLOAD_USE_COMPLEX_SEARCH: True,
             }
         )
+        first.search_settings_snapshot[timeout_key] = 0
         errors = []
         first.signals.error.connect(errors.append)
-        monkeypatch.setattr("core.worker._get_adv_setting", immediate_timeout)
         first.run()
         assert errors and "Timeout" in errors[0]
         assert first._executor is None
 
-        monkeypatch.undo()
         second = SearchWorker(
             {
                 Constants.PAYLOAD_FILE_LIST: files,

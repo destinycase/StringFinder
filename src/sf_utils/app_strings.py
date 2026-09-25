@@ -75,6 +75,7 @@ class AppStrings:
     TAB_LOGS = "로그"
     SETTINGS_TITLE = "설정"
     SETTINGS_GROUP_GENERAL = "일반"
+    SETTINGS_USER_GUIDE_BUTTON = "GitHub 사용자 가이드 열기"
     SETTINGS_GROUP_APPEARANCE = "화면"
     SETTINGS_GROUP_LOG = "로그"
     SETTINGS_GROUP_DATA = "데이터"
