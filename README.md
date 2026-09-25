@@ -11,9 +11,6 @@ StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색�
 - JSON·XML 구조 검색 및 Excel 시트/셀 결과 표시
 - 검색 결과 필터링·정렬, 문맥 미리보기, 외부 편집기 연동
 - 탭별 세션 저장·복원과 검색 결과 내보내기(TXT/XLSX)
-- 접근 오류·손상 문서·안전 한도 초과 파일의 분리 안내 및 원인 표시
-- 전체 검색 결과 상한과 건너뛴 파일을 검색 요약과 별도 안내로 구분
-- `.gitignore` 규칙과 무관하게 일반 검색과 누락 방지 검색에서 같은 파일 후보를 검색
 - 한국어/English 현지화와 설정 기반 성능 진단 리포트
 
 ## 실행
@@ -39,13 +36,3 @@ python run.py
 - [사용자 가이드](docs/USER_GUIDE.md) — 화면, 검색 방식, 설정, 결과 및 문제 해결
 - [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 검색 계약, 현지화, 테스트와 릴리스 절차
 - [성능 기준](docs/ENGINE_PERFORMANCE_BASELINE.md) — 공식 벤치마크 기준과 해석 방법
-
-## 검증
-
-```powershell
-pytest -q
-cargo test --manifest-path src/rust_engine/Cargo.toml
-ruff check src tests
-```
-
-성능 진단은 설정 → 일반 하단의 **성능 진단**에서 실행할 수 있습니다. 진단 결과에는 경로·본문·검색어를 넣지 않지만, 리포트를 공유하기 전 환경 정보와 파일 분포를 확인하십시오.
