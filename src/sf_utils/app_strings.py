@@ -242,6 +242,7 @@ class AppStrings:
                             )
     RESULT_SUMMARY_FORMAT = "파일 수 : {file_count} | 문자열 수 : {match_count} | 시간 : {duration}s"
     SKIPPED_FILES_COUNT = "⚠ 건너뛴 파일 수: {}"
+    TOTAL_MATCH_LIMIT_REACHED = "⚠ 결과 수량 제한 도달 ({})"
     SKIPPED_FILES_VIEW_BUTTON = "파일 목록 보기"
     SKIPPED_FILES_DIALOG_TITLE = "건너뛴 파일 목록"
     SKIPPED_FILES_COPY_BUTTON = "목록 전체 복사"
@@ -273,7 +274,6 @@ class AppStrings:
     LOG_SCH_SKIPPED_FILE_ITEM = "  └─ 스킵 된 파일: {} ({})"
     LOG_SCH_SKIPPED_SHEET_ITEM = "  └─ 스킵 된 시트: {} > {} ({})"
     MSG_LOG_LIMIT_REACHED = "[안내] 로그 표시 제한(5,000줄)에 도달하여 이전 로그를 정리했습니다."
-    MSG_MATCH_TRUNCATION_NOTICE = "(검색된 결과가 너무 많아 일부 상세 결과가 제한되었습니다)"
     MSG_BINARY_FILE = "[이진 파일]"
     MSG_BINARY_MATCH = "[이진 파일에서 {}개 검색 결과 발견]"
     MSG_LONG_LINE_PREVIEW = "{}... (긴 줄)"

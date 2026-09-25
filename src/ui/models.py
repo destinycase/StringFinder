@@ -66,7 +66,6 @@ class SearchResultModel(QAbstractTableModel):
         self._filtered_buffer = []  # 필터링된 데이터
         self._limit_signal_sent = False
         self._current_page = 1
-        self.has_truncated_results = False  # 매치 상한에 도달한 파일이 있는지 여부를 저장합니다.
         self._page_size = 1000  # 기본 페이지 크기를 1000건으로 설정합니다.
         self._pagination_enabled = True
         self._is_sorting = False
@@ -168,9 +167,6 @@ class SearchResultModel(QAbstractTableModel):
             if item_data:
                 new_items.append(item_data)
                 # 개별 파일의 매치 수 상한(-1 마커) 도달 여부를 확인합니다.
-                matches_list = item_data[4]
-                if any(str(m[0]) == "-1" for m in matches_list):
-                    self.has_truncated_results = True
 
         if not new_items:
             return
@@ -318,7 +314,6 @@ class SearchResultModel(QAbstractTableModel):
         self._filtered_buffer = []
         self._current_page = 1
         self._limit_signal_sent = False
-        self.has_truncated_results = False  # 상태를 초기화합니다.
         self._apply_filters()  # 내부적으로 리셋 신호 발생
 
     def get_total_pages(self) -> int:

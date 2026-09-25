@@ -76,6 +76,18 @@ def test_worker_total_limit_keeps_exact_allowed_prefix(monkeypatch):
     assert accepted == [("many.txt", 3, [(1, "one"), (2, "two"), (3, "three")])]
 
 
+def test_worker_emits_global_limit_for_result_banner(monkeypatch):
+    worker = SearchWorker({"file_list": [], "search_string": "needle"})
+    monkeypatch.setattr("core.worker._get_adv_setting", lambda *_args: 500_000)
+    emitted = []
+    worker.signals.total_match_limit_reached.connect(emitted.append)
+
+    worker._stop_for_total_match_limit()
+    worker._stop_for_total_match_limit()
+
+    assert emitted == [500_000]
+
+
 def test_precise_structured_concurrency_uses_shared_memory_budget(monkeypatch):
     worker = SearchWorker(
         {

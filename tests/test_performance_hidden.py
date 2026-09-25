@@ -129,6 +129,36 @@ def test_rust_files_list_exclude_hidden(hidden_test_env):
     assert len(results) == 2
 
 
+def test_rust_engine_search_includes_gitignored_files(tmp_path):
+    """Normal search should not apply repository .gitignore exclusions."""
+    (tmp_path / ".gitignore").write_text("ignored.json\n", encoding="utf-8")
+    (tmp_path / "ignored.json").write_text('{"value": "needle"}', encoding="utf-8")
+
+    result = search_directory_fast(
+        [str(tmp_path)], "needle", extensions=["json"], exclude_hidden=False
+    )
+
+    results = result.get("results", [])
+    assert len(results) == 1
+    assert results[0][0].endswith("ignored.json")
+
+
+def test_python_scanner_matches_rust_hidden_dotfile_policy(tmp_path):
+    """Dot-prefixed files are hidden for both normal and precise searches."""
+    dotfile = tmp_path / ".package-lock.json"
+    dotfile.write_text('{"needle": "le"}', encoding="utf-8")
+
+    excluded = FileScanner(
+        folders=[str(tmp_path)], extensions=[".json"], exclude_hidden=True
+    ).scan()
+    included = FileScanner(
+        folders=[str(tmp_path)], extensions=[".json"], exclude_hidden=False
+    ).scan()
+
+    assert not any(os.path.basename(item[0]) == dotfile.name for item in excluded)
+    assert any(os.path.basename(item[0]) == dotfile.name for item in included)
+
+
 def test_recycle_bin_is_always_excluded_from_every_search_entry_point(tmp_path):
     normal = tmp_path / "normal.txt"
     normal.write_text("needle", encoding="utf-8")

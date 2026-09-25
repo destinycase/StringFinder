@@ -2,7 +2,7 @@
 
 StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색하는 데스크톱 애플리케이션입니다.
 
-현재 버전은 **5.9.18**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
+현재 버전은 **5.9.19**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -12,6 +12,8 @@ StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색�
 - 검색 결과 필터링·정렬, 문맥 미리보기, 외부 편집기 연동
 - 탭별 세션 저장·복원과 검색 결과 내보내기(TXT/XLSX)
 - 접근 오류·손상 문서·안전 한도 초과 파일의 분리 안내 및 원인 표시
+- 전체 검색 결과 상한과 건너뛴 파일을 검색 요약과 별도 안내로 구분
+- `.gitignore` 규칙과 무관하게 일반 검색과 누락 방지 검색에서 같은 파일 후보를 검색
 - 한국어/English 현지화와 설정 기반 성능 진단 리포트
 
 ## 실행
@@ -19,7 +21,7 @@ StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색�
 배포본은 `dist/StringFinder.exe`입니다. 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
 
 ```powershell
-python sf_main.py
+python run.py
 ```
 
 ## 기술 구성

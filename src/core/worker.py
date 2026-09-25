@@ -191,6 +191,7 @@ class WorkerSignals(QObject):
     results_found = Signal(list)
     skipped_found = Signal(list)
     search_finished = Signal(int, int, int)
+    total_match_limit_reached = Signal(int)
     error = Signal(str)
     finished = Signal()
 
@@ -221,6 +222,7 @@ class SearchWorker(QRunnable):
         self.existence_only = params.get(Constants.PAYLOAD_EXISTENCE_ONLY, False)
         self.config_manager: ConfigManager = ConfigManager()
         self._total_matches_accumulated = 0
+        self._total_limit_alert_emitted = False
         self._last_mem_check: Optional[float] = None
         self._memory_alert_emitted = False
 
@@ -353,6 +355,9 @@ class SearchWorker(QRunnable):
         logger.warning(err_msg)
         self.stop_event.set()
         self.is_running.clear()
+        if not self._total_limit_alert_emitted:
+            self._total_limit_alert_emitted = True
+            self._safe_emit(self.signals.total_match_limit_reached, maximum)
         self._safe_emit(self.signals.error, err_msg)
 
     def _recommended_structured_in_flight(self, batches, executor_workers: int) -> int:

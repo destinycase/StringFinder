@@ -151,6 +151,33 @@ class UIStyles:
         """
 
     @classmethod
+    def get_total_match_limit_banner_style(cls, is_dark_mode: bool) -> str:
+        """Style the global result-limit notice like the skipped-files banner."""
+        if is_dark_mode:
+            return """
+                QFrame#totalMatchLimitBanner {
+                    background-color: #3B3020;
+                    border: 1px solid #D69E2E;
+                    border-radius: 4px;
+                }
+                QLabel#totalMatchLimitLabel {
+                    color: #FFD166;
+                    font-weight: 700;
+                }
+            """
+        return """
+            QFrame#totalMatchLimitBanner {
+                background-color: #FFF7E0;
+                border: 1px solid #C47B00;
+                border-radius: 4px;
+            }
+            QLabel#totalMatchLimitLabel {
+                color: #8A4B00;
+                font-weight: 700;
+            }
+        """
+
+    @classmethod
     def get_file_info_header_style(cls, is_dark_mode: bool) -> str:
         """테마에 대응하는 선택 파일 정보 헤더 스타일을 반환합니다."""
         if is_dark_mode:

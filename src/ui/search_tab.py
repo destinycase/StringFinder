@@ -58,6 +58,7 @@ class SearchTab(QMainWindow):
         self.total_matches = 0
         self.total_files = 0
         self.skipped_count = 0
+        self.total_match_limit_count = 0
         # The mode that produced the currently displayed results. This is kept
         # separately from the editable search controls so changing an option
         # before saving a session cannot reinterpret old result content.
@@ -397,6 +398,7 @@ class SearchTab(QMainWindow):
                 self.worker.signals.results_found.disconnect()
                 self.worker.signals.skipped_found.disconnect()
                 self.worker.signals.search_finished.disconnect()
+                self.worker.signals.total_match_limit_reached.disconnect()
                 self.worker.signals.error.disconnect()
                 self.worker.signals.finished.disconnect()
             except (RuntimeError, TypeError):
@@ -462,6 +464,7 @@ class SearchTab(QMainWindow):
                 "total_matches": self.total_matches,
                 "total_elapsed": self.last_search_duration,
                 "skip_count": total_skipped,
+                "total_match_limit_count": self.total_match_limit_count,
             },
             Constants.PAYLOAD_SKIPPED: [list(item) for item in self.skipped_files_list],
             Constants.PAYLOAD_LOGS: self._serialize_logs(),
@@ -565,6 +568,12 @@ class SearchTab(QMainWindow):
         except (TypeError, ValueError):
             self.last_search_duration = 0.0
         self.skipped_count = len(self.skipped_files_list)
+        try:
+            self.total_match_limit_count = max(
+                0, int(summary.get("total_match_limit_count", 0) or 0)
+            )
+        except (TypeError, ValueError):
+            self.total_match_limit_count = 0
         self.skipped_count_updated.emit(self.skipped_count)
         if results:
             self.result_view_panel.set_results(results)
@@ -577,6 +586,7 @@ class SearchTab(QMainWindow):
 
             QTimer.singleShot(100, self.result_view_panel.auto_select_first_result)
         self.result_view_panel.set_skipped_files(self.skipped_files_list, total_count=self.skipped_count)
+        self.result_view_panel.set_total_match_limit_reached(self.total_match_limit_count)
         if summary or self.skipped_count:
             self.result_view_panel.set_summary_info(
                 self.total_files,
@@ -670,6 +680,7 @@ class SearchTab(QMainWindow):
             self.results_buffer = []
             self.skipped_files_list = []
             self.skipped_count = 0
+            self.total_match_limit_count = 0
             self.skipped_count_updated.emit(0)
             self.scan_start_time = time.time()
             self._liveliness_seconds = 0  # 검색 시작 시 타이머 초기화
@@ -748,6 +759,7 @@ class SearchTab(QMainWindow):
                 self.worker.signals.results_found.disconnect()
                 self.worker.signals.skipped_found.disconnect()
                 self.worker.signals.search_finished.disconnect()
+                self.worker.signals.total_match_limit_reached.disconnect()
                 self.worker.signals.error.disconnect()
                 self.worker.signals.finished.disconnect()
             except (RuntimeError, TypeError):
@@ -759,6 +771,7 @@ class SearchTab(QMainWindow):
         self.worker.signals.results_found.connect(self._on_results_found)
         self.worker.signals.skipped_found.connect(self._on_skipped_found)
         self.worker.signals.search_finished.connect(self._on_search_finished)
+        self.worker.signals.total_match_limit_reached.connect(self._on_total_match_limit_reached)
         self.worker.signals.error.connect(self._on_search_error)
         self.worker.signals.finished.connect(self._on_worker_finished)
 
@@ -916,6 +929,7 @@ class SearchTab(QMainWindow):
             self.skipped_count_updated.emit(self.skipped_count)
             total_skipped = self.skipped_count
             self.result_view_panel.set_skipped_files(self.skipped_files_list, total_count=total_skipped)
+            self.result_view_panel.set_total_match_limit_reached(self.total_match_limit_count)
             # 워커에서 수집한 시트 스킵 목록 참조 [(file_path, sheet_name)]
             skipped_sheets = []
             if hasattr(self, "worker") and self.worker and hasattr(self.worker, "skipped_sheets_list"):
@@ -965,6 +979,13 @@ class SearchTab(QMainWindow):
         finally:
             self._restore_search_button()
             self._set_inputs_enabled(True)
+
+    def _on_total_match_limit_reached(self, limit_count):
+        """Remember the global result cap; show its banner after finalization."""
+        try:
+            self.total_match_limit_count = max(0, int(limit_count or 0))
+        except (TypeError, ValueError):
+            self.total_match_limit_count = 0
 
     def _on_search_error(self, error_msg):
         """작업 도중 발생하는 치명적 오류를 처리하고 사용자에게 알립니다."""

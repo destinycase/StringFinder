@@ -312,6 +312,18 @@ class ResultView(QWidget):
         self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(self._is_dark_theme()))
         self.summary_label.setFixedHeight(32)
         self.summary_label.setVisible(False)
+        self.total_match_limit_banner = QFrame()
+        self.total_match_limit_banner.setObjectName("totalMatchLimitBanner")
+        self.total_match_limit_banner.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.total_match_limit_banner.setFixedHeight(32)
+        total_limit_layout = QHBoxLayout(self.total_match_limit_banner)
+        total_limit_layout.setContentsMargins(10, 5, 10, 5)
+        self.total_match_limit_label = QLabel()
+        self.total_match_limit_label.setObjectName("totalMatchLimitLabel")
+        self.total_match_limit_label.setWordWrap(False)
+        total_limit_layout.addWidget(self.total_match_limit_label)
+        self.total_match_limit_banner.setVisible(False)
+        self._total_match_limit_count = 0
         self.skipped_files_banner = QFrame()
         self.skipped_files_banner.setObjectName("skippedFilesBanner")
         self.skipped_files_banner.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -332,6 +344,7 @@ class ResultView(QWidget):
         self.summary_row.setContentsMargins(0, 0, 0, 0)
         self.summary_row.setSpacing(8)
         self.summary_row.addWidget(self.summary_label, 1)
+        self.summary_row.addWidget(self.total_match_limit_banner)
         self.summary_row.addWidget(self.skipped_files_banner)
         self.result_view = QTableView()
         self.result_model = SearchResultModel(self.icon_provider)
@@ -534,6 +547,7 @@ class ResultView(QWidget):
         self.result_view.setStyleSheet(style)
         self.match_view.setStyleSheet(style)
         self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(is_dark))
+        self.total_match_limit_banner.setStyleSheet(UIStyles.get_total_match_limit_banner_style(is_dark))
         self.skipped_files_banner.setStyleSheet(UIStyles.get_skipped_files_banner_style(is_dark))
         self.file_info_label.setStyleSheet(UIStyles.get_file_info_header_style(is_dark))
         self.context_preview.setStyleSheet(UIStyles.get_context_preview_style(is_dark))
@@ -1057,10 +1071,6 @@ class ResultView(QWidget):
                 skip_count=skip_count,
                 duration=f"{duration:.2f}",
             )
-            # 개별 파일 내 매치 수가 너무 많아 일부가 생략된 경우 안내 메시지를 추가합니다.
-            if self.result_model.has_truncated_results:
-                summary_text += f" {AppStrings.MSG_MATCH_TRUNCATION_NOTICE}"
-                
             state = "finished"
             if AppStrings.SUMMARY_PREFIX_SEARCHING in state_prefix:
                 state = "searching"
@@ -1083,6 +1093,18 @@ class ResultView(QWidget):
         self.skipped_files_label.setText(AppStrings.SKIPPED_FILES_COUNT.format(self._skipped_file_count))
         self.skipped_files_banner.setVisible(self._skipped_file_count > 0)
 
+    def set_total_match_limit_reached(self, limit_count=0):
+        """Show a dedicated banner when the configured global result limit is reached."""
+        try:
+            self._total_match_limit_count = max(0, int(limit_count or 0))
+        except (TypeError, ValueError):
+            self._total_match_limit_count = 0
+        self.total_match_limit_banner.setVisible(self._total_match_limit_count > 0)
+        if self._total_match_limit_count:
+            self.total_match_limit_label.setText(
+                AppStrings.TOTAL_MATCH_LIMIT_REACHED.format(self._total_match_limit_count)
+            )
+
     def show_skipped_files_dialog(self):
         """건너뛴 파일 경로와 사유를 복사 가능한 팝업으로 표시합니다."""
         if self._skipped_file_count <= 0:
@@ -1099,6 +1121,7 @@ class ResultView(QWidget):
         # [UI/UX] 검색 시작 시 이전 검색의 요약 정보를 숨깁니다.
         self.summary_label.setText("")
         self.summary_label.setVisible(False)
+        self.set_total_match_limit_reached(0)
         self.set_skipped_files([], total_count=0)
         self.selected_file_path = ""
         self.file_info_label.clear()

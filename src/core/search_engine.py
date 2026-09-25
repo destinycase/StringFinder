@@ -988,6 +988,17 @@ def is_hidden_windows(path: str) -> bool:
         return False
 
 
+def is_hidden_path(path: str) -> bool:
+    """Match Rust directory traversal semantics for hidden paths on Windows.
+
+    The Rust ``ignore`` walker treats dot-prefixed files and directories as
+    hidden even on Windows, while the Win32 attribute check alone does not.
+    Keep the Python fallback/precise-search scanner consistent with that rule.
+    """
+    name = os.path.basename(os.fspath(path))
+    return name.startswith(".") and name not in {".", ".."} or is_hidden_windows(path)
+
+
 def _has_recycle_bin_component(path: str) -> bool:
     return any(
         component.casefold() == "$recycle.bin"
@@ -1294,7 +1305,7 @@ class FileScanner:
                 for entry in entries:
                     if self.stop_check_callback and self.stop_check_callback():
                         return
-                    if self.exclude_hidden and is_hidden_windows(entry.path):
+                    if self.exclude_hidden and is_hidden_path(entry.path):
                         continue
                     if hasattr(self, "_yield_counter"):
                         self._yield_counter += 1

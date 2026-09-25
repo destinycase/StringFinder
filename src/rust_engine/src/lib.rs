@@ -351,6 +351,15 @@ fn load_file_snapshot(
     Ok(FileSnapshot::Owned(bytes))
 }
 
+fn search_walk_builder(root_path: &Path, exclude_hidden: bool) -> WalkBuilder {
+    let mut builder = WalkBuilder::new(root_path);
+    builder.hidden(exclude_hidden);
+    // Search results must not depend on repository ignore rules; the
+    // precise-search scanner also traverses files listed in .gitignore.
+    builder.git_ignore(false);
+    builder
+}
+
 #[pyfunction]
 #[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=10000, max_check_cells=500000, max_json_depth=20000, max_json_size=1073741824, options=None))]
 #[allow(clippy::too_many_arguments)]
@@ -1223,8 +1232,7 @@ pub fn search_dir(
             if stop_flag.load(Ordering::Relaxed) {
                 break;
             }
-            WalkBuilder::new(&root_path)
-                .hidden(exclude_hidden)
+            search_walk_builder(Path::new(&root_path), exclude_hidden)
                 .build_parallel()
                 .run(|| {
                     let res_ref = results.clone();
@@ -2172,6 +2180,28 @@ fn extract_line_content_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    #[test]
+    fn normal_search_walker_includes_gitignored_files() {
+        let unique = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("sf-gitignore-test-{unique}"));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join(".gitignore"), "ignored.json\n").unwrap();
+        let ignored_file = root.join("ignored.json");
+        fs::write(&ignored_file, "{}\n").unwrap();
+
+        let found = search_walk_builder(root.as_path(), false)
+            .build()
+            .filter_map(Result::ok)
+            .any(|entry| entry.path() == ignored_file);
+
+        let _ = fs::remove_dir_all(&root);
+        assert!(found, "normal search walker must not honor .gitignore");
+    }
 
     fn build_test_ac(pattern: &str) -> aho_corasick::AhoCorasick {
         AhoCorasickBuilder::new()

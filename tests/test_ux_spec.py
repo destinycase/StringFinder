@@ -248,6 +248,60 @@ def test_skipped_files_banner_is_emphasized_and_opens_list(search_tab_fixture):
     dialog_class.return_value.exec.assert_called_once_with()
 
 
+def test_global_match_limit_uses_separate_banner(search_tab_fixture):
+    panel = search_tab_fixture.result_view_panel
+    panel.set_summary_info(file_count=12, match_count=500_000, duration=2.5)
+
+    panel.set_total_match_limit_reached(500_000)
+    assert not panel.summary_label.isHidden()
+    assert not panel.total_match_limit_banner.isHidden()
+    assert panel.total_match_limit_label.text() == AppStrings.TOTAL_MATCH_LIMIT_REACHED.format(500_000)
+    assert panel.skipped_files_banner.isHidden()
+
+    panel.set_skipped_files([("C:/broken.xml", "XML 구문 오류")], total_count=1)
+    assert not panel.total_match_limit_banner.isHidden()
+    assert not panel.skipped_files_banner.isHidden()
+
+    panel.clear()
+    assert panel.total_match_limit_banner.isHidden()
+    assert panel.skipped_files_banner.isHidden()
+
+
+def test_per_file_detail_truncation_does_not_append_generic_summary_notice(search_tab_fixture):
+    panel = search_tab_fixture.result_view_panel
+    panel.result_model.add_results(
+        [("C:/limited.txt", 1, [(-1, "per-file limit", None, None)])]
+    )
+
+    panel.set_summary_info(file_count=1, match_count=1, duration=1.0)
+
+    assert panel.summary_label.text() == AppStrings.RESULT_SUMMARY_FORMAT.format(
+        file_count=1, match_count=1, skip_count=0, duration="1.00"
+    )
+
+
+def test_search_tab_shows_limit_banner_after_worker_signal(search_tab_fixture):
+    import time
+
+    tab = search_tab_fixture
+    tab._setup_search_worker({})
+    tab.scan_start_time = time.time() - 1
+    tab.scanned_count = 1
+    tab.total_files = 1
+    tab.total_matches = 500_000
+    tab.result_view_panel.result_model.add_results([("C:/result.txt", 500_000, [])])
+
+    tab.worker.signals.total_match_limit_reached.emit(500_000)
+
+    assert tab.total_match_limit_count == 500_000
+    assert tab.result_view_panel.total_match_limit_banner.isHidden()
+
+    tab._on_search_finished(1, 500_000, 0)
+
+    assert not tab.result_view_panel.total_match_limit_banner.isHidden()
+    assert tab.result_view_panel.total_match_limit_label.text() == AppStrings.TOTAL_MATCH_LIMIT_REACHED.format(500_000)
+
+
 def test_empty_result_status_panels_stay_compact(search_tab_fixture, qtbot):
     panel = search_tab_fixture.result_view_panel
     layout = panel.layout()
@@ -261,12 +315,15 @@ def test_empty_result_status_panels_stay_compact(search_tab_fixture, qtbot):
 
     assert panel.summary_label.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
     assert panel.skipped_files_banner.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
+    assert panel.total_match_limit_banner.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
     assert not panel.summary_label.wordWrap()
     assert not panel.skipped_files_label.wordWrap()
+    assert not panel.total_match_limit_label.wordWrap()
     assert layout.stretch(layout.indexOf(panel.empty_label)) == 1
     assert layout.stretch(layout.indexOf(panel.result_splitter)) == 1
     assert panel.summary_label.height() <= panel.summary_label.sizeHint().height()
     assert panel.skipped_files_banner.height() <= panel.skipped_files_banner.sizeHint().height()
+    assert panel.total_match_limit_banner.height() == panel.skipped_files_banner.height()
 
 
 def test_skipped_files_dialog_copies_paths_and_reasons(qtbot):
