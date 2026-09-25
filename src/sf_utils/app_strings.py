@@ -41,7 +41,6 @@ class AppStrings:
     COPY_CONTENT = "내용 복사 (Ctrl+C)"
     LOG_FILTER_LABEL = "로그 필터:"
     LOG_CLEAR_BTN = "로그 지우기"
-    FILENAME_FILTER_LABEL = "파일명 필터:"
     SELECT_FOLDER_TITLE = "폴더 선택"
     PAGINATION_PREV = "이전"
     PAGINATION_NEXT = "다음"
@@ -78,7 +77,6 @@ class AppStrings:
     SETTINGS_USER_GUIDE_BUTTON = "GitHub 사용자 가이드 열기"
     SETTINGS_GROUP_APPEARANCE = "화면"
     SETTINGS_GROUP_LOG = "로그"
-    SETTINGS_GROUP_DATA = "데이터"
     SETTINGS_GROUP_ADVANCED = "고급"
     EXTERNAL_EDITOR_GROUP = "줄 열기 프로그램"
     EXTERNAL_EDITOR_LABEL = "프로그램"
@@ -116,7 +114,6 @@ class AppStrings:
     UNIT_COUNT = "건"
     UNIT_MB = "MB"
     UNIT_SEC = "초"
-    UNIT_CELL = "셀"
     UNIT_DEPTH = "단위(층)"
 
     BTN_RESET_ADVANCED = "고급 설정 초기값으로 복원"
@@ -149,24 +146,11 @@ class AppStrings:
         "일반적인 한글·영문 검색은 일반 검색을 권장합니다."
     )
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
-    EXCLUDE_HIDDEN_TOOLTIP = (
-        "윈도우의 '숨김' 속성이 설정된 폴더와 파일을 검색에서 제외합니다.\n"
-        ".git, node_modules, AppData 등 불필요한 스캔을 줄여 속도가 대폭 향상됩니다."
-    )
     EXCLUDE_BINARY_LABEL = "바이너리 파일 제외"
-    EXCLUDE_BINARY_TOOLTIP = (
-        "이미지, 실행 파일(exe, dll) 등 바이너리 파일을 검색 대상에서 제외합니다.\n"
-        "항상 검색이 필요한 특수 모드(Excel 등)나 직접 지정한 확장자는 제외 대상에서 보호됩니다."
-    )
     BOOLEAN_SEARCH_LABEL = "존재 여부만 확인"
     SEARCH_PROFILE_LABEL = "검색 방식"
     SEARCH_PROFILE_NORMAL = "일반 검색"
     SEARCH_PROFILE_PRECISE = "누락 방지 검색(매우 느림)"
-    BOOLEAN_SEARCH_TOOLTIP = (
-        "파일 내에 해당 텍스트가 존재하는지만 빠르게 확인합니다.\n"
-        "첫 번째 일치 항목을 찾으면 즉시 다음 파일로 넘어가므로 매우 빠릅니다.\n"
-        "상세 검색 결과(줄 번호 등)는 제공되지 않습니다."
-    )
     SPECIAL_SEARCH_LABEL = "특수 검색"
     SPECIAL_SEARCH_OFF = "끄기"
     SPECIAL_SEARCH_ITEMS = [
@@ -178,9 +162,6 @@ class AppStrings:
         "Excel (부분 일치)",
         "Excel (정확히 일치)",
     ]
-    SPECIAL_SEARCH_XML = "XML (부분 일치)"
-    SPECIAL_SEARCH_JSON = "JSON (부분 일치)"
-    SPECIAL_SEARCH_EXCEL = "Excel (부분 일치)"
     # =========================================================================
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)
     # =========================================================================
@@ -188,15 +169,11 @@ class AppStrings:
         "검색할 문자열 입력...(검색을 원하는 문자열이 '한글', '영어', '일반 특수 문자'가 아닌 경우. 누락 방지 검색 사용)"
     )
     EXT_EDIT_PLACEHOLDER = "확장자 (예: txt)"
-    FILENAME_EDIT_PLACEHOLDER = "파일명 필터 (예: npc, fo / 콤마 구분)..."
     FILENAME_LIST_PLACEHOLDER = "필터 단어 (예: npc)"
     RESULT_FILTER_FILE_PLACEHOLDER = "파일 필터..."
     RESULT_COMPACT_ROWS = "목록 조밀하게"
     RESULT_FILTER_FOLDER_PLACEHOLDER = "폴더 필터..."
     MATCH_FILTER_LIST_PLACEHOLDER = "목록 필터..."
-    MATCH_FILTER_LINE_PLACEHOLDER = "라인 필터..."
-    MATCH_FILTER_CONTENT_PLACEHOLDER = "내용 필터..."
-    MATCH_FILTER_NAME_PLACEHOLDER = "이름 필터..."
     MATCH_FILTER_KEY_PLACEHOLDER = "키 필터..."
     MATCH_FILTER_VALUE_PLACEHOLDER = "값 필터..."
     MATCH_FILTER_EXCEL_SHEET_PLACEHOLDER = "시트 필터..."
@@ -249,7 +226,6 @@ class AppStrings:
     SKIPPED_FILES_REASON = "사유: {}"
     SKIPPED_FILES_DETAILS_MISSING = "상세 정보가 기록되지 않은 파일: {}개"
     SELECTED_FILE_INFO_TEMPLATE = "📄 {}  (문자열 총 {}건)"
-    CONTEXT_PREVIEW_TITLE = "문맥 미리보기"
     CONTEXT_PREVIEW_BEFORE_LABEL = "위 문맥"
     CONTEXT_PREVIEW_AFTER_LABEL = "아래 문맥"
     CONTEXT_PREVIEW_LINE_UNIT = "줄"
@@ -265,17 +241,14 @@ class AppStrings:
     SUMMARY_PREFIX_SEARCHING = "[검색 중] "
     SUMMARY_PREFIX_STOPPED = "[검색 중지] "
     SUMMARY_PREFIX_FINISHED = "[검색 완료] "
-    RESULT_MSG_SKIPPED_DETAILS = "{}개의 검색 결과가 발견되었습니다. ({}개 파일 스킵: {}...)"
     RESULT_MSG_SKIPPED_SIMPLE = "{}개의 검색 결과가 발견되었습니다. ({}개 파일 스킵)"
     RESULT_MSG_SKIPPED_WITH_SHEETS = "{}개의 검색 결과가 발견되었습니다. ({}개 파일 스킵, {}개 시트 스킵)"
     RESULT_MSG_ONLY_SHEETS_SKIPPED = "{}개의 검색 결과가 발견되었습니다. ({}개 시트 스킵)"
     LOG_SCH_SKIPPED_FILE_ITEM = "  └─ 스킵 된 파일: {} ({})"
     LOG_SCH_SKIPPED_SHEET_ITEM = "  └─ 스킵 된 시트: {} > {} ({})"
-    MSG_LOG_LIMIT_REACHED = "[안내] 로그 표시 제한(5,000줄)에 도달하여 이전 로그를 정리했습니다."
     MSG_BINARY_FILE = "[이진 파일]"
     MSG_BINARY_MATCH = "[이진 파일에서 {}개 검색 결과 발견]"
     MSG_LONG_LINE_PREVIEW = "{}... (긴 줄)"
-    SKIP_BADGE_TEMPLATE = "⚠️ 스킵: {}건 (로그 확인)"
     # [v5.1.0] Doctor Mode (자가 진단) 관련 문자열
     BTN_SYSTEM_DOCTOR = "시스템 자가 진단 실행"
     BTN_PERFORMANCE_DIAGNOSTIC = "성능 진단"

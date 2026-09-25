@@ -179,7 +179,6 @@ class MainWindow(QMainWindow):
         new_tab = SearchTab(self.config_manager)
         new_tab.status_message_requested.connect(self.statusBar().showMessage)
         new_tab.liveliness_updated.connect(lambda r, s: self._on_tab_liveliness_updated(new_tab, r, s))
-        new_tab.skipped_count_updated.connect(lambda count: self._on_tab_skip_count_updated(new_tab, count))
         new_tab.search_finished_with_data.connect(lambda: self._on_search_finished_in_tab(new_tab))
         new_tab.search_status_changed.connect(
             lambda locked, tab=new_tab: self._on_tab_search_status_changed(tab, locked)
@@ -313,40 +312,15 @@ class MainWindow(QMainWindow):
         """탭 전환 시 상태 표시줄 인디케이터를 활성화된 탭의 상태와 동기화합니다."""
         tab = self.tab_widget.widget(index)
         if isinstance(tab, SearchTab):
-            self._update_skip_badge(tab.skipped_count)
             is_running = (
                 tab.search_state != Constants.SearchState.IDLE and tab.search_state != Constants.SearchState.STOPPING
             )
             self._update_status_bar_widgets(is_running, tab._liveliness_seconds)
         else:
-            self._update_skip_badge(0)
             self._update_status_bar_widgets(False, 0)
-
-    def _on_tab_skip_count_updated(self, tab, count):
-        """활성 탭의 건너뛴 파일 수가 바뀌면 상태 표시를 갱신합니다."""
-        if self.tab_widget.currentWidget() == tab:
-            self._update_skip_badge(count)
-
-    def _update_skip_badge(self, count):
-        """현재 탭의 건너뛴 파일 수를 클릭 가능한 상태 표시로 반영합니다."""
-        return
-        return
-        count = max(0, int(count or 0))
-        if count:
-            self.skip_badge_btn.setText(AppStrings.SKIP_BADGE_TEMPLATE.format(count))
-            self.skip_badge_btn.show()
-        else:
-            self.skip_badge_btn.setText("")
-            self.skip_badge_btn.hide()
 
     def _show_active_tab_logs(self):
         """Open the active tab's logs in a separate window."""
-        tab = self.tab_widget.currentWidget()
-        if isinstance(tab, SearchTab):
-            tab.show_log_window()
-
-    def _on_skip_badge_clicked(self):
-        """상태 표시를 누르면 현재 검색 탭의 로그 화면으로 이동합니다."""
         tab = self.tab_widget.currentWidget()
         if isinstance(tab, SearchTab):
             tab.show_log_window()

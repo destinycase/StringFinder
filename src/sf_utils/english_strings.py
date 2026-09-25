@@ -28,7 +28,6 @@ ENGLISH_STRINGS = {
     "COPY_CONTENT": "Copy content (Ctrl+C)",
     "LOG_FILTER_LABEL": "Log filter:",
     "LOG_CLEAR_BTN": "Clear logs",
-    "FILENAME_FILTER_LABEL": "Filename filter:",
     "SELECT_FOLDER_TITLE": "Select folder",
     "PAGINATION_PREV": "Previous",
     "PAGINATION_NEXT": "Next",
@@ -60,7 +59,6 @@ ENGLISH_STRINGS = {
     "SETTINGS_USER_GUIDE_BUTTON": "Open GitHub user guide",
     "SETTINGS_GROUP_APPEARANCE": "Appearance",
     "SETTINGS_GROUP_LOG": "Logs",
-    "SETTINGS_GROUP_DATA": "Data",
     "SETTINGS_GROUP_ADVANCED": "Advanced",
     "EXTERNAL_EDITOR_GROUP": "Open line with",
     "EXTERNAL_EDITOR_LABEL": "Application",
@@ -90,7 +88,6 @@ ENGLISH_STRINGS = {
     "ADVANCED_MAX_JSON_DEPTH": "Maximum JSON nesting depth",
     "UNIT_COUNT": "items",
     "UNIT_SEC": "sec",
-    "UNIT_CELL": "cells",
     "UNIT_DEPTH": "levels",
     "BTN_RESET_ADVANCED": "Restore advanced defaults",
     "LANGUAGE_LABEL": "Language",
@@ -119,24 +116,11 @@ ENGLISH_STRINGS = {
         "For ordinary Korean and English text, the faster default search is recommended."
     ),
     "EXCLUDE_HIDDEN_LABEL": "Exclude hidden files/folders",
-    "EXCLUDE_HIDDEN_TOOLTIP": (
-        "Excludes files and folders with the Windows Hidden attribute.\n"
-        "Avoiding unnecessary locations such as .git, node_modules, and AppData greatly improves speed."
-    ),
     "EXCLUDE_BINARY_LABEL": "Exclude binary files",
-    "EXCLUDE_BINARY_TOOLTIP": (
-        "Excludes binary files such as images and executables (exe, dll).\n"
-        "Required special formats such as Excel and explicitly selected extensions remain included."
-    ),
     "BOOLEAN_SEARCH_LABEL": "Existence only (fast)",
     "SEARCH_PROFILE_LABEL": "Search mode",
     "SEARCH_PROFILE_NORMAL": "Normal search",
     "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
-    "BOOLEAN_SEARCH_TOOLTIP": (
-        "Checks only whether the text exists in each file.\n"
-        "The search moves to the next file after the first match, making it very fast.\n"
-        "Detailed matches such as line numbers are not provided."
-    ),
     "SPECIAL_SEARCH_LABEL": "Special search",
     "SPECIAL_SEARCH_OFF": "Off",
     "SPECIAL_SEARCH_ITEMS": [
@@ -148,20 +132,13 @@ ENGLISH_STRINGS = {
         "Excel (contains)",
         "Excel (exact)",
     ],
-    "SPECIAL_SEARCH_XML": "XML (contains)",
-    "SPECIAL_SEARCH_JSON": "JSON (contains)",
-    "SPECIAL_SEARCH_EXCEL": "Excel (contains)",
     "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use miss-prevention search for complex Unicode variants)",
     "EXT_EDIT_PLACEHOLDER": "Extension (for example: txt)",
-    "FILENAME_EDIT_PLACEHOLDER": "Filename filter (for example: npc, fo / comma-separated)...",
     "FILENAME_LIST_PLACEHOLDER": "Filter term (for example: npc)",
     "RESULT_FILTER_FILE_PLACEHOLDER": "Filter files...",
     "RESULT_COMPACT_ROWS": "Compact lists",
     "RESULT_FILTER_FOLDER_PLACEHOLDER": "Filter folders...",
     "MATCH_FILTER_LIST_PLACEHOLDER": "Filter list...",
-    "MATCH_FILTER_LINE_PLACEHOLDER": "Filter lines...",
-    "MATCH_FILTER_CONTENT_PLACEHOLDER": "Filter content...",
-    "MATCH_FILTER_NAME_PLACEHOLDER": "Filter names...",
     "MATCH_FILTER_KEY_PLACEHOLDER": "Filter keys...",
     "MATCH_FILTER_VALUE_PLACEHOLDER": "Filter values...",
     "MATCH_FILTER_EXCEL_SHEET_PLACEHOLDER": "Filter sheets...",
@@ -208,7 +185,6 @@ ENGLISH_STRINGS = {
     "SKIPPED_FILES_REASON": "Reason: {}",
     "SKIPPED_FILES_DETAILS_MISSING": "Files without recorded details: {}",
     "SELECTED_FILE_INFO_TEMPLATE": "📄 {}  ({} total matches)",
-    "CONTEXT_PREVIEW_TITLE": "Context preview",
     "CONTEXT_PREVIEW_BEFORE_LABEL": "Before",
     "CONTEXT_PREVIEW_AFTER_LABEL": "After",
     "CONTEXT_PREVIEW_LINE_UNIT": "lines",
@@ -226,17 +202,14 @@ ENGLISH_STRINGS = {
     "SUMMARY_PREFIX_SEARCHING": "[Searching] ",
     "SUMMARY_PREFIX_STOPPED": "[Search stopped] ",
     "SUMMARY_PREFIX_FINISHED": "[Search complete] ",
-    "RESULT_MSG_SKIPPED_DETAILS": "{} matches found. ({} files skipped: {}...)",
     "RESULT_MSG_SKIPPED_SIMPLE": "{} matches found. ({} files skipped)",
     "RESULT_MSG_SKIPPED_WITH_SHEETS": "{} matches found. ({} files skipped, {} sheets skipped)",
     "RESULT_MSG_ONLY_SHEETS_SKIPPED": "{} matches found. ({} sheets skipped)",
     "LOG_SCH_SKIPPED_FILE_ITEM": "  └─ Skipped file: {} ({})",
     "LOG_SCH_SKIPPED_SHEET_ITEM": "  └─ Skipped sheet: {} > {} ({})",
-    "MSG_LOG_LIMIT_REACHED": "[Info] The 5,000-line log display limit was reached; older logs were cleared.",
     "MSG_BINARY_FILE": "[Binary file]",
     "MSG_BINARY_MATCH": "[{} items found in binary file]",
     "MSG_LONG_LINE_PREVIEW": "{}... (long line)",
-    "SKIP_BADGE_TEMPLATE": "⚠️ Skipped: {} (check logs)",
     "BTN_SYSTEM_DOCTOR": "Run system diagnostics",
     "BTN_PERFORMANCE_DIAGNOSTIC": "Performance diagnostic",
     "PERFORMANCE_DIAGNOSTIC_SELECT_FOLDER": "Select performance diagnostic folder",
