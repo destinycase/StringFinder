@@ -12,6 +12,7 @@ import hmac
 import json
 import os
 import platform
+import random
 import secrets
 import statistics
 import sys
@@ -19,11 +20,12 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.search_engine import search_in_file  # noqa: E402
+from core.search_engine import is_hidden_path, search_in_file, use_search_settings_snapshot  # noqa: E402
 from core.skip_reason_codes import TEMPLATE_NAMES, decode_skip_reason  # noqa: E402
 from sf_utils.app_strings import AppStrings  # noqa: E402
 from sf_utils.constants import Constants  # noqa: E402
@@ -31,6 +33,8 @@ from sf_utils.version_helper import get_app_version  # noqa: E402
 
 FIXED_QUERY = "StringFinderDiagnosticNeedle"
 DEFAULT_MAX_SECONDS = 7200
+RESOURCE_SAMPLE_INTERVAL_SECONDS = 30
+MAX_RESOURCE_SAMPLES_PER_SCENARIO = 600
 SCENARIOS = (
     ("normal_no_match", False, False, False),
     ("normal_existence", False, True, False),
@@ -104,8 +108,46 @@ def _size_bucket(size: int) -> str:
     return "100MB+"
 
 
-def _files(root: Path) -> list[Path]:
-    return [path for path in root.rglob("*") if path.is_file() and "$recycle.bin" not in {p.lower() for p in path.parts}]
+def _is_hidden_relative_to_root(root: Path, path: Path) -> bool:
+    """Apply hidden-file and hidden-directory filtering without exposing paths."""
+    try:
+        relative_parts = path.relative_to(root).parts
+    except ValueError:
+        return False
+    for depth in range(1, len(relative_parts) + 1):
+        if is_hidden_path(str(root.joinpath(*relative_parts[:depth]))):
+            return True
+    return False
+
+
+def _files(root: Path, *, exclude_hidden: bool = True) -> tuple[list[Path], int]:
+    files: list[Path] = []
+    hidden_files_excluded = 0
+    for path in root.rglob("*"):
+        if not path.is_file() or "$recycle.bin" in {part.lower() for part in path.parts}:
+            continue
+        if exclude_hidden and _is_hidden_relative_to_root(root, path):
+            hidden_files_excluded += 1
+            continue
+        files.append(path)
+    return files, hidden_files_excluded
+
+
+def _diagnostic_search_policy() -> dict[str, object]:
+    """Return only effective, non-sensitive settings that affect search work."""
+    from sf_utils.config_manager import ConfigManager
+
+    config = ConfigManager()
+    advanced = config.get_advanced_settings()
+    advanced_settings = {
+        key: advanced.get(key, spec["default"])
+        for key, spec in Constants.ADVANCED_SETTING_SPECS.items()
+    }
+    return {
+        "exclude_hidden": config.get(Constants.CONFIG_KEY_EXCLUDE_HIDDEN, True) is True,
+        "exclude_binary": config.get_exclude_binary(),
+        "advanced_settings": advanced_settings,
+    }
 
 
 def _safe_extension(path: Path) -> str:
@@ -277,9 +319,12 @@ def run(
     """Collect an actionable report without exporting file paths or contents."""
     wall_started = time.perf_counter()
     environment = _runtime_environment()
+    search_policy = _diagnostic_search_policy()
     root = Path(root)
     inventory_started = time.perf_counter()
-    paths = _files(root)
+    paths, hidden_files_excluded = _files(
+        root, exclude_hidden=bool(search_policy["exclude_hidden"])
+    )
     inventory_seconds = time.perf_counter() - inventory_started
     metadata_started = time.perf_counter()
     salt = secrets.token_bytes(32)
@@ -317,15 +362,39 @@ def run(
         }
     metadata_seconds = time.perf_counter() - metadata_started
 
+    # A single randomized order is shared by every mode and repetition. If the
+    # global time budget expires, all modes sample the same prefix rather than
+    # whichever directories happen to be visited first by the filesystem.
+    random.Random(secrets.randbits(64)).shuffle(paths)
+
     benchmark_started = time.perf_counter()
     total_work = max(1, len(paths) * max(1, repeats) * len(SCENARIOS))
     completed_work = 0
     scenarios: list[dict[str, object]] = []
     stop_status: str | None = None
+    budget_limited = False
 
-    for name, precise, existence_only, _unused in SCENARIOS:
+    for scenario_index, (name, precise, existence_only, _unused) in enumerate(SCENARIOS):
         scenario_started = time.perf_counter()
+        scenario_deadline = (
+            None
+            if max_seconds is None
+            else benchmark_started + max_seconds * (scenario_index + 1) / len(SCENARIOS)
+        )
         resource_before = _resource_snapshot()
+        resource_samples: list[dict[str, float | int | None]] = [
+            {
+                "elapsed_seconds": 0.0,
+                "rss_mb": resource_before.get("rss_mb"),
+                "system_memory_available_mb": resource_before.get("system_memory_available_mb"),
+                "cpu_cores_equivalent": None,
+                "read_bytes_since_previous_sample": None,
+                "write_bytes_since_previous_sample": None,
+            }
+        ]
+        last_resource_sample_time = scenario_started
+        last_resource_snapshot = resource_before
+        resource_samples_truncated = False
         run_rows: list[dict[str, object]] = []
         type_metrics: dict[str, dict[str, object]] = defaultdict(_new_metric)
         extension_metrics: dict[str, dict[str, object]] = defaultdict(_new_metric)
@@ -334,6 +403,8 @@ def run(
         exception_types: Counter[str] = Counter()
         slow_file_stats: dict[str, dict[str, object]] = {}
         total_matches = total_match_files = total_skipped = total_errors = 0
+        scenario_processed = 0
+        scenario_timed_out = False
 
         for iteration in range(max(1, repeats)):
             iteration_started = time.perf_counter()
@@ -347,8 +418,9 @@ def run(
                     stop_status = "cancelled"
                     interrupted = True
                     break
-                if max_seconds is not None and time.perf_counter() - benchmark_started >= max_seconds:
-                    stop_status = "timed_out"
+                if scenario_deadline is not None and time.perf_counter() >= scenario_deadline:
+                    scenario_timed_out = True
+                    budget_limited = True
                     interrupted = True
                     break
 
@@ -363,13 +435,17 @@ def run(
                 exception_name: str | None = None
                 file_started = time.perf_counter()
                 try:
-                    result = search_in_file(
-                        str(path),
-                        FIXED_QUERY,
-                        file_size=file_size,
-                        use_complex_search=precise,
-                        existence_only=existence_only,
-                    )
+                    with use_search_settings_snapshot(
+                        cast(dict[str, Any], search_policy["advanced_settings"])
+                    ):
+                        result = search_in_file(
+                            str(path),
+                            FIXED_QUERY,
+                            file_size=file_size,
+                            use_complex_search=precise,
+                            existence_only=existence_only,
+                            exclude_binary=bool(search_policy["exclude_binary"]),
+                        )
                     if isinstance(result, tuple) and result and result[0] == Constants.STATUS_SKIPPED:
                         skipped += 1
                         file_skip_code = _skip_code(result[1] if len(result) > 1 else "")
@@ -450,11 +526,44 @@ def run(
                                     types[exception_name] = types.get(exception_name, 0) + 1
 
                     completed_work += 1
+                    scenario_processed += 1
                     if progress_callback:
                         progress_callback(completed_work, total_work, name, str(path))
 
+                    sample_now = time.perf_counter()
+                    if (
+                        sample_now - last_resource_sample_time >= RESOURCE_SAMPLE_INTERVAL_SECONDS
+                        and not resource_samples_truncated
+                    ):
+                        if len(resource_samples) < MAX_RESOURCE_SAMPLES_PER_SCENARIO:
+                            snapshot = _resource_snapshot()
+                            sample_elapsed = max(0.001, sample_now - last_resource_sample_time)
+                            previous_cpu = last_resource_snapshot.get("cpu_time_seconds")
+                            current_cpu = snapshot.get("cpu_time_seconds")
+                            previous_read = last_resource_snapshot.get("process_read_bytes")
+                            current_read = snapshot.get("process_read_bytes")
+                            previous_write = last_resource_snapshot.get("process_write_bytes")
+                            current_write = snapshot.get("process_write_bytes")
+                            resource_samples.append(
+                                {
+                                    "elapsed_seconds": round(sample_now - scenario_started, 3),
+                                    "rss_mb": snapshot.get("rss_mb"),
+                                    "system_memory_available_mb": snapshot.get("system_memory_available_mb"),
+                                    "cpu_cores_equivalent": round((current_cpu - previous_cpu) / sample_elapsed, 3)
+                                    if current_cpu is not None and previous_cpu is not None else None,
+                                    "read_bytes_since_previous_sample": current_read - previous_read
+                                    if current_read is not None and previous_read is not None else None,
+                                    "write_bytes_since_previous_sample": current_write - previous_write
+                                    if current_write is not None and previous_write is not None else None,
+                                }
+                            )
+                            last_resource_sample_time = sample_now
+                            last_resource_snapshot = snapshot
+                        else:
+                            resource_samples_truncated = True
+
             elapsed_iteration = time.perf_counter() - iteration_started
-            if processed or not paths:
+            if processed or not paths or interrupted:
                 run_rows.append(
                     {
                         "run": iteration + 1,
@@ -487,22 +596,57 @@ def run(
                 break
 
         resource_after = _resource_snapshot()
+        final_now = time.perf_counter()
+        final_elapsed = final_now - scenario_started
+        final_interval = max(0.001, final_now - last_resource_sample_time)
+        previous_cpu = last_resource_snapshot.get("cpu_time_seconds")
+        current_cpu = resource_after.get("cpu_time_seconds")
+        previous_read = last_resource_snapshot.get("process_read_bytes")
+        current_read = resource_after.get("process_read_bytes")
+        previous_write = last_resource_snapshot.get("process_write_bytes")
+        current_write = resource_after.get("process_write_bytes")
+        final_sample: dict[str, float | int | None] = {
+            "elapsed_seconds": round(final_elapsed, 3),
+            "rss_mb": resource_after.get("rss_mb"),
+            "system_memory_available_mb": resource_after.get("system_memory_available_mb"),
+            "cpu_cores_equivalent": round((current_cpu - previous_cpu) / final_interval, 3)
+            if current_cpu is not None and previous_cpu is not None else None,
+            "read_bytes_since_previous_sample": current_read - previous_read
+            if current_read is not None and previous_read is not None else None,
+            "write_bytes_since_previous_sample": current_write - previous_write
+            if current_write is not None and previous_write is not None else None,
+        }
+        if len(resource_samples) >= MAX_RESOURCE_SAMPLES_PER_SCENARIO:
+            resource_samples[-1] = final_sample
+        else:
+            resource_samples.append(final_sample)
         scenario_wall = time.perf_counter() - scenario_started
         completed_repeats = sum(1 for row in run_rows if row["complete"])
-        scenario_status = stop_status or ("completed" if completed_repeats == max(1, repeats) else "not_run")
+        scenario_status = (
+            stop_status
+            if stop_status == "cancelled"
+            else "timed_out"
+            if scenario_timed_out
+            else "completed"
+            if completed_repeats == max(1, repeats)
+            else "not_run"
+        )
         samples = [float(row["elapsed_seconds"]) for row in run_rows if row["complete"]]
         sorted_samples = sorted(samples)
         p95 = sorted_samples[max(0, int(len(sorted_samples) * 0.95 + 0.999999) - 1)] if sorted_samples else None
         cpu_delta = None
         if resource_before["cpu_time_seconds"] is not None and resource_after["cpu_time_seconds"] is not None:
             cpu_delta = round(float(resource_after["cpu_time_seconds"]) - float(resource_before["cpu_time_seconds"]), 3)
-        scenario = {
+        scenario: dict[str, object] = {
             "name": name,
             "display_name": SCENARIO_LABELS[name],
             "search_mode": "miss_prevention" if precise else "normal",
             "engine_route": "Python compatibility/search path" if precise else "Rust fast-search path (Excel uses its specialized parser)",
             "existence_only": existence_only,
             "status": scenario_status,
+            "time_budget_seconds": round(
+                max(0.0, scenario_deadline - scenario_started), 3
+            ) if scenario_deadline is not None else None,
             "repeats_requested": max(1, repeats),
             "repeats_completed": completed_repeats,
             "elapsed_seconds": round(scenario_wall, 6),
@@ -519,6 +663,9 @@ def run(
             },
             "runs": run_rows,
             "files_processed": sum(int(row["files_processed"]) for row in run_rows),
+            "measurement_coverage_percent": round(
+                min(100.0, 100 * scenario_processed / max(1, len(paths) * max(1, repeats))), 2
+            ),
             "nominal_input_bytes": sum(int(row["nominal_input_bytes"]) for row in run_rows),
             "match_files": total_match_files,
             "matches": total_matches,
@@ -546,6 +693,9 @@ def run(
             "resource": {
                 "before": resource_before,
                 "after": resource_after,
+                "samples_interval_seconds": RESOURCE_SAMPLE_INTERVAL_SECONDS,
+                "samples": resource_samples,
+                "samples_truncated": resource_samples_truncated,
                 "process_cpu_seconds": cpu_delta,
                 "process_cpu_cores_equivalent": round(cpu_delta / scenario_wall, 3)
                 if cpu_delta is not None and scenario_wall >= 0.25
@@ -553,16 +703,16 @@ def run(
             },
         }
         scenarios.append(scenario)
-        if stop_status:
+        if stop_status == "cancelled":
             break
 
-    overall_status = stop_status or "completed"
+    overall_status = stop_status or ("timed_out" if budget_limited else "completed")
     has_issues = any(item["skipped"] or item["errors"] or item["matches"] for item in scenarios)
-    overall_verdict = "INCOMPLETE" if stop_status else "REVIEW" if has_issues or not paths else "PASS"
+    overall_verdict = "INCOMPLETE" if overall_status != "completed" else "REVIEW" if has_issues or not paths else "PASS"
     wall_seconds = time.perf_counter() - wall_started
     benchmark_seconds = time.perf_counter() - benchmark_started
     return {
-        "diagnostic_version": 3,
+        "diagnostic_version": 4,
         "app_version": get_app_version(),
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "status": overall_status,
@@ -571,6 +721,8 @@ def run(
             "query": "fixed negative-match query (query text redacted)",
             "match_behavior": "The fixed query is intended not to match; this run primarily measures negative-search cost.",
             "execution_model": "Files are measured sequentially through search_in_file; this is not end-to-end parallel directory-search timing.",
+            "file_order": "Randomized once per report and shared by all scenarios and repeats; paths and random seed are not exported.",
+            "scenario_scheduling": "The total time budget is divided into cumulative equal time slices so later scenarios receive measurement time even when earlier scenarios are slow.",
         },
         "target": {
             "root_type": "directory",
@@ -581,6 +733,7 @@ def run(
             "size_buckets": dict(inventory_sizes),
             "directory_depth_buckets": dict(inventory_depths),
             "stat_failures": stat_failures,
+            "hidden_files_excluded": hidden_files_excluded,
         },
         "timing": {
             "inventory_seconds": round(inventory_seconds, 6),
@@ -596,7 +749,10 @@ def run(
             "total_work_units": total_work,
             "completed_work_units": completed_work,
             "completion_percent": round(100 * completed_work / total_work, 2) if total_work else 100.0,
+            "scenario_time_slicing": True,
+            "resource_sample_interval_seconds": RESOURCE_SAMPLE_INTERVAL_SECONDS,
         },
+        "search_policy": search_policy,
         "environment": environment,
         "scenarios": scenarios,
         "privacy": {
@@ -657,6 +813,8 @@ def _markdown(report: dict[str, object]) -> str:
         "The fixed query is intended to be absent. Any match makes that scenario REVIEW REQUIRED.",
         "This diagnostic calls `search_in_file` sequentially; it is not the wall time of parallel folder search.",
         "Throughput is nominal input size divided by elapsed time, not guaranteed physical disk throughput.",
+        "All scenarios share one randomized file order and receive cumulative equal time slices, so a timeout still attempts every mode.",
+        f"Process and system resources are sampled every {config['resource_sample_interval_seconds']} seconds; samples contain no paths or file contents.",
     ]
     if not target["file_count"]:
         lines.append("No searchable files were found; timing conclusions are invalid.")
@@ -664,11 +822,15 @@ def _markdown(report: dict[str, object]) -> str:
         pct = 100 * float(env["memory_available_mb_at_start"]) / float(env["memory_total_mb"])
         if pct < 10:
             lines.append(f"WARNING: only {pct:.1f}% of system memory was available at start.")
-    lines.extend(["", "## Scenario summary", "", "| Scenario | Status | Runs | Mean | Median | P95 | Files/s | Matches | Skipped | Errors |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"])
+    policy = report["search_policy"]
+    lines.extend(["", "## Effective search settings", "", f"- Hidden files/folders excluded: `{policy['exclude_hidden']}`; excluded file count: {target['hidden_files_excluded']:,}", f"- Binary files excluded: `{policy['exclude_binary']}`", "", "| Advanced setting | Effective value |", "|---|---:|"])
+    for key, value in sorted(policy["advanced_settings"].items()):
+        lines.append(f"| `{key}` | {value} |")
+    lines.extend(["", "## Scenario summary", "", "| Scenario | Status | Coverage | Runs | Mean | Median | P95 | Files/s | Matches | Skipped | Errors |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"])
     for item in report["scenarios"]:
         stats = item["run_time_statistics"]
         lines.append(
-            f"| {item['display_name']} | {item['status']} | {item['repeats_completed']}/{item['repeats_requested']} | "
+            f"| {item['display_name']} | {item['status']} | {item['measurement_coverage_percent']}% | {item['repeats_completed']}/{item['repeats_requested']} | "
             f"{_duration(stats['mean_seconds'])} | {_duration(stats['median_seconds'])} | {_duration(stats['p95_seconds'])} | "
             f"{item['runs'][0]['files_per_second'] if item['runs'] else '—'} | {item['matches']:,} | {item['skipped']:,} | {item['errors']:,} |"
         )
@@ -681,6 +843,34 @@ def _markdown(report: dict[str, object]) -> str:
             lines.append(f"- **{item['display_name']}**: skips `{item['skip_reason_codes'] or {}}`; exceptions `{item['exception_types'] or {}}`")
     if not any(item["skip_reason_codes"] or item["exception_types"] for item in report["scenarios"]):
         lines.append("No skips or exceptions were recorded.")
+    lines.extend(["", "## Per-format work profile", "", "| Scenario | Format | Files | Time | Average/file | Skipped |", "|---|---|---:|---:|---:|---:|"])
+    for item in report["scenarios"]:
+        for file_type, metric in sorted(item["file_type_metrics"].items()):
+            lines.append(
+                f"| {item['display_name']} | {file_type} | {metric['files']:,} | {_duration(metric['elapsed_seconds'])} | "
+                f"{_duration(metric['average_file_seconds'])} | {metric['skipped']:,} |"
+            )
+    lines.extend(["", "## Per-size work profile", "", "| Scenario | Size range | Files | Time | Average/file | Skipped |", "|---|---|---:|---:|---:|---:|"])
+    for item in report["scenarios"]:
+        for size_bucket, metric in sorted(item["size_bucket_metrics"].items()):
+            lines.append(
+                f"| {item['display_name']} | {size_bucket} | {metric['files']:,} | {_duration(metric['elapsed_seconds'])} | "
+                f"{_duration(metric['average_file_seconds'])} | {metric['skipped']:,} |"
+            )
+    lines.extend(["", "## Resource samples", "", "| Scenario | Samples | Peak sampled RSS | Lowest available system memory | Highest sampled CPU use | Sampled read | Sampled write |", "|---|---:|---:|---:|---:|---:|---:|"])
+    for item in report["scenarios"]:
+        points = item["resource"]["samples"]
+        rss_values = [float(point["rss_mb"]) for point in points if point.get("rss_mb") is not None]
+        available_values = [float(point["system_memory_available_mb"]) for point in points if point.get("system_memory_available_mb") is not None]
+        cpu_values = [float(point["cpu_cores_equivalent"]) for point in points if point.get("cpu_cores_equivalent") is not None]
+        read_values = [int(point["read_bytes_since_previous_sample"]) for point in points if point.get("read_bytes_since_previous_sample") is not None]
+        write_values = [int(point["write_bytes_since_previous_sample"]) for point in points if point.get("write_bytes_since_previous_sample") is not None]
+        lines.append(
+            f"| {item['display_name']} | {len(points)} | {_format_bytes(int(max(rss_values) * 1024 * 1024)) if rss_values else 'unavailable'} | "
+            f"{_format_bytes(int(min(available_values) * 1024 * 1024)) if available_values else 'unavailable'} | "
+            f"{max(cpu_values):.2f} cores | {_format_bytes(sum(read_values)) if read_values else 'unavailable'} | "
+            f"{_format_bytes(sum(write_values)) if write_values else 'unavailable'} |"
+        )
     lines.extend(["", "## Dataset profile", "", "| Dimension | Value | Files |", "|---|---|---:|"])
     for dimension, label in (("types", "type"), ("extensions", "extension"), ("size_buckets", "size"), ("directory_depth_buckets", "depth")):
         for key, count in sorted(target[dimension].items()):

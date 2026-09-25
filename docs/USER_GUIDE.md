@@ -1,7 +1,7 @@
 # StringFinder 사용자 가이드
 
 - **대상:** Windows에서 파일을 검색하는 일반 사용자
-- **기준 버전:** StringFinder 5.9.21
+- **기준 버전:** StringFinder 5.9.22
 - **최종 수정일:** 2026-09-25
 
 ---

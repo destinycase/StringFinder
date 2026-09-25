@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "sf_engine"
-version = "5.9.21"
+version = "5.9.22"
 dependencies = [
  "aho-corasick",
  "calamine",
