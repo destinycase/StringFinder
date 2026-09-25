@@ -183,7 +183,6 @@ def test_advanced_tab_groups_settings_by_runtime_scope(qtbot, mock_config_manage
     assert group_titles == [
         AppStrings.ADVANCED_COMMON_GROUP,
         AppStrings.ADVANCED_PRECISE_SEARCH_GROUP,
-        AppStrings.ADVANCED_EXISTENCE_ONLY_GROUP,
     ]
     assert AppStrings.SETTINGS_GROUP_ADVANCED not in group_titles
 
@@ -217,10 +216,6 @@ def test_advanced_tab_groups_settings_by_runtime_scope(qtbot, mock_config_manage
         belongs_to_group(dialog.adv_spinboxes[key], AppStrings.ADVANCED_PRECISE_SEARCH_GROUP)
         for key in precise_keys
     )
-    assert belongs_to_group(
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS],
-        AppStrings.ADVANCED_EXISTENCE_ONLY_GROUP,
-    )
 
     def ordered_controls(group_title, expected_controls):
         controls = []
@@ -247,15 +242,8 @@ def test_advanced_tab_groups_settings_by_runtime_scope(qtbot, mock_config_manage
         dialog.adv_spinboxes[Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD],
         dialog.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG],
     ]
-    expected_existence_order = [
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS],
-    ]
     assert ordered_controls(AppStrings.ADVANCED_COMMON_GROUP, expected_common_order) == expected_common_order
     assert ordered_controls(AppStrings.ADVANCED_PRECISE_SEARCH_GROUP, expected_precise_order) == expected_precise_order
-    assert (
-        ordered_controls(AppStrings.ADVANCED_EXISTENCE_ONLY_GROUP, expected_existence_order)
-        == expected_existence_order
-    )
 
 
 def test_advanced_setting_spinbox_ranges_share_the_config_contract(qtbot, mock_config_manager):

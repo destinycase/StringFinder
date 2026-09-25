@@ -20,13 +20,18 @@ class Constants:
     CONFIG_SCHEMA_VERSION = CONFIG_SCHEMA_VERSION
     SETTING_DEFAULT_VERSIONS = DEFAULT_VERSIONS
     DEFAULT_MAX_JSON_DOM_SIZE_MB = DEFAULTS["max_json_dom_size"]
+    # The persisted setting key remains stable for existing user configs, but
+    # its meaning is now a shared per-file cap across formats and search modes.
+    DEFAULT_MAX_SEARCH_FILE_SIZE_MB = DEFAULT_MAX_JSON_DOM_SIZE_MB
     DEFAULT_MAX_SMALL_FILE_SIZE_MB = DEFAULTS["max_small_file_size"]
     DEFAULT_JSON_MMAP_THRESHOLD_MB = DEFAULTS["json_mmap_threshold"]
     DEFAULT_MAX_TOTAL_MATCHES = DEFAULTS["max_total_matches"]
     DEFAULT_MAX_PER_FILE_MATCHES = DEFAULTS["max_per_file_matches"]
     DEFAULT_TIMEOUT_WORKER_HANG = DEFAULTS["timeout_worker_hang"]
-    DEFAULT_MAX_CHECK_CELLS = DEFAULTS["max_check_cells"]
+    # Compatibility fallback used only to render old EXCEL_CELL_LIMIT diagnostics.
+    LEGACY_MAX_CHECK_CELLS = 500_000
     DEFAULT_MAX_JSON_DEPTH = DEFAULTS["max_json_depth"]
+    SETTING_MAX_SEARCH_FILE_SIZE_MB = 1024
     DEFAULT_EXCEL_MAX_CONCURRENCY = DEFAULTS["excel_max_concurrency"]
     DEFAULT_EXCEL_SERIALIZATION_THRESHOLD_MB = DEFAULTS["excel_serialization_threshold_mb"]
 
@@ -129,10 +134,11 @@ class Constants:
     CONFIG_KEY_MAX_TOTAL_MATCHES = "max_total_matches"
     CONFIG_KEY_MAX_PER_FILE_MATCHES = "max_per_file_matches"
     CONFIG_KEY_MAX_JSON_DOM_SIZE = "max_json_dom_size"
+    CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB = CONFIG_KEY_MAX_JSON_DOM_SIZE
     CONFIG_KEY_MAX_SMALL_FILE_SIZE = "max_small_file_size"
     CONFIG_KEY_JSON_MMAP_THRESHOLD = "json_mmap_threshold"
     CONFIG_KEY_TIMEOUT_WORKER_HANG = "timeout_worker_hang"
-    CONFIG_KEY_MAX_CHECK_CELLS = "max_check_cells"
+    CONFIG_KEY_MAX_CHECK_CELLS = "max_check_cells"  # Legacy config/API compatibility; no longer user-configurable.
     CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
     CONFIG_KEY_EXCEL_MAX_CONCURRENCY = "excel_max_concurrency"
     CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB = "excel_serialization_threshold_mb"
@@ -150,10 +156,10 @@ class Constants:
             "minimum": 10,
             "maximum": 1_000_000,
         },
-        CONFIG_KEY_MAX_JSON_DOM_SIZE: {
-            "default": DEFAULT_MAX_JSON_DOM_SIZE_MB,
+        CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: {
+            "default": DEFAULT_MAX_SEARCH_FILE_SIZE_MB,
             "minimum": 1,
-            "maximum": DEFAULT_MAX_JSON_DOM_SIZE_MB,
+            "maximum": SETTING_MAX_SEARCH_FILE_SIZE_MB,
         },
         CONFIG_KEY_MAX_SMALL_FILE_SIZE: {
             "default": DEFAULT_MAX_SMALL_FILE_SIZE_MB,
@@ -169,11 +175,6 @@ class Constants:
             "default": DEFAULT_TIMEOUT_WORKER_HANG,
             "minimum": 10,
             "maximum": 3_600,
-        },
-        CONFIG_KEY_MAX_CHECK_CELLS: {
-            "default": DEFAULT_MAX_CHECK_CELLS,
-            "minimum": 1_000,
-            "maximum": 10_000_000,
         },
         CONFIG_KEY_MAX_JSON_DEPTH: {
             "default": DEFAULT_MAX_JSON_DEPTH,

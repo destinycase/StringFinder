@@ -19,9 +19,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
-use crate::excel_search::{
-    check_excel_file, search_excel_file, ExcelFileError, EXCEL_CELL_LIMIT_MARKER_PREFIX,
-};
+use crate::excel_search::{check_excel_file, search_excel_file, ExcelFileError};
 use crate::json_search::{check_json_file, search_json_file, JSON_DEPTH_LIMIT_MARKER_PREFIX};
 use crate::types::{RawMatch, SearchMatch, SearchOptions};
 use crate::utils::{
@@ -29,8 +27,6 @@ use crate::utils::{
     match_filename_glob, parse_search_mode,
 };
 use crate::xml_search::{check_xml_file, search_xml_file, XmlSearchError};
-
-const MAX_FILE_SIZE: u64 = 1024 * 1024 * 1024; // 1GB 제한
 
 // 내부 타입 에일리어스 및 에러 마커 정의
 type RawFileMatches = Vec<(String, Vec<RawMatch>)>;
@@ -51,7 +47,9 @@ const REASON_ERR_EXCEL_PANIC: &str = "ERR_EXCEL_PANIC";
 const REASON_ERR_RESOURCE_BUDGET: &str = "ERR_RESOURCE_BUDGET";
 const REASON_INFO_JSON_DEPTH_LIMIT: &str = "INFO_JSON_DEPTH_LIMIT";
 
-const DEFAULT_MAX_JSON_SIZE: u64 = 500 * 1024 * 1024;
+// Fallback for direct engine API calls that omit the setting. Application
+// search paths pass the user's configured value and do not use this fallback.
+const DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES: u64 = 1024 * 1024 * 1024;
 const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
 const MATCH_META_TRUNCATED: &str = "__SF_TRUNCATED__";
 // Shared marker for long-line result metadata and offset handling.
@@ -355,7 +353,8 @@ fn search_walk_builder(root_path: &Path, exclude_hidden: bool) -> WalkBuilder {
     let mut builder = WalkBuilder::new(root_path);
     builder.hidden(exclude_hidden);
     // Search results must not depend on repository ignore rules; the
-    // precise-search scanner also traverses files listed in .gitignore.
+    // precise-search scanner also traverses files listed in .gitignore/.ignore.
+    builder.ignore(false);
     builder.git_ignore(false);
     builder
 }
@@ -396,6 +395,8 @@ fn search_file(
             max_json_size = config.max_json_size.unwrap_or(max_json_size);
         }
     }
+    // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
+    let _ = max_check_cells;
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
         parse_search_mode(mode_bits);
@@ -455,7 +456,6 @@ fn search_file(
             existence_only,
             stop_flag,
             max_per_file,
-            max_check_cells,
             max_json_depth,
             max_json_size,
         })
@@ -733,7 +733,6 @@ struct InternalSearchParams<'a> {
     existence_only: bool,
     stop_flag: Arc<AtomicBool>,
     max_per_file: usize,
-    max_check_cells: u64,
     max_json_depth: usize,
     max_json_size: u64,
 }
@@ -753,7 +752,6 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         existence_only,
         stop_flag,
         max_per_file,
-        max_check_cells,
         max_json_depth,
         max_json_size,
     } = params;
@@ -774,7 +772,8 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             Ok(metadata) => metadata,
             Err(error) => return Some(Err(encode_skip_reason(REASON_ERR_METADATA, error))),
         };
-        if metadata.len() > MAX_FILE_SIZE {
+        let file_size_limit = max_json_size;
+        if metadata.len() > file_size_limit {
             return Some(Err(encode_skip_reason(
                 REASON_ERR_TOO_LARGE,
                 format!("{} bytes", metadata.len()),
@@ -790,21 +789,12 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             }
         }
         if existence_only {
-            let outcome =
-                match check_excel_file(path, pattern, ac, is_exact, stop_flag, max_check_cells) {
-                    Ok(outcome) => outcome,
-                    Err(error) => return Some(Err(encode_excel_skip_reason(error))),
-                };
+            let outcome = match check_excel_file(path, pattern, ac, is_exact, stop_flag) {
+                Ok(outcome) => outcome,
+                Err(error) => return Some(Err(encode_excel_skip_reason(error))),
+            };
             if outcome.found {
                 return Some(Ok(vec![(1, "MATCH".to_string(), None, None)]));
-            }
-            if outcome.cell_limit_reached {
-                return Some(Ok(vec![(
-                    0,
-                    format!("{}{}", EXCEL_CELL_LIMIT_MARKER_PREFIX, max_check_cells),
-                    None,
-                    None,
-                )]));
             }
             if let Some(sheet_name) = outcome.sheet_error {
                 return Some(Err(encode_skip_reason(
@@ -814,15 +804,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             }
             return None;
         }
-        let r_raw = match search_excel_file(
-            path,
-            pattern,
-            ac,
-            is_exact,
-            stop_flag,
-            max_per_file,
-            max_check_cells,
-        ) {
+        let r_raw = match search_excel_file(path, pattern, ac, is_exact, stop_flag, max_per_file) {
             Ok(matches) => matches,
             Err(error) => return Some(Err(encode_excel_skip_reason(error))),
         };
@@ -854,16 +836,11 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     if f_len == 0 {
         return None;
     }
-    if f_len > MAX_FILE_SIZE {
+    let file_size_limit = max_json_size;
+    if f_len > file_size_limit {
         return Some(Err(encode_skip_reason(
             REASON_ERR_TOO_LARGE,
             format!("{} bytes", f_len),
-        )));
-    }
-    if is_json && ext_l == ".json" && f_len > max_json_size {
-        return Some(Err(encode_skip_reason(
-            REASON_ERR_JSON_SIZE_LIMIT,
-            format!("{} bytes", max_json_size),
         )));
     }
 
@@ -1087,9 +1064,12 @@ pub fn search_dir(
         }
         structured_memory_budget = config.structured_memory_budget;
     }
+    // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
+    let _ = max_check_cells;
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
         parse_search_mode(mode_bits);
+    let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
     let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
     let ac = Arc::new(
         AhoCorasickBuilder::new()
@@ -1271,6 +1251,9 @@ pub fn search_dir(
                         }
 
                         let path = entry.path();
+                        if should_exclude_recycle_path(path) {
+                            return ignore::WalkState::Continue;
+                        }
                         if let Some(s) = ext_s {
                             let ext_str = path
                                 .extension()
@@ -1284,6 +1267,24 @@ pub fn search_dir(
                         if let Some(ref set) = glob_s {
                             let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
                             if !set.is_match(filename) {
+                                return ignore::WalkState::Continue;
+                            }
+                        }
+
+                        if let Ok(metadata) = std::fs::metadata(path) {
+                            if metadata.len() > common_file_size_limit {
+                                let f_path = path.to_string_lossy().to_string();
+                                let mut skipped = skip_ref
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                skipped.push((
+                                    f_path,
+                                    encode_skip_reason(
+                                        REASON_ERR_TOO_LARGE,
+                                        format!("{} bytes", metadata.len()),
+                                    ),
+                                ));
+                                file_counter.fetch_add(1, Ordering::Relaxed);
                                 return ignore::WalkState::Continue;
                             }
                         }
@@ -1327,9 +1328,9 @@ pub fn search_dir(
                             existence_only,
                             stop_flag: stop_ref.clone(),
                             max_per_file: max_per_file.unwrap_or(10_000),
-                            max_check_cells: max_check_cells.unwrap_or(500_000),
                             max_json_depth: max_json_depth.unwrap_or(20_000),
-                            max_json_size: max_json_size.unwrap_or(DEFAULT_MAX_JSON_SIZE),
+                            max_json_size: max_json_size
+                                .unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES),
                         });
 
                         if let Some(r) = res {
@@ -1450,6 +1451,8 @@ fn search_files_list(
         }
         structured_memory_budget = config.structured_memory_budget;
     }
+    // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
+    let _ = max_check_cells;
     let stop_flag = Arc::new(AtomicBool::new(false));
     let structured_limiter = structured_memory_budget
         .filter(|budget| *budget > 0)
@@ -1567,6 +1570,7 @@ fn search_files_list(
         let pat_upper = norm_pattern.to_lowercase().to_uppercase();
         let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
             parse_search_mode(mode_bits);
+        let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
         let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
 
         let ac = Arc::new(
@@ -1586,6 +1590,36 @@ fn search_files_list(
                 return;
             }
             let path = Path::new(&f_path);
+            if let Ok(metadata) = std::fs::metadata(path) {
+                if should_exclude_recycle_path(path) {
+                    progress_counter.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+                if exclude_hidden {
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::fs::MetadataExt;
+                        if (metadata.file_attributes() & 0x02) != 0 {
+                            progress_counter.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        }
+                    }
+                }
+                if metadata.len() > common_file_size_limit {
+                    let mut entries = skipped
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    entries.push((
+                        f_path.clone(),
+                        encode_skip_reason(
+                            REASON_ERR_TOO_LARGE,
+                            format!("{} bytes", metadata.len()),
+                        ),
+                    ));
+                    progress_counter.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+            }
             let _memory_permit = match acquire_structured_permit(
                 &structured_limiter,
                 path,
@@ -1622,9 +1656,8 @@ fn search_files_list(
                 existence_only,
                 stop_flag: stop_flag.clone(),
                 max_per_file: max_per_file.unwrap_or(10_000),
-                max_check_cells: max_check_cells.unwrap_or(500_000),
                 max_json_depth: max_json_depth.unwrap_or(20_000),
-                max_json_size: max_json_size.unwrap_or(DEFAULT_MAX_JSON_SIZE),
+                max_json_size: max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES),
             });
 
             if let Some(r) = res {
@@ -1925,7 +1958,22 @@ fn find_files_with_keyword(
                             Err(_) => return ignore::WalkState::Continue,
                         };
                         let f_size = meta.len();
-                        if f_size == 0 || f_size > MAX_FILE_SIZE {
+                        if f_size == 0 {
+                            return ignore::WalkState::Continue;
+                        }
+                        let file_size_limit = max_json_size;
+                        if f_size > file_size_limit {
+                            let f_path = path.to_string_lossy().to_string();
+                            let mut g = skipped_inner
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            g.push((
+                                f_path,
+                                encode_skip_reason(
+                                    REASON_ERR_TOO_LARGE,
+                                    format!("{} bytes", f_size),
+                                ),
+                            ));
                             return ignore::WalkState::Continue;
                         }
 
@@ -1937,21 +1985,6 @@ fn find_files_with_keyword(
                             && path.extension().is_some_and(|e| {
                                 e.eq_ignore_ascii_case("xml") || e.eq_ignore_ascii_case("sf_xml")
                             });
-                        if is_json_file && f_size > max_json_size {
-                            let f_path = path.to_string_lossy().to_string();
-                            let mut g = skipped_inner
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            g.push((
-                                f_path,
-                                encode_skip_reason(
-                                    REASON_ERR_JSON_SIZE_LIMIT,
-                                    format!("{} bytes", max_json_size),
-                                ),
-                            ));
-                            return ignore::WalkState::Continue;
-                        }
-
                         let _memory_permit = match acquire_structured_permit(
                             &limiter_inner,
                             path,
@@ -2183,7 +2216,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn normal_search_walker_includes_gitignored_files() {
+    fn normal_search_walker_ignores_gitignore_and_ignore_rules() {
         let unique = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -2191,16 +2224,27 @@ mod tests {
         let root = std::env::temp_dir().join(format!("sf-gitignore-test-{unique}"));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join(".gitignore"), "ignored.json\n").unwrap();
+        fs::write(root.join(".ignore"), "custom-ignored.json\n").unwrap();
         let ignored_file = root.join("ignored.json");
         fs::write(&ignored_file, "{}\n").unwrap();
+        let custom_ignored_file = root.join("custom-ignored.json");
+        fs::write(&custom_ignored_file, "{}\n").unwrap();
 
-        let found = search_walk_builder(root.as_path(), false)
+        let found: HashSet<_> = search_walk_builder(root.as_path(), false)
             .build()
             .filter_map(Result::ok)
-            .any(|entry| entry.path() == ignored_file);
+            .map(|entry| entry.path().to_path_buf())
+            .collect();
 
         let _ = fs::remove_dir_all(&root);
-        assert!(found, "normal search walker must not honor .gitignore");
+        assert!(
+            found.contains(&ignored_file),
+            "normal search must ignore .gitignore rules"
+        );
+        assert!(
+            found.contains(&custom_ignored_file),
+            "normal search must ignore .ignore rules"
+        );
     }
 
     fn build_test_ac(pattern: &str) -> aho_corasick::AhoCorasick {

@@ -4,12 +4,10 @@ use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
 
 const EXCEL_MARKER_SHEET_ERROR_PREFIX: &str = "__SF_EXCEL_SHEET_ERR__|";
-pub const EXCEL_CELL_LIMIT_MARKER_PREFIX: &str = "__SF_EXCEL_CELL_LIMIT__|";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ExcelCheckOutcome {
     pub found: bool,
-    pub cell_limit_reached: bool,
     pub sheet_error: Option<String>,
 }
 
@@ -26,7 +24,6 @@ struct ExcelCtx<'a> {
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
-    max_check_cells: u64,
 }
 
 // M3: calamine 0.33의 Reader<RS> 트레이트 시그니처에 맞게 바운드를 수정합니다.
@@ -102,7 +99,6 @@ where
     WB: Reader<R>,
 {
     // C1: 매우 큰 파일에서 첫 매치가 극히 마지막에 있어도 무한 순회하지 않도록 상한을 둡니다.
-    let mut cell_count: u64 = 0;
     let mut first_sheet_error = None;
 
     for sheet_name in wb.sheet_names() {
@@ -117,18 +113,9 @@ where
                     return ExcelCheckOutcome::default();
                 }
                 for cell in row.iter() {
-                    cell_count += 1;
-                    if cell_count > ctx.max_check_cells {
-                        return ExcelCheckOutcome {
-                            found: false,
-                            cell_limit_reached: true,
-                            sheet_error: first_sheet_error,
-                        };
-                    }
                     if cell_matches(cell, ctx) {
                         return ExcelCheckOutcome {
                             found: true,
-                            cell_limit_reached: false,
                             sheet_error: first_sheet_error,
                         };
                     }
@@ -140,7 +127,6 @@ where
     }
     ExcelCheckOutcome {
         found: false,
-        cell_limit_reached: false,
         sheet_error: first_sheet_error,
     }
 }
@@ -153,7 +139,6 @@ pub fn search_excel_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
-    max_check_cells: u64,
 ) -> Result<Vec<RawMatch>, ExcelFileError> {
     let ext = path
         .extension()
@@ -168,7 +153,6 @@ pub fn search_excel_file(
         is_exact,
         stop_flag: stop_flag.clone(),
         max_per_file,
-        max_check_cells,
     };
 
     // 포맷별 타입이 달라 매크로로 처리: 열기+검색을 한 번에 catch_unwind로 감쌉니다.
@@ -204,7 +188,6 @@ pub fn check_excel_file(
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    max_check_cells: u64,
 ) -> Result<ExcelCheckOutcome, ExcelFileError> {
     let ext = path
         .extension()
@@ -219,7 +202,6 @@ pub fn check_excel_file(
         is_exact,
         stop_flag: stop_flag.clone(),
         max_per_file: 5000,
-        max_check_cells,
     };
 
     macro_rules! chk {
@@ -355,7 +337,6 @@ mod tests {
             is_exact: exact,
             stop_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             max_per_file: 5_000,
-            max_check_cells: 500_000,
         };
         assert_eq!(cell_matches(&cell, &ctx), expected);
     }

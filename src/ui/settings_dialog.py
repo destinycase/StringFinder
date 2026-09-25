@@ -363,9 +363,9 @@ class SettingsDialog(QDialog):
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, *setting_bounds(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES), AppStrings.UNIT_COUNT
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_JSON_DOM_SIZE,
+            AppStrings.ADVANCED_MAX_SEARCH_FILE_SIZE,
             Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, *setting_bounds(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE), AppStrings.UNIT_MB,
-            description_text=AppStrings.ADVANCED_MAX_JSON_DOM_SIZE_DESCRIPTION,
+            description_text=AppStrings.ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION,
         )
         self.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DEPTH] = create_spinbox_row(
             AppStrings.ADVANCED_MAX_JSON_DEPTH,
@@ -395,8 +395,6 @@ class SettingsDialog(QDialog):
         )
         tab_advanced_layout.addWidget(precise_group)
 
-        existence_only_group = QGroupBox(AppStrings.ADVANCED_EXISTENCE_ONLY_GROUP)
-        existence_only_layout = QVBoxLayout(existence_only_group)
         self.adv_spinboxes[Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY] = create_spinbox_row(
             AppStrings.ADVANCED_EXCEL_MAX_CONCURRENCY,
             Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY,
@@ -413,14 +411,6 @@ class SettingsDialog(QDialog):
             target_layout=precise_layout,
             description_text=AppStrings.ADVANCED_EXCEL_SERIALIZATION_THRESHOLD_DESCRIPTION,
         )
-        self.adv_spinboxes[Constants.CONFIG_KEY_MAX_CHECK_CELLS] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_CHECK_CELLS,
-            Constants.CONFIG_KEY_MAX_CHECK_CELLS, *setting_bounds(Constants.CONFIG_KEY_MAX_CHECK_CELLS), AppStrings.UNIT_CELL,
-            target_layout=existence_only_layout,
-            description_text=AppStrings.ADVANCED_MAX_CHECK_CELLS_DESCRIPTION,
-        )
-        tab_advanced_layout.addWidget(existence_only_group)
-
         tab_advanced_layout.addSpacing(10)
         reset_adv_btn = QPushButton(AppStrings.BTN_RESET_ADVANCED)
         reset_adv_btn.clicked.connect(self._reset_advanced_settings)

@@ -114,13 +114,34 @@ def test_rust_search_limits_fall_back_to_safe_defaults_for_invalid_values(monkey
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: "invalid",
             Constants.CONFIG_KEY_MAX_CHECK_CELLS: 0,
             Constants.CONFIG_KEY_MAX_JSON_DEPTH: -5,
-            Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 999,
+            Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 2048,
         },
     )
 
     limits = search_engine._get_rust_search_limits()
     assert limits[:3] == (Constants.DEFAULT_MAX_PER_FILE_MATCHES, 1, 1)
-    assert 0 < limits[3] <= Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024
+    assert limits[3] == Constants.SETTING_MAX_SEARCH_FILE_SIZE_MB * 1024 * 1024
+
+
+def test_common_file_size_limit_applies_to_python_text_search(tmp_path, monkeypatch):
+    target = tmp_path / "oversized.txt"
+    target.write_bytes(b"x" * (1024 * 1024 + 1) + b"needle")
+    monkeypatch.setattr(
+        search_engine,
+        "_get_adv_setting",
+        lambda key, default: 1 if key == Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB else default,
+    )
+
+    result = search_engine.search_in_file(
+        str(target),
+        "needle",
+        use_complex_search=True,
+        force_python=True,
+    )
+
+    assert isinstance(result, tuple)
+    assert result[0] == Constants.STATUS_SKIPPED
+    assert "1048583" in result[1]
 
 
 def test_real_rust_engine_enforces_configured_json_size_limit(tmp_path):
@@ -130,15 +151,15 @@ def test_real_rust_engine_enforces_configured_json_size_limit(tmp_path):
     file_path = tmp_path / "large.json"
     file_path.write_text('{"payload":"' + ("x" * (2 * 1024 * 1024)) + '"}', encoding="utf-8")
 
-    result = search_engine.sf_engine.search_file(  # type: ignore
-        str(file_path),
-        "needle",
-        Constants.RUST_MODE_JSON,
-        max_json_size=1024 * 1024,
-    )
+    with pytest.raises(RuntimeError, match="ERR_TOO_LARGE") as exc_info:
+        search_engine.sf_engine.search_file(  # type: ignore
+            str(file_path),
+            "needle",
+            Constants.RUST_MODE_JSON,
+            max_json_size=1024 * 1024,
+        )
 
-    assert result
-    assert result[0][1] == "ERR_JSON_SIZE_LIMIT|1048576 bytes"
+    assert "2097166 bytes" in str(exc_info.value)
 
 
 def test_real_rust_json_size_limit_skips_only_large_file(tmp_path, monkeypatch):
@@ -175,7 +196,7 @@ def test_real_rust_json_size_limit_skips_only_large_file(tmp_path, monkeypatch):
     ]
     assert len(response["skipped"]) == 1
     assert response["skipped"][0][0] == str(large_file)
-    assert "JSON 파일 크기 제한 초과" in response["skipped"][0][1]
+    assert AppStrings.SKIP_REASON_TOO_LARGE.split("{}")[0] in response["skipped"][0][1]
 
 
 def test_real_rust_engine_exposes_structured_match_metadata(tmp_path):

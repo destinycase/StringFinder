@@ -156,6 +156,9 @@ class ConfigManager:
                         logger.warning(AppStrings.LOG_CFG_INVALID_VER)
                         return copy.deepcopy(self._defaults)
                     loaded_version = data.get(Constants.CONFIG_KEY_VERSION, 0)
+                    if type(loaded_version) is not int or loaded_version < 0:
+                        logger.warning("Invalid configuration version; applying current defaults")
+                        loaded_version = 0
                     if loaded_version < self.CURRENT_CONFIG_VERSION:
                         logger.info(AppStrings.LOG_CFG_MIGRATION.format(loaded_version, self.CURRENT_CONFIG_VERSION))
                         data = self._migrate_config(data, loaded_version)
@@ -173,23 +176,62 @@ class ConfigManager:
                             merged[k] = v
                     # Validate scalar settings before UI code consumes them.
                     # A malformed JSON value must not prevent application start.
+                    language = merged.get(Constants.CONFIG_KEY_LANGUAGE)
+                    if not isinstance(language, str) or language not in {"ko", "en"}:
+                        merged[Constants.CONFIG_KEY_LANGUAGE] = self._defaults[
+                            Constants.CONFIG_KEY_LANGUAGE
+                        ]
                     theme = merged.get(Constants.CONFIG_KEY_THEME)
                     if not isinstance(theme, str) or theme.lower() not in {"dark", "light", "auto"}:
                         merged[Constants.CONFIG_KEY_THEME] = self._defaults.get(
                             Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME
                         )
                     for key in (
+                        Constants.CONFIG_KEY_COMPACT_RESULT_ROWS,
+                        Constants.CONFIG_KEY_EXCLUDE_HIDDEN,
+                        Constants.CONFIG_KEY_EXCLUDE_BINARY,
+                        Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT,
+                    ):
+                        if not isinstance(merged.get(key), bool):
+                            merged[key] = self._defaults[key]
+                    for key in (
+                        Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES,
+                        Constants.CONFIG_KEY_CONTEXT_AFTER_LINES,
+                    ):
+                        merged[key] = self._normalize_bounded_int(
+                            merged.get(key),
+                            self._defaults[key],
+                            0,
+                            Constants.MAX_CONTEXT_PREVIEW_LINES,
+                        )
+                    for key in (
+                        Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS,
+                        Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS,
+                    ):
+                        default_widths = self._defaults[key]
+                        widths = merged.get(key)
+                        if (
+                            not isinstance(widths, list)
+                            or len(widths) != len(default_widths)
+                            or any(type(width) is not int or not 0 <= width <= 10_000 for width in widths)
+                        ):
+                            merged[key] = copy.deepcopy(default_widths)
+                    for key in (
                         Constants.CONFIG_KEY_GEOMETRY,
                         Constants.CONFIG_KEY_WINDOW_STATE,
                         Constants.CONFIG_KEY_MAIN_SPLITTER_STATE,
                         Constants.CONFIG_KEY_RESULT_SPLITTER_STATE,
                         Constants.CONFIG_KEY_FILTER_SPLITTER_STATE,
+                        Constants.CONFIG_KEY_DOCK_LAYOUT_STATE,
                     ):
                         value = merged.get(key)
                         if value is not None and not isinstance(value, str):
                             merged[key] = self._defaults.get(key)
                     merged[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(
                         merged.get(Constants.CONFIG_KEY_ADVANCED),
+                    )
+                    merged[Constants.CONFIG_KEY_LOG_RETENTION] = self._normalize_log_retention(
+                        merged.get(Constants.CONFIG_KEY_LOG_RETENTION)
                     )
                     merged = self._apply_default_version_updates(merged, data)
                     return merged
@@ -247,19 +289,30 @@ class ConfigManager:
         return config
 
     def _normalize_advanced_settings(self, settings: Any) -> dict[str, int]:
-        """Return only supported advanced settings with canonical bounds."""
+        """Validate advanced settings, restoring invalid values to defaults."""
         source = settings if isinstance(settings, dict) else {}
         normalized: dict[str, int] = {}
         for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
             default = int(spec["default"])
             minimum = int(spec["minimum"])
             maximum = int(spec["maximum"])
-            try:
-                value = int(source.get(key, default))
-            except (TypeError, ValueError):
-                value = default
-            normalized[key] = min(max(value, minimum), maximum)
+            raw_value = source.get(key, default)
+            is_valid = type(raw_value) is int and minimum <= raw_value <= maximum
+            value = raw_value if is_valid else default
+            if key in source and not is_valid:
+                logger.warning(
+                    "Invalid advanced setting %s; restoring its default value",
+                    key,
+                )
+            normalized[key] = value
         return normalized
+
+    @staticmethod
+    def _normalize_bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+        """Accept only JSON integer values in range; restore defaults otherwise."""
+        if type(value) is not int or not minimum <= value <= maximum:
+            return default
+        return value
 
     def save(self):
         """디바운스 저장을 예약한다."""
@@ -781,26 +834,27 @@ class ConfigManager:
     def get_log_retention(self) -> dict[str, Any]:
         """Return a detached, type- and range-normalized log retention config."""
         with self._config_lock:
-            defaults = self._defaults.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
-            raw = self._config.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
-            result = copy.deepcopy(defaults) if isinstance(defaults, dict) else {}
-            if isinstance(raw, dict):
-                result.update(copy.deepcopy(raw))
+            return self._normalize_log_retention(
+                self._config.get(Constants.CONFIG_KEY_LOG_RETENTION)
+            )
 
-            enabled = result.get(Constants.CONFIG_KEY_LOG_RETENTION_ENABLED)
-            if not isinstance(enabled, bool):
-                result[Constants.CONFIG_KEY_LOG_RETENTION_ENABLED] = bool(
-                    defaults.get(Constants.CONFIG_KEY_LOG_RETENTION_ENABLED, True)
-                )
-            for key, minimum, maximum in (
-                (Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES, 1, 100),
-                (Constants.CONFIG_KEY_LOG_RETENTION_MAX_DAYS, 1, 365),
-            ):
-                try:
-                    result[key] = min(max(int(result[key]), minimum), maximum)
-                except (KeyError, TypeError, ValueError):
-                    result[key] = defaults.get(key, minimum)
-            return result
+    def _normalize_log_retention(self, settings: Any) -> dict[str, Any]:
+        defaults = self._defaults.get(Constants.CONFIG_KEY_LOG_RETENTION, {})
+        result = copy.deepcopy(defaults) if isinstance(defaults, dict) else {}
+        if isinstance(settings, dict):
+            result.update(copy.deepcopy(settings))
+
+        enabled_key = Constants.CONFIG_KEY_LOG_RETENTION_ENABLED
+        if not isinstance(result.get(enabled_key), bool):
+            result[enabled_key] = defaults.get(enabled_key, True)
+        for key, minimum, maximum in (
+            (Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES, 1, 100),
+            (Constants.CONFIG_KEY_LOG_RETENTION_MAX_DAYS, 1, 365),
+        ):
+            result[key] = self._normalize_bounded_int(
+                result.get(key), defaults.get(key, minimum), minimum, maximum
+            )
+        return result
         
     def set_advanced_settings(self, settings_dict: dict):
         """고급 설정을 업데이트한다."""

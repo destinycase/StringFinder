@@ -227,11 +227,59 @@ def test_malformed_runtime_settings_are_normalized(temp_dir):
         advanced = cm.get_advanced_settings()
 
     assert retention[Constants.CONFIG_KEY_LOG_RETENTION_ENABLED] is True
-    assert retention[Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES] == 100
+    assert retention[Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES] == 10
     assert retention[Constants.CONFIG_KEY_LOG_RETENTION_MAX_DAYS] == 3
     assert advanced[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] == Constants.DEFAULT_MAX_TOTAL_MATCHES
-    assert advanced[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] == 1
-    assert advanced[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG] == 3600
+    assert advanced[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] == Constants.DEFAULT_MAX_SMALL_FILE_SIZE_MB
+    assert advanced[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG] == Constants.DEFAULT_TIMEOUT_WORKER_HANG
+
+
+def test_out_of_range_advanced_values_from_config_restore_only_invalid_items(temp_dir):
+    config_dir = os.path.join(temp_dir, Constants.APP_NAME)
+    os.makedirs(config_dir, exist_ok=True)
+    config_path = Path(config_dir) / Constants.CONFIG_FILENAME
+    config_path.write_text(
+        json.dumps(
+            {
+                Constants.CONFIG_KEY_VERSION: Constants.CONFIG_SCHEMA_VERSION,
+                Constants.CONFIG_KEY_ADVANCED: {
+                    Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 1025,
+                    Constants.CONFIG_KEY_MAX_TOTAL_MATCHES: 999,
+                    Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 12,
+                    Constants.CONFIG_KEY_MAX_JSON_DEPTH: True,
+                },
+                Constants.CONFIG_KEY_LANGUAGE: 42,
+                Constants.CONFIG_KEY_EXCLUDE_HIDDEN: "false",
+                Constants.CONFIG_KEY_CONTEXT_AFTER_LINES: 99,
+                Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS: ["wide"],
+                Constants.CONFIG_KEY_LOG_RETENTION: {
+                    Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES: 101
+                },
+                Constants.CONFIG_KEY_SETTING_DEFAULT_VERSIONS: dict(
+                    Constants.SETTING_DEFAULT_VERSIONS
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with patch("os.getenv", return_value=temp_dir):
+        ConfigManager._instance = None
+        config = ConfigManager()
+
+    advanced = config.get_advanced_settings()
+    assert advanced[Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB] == (
+        Constants.DEFAULT_MAX_SEARCH_FILE_SIZE_MB
+    )
+    assert advanced[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES] == Constants.DEFAULT_MAX_TOTAL_MATCHES
+    assert advanced[Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES] == 12
+    assert advanced[Constants.CONFIG_KEY_MAX_JSON_DEPTH] == Constants.DEFAULT_MAX_JSON_DEPTH
+    snapshot = config.get_config_snapshot()
+    assert snapshot[Constants.CONFIG_KEY_LANGUAGE] == Constants.DEFAULT_LANGUAGE
+    assert snapshot[Constants.CONFIG_KEY_EXCLUDE_HIDDEN] is True
+    assert snapshot[Constants.CONFIG_KEY_CONTEXT_AFTER_LINES] == Constants.DEFAULT_CONTEXT_PREVIEW_LINES
+    assert snapshot[Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS] == [60, 400, 100, 60]
+    assert config.get_log_retention()[Constants.CONFIG_KEY_LOG_RETENTION_MAX_FILES] == 10
 
 
 def test_config_accessors_do_not_expose_mutable_state(temp_dir):
@@ -427,7 +475,7 @@ def test_default_version_updates_reset_only_changed_settings(temp_dir):
                     },
                     Constants.CONFIG_KEY_SETTING_DEFAULT_VERSIONS: {
                         Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 1,
-                        Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 2,
+                        Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 3,
                     },
                 }
             ),

@@ -21,6 +21,9 @@ target/
 .vscode/
 .idea/
 
+# Ignore hidden directories at any depth
+.*/
+
 # Distribution / packaging
 build/
 *.egg-info/

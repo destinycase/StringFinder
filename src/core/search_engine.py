@@ -43,6 +43,35 @@ def _get_adv_setting(key, default):
     return ConfigManager().get_advanced_settings().get(key, default)
 
 
+def _max_search_file_size_bytes() -> int:
+    """Return the configured per-file size cap, bounded to the supported 1 GiB range."""
+    try:
+        configured_mb = int(
+            _get_adv_setting(
+                Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB,
+                Constants.DEFAULT_MAX_SEARCH_FILE_SIZE_MB,
+            )
+        )
+    except (TypeError, ValueError):
+        configured_mb = Constants.DEFAULT_MAX_SEARCH_FILE_SIZE_MB
+    configured_mb = min(
+        max(1, configured_mb),
+        Constants.SETTING_MAX_SEARCH_FILE_SIZE_MB,
+    )
+    return configured_mb * 1024 * 1024
+
+
+def _file_size_limit_result(file_size: int) -> Optional[Tuple[str, str]]:
+    if file_size <= _max_search_file_size_bytes():
+        return None
+    return (
+        Constants.STATUS_SKIPPED,
+        AppStrings.SKIP_REASON_TOO_LARGE.format(
+            AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
+        ),
+    )
+
+
 def _get_rust_search_limits() -> Tuple[int, int, int, int]:
     """Return the safety limits supported by the Rust search API.
 
@@ -59,15 +88,18 @@ def _get_rust_search_limits() -> Tuple[int, int, int, int]:
         except (TypeError, ValueError):
             return default
 
-    max_json_size_mb = min(
-        positive_int(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB),
-        Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB,
+    max_search_file_size_mb = min(
+        positive_int(
+            Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB,
+            Constants.DEFAULT_MAX_SEARCH_FILE_SIZE_MB,
+        ),
+        Constants.SETTING_MAX_SEARCH_FILE_SIZE_MB,
     )
     return (
         positive_int(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES),
-        positive_int(Constants.CONFIG_KEY_MAX_CHECK_CELLS, Constants.DEFAULT_MAX_CHECK_CELLS),
+        positive_int(Constants.CONFIG_KEY_MAX_CHECK_CELLS, Constants.LEGACY_MAX_CHECK_CELLS),
         positive_int(Constants.CONFIG_KEY_MAX_JSON_DEPTH, Constants.DEFAULT_MAX_JSON_DEPTH),
-        max_json_size_mb * 1024 * 1024,
+        max_search_file_size_mb * 1024 * 1024,
     )
 
 
@@ -128,24 +160,9 @@ def _memory_guard_result(
         except OSError:
             # The regular open/read path provides the localized I/O reason.
             return None
-        try:
-            configured_size_mb = max(
-                1,
-                int(
-                    _get_adv_setting(
-                        Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE,
-                        Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB,
-                    )
-                ),
-            )
-        except (TypeError, ValueError):
-            configured_size_mb = Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB
-        configured_size_limit = configured_size_mb * 1024 * 1024
-        if file_size > configured_size_limit and (
-            document_kind == "json" or engine_kind == "python"
-        ):
+        if file_size > _max_search_file_size_bytes():
             # Let the established parser-size check return its more specific
-            # JSON/file size reason before applying a projected-memory reason.
+            # file-size reason before applying a projected-memory reason.
             return None
         estimate = estimate_structured_memory_bytes(file_size, document_kind, engine_kind)
         projection_reason = projected_memory_pressure_reason(snapshot, estimate)
@@ -548,7 +565,7 @@ def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> 
             saved_limit
             or _get_adv_setting(
                 Constants.CONFIG_KEY_MAX_CHECK_CELLS,
-                Constants.DEFAULT_MAX_CHECK_CELLS,
+                Constants.LEGACY_MAX_CHECK_CELLS,
             )
         )
     if resource_name in {"SKIP_REASON_PANIC", "SKIP_REASON_CRITICAL"}:
@@ -836,7 +853,7 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
             limit = _positive_limit(
                 detail,
                 Constants.CONFIG_KEY_MAX_CHECK_CELLS,
-                Constants.DEFAULT_MAX_CHECK_CELLS,
+                Constants.LEGACY_MAX_CHECK_CELLS,
             )
             reasons.append(AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(limit))
             continue
@@ -857,7 +874,7 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
             limit = _positive_limit(
                 content[len(RUST_MATCH_MARKER_EXCEL_CELL_LIMIT) :],
                 Constants.CONFIG_KEY_MAX_CHECK_CELLS,
-                Constants.DEFAULT_MAX_CHECK_CELLS,
+                Constants.LEGACY_MAX_CHECK_CELLS,
             )
             reasons.append(AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(limit))
 
@@ -1307,6 +1324,8 @@ class FileScanner:
                         return
                     if self.exclude_hidden and is_hidden_path(entry.path):
                         continue
+                    if entry.is_symlink():
+                        continue
                     if hasattr(self, "_yield_counter"):
                         self._yield_counter += 1
                         if self._yield_counter % 5000 == 0:
@@ -1325,7 +1344,7 @@ class FileScanner:
                             if is_recycle_bin_path(entry.path):
                                 continue
                             ext = splitext(entry.name)[1].lower()
-                            if ext in self.extensions:
+                            if not self.extensions or ext in self.extensions:
                                 if self.processed_filename_filters:
                                     is_matched = False
                                     fname_lower = entry.name.lower()
@@ -1461,12 +1480,6 @@ def search_in_excel_special(
 
         count = 0
         matches = []
-        checked_cells = 0
-        max_check_cells = _positive_limit(
-            None,
-            Constants.CONFIG_KEY_MAX_CHECK_CELLS,
-            Constants.DEFAULT_MAX_CHECK_CELLS,
-        )
         max_per_file = _positive_limit(
             None,
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
@@ -1499,15 +1512,6 @@ def search_in_excel_special(
                     if row_idx % 100 == 0 and stop_event and stop_event.is_set():
                         break
                     for col_idx, cell_value in enumerate(row):
-                        if existence_only:
-                            checked_cells += 1
-                            if checked_cells > max_check_cells:
-                                return (
-                                    Constants.STATUS_SKIPPED,
-                                    AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(
-                                        max_check_cells
-                                    ),
-                                )
                         if cell_value is not None:
                             val_str = normalize_unicode(str(cell_value))
                             val_norm = re.sub(r"\s+", " ", val_str).casefold().strip()
@@ -1663,7 +1667,7 @@ def search_in_json_special(
         file_size = 0
         try:
             file_size = os.path.getsize(file_path)
-            if file_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
+            if file_size > _max_search_file_size_bytes():
                 logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
                 return (
                     Constants.STATUS_SKIPPED,
@@ -1958,7 +1962,7 @@ def search_in_xml_special(
         # 이유: 크기 제한 없이 전체 파일을 메모리에 로드 -> 대용량 XML에서 OOM 위험
         try:
             file_size = os.path.getsize(file_path)
-            if file_size > (_get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE, Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB) * 1024 * 1024):
+            if file_size > _max_search_file_size_bytes():
                 logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
                 return (
                     Constants.STATUS_SKIPPED,
@@ -2097,6 +2101,18 @@ def search_in_file(
     """파일의 성격에 따라 적절한 검색 엔진을 선택하여 검색을 수행합니다."""
     if is_recycle_bin_path(file_path):
         return None
+    if use_complex_search or force_python or not HAS_RUST_ENGINE:
+        try:
+            if file_size is None:
+                file_size = os.path.getsize(file_path)
+        except (OSError, IOError) as e:
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_FILE_ACCESS_BINARY.format(_localize_io_error_detail(e)),
+            )
+        size_limit_result = _file_size_limit_result(file_size)
+        if size_limit_result:
+            return size_limit_result
     search_string_nfc = normalize_unicode(search_string)
     ext = splitext(file_path)[1].lower()
     if ext in EXCEL_EXTS:
@@ -2144,17 +2160,17 @@ def search_in_file(
                 stop_event=stop_event,
                 existence_only=existence_only,
             )
-    try:
-        if file_size is None:
+    if file_size is None:
+        try:
             file_size = os.path.getsize(file_path)
-        if file_size == 0:
-            return (Constants.STATUS_SKIPPED, AppStrings.SKIP_EMPTY_FILE)
-    except (OSError, IOError) as e:
-        logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_ERROR.format(file_path, e))
-        return (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_FILE_ACCESS_BINARY.format(_localize_io_error_detail(e)),
-        )
+        except (OSError, IOError) as e:
+            logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_ERROR.format(file_path, e))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_FILE_ACCESS_BINARY.format(_localize_io_error_detail(e)),
+            )
+    if file_size == 0:
+        return (Constants.STATUS_SKIPPED, AppStrings.SKIP_EMPTY_FILE)
     # 인코딩 조기 감지 (Rust 결과 신뢰도 판단 및 폴백 결정용)
     head = b""
     detected_enc_quick = Constants.ENC_UTF8
@@ -2455,6 +2471,37 @@ def search_in_files_batch(
     return {"results": results, "skipped": skipped}
 
 
+def _deduplicate_overlapping_roots(search_paths: List[str]) -> List[str]:
+    """Drop duplicate roots and descendants already covered by a parent root."""
+    candidates = [
+        (path, os.path.normcase(os.path.realpath(os.path.abspath(path))))
+        for path in search_paths
+    ]
+    canonical_roots = {canonical for _path, canonical in candidates}
+    seen: set[str] = set()
+    unique_roots: List[str] = []
+    for original, canonical in candidates:
+        covered = False
+        for parent in canonical_roots:
+            if parent == canonical:
+                continue
+            if os.path.splitdrive(parent)[0] != os.path.splitdrive(canonical)[0]:
+                continue
+            try:
+                if (
+                    len(parent) < len(canonical)
+                    and os.path.commonpath((parent, canonical)) == parent
+                ):
+                    covered = True
+                    break
+            except ValueError:
+                continue
+        if not covered and canonical not in seen:
+            seen.add(canonical)
+            unique_roots.append(original)
+    return unique_roots
+
+
 def search_directory_fast(
     search_paths: List[str],
     search_string: str,
@@ -2466,6 +2513,7 @@ def search_directory_fast(
 ) -> Dict[str, List]:
     """Rust 엔진을 사용하여 디렉토리를 고속으로 검색합니다."""
     try:
+        search_paths = _deduplicate_overlapping_roots(search_paths)
         rust_pattern = normalize_unicode(search_string)
         rust_exts = None
         if extensions:
