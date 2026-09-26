@@ -1,7 +1,8 @@
 """Run a one-shot, privacy-preserving performance diagnostic on a folder.
 
-The fixed query is intentionally not written to the report. Only aggregate
-counts, timings, resource usage, and result-contract counters are exported.
+A fresh high-entropy query is generated for each report and is not exported.
+Only aggregate counts, timings, resource usage, and result-contract counters
+are exported.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from sf_utils.app_strings import AppStrings  # noqa: E402
 from sf_utils.constants import Constants  # noqa: E402
 from sf_utils.version_helper import get_app_version  # noqa: E402
 
-FIXED_QUERY = "StringFinderDiagnosticNeedle"
+ONE_GIB_BYTES = 1024**3
 DEFAULT_MAX_SECONDS = 7200
 RESOURCE_SAMPLE_INTERVAL_SECONDS = 30
 MAX_RESOURCE_SAMPLES_PER_SCENARIO = 600
@@ -105,7 +106,38 @@ def _size_bucket(size: int) -> str:
         return "64KB-10MB"
     if size <= 100 * 1024 * 1024:
         return "10MB-100MB"
-    return "100MB+"
+    if size <= ONE_GIB_BYTES:
+        return "100MB-1GiB"
+    return ">1GiB"
+
+
+def _new_diagnostic_query() -> str:
+    """Create a high-entropy per-report query without a source-code literal."""
+    return secrets.token_urlsafe(24)
+
+
+def _unknown_skip_category(reason: object) -> str | None:
+    """Classify recognizable ERR_UNKNOWN details without exporting raw text."""
+    code, detail = decode_skip_reason(reason)
+    if code != "ERR_UNKNOWN":
+        return None
+    text = (detail or str(reason or "")).casefold()
+    categories = (
+        ("permission_or_access", ("permission", "access denied", "winerror 5", "접근 거부", "권한이 없")),
+        ("file_in_use", ("sharing violation", "winerror 32", "being used", "locked", "사용 중", "다른 프로세스")),
+        ("not_found", ("file not found", "no such file", "winerror 2", "winerror 3", "찾을 수 없")),
+        ("path_too_long", ("path too long", "filename too long", "winerror 206", "경로가 너무", "파일 이름이 너무")),
+        ("empty_file", ("empty file", "file is empty", "빈 파일")),
+        ("binary_or_nontext", ("binary", "non-text", "이진 파일", "바이너리")),
+        ("encoding_or_decode", ("encoding", "decode", "codec", "invalid byte", "인코딩", "디코딩")),
+        ("resource_pressure", ("too many open files", "resource temporarily unavailable", "out of memory", "memory error", "리소스 부족", "메모리 부족")),
+        ("io_error", ("i/o error", "os error", "read error", "write error", "input/output", "입출력", "읽기 실패", "쓰기 실패")),
+        ("format_or_parse", ("unsupported format", "invalid format", "malformed", "parse error", "not a zip", "손상된 형식", "구문 분석")),
+    )
+    for category, indicators in categories:
+        if any(indicator in text for indicator in indicators):
+            return category
+    return "unclassified"
 
 
 def _is_hidden_relative_to_root(root: Path, path: Path) -> bool:
@@ -335,6 +367,7 @@ def run(
     inventory_depths: Counter[str] = Counter()
     inventory_bytes = 0
     stat_failures = 0
+    files_over_1gib = 0
 
     for path in paths:
         file_type = _classify(path)
@@ -350,6 +383,7 @@ def run(
         if size is not None:
             inventory_bytes += size
             inventory_sizes[bucket] += 1
+            files_over_1gib += int(size > ONE_GIB_BYTES)
         inventory_types[file_type] += 1
         inventory_extensions[extension] += 1
         inventory_depths[depth_bucket] += 1
@@ -366,6 +400,7 @@ def run(
     # global time budget expires, all modes sample the same prefix rather than
     # whichever directories happen to be visited first by the filesystem.
     random.Random(secrets.randbits(64)).shuffle(paths)
+    diagnostic_query = _new_diagnostic_query()
 
     benchmark_started = time.perf_counter()
     total_work = max(1, len(paths) * max(1, repeats) * len(SCENARIOS))
@@ -400,6 +435,7 @@ def run(
         extension_metrics: dict[str, dict[str, object]] = defaultdict(_new_metric)
         size_metrics: dict[str, dict[str, object]] = defaultdict(_new_metric)
         skip_codes: Counter[str] = Counter()
+        unknown_skip_categories: Counter[str] = Counter()
         exception_types: Counter[str] = Counter()
         slow_file_stats: dict[str, dict[str, object]] = {}
         total_matches = total_match_files = total_skipped = total_errors = 0
@@ -410,6 +446,7 @@ def run(
             iteration_started = time.perf_counter()
             processed = nominal_bytes = match_files = matches = skipped = errors = 0
             run_skip_codes: Counter[str] = Counter()
+            run_unknown_skip_categories: Counter[str] = Counter()
             run_exception_types: Counter[str] = Counter()
             interrupted = False
 
@@ -432,6 +469,7 @@ def run(
                 elapsed = 0.0
                 file_match_count = 0
                 file_skip_code: str | None = None
+                file_unknown_skip_category: str | None = None
                 exception_name: str | None = None
                 file_started = time.perf_counter()
                 try:
@@ -440,7 +478,7 @@ def run(
                     ):
                         result = search_in_file(
                             str(path),
-                            FIXED_QUERY,
+                            diagnostic_query,
                             file_size=file_size,
                             use_complex_search=precise,
                             existence_only=existence_only,
@@ -451,6 +489,13 @@ def run(
                         file_skip_code = _skip_code(result[1] if len(result) > 1 else "")
                         run_skip_codes[file_skip_code] += 1
                         skip_codes[file_skip_code] += 1
+                        if file_skip_code == "ERR_UNKNOWN":
+                            file_unknown_skip_category = _unknown_skip_category(
+                                result[1] if len(result) > 1 else ""
+                            )
+                            if file_unknown_skip_category:
+                                run_unknown_skip_categories[file_unknown_skip_category] += 1
+                                unknown_skip_categories[file_unknown_skip_category] += 1
                     elif isinstance(result, tuple):
                         match_files += 1
                         try:
@@ -509,6 +554,7 @@ def run(
                                     "max_seconds": elapsed,
                                     "skipped": 0,
                                     "skip_reason_codes": {},
+                                    "unknown_skip_categories": {},
                                     "exception_types": {},
                                 }
                                 slow_file_stats[file_id] = candidate
@@ -521,6 +567,11 @@ def run(
                                 if file_skip_code:
                                     codes = candidate["skip_reason_codes"]
                                     codes[file_skip_code] = codes.get(file_skip_code, 0) + 1
+                                if file_unknown_skip_category:
+                                    categories = candidate["unknown_skip_categories"]
+                                    categories[file_unknown_skip_category] = (
+                                        categories.get(file_unknown_skip_category, 0) + 1
+                                    )
                                 if exception_name:
                                     types = candidate["exception_types"]
                                     types[exception_name] = types.get(exception_name, 0) + 1
@@ -580,6 +631,7 @@ def run(
                         "skipped": skipped,
                         "errors": errors,
                         "skip_reason_codes": dict(run_skip_codes),
+                        "unknown_skip_categories": dict(run_unknown_skip_categories),
                         "exception_types": dict(run_exception_types),
                         "verdict": "INCOMPLETE"
                         if interrupted
@@ -672,6 +724,7 @@ def run(
             "skipped": total_skipped,
             "errors": total_errors,
             "skip_reason_codes": dict(skip_codes),
+            "unknown_skip_categories": dict(unknown_skip_categories),
             "exception_types": dict(exception_types),
             "file_type_metrics": _finalize_metrics(type_metrics),
             "extension_metrics": _finalize_metrics(extension_metrics),
@@ -712,22 +765,24 @@ def run(
     wall_seconds = time.perf_counter() - wall_started
     benchmark_seconds = time.perf_counter() - benchmark_started
     return {
-        "diagnostic_version": 4,
+        "diagnostic_version": 5,
         "app_version": get_app_version(),
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "status": overall_status,
         "verdict": overall_verdict,
         "workload": {
-            "query": "fixed negative-match query (query text redacted)",
-            "match_behavior": "The fixed query is intended not to match; this run primarily measures negative-search cost.",
+            "query": "randomized 192-bit negative-match query (query text redacted)",
+            "match_behavior": "A fresh high-entropy query is generated per report and is expected not to occur in the target. Any match requires review.",
             "execution_model": "Files are measured sequentially through search_in_file; this is not end-to-end parallel directory-search timing.",
             "file_order": "Randomized once per report and shared by all scenarios and repeats; paths and random seed are not exported.",
             "scenario_scheduling": "The total time budget is divided into cumulative equal time slices so later scenarios receive measurement time even when earlier scenarios are slow.",
+            "query_strategy": "One cryptographically random 192-bit URL-safe token per report; the token and random source are not exported.",
         },
         "target": {
             "root_type": "directory",
             "file_count": len(paths),
             "total_bytes": inventory_bytes,
+            "files_over_1gib": files_over_1gib,
             "types": dict(inventory_types),
             "extensions": dict(inventory_extensions),
             "size_buckets": dict(inventory_sizes),
@@ -810,7 +865,7 @@ def _markdown(report: dict[str, object]) -> str:
         "",
         "## Interpretation",
         "",
-        "The fixed query is intended to be absent. Any match makes that scenario REVIEW REQUIRED.",
+        "A fresh random 192-bit query is intended to be absent. Any match makes that scenario REVIEW REQUIRED.",
         "This diagnostic calls `search_in_file` sequentially; it is not the wall time of parallel folder search.",
         "Throughput is nominal input size divided by elapsed time, not guaranteed physical disk throughput.",
         "All scenarios share one randomized file order and receive cumulative equal time slices, so a timeout still attempts every mode.",
@@ -836,11 +891,15 @@ def _markdown(report: dict[str, object]) -> str:
         )
     for item in report["scenarios"]:
         if item["matches"]:
-            lines.append(f"WARNING: {item['display_name']} produced fixed query match {item['matches']}.")
+            lines.append(f"WARNING: {item['display_name']} produced unexpected diagnostic-query matches ({item['matches']}).")
     lines.extend(["", "## Skip and exception codes", ""])
     for item in report["scenarios"]:
         if item["skip_reason_codes"] or item["exception_types"]:
             lines.append(f"- **{item['display_name']}**: skips `{item['skip_reason_codes'] or {}}`; exceptions `{item['exception_types'] or {}}`")
+            if item.get("unknown_skip_categories"):
+                lines.append(
+                    f"  - Recognized ERR_UNKNOWN clues (raw details omitted): `{item['unknown_skip_categories']}`"
+                )
     if not any(item["skip_reason_codes"] or item["exception_types"] for item in report["scenarios"]):
         lines.append("No skips or exceptions were recorded.")
     lines.extend(["", "## Per-format work profile", "", "| Scenario | Format | Files | Time | Average/file | Skipped |", "|---|---|---:|---:|---:|---:|"])
@@ -871,11 +930,21 @@ def _markdown(report: dict[str, object]) -> str:
             f"{max(cpu_values):.2f} cores | {_format_bytes(sum(read_values)) if read_values else 'unavailable'} | "
             f"{_format_bytes(sum(write_values)) if write_values else 'unavailable'} |"
         )
-    lines.extend(["", "## Dataset profile", "", "| Dimension | Value | Files |", "|---|---|---:|"])
+    lines.extend(
+        [
+            "",
+            "## Dataset profile",
+            "",
+            f"- Files larger than 1 GiB: **{target['files_over_1gib']:,}**",
+            "",
+            "| Dimension | Value | Files |",
+            "|---|---|---:|",
+        ]
+    )
     for dimension, label in (("types", "type"), ("extensions", "extension"), ("size_buckets", "size"), ("directory_depth_buckets", "depth")):
         for key, count in sorted(target[dimension].items()):
             lines.append(f"| {label} | {key} | {count:,} |")
-    lines.extend(["", "## Environment", "", f"- OS: `{env.get('os')}`; Python: `{env.get('python_implementation')} {env.get('python_version')}`", f"- CPU: `{env.get('processor') or env.get('machine')}`; logical CPUs: {env.get('logical_cpus')}", f"- Memory: {env.get('memory_total_mb', 'unknown')} MiB total; {env.get('memory_available_mb_at_start', 'unknown')} MiB available at start", f"- Rust engine: `{env.get('rust_engine')}`; dependencies: `{env.get('dependencies', {})}`", "", "## Privacy and limitations", "", "Paths, filenames, file contents, sheet names, and the fixed query are not exported. Anonymous file IDs are report-scoped HMAC pseudonyms. Exact file sizes and environment/resource data are included."])
+    lines.extend(["", "## Environment", "", f"- OS: `{env.get('os')}`; Python: `{env.get('python_implementation')} {env.get('python_version')}`", f"- CPU: `{env.get('processor') or env.get('machine')}`; logical CPUs: {env.get('logical_cpus')}", f"- Memory: {env.get('memory_total_mb', 'unknown')} MiB total; {env.get('memory_available_mb_at_start', 'unknown')} MiB available at start", f"- Rust engine: `{env.get('rust_engine')}`; dependencies: `{env.get('dependencies', {})}`", "", "## Privacy and limitations", "", "Paths, filenames, file contents, sheet names, and the generated query are not exported. Anonymous file IDs are report-scoped HMAC pseudonyms. Exact file sizes and environment/resource data are included."])
     return "\n".join(lines) + "\n"
 
 
