@@ -98,6 +98,7 @@ class AppStrings:
     ADVANCED_MAX_SEARCH_FILE_SIZE = "검색 파일 크기 제한"
     ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION = "모든 검색 방식과 파일 형식에 적용되는 파일 크기 상한입니다. 설정한 크기를 초과하는 파일은 건너뜁니다. 최대 1GB까지 설정할 수 있습니다."
     ADVANCED_PRECISE_SEARCH_GROUP = "누락 방지 검색 전용"
+    ADVANCED_DIAGNOSTICS_GROUP = "진단 도구"
     ADVANCED_MAX_SMALL_FILE_SIZE = "작은 텍스트 파일 빠른 처리 기준"
     ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION = "이 크기보다 작은 텍스트 파일은 더 빠른 방식으로 처리합니다."
     ADVANCED_JSON_MMAP_THRESHOLD = "큰 JSON 파일 읽기 전환 기준"
@@ -170,6 +171,7 @@ class AppStrings:
     )
     EXT_EDIT_PLACEHOLDER = "확장자 (예: txt)"
     FILENAME_LIST_PLACEHOLDER = "필터 단어 (예: npc)"
+    FILENAME_FILTER_WILDCARD_NOT_ALLOWED = "파일명 필터에는 와일드카드·패턴 문자(*, ?, [, ], \\)를 사용할 수 없습니다."
     RESULT_FILTER_FILE_PLACEHOLDER = "파일 필터..."
     RESULT_COMPACT_ROWS = "목록 조밀하게"
     RESULT_FILTER_FOLDER_PLACEHOLDER = "폴더 필터..."

@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from PySide6.QtWidgets import QGroupBox, QLabel
+from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton
 
 from core.search_engine import (
     format_excel_panic_reason,
@@ -183,12 +183,16 @@ def test_advanced_tab_groups_settings_by_runtime_scope(qtbot, mock_config_manage
     assert group_titles == [
         AppStrings.ADVANCED_COMMON_GROUP,
         AppStrings.ADVANCED_PRECISE_SEARCH_GROUP,
+        AppStrings.ADVANCED_DIAGNOSTICS_GROUP,
     ]
     assert AppStrings.SETTINGS_GROUP_ADVANCED not in group_titles
 
     groups = {
         group.title(): group for group in advanced_tab.findChildren(QGroupBox)
     }
+    assert len(
+        groups[AppStrings.ADVANCED_DIAGNOSTICS_GROUP].findChildren(QPushButton)
+    ) == 2
 
     def belongs_to_group(widget, group_title):
         parent = widget.parentWidget()

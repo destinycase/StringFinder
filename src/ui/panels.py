@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Union
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRegularExpression, Qt, Signal
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QToolButton,
     QVBoxLayout,
@@ -503,6 +505,11 @@ class FilenameFilterPanel(DenseFilterPanel):
         add_layout = QHBoxLayout()
         self.add_edit = QLineEdit()
         self.add_edit.setPlaceholderText(AppStrings.FILENAME_LIST_PLACEHOLDER)
+        self.add_edit.setValidator(
+            QRegularExpressionValidator(
+                QRegularExpression(r"[^*?\[\]\\]*"), self.add_edit
+            )
+        )
         self.add_edit.returnPressed.connect(self._on_add_clicked)
         add_btn = QPushButton(AppStrings.ADD_EXT_BTN)
         add_btn.setFixedWidth(50)
@@ -523,14 +530,22 @@ class FilenameFilterPanel(DenseFilterPanel):
     def _on_add_clicked(self):
         fn = self.add_edit.text().strip()
         if fn:
-            self.add_filename(fn)
+            if not self.add_filename(fn):
+                QMessageBox.warning(
+                    self,
+                    AppStrings.ERROR_TITLE,
+                    AppStrings.FILENAME_FILTER_WILDCARD_NOT_ALLOWED,
+                )
+                return
             self.add_edit.clear()
 
-    def add_filename(self, fn: str, checked: bool = True):
+    def add_filename(self, fn: str, checked: bool = True) -> bool:
+        if any(char in fn for char in "*?[]\\"):
+            return False
         for i in range(self.filename_list.count()):
             widget = self.filename_list.itemWidget(self.filename_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.text() == fn:
-                return
+                return True
         item = QListWidgetItem(self.filename_list)
         widget = FilterItemWidget(
             fn, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self.filter_changed.emit()
@@ -540,6 +555,7 @@ class FilenameFilterPanel(DenseFilterPanel):
         self.filename_list.addItem(item)
         self.filename_list.setItemWidget(item, widget)
         self.filter_changed.emit()
+        return True
 
     def _delete_item(self, item):
         row = self.filename_list.row(item)

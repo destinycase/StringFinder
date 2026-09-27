@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.11 (StringFinder v5.9.23 기준)
-- **최종 수정일:** 2026-09-26
+- **문서 버전:** 1.12 (StringFinder v5.9.24 기준)
+- **최종 수정일:** 2026-09-27
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 5.9.23** · Updated: **2026-09-26**
+> Documentation baseline: **StringFinder 5.9.24** · Updated: **2026-09-27**
 
 ---
 
@@ -171,7 +171,7 @@ from core.search_engine import sf_engine
 options = sf_engine.SearchOptions(
     mode_bits=1,                    # JSON 비트플래그 (Constants.RUST_MODE_JSON 권장)
     extensions=["py", "rs"],        # 확장자 필터
-    filename_filter=["*test*"],     # 파일명 글로브 필터
+    filename_filter=["test"],       # GUI 파일명 필터는 리터럴 이름 조각
     exclude_hidden=True,            # 숨김 파일 제외
     stop_event=stop_event,          # 취소 감시용 threading.Event
     results_callback=callback_fn,   # 실시간 배치 수신 콜백
@@ -183,6 +183,8 @@ options = sf_engine.SearchOptions(
     max_json_size=1073741824,       # 공통 검색 파일 크기 제한 (1GB; legacy API 이름)
 )
 ```
+
+설정 화면의 파일명 필터는 `*`, `?`, `[`, `]`, `\`를 패턴 문법으로 해석하지 않고 입력 단계에서 거부합니다. 파일명 조건은 리터럴 이름 조각으로만 추가하며, 세션 복원 경로도 같은 검증을 통과해야 합니다. 이 UI 정책을 바꿀 때는 일반 검색과 누락 방지 검색의 후보 파일 집합이 같은지 회귀 테스트를 갱신합니다.
 
 `results_callback`을 사용하는 디렉터리/파일 목록 검색에서는 callback이 결과의 단일 전달 경로입니다. callback에는 `(path, matches)` 배치가 전달되고, 동기 반환 목록은 중복 메모리 보관을 피하기 위해 비워질 수 있습니다. callback 없이 호출하면 동기 반환 목록을 사용할 수 있습니다. callback 예외는 Rust 검색 오류로 호출자에게 전파됩니다.
 
@@ -356,6 +358,8 @@ python build.py
 각 `SearchWorker`는 검색을 시작할 때 고급 검색 설정을 한 번 읽어 해당 작업의 스냅샷으로 보관합니다. 파일별 처리와 배치 작업은 이 스냅샷을 사용하므로 검색 도중 설정을 바꿔도 현재 검색의 제한·정책이 중간에 바뀌지 않고, 변경값은 다음 검색부터 적용됩니다. 새 설정을 사용할 때는 UI·Rust 경로·누락 방지 배치 경로가 같은 스냅샷을 참조하는지 확인하고, 파일별 반복에서 설정 파일을 다시 읽지 않는 회귀 테스트를 추가합니다.
 
 ### 7.2 일회성 실무 성능 진단
+
+설정 UI의 **시스템 자가 진단**과 **성능 진단** 실행 버튼은 고급 탭의 **진단 도구** 그룹에 있습니다.
 
 검색 결과는 `SearchTab`의 결과 영역에 직접 배치하며 별도 결과 탭을 만들지 않습니다. 로그는 `QDialog` 독립 창으로 분리하고 `MainWindow` 상태 표시줄의 로그 버튼으로 엽니다. 상태 표시줄에는 스킵 건수를 표시하지 않고, 스킵 상세는 결과 요약과 파일 목록 팝업에서 제공합니다. 설정 버튼은 상태 표시줄의 가장 오른쪽에 둡니다.
 

@@ -256,17 +256,6 @@ class SettingsDialog(QDialog):
         log_layout.addWidget(delete_logs_btn)
         tab_general_layout.addWidget(log_group)
         
-        # 시스템 자가 진단 그룹 추가
-        doctor_group = QGroupBox(AppStrings.BTN_SYSTEM_DOCTOR)
-        doctor_layout = QVBoxLayout(doctor_group)
-        doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
-        doctor_btn.clicked.connect(self._run_system_doctor)
-        doctor_layout.addWidget(doctor_btn)
-        diagnostic_btn = QPushButton(AppStrings.BTN_PERFORMANCE_DIAGNOSTIC)
-        diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
-        doctor_layout.addWidget(diagnostic_btn)
-        tab_general_layout.addWidget(doctor_group)
-
         tab_general_layout.addSpacing(10)
         open_dir_btn = QPushButton(AppStrings.OPEN_DATA_DIR_BTN)
         open_dir_btn.clicked.connect(self._open_data_dir)
@@ -398,6 +387,16 @@ class SettingsDialog(QDialog):
             description_text=AppStrings.ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION,
         )
         tab_advanced_layout.addWidget(precise_group)
+
+        diagnostic_group = QGroupBox(AppStrings.ADVANCED_DIAGNOSTICS_GROUP)
+        diagnostic_layout = QVBoxLayout(diagnostic_group)
+        doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
+        doctor_btn.clicked.connect(self._run_system_doctor)
+        diagnostic_layout.addWidget(doctor_btn)
+        diagnostic_btn = QPushButton(AppStrings.BTN_PERFORMANCE_DIAGNOSTIC)
+        diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
+        diagnostic_layout.addWidget(diagnostic_btn)
+        tab_advanced_layout.addWidget(diagnostic_group)
 
         self.adv_spinboxes[Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY] = create_spinbox_row(
             AppStrings.ADVANCED_EXCEL_MAX_CONCURRENCY,
