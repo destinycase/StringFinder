@@ -53,6 +53,25 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
     if simd_from_utf8(sample).is_ok() {
         return UTF_8;
     }
+    // A bounded sample may end inside a valid UTF-8 code point.
+    if sample_len < data.len() {
+        if let Err(error) = std::str::from_utf8(sample) {
+            if error.error_len().is_none() {
+                let complete = &data[..data.len().min(sample_len + 3)];
+                if std::str::from_utf8(complete).is_ok() {
+                    return UTF_8;
+                }
+                // Validate just the sampled prefix including its final code point.
+                let mut end = sample_len;
+                while end < data.len() && end < sample_len + 3 && data[end] & 0xc0 == 0x80 {
+                    end += 1;
+                }
+                if std::str::from_utf8(&data[..end]).is_ok() {
+                    return UTF_8;
+                }
+            }
+        }
+    }
 
     let has_high_bytes = sample.iter().any(|&b| b >= 0x80);
     if !has_high_bytes {
@@ -91,9 +110,9 @@ pub fn build_glob_set(filters: &[String]) -> Option<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for filter in filters {
         let pattern = if !filter.contains('*') && !filter.contains('?') {
-            format!("*{}*", filter)
+            format!("*{}*", filter.to_lowercase())
         } else {
-            filter.clone()
+            filter.to_lowercase()
         };
         // GlobBuilder를 사용하여 대소문자 무시 속성을 직접 부여하여 힙 할당을 줄입니다.
         if let Ok(glob) = globset::GlobBuilder::new(&pattern)
@@ -110,7 +129,10 @@ pub fn match_filename_glob(filename: &str, glob_set: &Option<GlobSet>) -> bool {
     match glob_set {
         // GlobSetBuilder에서 case_insensitive(true)를 설정했으므로 추가적인 소문자 변환이 필요 없습니다.
         // 여기서 더 이상 filename.to_lowercase()를 호출할 필요가 없음 (할당 제거)
-        Some(set) => set.is_match(filename),
+        Some(set) => {
+            set.is_match(filename)
+                || (!filename.is_ascii() && set.is_match(filename.to_lowercase()))
+        }
         None => true,
     }
 }

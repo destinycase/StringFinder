@@ -1,7 +1,6 @@
 import ctypes
 from contextlib import contextmanager
 from contextvars import ContextVar
-import json
 import logging
 import mmap
 import multiprocessing
@@ -16,6 +15,7 @@ from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
 from sf_utils.english_strings import ENGLISH_STRINGS
 from sf_utils.localization import get_korean_strings, get_language
+from core.json_policy import DuplicateKeyError, ObjectPairs, loads_document
 from core.skip_reason_codes import (
     EXPAT_XML_DETAIL_TRANSLATION_NAMES,
     LEGACY_MARKERS,
@@ -370,6 +370,8 @@ def _localize_io_error_detail(detail: Any) -> str:
 
 def _localize_json_error_detail(detail: Any) -> str:
     """Convert JSON parser diagnostics into a stable localized explanation."""
+    if "duplicate JSON object key" in str(detail):
+        return AppStrings.JSON_DETAIL_DUPLICATE_KEYS
     raw_detail = _log_raw_skip_detail("JSON", detail)
     position = re.search(r"(?:at\s+)?line\s+(\d+)(?:\s+column\s+(\d+))?", raw_detail, re.IGNORECASE)
     if position:
@@ -948,7 +950,9 @@ def _search_text_stream(
 
     def detail_texts(line: str, folded: str, occurrences: int):
         """Keep detail rows bounded for huge single-line documents."""
-        text = line.strip()
+        normalized = line if line.isascii() else normalize_nfc("NFC", line)
+        text = normalized.strip()
+        leading = len(normalized) - len(normalized.lstrip())
         limit = 1024
         if len(text) <= limit:
             return [text] * occurrences
@@ -961,7 +965,20 @@ def _search_text_stream(
             positions.append(found)
             cursor = found + max(1, len(search_fold))
         result = []
+        # Folded indices are not character indices (e.g. ß -> ss).
+        original_cursor = 0
+        folded_cursor = 0
         for start in positions:
+            if normalized.isascii():
+                start = max(0, start - leading)
+            else:
+                while original_cursor < len(normalized):
+                    width = len(normalized[original_cursor].casefold())
+                    if folded_cursor + width > start:
+                        break
+                    folded_cursor += width
+                    original_cursor += 1
+                start = max(0, original_cursor - leading)
             left = max(0, start - limit // 2)
             right = min(len(text), left + limit)
             left = max(0, right - limit)
@@ -1076,6 +1093,8 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
         bits |= Constants.RUST_MODE_EXCLUDE_BINARY
     if existence_only:
         bits |= Constants.RUST_MODE_EXISTENCE_ONLY
+    if _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False):
+        bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS
 
     if not special_mode:
         return bits
@@ -1095,7 +1114,7 @@ def is_binary_file(file_path: str) -> bool:
         with open(file_path, "rb") as f:
             # 헤드 읽기 범위를 8KB로 확대하여 PDF 파일 등의 바이너리 판독 정확도를 높였습니다.
             chunk = f.read(8192)
-            return b"\x00" in chunk
+            return b"\x00" in chunk and not detect_encoding_quickly(chunk).startswith("utf-16")
     except (IOError, OSError, PermissionError):
         return False
     except Exception as e:
@@ -1122,16 +1141,16 @@ def detect_encoding_quickly(data: bytes) -> str:
             return "utf-16-le"
             
     # 2. 분포 기반 (NUL 바이트가 한쪽 인덱스에 압도적으로 많은지 확인)
-    # 한글 등 유니코드 포함 시 모든 ODD/EVEN이 NUL이 아닐 수 있으므로 비율(80% 이상)로 판정
-    if len(data) >= 8:
+    # Share the Rust detector's NUL-distribution thresholds, including short files.
+    if len(data) >= 4:
         sample = data[:min(len(data), 2048)]
         even_nuls = sum(1 for i in range(0, len(sample), 2) if sample[i] == 0)
         odd_nuls = sum(1 for i in range(1, len(sample), 2) if sample[i] == 0)
         total_pairs = len(sample) // 2
-        if total_pairs > 5:
-            if even_nuls > total_pairs * 0.8 and odd_nuls < total_pairs * 0.2:
+        if total_pairs >= 2:
+            if even_nuls > total_pairs * 0.7 and odd_nuls <= total_pairs * 0.1:
                 return "utf-16-be"
-            if odd_nuls > total_pairs * 0.8 and even_nuls < total_pairs * 0.2:
+            if odd_nuls > total_pairs * 0.7 and even_nuls <= total_pairs * 0.1:
                 return "utf-16-le"
 
     try:
@@ -1148,122 +1167,29 @@ def detect_encoding_quickly(data: bytes) -> str:
         pass
     return Constants.ENC_UTF8
 
-def _get_search_bytes_with_encoding(search_string: str, encoding: Optional[str], head: bytes) -> bytes:
-    """인코딩 방식(특히 UTF-16 BOM)을 고려하여 검색어를 바이트 배열로 변환합니다."""
-    try:
-        if encoding == "utf-16":
-            if head.startswith(b"\xff\xfe"):
-                return search_string.encode("utf-16-le", errors="ignore")
-            else:
-                return search_string.encode("utf-16-be", errors="ignore")
-        return search_string.encode(encoding or "utf-8", errors="ignore")
-    except (UnicodeEncodeError, LookupError):
-        return search_string.encode("utf-8", errors="ignore")
-
-
 def _fast_existence_check(
-    file_path: str, search_string: str, exact_match: bool = False, raw_data: Optional[bytes] = None, encoding: Optional[str] = None
+    file_path: str, search_string: str, exact_match: bool = False,
+    raw_data: Optional[bytes] = None, encoding: Optional[str] = None,
 ) -> bool:
-    """
-    존재 여부만 확인(existence_only) 모드에서 DOM 파싱 전 고속 필터링(Negative Filter)을 수행합니다.
-    인코딩 인자를 수용하고 유니코드 정규화를 보완하여 중복 감지를 방지합니다.
-    """
+    """Conservative decoded-text check; never reject matches using raw bytes."""
     try:
-        # 1. 인코딩 감지 및 데이터 준비
         if encoding is None:
             if raw_data is not None:
-                head = raw_data[:65536]
-                encoding = detect_encoding_quickly(head)
+                encoding = detect_encoding_quickly(raw_data[:65536])
             else:
-                with open(file_path, "rb") as f:
-                    # mmap을 활용하여 고속으로 바이트 검색(Negative Filter)을 수행합니다.
-                    f_size = os.fstat(f.fileno()).st_size
-                    if f_size >= 1024 * 1024:  # 1MB 이상 시 mmap 사용
-                        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-                        try:
-                            # 1. 인코딩 감지를 위한 헤드 추출 (mmap 직접 슬라이싱은 복사 발생, 64KB 수준은 무방)
-                            head = mm[:65536]
-                            encoding = detect_encoding_quickly(head)
-                            
-                            # 2. 인코딩을 고려한 바이트 검색(Negative Filter)
-                            search_bytes = _get_search_bytes_with_encoding(search_string, encoding, head)
-                                
-                            if mm.find(search_bytes) == -1:
-                                return False
-                        finally:
-                            mm.close()
-                    else:
-                        # [H-02 Fix] f.read() 전에 파일 크기 측정 — 포인터 이동 후 fstat 사용 시 오탐 방지
-                        f_size_pre = os.fstat(f.fileno()).st_size
-                        head = f.read(65536)
-                        encoding = detect_encoding_quickly(head)
-                        
-                        # 소형 파일에 대해서도 mmap 미사용 시 즉각적인 Negative Filter 수행
-                        search_bytes = _get_search_bytes_with_encoding(search_string, encoding, head)
-
-                        # Negative Filter: head가 파일 전체인 경우(≤65KB)에만 적용
-                        # 65KB 초과 파일은 head에 없어도 뒷부분에 검색어가 있을 수 있으므로 건너뜀
-                        if search_bytes and f_size_pre <= 65536:
-                            if search_bytes not in head:
-                                return False
-
-        
-        if not encoding:
-            encoding = "utf-8"
-
-        search_str_nfc = normalize_unicode(search_string)
-        search_fold = search_str_nfc.casefold()
-
-        # 2. 텍스트 기반 검색
+                with open(file_path, "rb") as stream:
+                    encoding = detect_encoding_quickly(stream.read(65536))
         if raw_data is not None:
-            # 메모리 내 데이터 기반 검색
-            try:
-                content = raw_data.decode(encoding, errors="ignore")
-                content_nfc = normalize_unicode(content)
-                content_fold = content_nfc.casefold()
-                if search_fold in content_fold:
-                    return True
-                
-                # 이스케이프 문자를 포함한 필터링을 최적화합니다.
-                has_non_ascii = any(ord(c) > 127 for c in search_str_nfc)
-                if has_non_ascii:
-                    if "\\" in content_nfc and ("\\u" in content_nfc or "\\x" in content_nfc):
-                        return True
-                return False
-            except Exception as e:
-                logger.debug(AppStrings.LOG_SCH_EXISTENCE_DECODE_FAIL.format(e))
-                return True
-        else:
-            # 스트리밍 기반 검색 (대용량 일반 파일 등)
-            with open(file_path, "r", encoding=encoding, errors="ignore") as f:
-                # 검색어가 두 청크에 걸쳐 있어도 누락되지 않도록 변환된
-                # 이전 청크의 끝부분을 다음 청크에 이어 붙입니다.
-                overlap = ""
-                overlap_size = max(0, len(search_fold) - 1)
-                while True:
-                    chunk = f.read(65536)
-                    if not chunk:
-                        break
-
-                    chunk_nfc = normalize_unicode(chunk)
-                    chunk_fold = chunk_nfc.casefold()
-                    searchable_fold = overlap + chunk_fold
-                    if search_fold in searchable_fold:
-                        return True
-
-                    if overlap_size:
-                        overlap = searchable_fold[-overlap_size:]
-
-                    if "\\" in chunk_nfc:
-                        has_non_ascii = any(ord(c) > 127 for c in search_str_nfc)
-                        if has_non_ascii and ("\\u" in chunk_nfc or "\\x" in chunk_nfc):
-                            return True
-        return False
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
-        logger.debug(AppStrings.LOG_SCH_EXISTENCE_JSON_FALLBACK.format(file_path, e))
-        return True
-    except Exception as e:
-        logger.debug(AppStrings.LOG_SCH_EXISTENCE_UNEXPECTED.format(file_path, e))
+            content = raw_data.decode(encoding, errors="strict")
+            return normalize_unicode(search_string).casefold() in normalize_unicode(content).casefold()
+        with open(file_path, "r", encoding=encoding, errors="strict") as stream:
+            _, _, found, _ = _search_text_stream(
+                stream, normalize_unicode(search_string), exact_match=exact_match,
+                existence_only=True, stop_event=None, max_per_file=1,
+            )
+        return found
+    except (OSError, UnicodeError, LookupError):
+        # A pre-check cannot prove a miss when reading/decoding fails.
         return True
 
 
@@ -1314,10 +1240,12 @@ class FileScanner:
         self.exclude_hidden = bool(kwargs.get("exclude_hidden", False))
         self.stop_check_callback = stop_check_callback
         self._yield_counter: int = 0
+        self.skipped: List[Tuple[str, str]] = []
 
     def scan(self) -> List[FileInfo]:
         """지정된 폴더들을 재귀적으로 스캔하여 파일 목록을 반환합니다."""
         file_list: List[FileInfo] = []
+        self.skipped.clear()
         visited = set()
         for folder in self.folders:
             if self.stop_check_callback and self.stop_check_callback():
@@ -1325,6 +1253,7 @@ class FileScanner:
             if is_recycle_bin_path(folder):
                 continue
             if not os.path.exists(folder):
+                self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, "file not found"))))
                 continue
             real_folder = os.path.realpath(folder)
             if real_folder in visited:
@@ -1379,12 +1308,16 @@ class FileScanner:
                                         continue
                                 file_list.append((entry.path, entry.stat().st_size))
                     except PermissionError as e:
+                        self.skipped.append((entry.path, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
                         logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_FAIL.format(entry.path, e))
                     except OSError as e:
+                        self.skipped.append((entry.path, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
                         logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_FAIL.format(entry.path, e))
         except PermissionError as e:
+            self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
             logger.warning(AppStrings.LOG_SCH_FOLDER_ACCESS_DENIED.format(folder, e))
         except OSError as e:
+            self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
             logger.error(AppStrings.LOG_SCH_SCAN_OS_ERROR.format(folder, e))
 
 
@@ -1463,6 +1396,7 @@ def search_in_excel_special(
                 for sheet_error in sheet_errors:
                     logger.warning("[%s] %s", file_path, sheet_error)
                 if processed:
+                    processed.extend((-2, reason, "", "") for reason in sheet_errors)
                     return (file_path, _visible_match_count(processed), processed)
                 if sheet_errors:
                     return (Constants.STATUS_SKIPPED, sheet_errors[0])
@@ -1502,12 +1436,13 @@ def search_in_excel_special(
 
         count = 0
         matches = []
+        sheet_errors = []
         max_per_file = _positive_limit(
             None,
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
             Constants.DEFAULT_MAX_PER_FILE_MATCHES,
         )
-        search_string_norm = re.sub(r"\s+", " ", search_string).casefold().strip()
+        search_string_norm = normalize_unicode(search_string).casefold().strip()
         search_string_lower = search_string.casefold()
 
         for sheet_name in workbook.sheet_names:
@@ -1529,6 +1464,7 @@ def search_in_excel_special(
                         continue
 
                 # iter_rows() 호출 후 회수 시점에서 발생하는 패닉 처리
+                # calamine iter_rows includes leading empty rows, but crops columns.
                 rows_iter = sheet.iter_rows()
                 for row_idx, row in enumerate(rows_iter):
                     if row_idx % 100 == 0 and stop_event and stop_event.is_set():
@@ -1536,32 +1472,28 @@ def search_in_excel_special(
                     for col_idx, cell_value in enumerate(row):
                         if cell_value is not None:
                             val_str = normalize_unicode(str(cell_value))
-                            val_norm = re.sub(r"\s+", " ", val_str).casefold().strip()
+                            val_norm = val_str.casefold().strip()
                             val_lower = val_str.casefold()
                             is_match = False
                             if exact_match:
-                                is_match = (val_norm == search_string_norm) or (
-                                    val_norm.replace(" ", "") == search_string_norm.replace(" ", "")
-                                )
+                                is_match = val_norm == search_string_norm
                             else:
                                 is_match = (search_string_norm in val_norm) or (search_string_lower in val_lower)
                             if is_match:
                                 count += 1
                                 if existence_only:
                                     # [Boolean] 일치 항목 발견 시 즉시 반환
-                                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
+                                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)] + [(-2, reason, "", "") for reason in sheet_errors])
                                 
                                 # [상] Python 경로 매치 상한 적용
                                 if count <= max_per_file:
                                     col_letter = ""
-                                    temp_col = col_idx
+                                    temp_col = col_idx + (sheet.start[1] if hasattr(sheet, "start") and sheet.start else 0)
                                     while temp_col >= 0:
                                         col_letter = chr(65 + (temp_col % 26)) + col_letter
                                         temp_col = (temp_col // 26) - 1
-                                    # offset_row 반영하여 정확한 셀 좌표 보고
-                                    abs_row = (
-                                        row_idx + 1 + (sheet.start[0] if hasattr(sheet, "start") and sheet.start else 0)
-                                    )
+                                    # iter_rows already includes the leading empty rows.
+                                    abs_row = row_idx + 1
                                     matches.append((0, sheet_name, f"{col_letter}{abs_row}", val_str))
                                 elif count == max_per_file + 1:
                                     matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", ""))
@@ -1572,11 +1504,16 @@ def search_in_excel_special(
                     AppStrings.EXCEL_DETAIL_SHEET_FAILURE,
                 )
                 logger.warning(f"[{file_path}] {sheet_err_msg}")
+                sheet_errors.append(sheet_err_msg)
                 continue
 
         if count > 0:
+            for sheet_error in sheet_errors:
+                matches.append((-2, sheet_error, "", ""))
             final_count = min(count, max_per_file + 1)
             return (file_path, final_count, matches)
+        if sheet_errors:
+            return (Constants.STATUS_SKIPPED, "\n".join(sheet_errors))
     except ImportError:
         return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_CALAMINE)
     except BaseException as e:  # 전체 파일 처리 중 발생하는 모든 치명적 예외 포착
@@ -1611,6 +1548,8 @@ def search_in_json_special(
     if HAS_RUST_ENGINE and not use_complex_search:
         try:
             mode_bits = Constants.RUST_MODE_JSON
+            if _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False):
+                mode_bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS
             if exact_match:
                 mode_bits |= Constants.RUST_MODE_EXACT
             if existence_only:
@@ -1701,15 +1640,8 @@ def search_in_json_special(
             # 파일 크기 측정 실패 시 안전을 위해 필터링을 건너뜁니다.
             pass
 
-        # [v4.63.2] Integrity Fix: existence_only 시에도 무결성 체크(loads)는 수행해야 함
-        # 조기 return None 대신 traversal 건너뛰기 힌트로만 활용
-        skip_traversal = False
-        if existence_only:
-            if not _fast_existence_check(file_path, search_string, exact_match):
-                skip_traversal = True
-        
-        # 대용량 파일도 무결성(loads) 체크를 수행하도록 처리합니다.
-        # 단, 미매치 힌트가 명확하면 loads 통과 후 None을 반환함 (아래 loads 이후로 이동)
+        # Existence checks still validate the entire JSON document. Raw-byte
+        # negative filters cannot rule out decoded/Unicode-normalized values.
 
         # [v4.63.9 Defensive] 변수 초기화 강제 (UnboundLocalError 원천 차단)
         raw_bytes = None
@@ -1763,49 +1695,34 @@ def search_in_json_special(
                         processed_content = None
                 else:
                     processed_content = None
-            data = None
+            missing = object()
+            data = missing
             if processed_content:
                 try:
-                    data = json.loads(processed_content, strict=True)
-                except RecursionError:
-                    if HAS_RUST_ENGINE:
-                        return search_in_json_special(
-                            file_path,
-                            search_string,
-                            exact_match=exact_match,
-                            use_complex_search=False,
-                            stop_event=stop_event,
-                            existence_only=existence_only,
-                            _rust_only=True,
-                        )
-                    return (
-                        Constants.STATUS_SKIPPED,
-                        AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(
-                            _get_adv_setting(
-                                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
-                                Constants.DEFAULT_MAX_JSON_DEPTH,
-                            )
-                        ),
-                    )
+                    data = loads_document(processed_content, _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False))
+                except DuplicateKeyError:
+                    return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
                 except (json.JSONDecodeError, ValueError):
                     pass
 
             # JSON 파싱이나 디코딩 실패 시 No-BOM UTF-16으로 재시도를 수행합니다.
-            if data is None:
+            if data is missing:
                 # 데이터가 확보된 경우에만 재시도를 수행하여 무결성을 유지합니다.
                 # mmap 디코딩 성공 후 파싱이 실패한 경우(raw_bytes=None)는 메시지 왜곡 방지를 위해 즉시 실패 처리
                 if raw_bytes is not None and encoding not in ["utf-16-le", "utf-16-be", "utf-16"]:
                     for alt_enc in ["utf-16-le", "utf-16-be"]:
                         try:
                             alt_content = raw_bytes.decode(alt_enc, errors="strict")
-                            data = json.loads(alt_content, strict=True)
+                            data = loads_document(alt_content, _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False))
                             encoding = alt_enc
                             processed_content = alt_content
                             break
+                        except DuplicateKeyError:
+                            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
                         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                             continue
                 
-                if data is None:
+                if data is missing:
                     # 모든 재시도 실패 시 SKIPPED 보고 (None 반환 방지)
                     _log_raw_skip_detail("JSON", "Integrity check failed")
                     return (
@@ -1851,8 +1768,8 @@ def search_in_json_special(
                 depth_limit_reached = True
                 continue
 
-            if isinstance(obj, dict):
-                for k, v in obj.items():
+            if isinstance(obj, (dict, ObjectPairs)):
+                for k, v in (obj.items() if isinstance(obj, dict) else obj):
                     new_path = f"{path}.{k}" if path else str(k)
                     stack.append((v, new_path, depth + 1))
             elif isinstance(obj, list):
@@ -1867,9 +1784,7 @@ def search_in_json_special(
                 else:
                     val_raw = normalize_unicode(str(obj))
                 val_comp = val_raw.casefold()
-                is_match = False if skip_traversal else (
-                    (val_comp == search_string) if exact_match else (search_string in val_comp)
-                )
+                is_match = (val_comp.strip() == search_string.strip()) if exact_match else (search_string in val_comp)
                 if is_match:
                     total_count += 1
                     if existence_only:
@@ -2032,7 +1947,7 @@ def search_in_xml_special(
                 for k, v in attrs.items():
                     val = normalize_unicode(str(v))
                     val_comp = val.casefold()
-                    if (search_string in val_comp) if not exact_match else (search_string == val_comp):
+                    if (search_string in val_comp) if not exact_match else (search_string.strip() == val_comp.strip()):
                         count += 1
                         if existence_only:
                             # 뒤쪽 구문 오류도 확인하도록 문서 끝까지 파싱합니다.

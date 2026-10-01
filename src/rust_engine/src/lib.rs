@@ -20,7 +20,9 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
 use crate::excel_search::{check_excel_file, search_excel_file, ExcelFileError};
-use crate::json_search::{check_json_file, search_json_file, JSON_DEPTH_LIMIT_MARKER_PREFIX};
+use crate::json_search::{
+    check_json_file_with_policy, search_json_file_with_policy, JSON_DEPTH_LIMIT_MARKER_PREFIX,
+};
 use crate::types::{RawMatch, SearchMatch, SearchOptions};
 use crate::utils::{
     build_glob_set, decode_bytes, detect_encoding, generate_search_patterns, is_binary,
@@ -37,6 +39,7 @@ type KeywordFileHits = Vec<(String, u64)>;
 const REASON_ERR_MMAP: &str = "ERR_MMAP";
 const REASON_ERR_OPEN: &str = "ERR_OPEN";
 const REASON_ERR_METADATA: &str = "ERR_METADATA";
+const REASON_ERR_WALK: &str = "ERR_WALK";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
 const REASON_ERR_JSON_SIZE_LIMIT: &str = "ERR_JSON_SIZE_LIMIT";
 const REASON_ERR_JSON_PARSE: &str = "ERR_JSON_PARSE";
@@ -356,6 +359,8 @@ fn search_walk_builder(root_path: &Path, exclude_hidden: bool) -> WalkBuilder {
     // precise-search scanner also traverses files listed in .gitignore/.ignore.
     builder.ignore(false);
     builder.git_ignore(false);
+    builder.git_exclude(false);
+    builder.git_global(false);
     builder
 }
 
@@ -452,6 +457,9 @@ fn search_file(
             is_xml,
             is_excel,
             exclude_hidden: false,
+            allow_duplicate_json_keys: mode_bits.unwrap_or(0)
+                & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
+                != 0,
             exclude_binary,
             existence_only,
             stop_flag,
@@ -726,6 +734,7 @@ struct InternalSearchParams<'a> {
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
     is_json: bool,
+    allow_duplicate_json_keys: bool,
     is_xml: bool,
     is_excel: bool,
     exclude_hidden: bool,
@@ -745,6 +754,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         ac,
         is_exact,
         is_json,
+        allow_duplicate_json_keys,
         is_xml,
         is_excel,
         exclude_hidden,
@@ -859,13 +869,14 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 
     let res: Result<Vec<RawMatch>, String> = if is_json && ext_l == ".json" {
         if existence_only {
-            check_json_file(
+            check_json_file_with_policy(
                 final_mmap,
                 pattern,
                 ac,
                 is_exact,
                 stop_flag.clone(),
                 max_json_depth,
+                allow_duplicate_json_keys,
             )
             .map(|outcome| {
                 let mut matches = Vec::new();
@@ -884,7 +895,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             })
             .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
         } else {
-            search_json_file(
+            search_json_file_with_policy(
                 final_mmap,
                 pattern,
                 ac,
@@ -892,6 +903,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 stop_flag.clone(),
                 max_per_file,
                 max_json_depth,
+                allow_duplicate_json_keys,
             )
             .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
         }
@@ -1235,7 +1247,10 @@ pub fn search_dir(
                             Ok(e) => e,
                             Err(e) => {
                                 if let Ok(mut s) = skip_ref.lock() {
-                                    s.push(("walker error".to_string(), e.to_string()));
+                                    s.push((
+                                        "walker error".to_string(),
+                                        encode_skip_reason(REASON_ERR_WALK, e),
+                                    ));
                                 }
                                 return ignore::WalkState::Continue;
                             }
@@ -1264,9 +1279,9 @@ pub fn search_dir(
                                 return ignore::WalkState::Continue;
                             }
                         }
-                        if let Some(ref set) = glob_s {
+                        if glob_s.is_some() {
                             let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                            if !set.is_match(filename) {
+                            if !match_filename_glob(filename, &glob_s) {
                                 return ignore::WalkState::Continue;
                             }
                         }
@@ -1315,6 +1330,9 @@ pub fn search_dir(
                             }
                         };
                         let res = search_file_internal(InternalSearchParams {
+                            allow_duplicate_json_keys: mode_bits.unwrap_or(0)
+                                & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
+                                != 0,
                             path,
                             pattern: &pat_orig,
                             pat_upper: &p_upper,
@@ -1643,6 +1661,9 @@ fn search_files_list(
                 }
             };
             let res = search_file_internal(InternalSearchParams {
+                allow_duplicate_json_keys: mode_bits.unwrap_or(0)
+                    & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
+                    != 0,
                 path,
                 pattern: &search_string,
                 pat_upper: &pat_upper,
@@ -1889,7 +1910,9 @@ fn find_files_with_keyword(
             builder
                 .hidden(exclude_hidden)
                 .ignore(false)
-                .git_ignore(false);
+                .git_ignore(false)
+                .git_exclude(false)
+                .git_global(false);
             let walker = builder.build_parallel();
             let res_ref = Arc::clone(&results);
             let skipped_ref = Arc::clone(&skipped);
@@ -1919,7 +1942,16 @@ fn find_files_with_keyword(
                     }
                     let entry = match entry {
                         Ok(e) => e,
-                        Err(_) => return ignore::WalkState::Continue,
+                        Err(error) => {
+                            skipped_inner
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .push((
+                                    "walker error".to_string(),
+                                    encode_skip_reason(REASON_ERR_WALK, error),
+                                ));
+                            return ignore::WalkState::Continue;
+                        }
                     };
                     let Some(file_type) = entry.file_type() else {
                         return ignore::WalkState::Continue;
@@ -1952,10 +1984,32 @@ fn find_files_with_keyword(
                         return ignore::WalkState::Continue;
                     }
 
-                    if let Ok(file) = File::open(path) {
+                    {
+                        let file = match File::open(path) {
+                            Ok(file) => file,
+                            Err(error) => {
+                                skipped_inner
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                    .push((
+                                        path.to_string_lossy().to_string(),
+                                        encode_skip_reason(REASON_ERR_OPEN, error),
+                                    ));
+                                return ignore::WalkState::Continue;
+                            }
+                        };
                         let meta = match file.metadata() {
                             Ok(m) => m,
-                            Err(_) => return ignore::WalkState::Continue,
+                            Err(error) => {
+                                skipped_inner
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                    .push((
+                                        path.to_string_lossy().to_string(),
+                                        encode_skip_reason(REASON_ERR_METADATA, error),
+                                    ));
+                                return ignore::WalkState::Continue;
+                            }
                         };
                         let f_size = meta.len();
                         if f_size == 0 {
@@ -2034,13 +2088,14 @@ fn find_files_with_keyword(
                                 .as_ref()
                                 .map(|value| value.as_bytes())
                                 .unwrap_or(bytes);
-                            check_json_file(
+                            check_json_file_with_policy(
                                 searchable,
                                 &kw_inner,
                                 &ac_inner,
                                 is_exact,
                                 stop_inner.clone(),
                                 max_json_depth,
+                                mode_bits.unwrap_or(0) & types::MODE_ALLOW_DUPLICATE_JSON_KEYS != 0,
                             )
                             .map(|outcome| (outcome.found, outcome.depth_limit_reached))
                             .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
@@ -2064,10 +2119,26 @@ fn find_files_with_keyword(
                             )
                             .map(|found| (found, false))
                             .map_err(encode_xml_skip_reason)
-                        } else if exclude_binary && is_binary(bytes) {
-                            Ok((false, false))
                         } else {
-                            Ok((ac_inner.find(bytes).is_some(), false))
+                            let encoding = detect_encoding(bytes);
+                            if exclude_binary && encoding == UTF_8 && is_binary(bytes) {
+                                Ok((false, false))
+                            } else if encoding == UTF_8 && !is_exact {
+                                Ok((ac_inner.find(bytes).is_some(), false))
+                            } else {
+                                let upper = kw_inner.to_lowercase().to_uppercase();
+                                let matches = do_search_with_mmap(
+                                    bytes,
+                                    encoding,
+                                    &upper,
+                                    &ac_inner,
+                                    is_exact,
+                                    true,
+                                    &stop_inner,
+                                    1,
+                                );
+                                Ok((!matches.is_empty(), false))
+                            }
                         };
 
                         let (is_match, depth_limit_reached) = match match_result {

@@ -254,7 +254,8 @@ def test_advanced_setting_spinbox_ranges_share_the_config_contract(qtbot, mock_c
     dialog = SettingsDialog(mock_config_manager)
     qtbot.addWidget(dialog)
 
-    assert set(dialog.adv_spinboxes) == set(Constants.ADVANCED_SETTING_SPECS)
+    assert set(dialog.adv_spinboxes) == {key for key, spec in Constants.ADVANCED_SETTING_SPECS.items() if type(spec["default"]) is int}
+    assert dialog.allow_duplicate_json_keys_combo.currentData() is False
     for key, spinbox in dialog.adv_spinboxes.items():
         spec = Constants.ADVANCED_SETTING_SPECS[key]
         assert spinbox.minimum() == spec["minimum"]

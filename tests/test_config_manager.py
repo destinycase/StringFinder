@@ -91,7 +91,10 @@ def test_v2_migration_removes_unused_case_setting_and_normalizes_advanced_bounds
     assert "case_insensitive" not in config
     assert "unknown_advanced_option" not in advanced
     for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
-        assert spec["minimum"] <= advanced[key] <= spec["maximum"]
+        if type(spec["default"]) is bool:
+            assert type(advanced[key]) is bool
+        else:
+            assert spec["minimum"] <= advanced[key] <= spec["maximum"]
 
 
 def test_reset_advanced_settings_schedules_persistence(temp_dir):

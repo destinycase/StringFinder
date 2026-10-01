@@ -7,6 +7,7 @@ be migrated without overwriting values that users intentionally chose.
 CONFIG_SCHEMA_VERSION = 5
 
 DEFAULTS = {
+    "allow_duplicate_json_keys": False,
     "max_total_matches": 500_000,
     "max_per_file_matches": 10_000,
     "max_json_dom_size": 1024,
@@ -21,6 +22,7 @@ DEFAULTS = {
 
 # Increment only when the shipped default for that setting changes.
 DEFAULT_VERSIONS = {
+    "allow_duplicate_json_keys": 1,
     "max_total_matches": 1,
     "max_per_file_matches": 2,
     # The stored value is now a shared per-file limit; reset old JSON/XML-only

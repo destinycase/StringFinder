@@ -293,6 +293,10 @@ class ConfigManager:
         source = settings if isinstance(settings, dict) else {}
         normalized: dict[str, int] = {}
         for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
+            if type(spec["default"]) is bool:
+                raw_value = source.get(key, spec["default"])
+                normalized[key] = raw_value if type(raw_value) is bool else spec["default"]
+                continue
             default = int(spec["default"])
             minimum = int(spec["minimum"])
             maximum = int(spec["maximum"])

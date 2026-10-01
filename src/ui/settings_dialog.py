@@ -307,6 +307,26 @@ class SettingsDialog(QDialog):
         common_layout.addLayout(hidden_row)
 
         adv_settings = self.config_manager.get_advanced_settings()
+        duplicate_row = QHBoxLayout()
+        duplicate_row.addWidget(QLabel(AppStrings.ADVANCED_ALLOW_DUPLICATE_JSON_KEYS))
+        duplicate_row.addStretch()
+        self.allow_duplicate_json_keys_combo = QComboBox()
+        self.allow_duplicate_json_keys_combo.addItem(AppStrings.JSON_DUPLICATE_KEYS_DENY, False)
+        self.allow_duplicate_json_keys_combo.addItem(AppStrings.JSON_DUPLICATE_KEYS_ALLOW, True)
+        self.allow_duplicate_json_keys_combo.setFixedWidth(INPUT_WIDTH)
+        self.allow_duplicate_json_keys_combo.setCurrentIndex(
+            self.allow_duplicate_json_keys_combo.findData(adv_settings.get(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False))
+        )
+        self.allow_duplicate_json_keys_combo.currentIndexChanged.connect(
+            lambda i: self._on_advanced_setting_changed(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, self.allow_duplicate_json_keys_combo.itemData(i))
+        )
+        duplicate_row.addWidget(self.allow_duplicate_json_keys_combo)
+        common_layout.addLayout(duplicate_row)
+        duplicate_description = QLabel(AppStrings.JSON_DUPLICATE_KEYS_DESCRIPTION)
+        duplicate_description.setObjectName("advancedSettingDescription")
+        duplicate_description.setWordWrap(True)
+        duplicate_description.setStyleSheet("color: #888888; font-size: 11px; padding: 0 2px 4px 2px;")
+        common_layout.addWidget(duplicate_description)
 
         def setting_bounds(key_name) -> tuple[int, int]:
             spec = Constants.ADVANCED_SETTING_SPECS[key_name]
@@ -714,6 +734,7 @@ class SettingsDialog(QDialog):
 
     def _reset_advanced_settings(self):
         defaults = self.config_manager.reset_advanced_settings()
+        self.allow_duplicate_json_keys_combo.setCurrentIndex(0)
         for key, spinbox in self.adv_spinboxes.items():
             spinbox.blockSignals(True)
             spinbox.setValue(defaults.get(key, 0))

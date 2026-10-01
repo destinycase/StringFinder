@@ -1,6 +1,7 @@
 use crate::types::RawMatch;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader as XmlReader;
+use std::borrow::Cow;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,9 +150,33 @@ struct XmlSearchContext<'a> {
     tag_path_cache: String,
     path_lengths: Vec<usize>,
     max_per_file: usize,
+    pending_text: Cow<'a, str>,
+    pending_start: usize,
+    pending_end: usize,
 }
 
-impl XmlSearchContext<'_> {
+impl<'a> XmlSearchContext<'a> {
+    fn append_text(&mut self, text: Cow<'a, str>, start: usize, end: usize) {
+        if self.pending_text.is_empty() {
+            self.pending_start = start;
+            self.pending_text = text;
+        } else {
+            self.pending_text.to_mut().push_str(&text);
+        }
+        self.pending_end = end;
+    }
+
+    fn flush_text(&mut self) {
+        if self.pending_text.is_empty() {
+            return;
+        }
+        let text = std::mem::replace(&mut self.pending_text, Cow::Borrowed(""));
+        let mmap = self.mmap;
+        let raw =
+            &mmap[self.pending_start + self.offset_bonus..self.pending_end + self.offset_bonus];
+        process_xml_text_item(raw, &text, self.pending_start, self.pending_end, self);
+    }
+
     fn push_tag(&mut self, name: &str) {
         self.path_lengths.push(self.tag_path_cache.len());
         if !self.tag_path_cache.is_empty() {
@@ -188,7 +213,6 @@ pub fn search_xml_file(
 
     let mut reader = XmlReader::from_reader(parse_mmap);
     reader.trim_text(false);
-    let mut buf = Vec::new();
     let mut document = XmlDocumentState::new();
 
     let pat_upper = pattern.to_lowercase().to_uppercase();
@@ -205,6 +229,9 @@ pub fn search_xml_file(
         tag_path_cache: String::new(),
         path_lengths: Vec::new(),
         max_per_file,
+        pending_text: Cow::Borrowed(""),
+        pending_start: 0,
+        pending_end: 0,
     };
 
     loop {
@@ -212,7 +239,14 @@ pub fn search_xml_file(
             break;
         }
         let start_pos = reader.buffer_position();
-        match reader.read_event_into(&mut buf) {
+        let event = reader.read_event();
+        if !matches!(
+            &event,
+            Ok(Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_))
+        ) {
+            ctx.flush_text();
+        }
+        match event {
             Err(error) => return Err(XmlSearchError::parse(error)),
             Ok(Event::Eof) => break,
             Ok(Event::Start(e)) => {
@@ -234,23 +268,23 @@ pub fn search_xml_file(
             }
             Ok(Event::Text(e)) => {
                 let end_pos = reader.buffer_position();
-                let raw = e.as_ref();
                 let text = e.unescape().map_err(XmlSearchError::parse)?;
                 document.validate_text_outside_root(&text)?;
-                process_xml_text_item(raw, &text, start_pos, end_pos, &mut ctx);
+                ctx.append_text(text, start_pos, end_pos);
             }
             Ok(Event::CData(e)) => {
                 let end_pos = reader.buffer_position();
-                let raw = e.as_ref();
-                let text = String::from_utf8_lossy(raw);
+                let text = match e.into_inner() {
+                    Cow::Borrowed(raw) => String::from_utf8_lossy(raw),
+                    Cow::Owned(raw) => Cow::Owned(String::from_utf8_lossy(&raw).into_owned()),
+                };
                 document.validate_cdata()?;
-                process_xml_text_item(raw, &text, start_pos, end_pos, &mut ctx);
+                ctx.append_text(text, start_pos, end_pos);
             }
             Ok(Event::Decl(_)) => document.on_declaration(start_pos)?,
             Ok(Event::DocType(_)) => document.on_doctype()?,
             _ => (),
         }
-        buf.clear();
     }
     if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(Vec::new());
@@ -307,8 +341,16 @@ fn process_xml_text_item(
             ctx.results.push((
                 ctx.last_line,
                 format!("/{}\t{}", tag_path, trimmed),
-                Some(match_offset),
-                Some(match_len),
+                if raw_bytes == unescaped_text.as_bytes() {
+                    Some(match_offset)
+                } else {
+                    None
+                },
+                if raw_bytes == unescaped_text.as_bytes() {
+                    Some(match_len)
+                } else {
+                    None
+                },
             ));
         }
     }
@@ -404,17 +446,31 @@ pub fn check_xml_file(
 
     let mut reader = XmlReader::from_reader(parse_mmap);
     reader.trim_text(false);
-    let mut buf = Vec::new();
     let pat_upper = pattern.to_lowercase().to_uppercase();
     let mut document = XmlDocumentState::new();
     let mut found = false;
+    let mut pending_text: Cow<'_, str> = Cow::Borrowed("");
 
     loop {
         if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
         let start_pos = reader.buffer_position();
-        match reader.read_event_into(&mut buf) {
+        let event = reader.read_event();
+        if !matches!(
+            &event,
+            Ok(Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_))
+        ) {
+            if !pending_text.trim().is_empty() {
+                found |= if is_exact {
+                    pending_text.trim().to_lowercase().to_uppercase() == pat_upper
+                } else {
+                    ac.find(pending_text.as_ref()).is_some()
+                };
+            }
+            pending_text = Cow::Borrowed("");
+        }
+        match event {
             Err(error) => return Err(XmlSearchError::parse(error)),
             Ok(Event::Eof) => break,
             Ok(Event::Start(e)) => {
@@ -430,39 +486,29 @@ pub fn check_xml_file(
             }
             Ok(Event::Text(e)) => {
                 let text = e.unescape().map_err(XmlSearchError::parse)?;
-                let trimmed = text.trim();
                 document.validate_text_outside_root(&text)?;
-                if !trimmed.is_empty() {
-                    let is_match = if is_exact {
-                        trimmed.to_lowercase().to_uppercase() == pat_upper
-                    } else {
-                        ac.find(text.as_ref()).is_some()
-                    };
-                    if is_match {
-                        found = true;
-                    }
+                if pending_text.is_empty() {
+                    pending_text = text;
+                } else {
+                    pending_text.to_mut().push_str(&text);
                 }
             }
             Ok(Event::CData(e)) => {
-                let text = String::from_utf8_lossy(e.as_ref());
-                let trimmed = text.trim();
+                let text = match e.into_inner() {
+                    Cow::Borrowed(raw) => String::from_utf8_lossy(raw),
+                    Cow::Owned(raw) => Cow::Owned(String::from_utf8_lossy(&raw).into_owned()),
+                };
                 document.validate_cdata()?;
-                if !trimmed.is_empty() {
-                    let is_match = if is_exact {
-                        trimmed.to_lowercase().to_uppercase() == pat_upper
-                    } else {
-                        ac.find(text.as_ref()).is_some()
-                    };
-                    if is_match {
-                        found = true;
-                    }
+                if pending_text.is_empty() {
+                    pending_text = text;
+                } else {
+                    pending_text.to_mut().push_str(&text);
                 }
             }
             Ok(Event::Decl(_)) => document.on_declaration(start_pos)?,
             Ok(Event::DocType(_)) => document.on_doctype()?,
             _ => (),
         }
-        buf.clear();
     }
     if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(false);
@@ -509,6 +555,19 @@ mod tests {
             .ascii_case_insensitive(true)
             .build([pattern])
             .unwrap()
+    }
+
+    #[test]
+    fn adjacent_text_cdata_and_comments_use_one_value() {
+        let ac = test_ac("needle");
+        for xml in ["<r>nee<![CDATA[dle]]></r>", "<r>nee<!--note-->dle</r>"] {
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let rows =
+                search_xml_file(xml.as_bytes(), "needle", &ac, false, stop.clone(), 10).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].2, None);
+            assert!(check_xml_file(xml.as_bytes(), "needle", &ac, false, stop).unwrap());
+        }
     }
 
     #[test]

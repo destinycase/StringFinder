@@ -52,7 +52,6 @@ class SearchResultModel(QAbstractTableModel):
     """
 
     sort_completed = Signal()
-    limit_reached = Signal(int)
 
     def __init__(self, icon_provider=None):
         """모델을 초기화하고 검색 엔진의 결과 항목 헤더를 설정합니다."""
@@ -64,7 +63,6 @@ class SearchResultModel(QAbstractTableModel):
         self.highlight_pattern = None
         self._result_buffer = []
         self._filtered_buffer = []  # 필터링된 데이터
-        self._limit_signal_sent = False
         self._current_page = 1
         self._page_size = 1000  # 기본 페이지 크기를 1000건으로 설정합니다.
         self._pagination_enabled = True
@@ -170,17 +168,6 @@ class SearchResultModel(QAbstractTableModel):
 
         if not new_items:
             return
-
-        if len(self._result_buffer) + len(new_items) > 100_000:
-            if not self._limit_signal_sent:
-                self.limit_reached.emit(100_000)
-                self._limit_signal_sent = True
-            
-            limit = 100_000 - len(self._result_buffer)
-            if limit > 0:
-                new_items = new_items[:limit]
-            else:
-                return
 
         self._result_buffer.extend(new_items)
         self._data_revision += 1
@@ -313,7 +300,6 @@ class SearchResultModel(QAbstractTableModel):
         self._result_buffer = []
         self._filtered_buffer = []
         self._current_page = 1
-        self._limit_signal_sent = False
         self._apply_filters()  # 내부적으로 리셋 신호 발생
 
     def get_total_pages(self) -> int:

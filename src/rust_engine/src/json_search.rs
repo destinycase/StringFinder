@@ -1,6 +1,6 @@
-use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
-use serde::Deserialize;
+use serde::de::{Deserialize, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::Deserializer;
+use std::borrow::Cow;
 use std::fmt;
 
 use crate::types::RawMatch;
@@ -12,9 +12,103 @@ pub struct JsonCheckResult {
     pub depth_limit_reached: bool,
 }
 
-enum PathComponent {
-    ObjectKey(String),
+enum PathComponent<'data> {
+    ObjectKey(Cow<'data, str>),
     ArrayIndex(usize),
+}
+
+/// Most objects have only a few keys. Retain keys moved out of the path instead
+/// of cloning them or allocating a hash table for every small object.
+#[derive(Default)]
+struct ObjectKeys<'data> {
+    inline: [Option<Cow<'data, str>>; 8],
+    len: usize,
+    overflow: Option<std::collections::HashSet<Cow<'data, str>>>,
+}
+
+impl<'data> ObjectKeys<'data> {
+    fn contains(&self, key: &str) -> bool {
+        match &self.overflow {
+            Some(keys) => keys.contains(key),
+            None => self.inline[..self.len]
+                .iter()
+                .flatten()
+                .any(|seen| seen == key),
+        }
+    }
+
+    /// Return false for a duplicate; hash-backed lookup and insertion are one operation.
+    fn insert(&mut self, key: Cow<'data, str>) -> bool {
+        if let Some(keys) = &mut self.overflow {
+            return keys.insert(key);
+        }
+        if self.inline[..self.len]
+            .iter()
+            .flatten()
+            .any(|seen| seen == &key)
+        {
+            return false;
+        }
+        self.insert_unique(key);
+        true
+    }
+
+    /// The caller checked this owned key before parsing its value. Moving it
+    /// out of the path afterwards avoids cloning decoded/escaped strings.
+    fn insert_unique(&mut self, key: Cow<'data, str>) {
+        if let Some(keys) = &mut self.overflow {
+            keys.insert(key);
+        } else if self.len < self.inline.len() {
+            self.inline[self.len] = Some(key);
+            self.len += 1;
+        } else {
+            let mut keys = std::collections::HashSet::with_capacity(16);
+            keys.extend(self.inline.iter_mut().filter_map(Option::take));
+            keys.insert(key);
+            self.overflow = Some(keys);
+        }
+    }
+}
+
+/// Borrow unescaped keys from the input; own keys only when decoding requires it.
+struct JsonKey<'data>(Cow<'data, str>);
+
+impl<'de> Deserialize<'de> for JsonKey<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct KeyVisitor;
+        impl<'de> Visitor<'de> for KeyVisitor {
+            type Value = JsonKey<'de>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON object key")
+            }
+
+            fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(JsonKey(Cow::Borrowed(value)))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(JsonKey(Cow::Owned(value.to_owned())))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(JsonKey(Cow::Owned(value)))
+            }
+        }
+        deserializer.deserialize_str(KeyVisitor)
+    }
 }
 
 struct JsonSearchState<'data> {
@@ -25,7 +119,7 @@ struct JsonSearchState<'data> {
     scan_offset: usize,
     scan_line: usize,
     locations_reliable: bool,
-    path: Vec<PathComponent>,
+    path: Vec<PathComponent<'data>>,
     results: Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
@@ -34,6 +128,7 @@ struct JsonSearchState<'data> {
     found: bool,
     valid: bool,
     depth_limit_reached: bool,
+    allow_duplicate_keys: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -54,6 +149,7 @@ impl<'data> JsonSearchState<'data> {
         max_per_file: usize,
         max_json_depth: usize,
         collect_results: bool,
+        allow_duplicate_keys: bool,
     ) -> Self {
         Self {
             pattern_upper: pattern.to_lowercase().to_uppercase(),
@@ -69,6 +165,7 @@ impl<'data> JsonSearchState<'data> {
             max_per_file,
             max_json_depth,
             collect_results,
+            allow_duplicate_keys,
             found: false,
             valid: true,
             depth_limit_reached: false,
@@ -175,6 +272,7 @@ impl<'data> JsonSearchState<'data> {
     fn record_scalar(&mut self, value: &str) {
         if self.stop_flag.load(std::sync::atomic::Ordering::Relaxed)
             || !self.should_process_scalar()
+            || self.path.len() > self.max_json_depth
         {
             return;
         }
@@ -227,7 +325,7 @@ struct JsonSeed<'state, 'data> {
     depth: usize,
 }
 
-impl<'de, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data> {
+impl<'de: 'data, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data> {
     type Value = ();
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -237,13 +335,11 @@ impl<'de, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data> {
         if self.depth > self.state.max_json_depth {
             self.state.depth_limit_reached = true;
             self.state.locations_reliable = false;
-            IgnoredAny::deserialize(deserializer).map(|_| ())
-        } else {
-            deserializer.deserialize_any(JsonVisitor {
-                state: self.state,
-                depth: self.depth,
-            })
         }
+        deserializer.deserialize_any(JsonVisitor {
+            state: self.state,
+            depth: self.depth,
+        })
     }
 }
 
@@ -252,7 +348,7 @@ struct JsonVisitor<'state, 'data> {
     depth: usize,
 }
 
-impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
+impl<'de: 'data, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -263,7 +359,18 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
     where
         A: MapAccess<'de>,
     {
-        while let Some(key) = map.next_key::<String>()? {
+        let mut keys = ObjectKeys::default();
+        while let Some(JsonKey(key)) = map.next_key::<JsonKey<'de>>()? {
+            let move_owned_key = !self.state.allow_duplicate_keys && matches!(key, Cow::Owned(_));
+            let duplicate = !self.state.allow_duplicate_keys
+                && if move_owned_key {
+                    keys.contains(&key)
+                } else {
+                    !keys.insert(key.clone())
+                };
+            if duplicate {
+                return Err(serde::de::Error::custom("duplicate JSON object key"));
+            }
             if self
                 .state
                 .stop_flag
@@ -277,7 +384,11 @@ impl<'de, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
                 state: &mut *self.state,
                 depth: self.depth.saturating_add(1),
             })?;
-            self.state.path.pop();
+            if let Some(PathComponent::ObjectKey(key)) = self.state.path.pop() {
+                if move_owned_key {
+                    keys.insert_unique(key);
+                }
+            }
         }
         Ok(())
     }
@@ -389,6 +500,7 @@ fn parse_json_once<'data>(
     max_json_depth: usize,
     collect_results: bool,
     stack_safe: bool,
+    allow_duplicate_keys: bool,
 ) -> Result<JsonSearchState<'data>, String> {
     let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
         &mmap[3..]
@@ -405,6 +517,7 @@ fn parse_json_once<'data>(
         max_per_file,
         max_json_depth,
         collect_results,
+        allow_duplicate_keys,
     );
     let mut deserializer = Deserializer::from_slice(parse_mmap);
     let parse_result = if stack_safe {
@@ -440,6 +553,7 @@ fn parse_json<'data>(
     max_per_file: usize,
     max_json_depth: usize,
     collect_results: bool,
+    allow_duplicate_keys: bool,
 ) -> Result<JsonSearchState<'data>, String> {
     let first_attempt = parse_json_once(
         mmap,
@@ -451,6 +565,7 @@ fn parse_json<'data>(
         max_json_depth,
         collect_results,
         false,
+        allow_duplicate_keys,
     );
     match first_attempt {
         Err(error) if error.contains("recursion limit exceeded") => parse_json_once(
@@ -463,11 +578,13 @@ fn parse_json<'data>(
             max_json_depth,
             collect_results,
             true,
+            allow_duplicate_keys,
         ),
         outcome => outcome,
     }
 }
 
+#[cfg(test)]
 pub fn search_json_file(
     mmap: &[u8],
     pattern: &str,
@@ -476,6 +593,29 @@ pub fn search_json_file(
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
     max_json_depth: usize,
+) -> Result<Vec<RawMatch>, String> {
+    search_json_file_with_policy(
+        mmap,
+        pattern,
+        ac,
+        is_exact,
+        stop_flag,
+        max_per_file,
+        max_json_depth,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn search_json_file_with_policy(
+    mmap: &[u8],
+    pattern: &str,
+    ac: &aho_corasick::AhoCorasick,
+    is_exact: bool,
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_per_file: usize,
+    max_json_depth: usize,
+    allow_duplicate_keys: bool,
 ) -> Result<Vec<RawMatch>, String> {
     let mut state = parse_json(
         mmap,
@@ -486,6 +626,7 @@ pub fn search_json_file(
         max_per_file,
         max_json_depth,
         true,
+        allow_duplicate_keys,
     )?;
     if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(Vec::new());
@@ -501,6 +642,7 @@ pub fn search_json_file(
     Ok(std::mem::take(&mut state.results))
 }
 
+#[cfg(test)]
 pub fn check_json_file(
     mmap: &[u8],
     pattern: &str,
@@ -508,6 +650,26 @@ pub fn check_json_file(
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_json_depth: usize,
+) -> Result<JsonCheckResult, String> {
+    check_json_file_with_policy(
+        mmap,
+        pattern,
+        ac,
+        is_exact,
+        stop_flag,
+        max_json_depth,
+        false,
+    )
+}
+
+pub fn check_json_file_with_policy(
+    mmap: &[u8],
+    pattern: &str,
+    ac: &aho_corasick::AhoCorasick,
+    is_exact: bool,
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_json_depth: usize,
+    allow_duplicate_keys: bool,
 ) -> Result<JsonCheckResult, String> {
     let state = parse_json(
         mmap,
@@ -518,6 +680,7 @@ pub fn check_json_file(
         0,
         max_json_depth,
         false,
+        allow_duplicate_keys,
     )?;
     if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(JsonCheckResult {
@@ -536,11 +699,53 @@ mod tests {
     use super::*;
     use aho_corasick::AhoCorasickBuilder;
 
+    #[test]
+    fn unescaped_keys_borrow_input_and_escaped_keys_own_decoded_text() {
+        let plain: JsonKey<'_> = serde_json::from_str(r#""name""#).unwrap();
+        assert!(matches!(plain.0, Cow::Borrowed("name")));
+        let escaped: JsonKey<'_> = serde_json::from_str(r#""na\u006de""#).unwrap();
+        assert!(matches!(escaped.0, Cow::Owned(ref value) if value == "name"));
+    }
+
+    #[test]
+    fn key_set_compares_decoded_text_before_and_after_hash_transition() {
+        let mut keys = ObjectKeys::default();
+        assert!(keys.insert(Cow::Borrowed("name")));
+        assert!(!keys.insert(Cow::Owned("name".to_owned())));
+        assert!(keys.insert(Cow::Borrowed("Name")));
+        for index in 0..20 {
+            assert!(keys.insert(Cow::Owned(format!("key{index}"))));
+        }
+        assert!(keys.overflow.is_some());
+        assert!(!keys.insert(Cow::Borrowed("key12")));
+        assert!(!keys.insert(Cow::Owned("name".to_owned())));
+    }
+
     fn test_ac(pattern: &str) -> aho_corasick::AhoCorasick {
         AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
             .build([pattern])
             .unwrap()
+    }
+
+    #[test]
+    fn duplicate_policy_preserves_all_values_or_rejects_whole_document() {
+        let ac = test_ac("needle");
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let json = br#"{"v":"needle","\u0076":"needle"}"#;
+        assert!(search_json_file(json, "needle", &ac, false, stop.clone(), 1, 20).is_err());
+        assert!(check_json_file(json, "needle", &ac, false, stop.clone(), 20).is_err());
+        assert_eq!(
+            search_json_file_with_policy(json, "needle", &ac, false, stop.clone(), 10, 20, true)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(
+            check_json_file_with_policy(json, "needle", &ac, false, stop, 20, true)
+                .unwrap()
+                .found
+        );
     }
 
     #[test]

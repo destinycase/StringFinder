@@ -1,6 +1,6 @@
 [package]
 name = "sf_engine"
-version = "5.9.24"
+version = "5.9.25"
 edition = "2021"
 
 [dependencies]

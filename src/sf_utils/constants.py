@@ -130,6 +130,8 @@ class Constants:
     
     # 고급 설정용 키
     CONFIG_KEY_ADVANCED = "advanced"
+    CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS = "allow_duplicate_json_keys"
+    RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS = 1 << 7
     CONFIG_KEY_SETTING_DEFAULT_VERSIONS = "setting_default_versions"
     CONFIG_KEY_MAX_TOTAL_MATCHES = "max_total_matches"
     CONFIG_KEY_MAX_PER_FILE_MATCHES = "max_per_file_matches"
@@ -146,6 +148,7 @@ class Constants:
     # 단일 계약입니다. 두 계층에 숫자를 중복 선언하면 수동 편집된 설정이
     # 화면과 실제 검색에서 서로 다르게 적용될 수 있습니다.
     ADVANCED_SETTING_SPECS = {
+        CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: {"default": DEFAULTS["allow_duplicate_json_keys"]},
         CONFIG_KEY_MAX_TOTAL_MATCHES: {
             "default": DEFAULT_MAX_TOTAL_MATCHES,
             "minimum": 1_000,

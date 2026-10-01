@@ -59,6 +59,8 @@ class SearchTab(QMainWindow):
         self.total_files = 0
         self.skipped_count = 0
         self.total_match_limit_count = 0
+        self._search_failed = False
+        self._search_finalized = False
         # The mode that produced the currently displayed results. This is kept
         # separately from the editable search controls so changing an option
         # before saving a session cannot reinterpret old result content.
@@ -682,6 +684,8 @@ class SearchTab(QMainWindow):
             self.skipped_count = 0
             self.total_match_limit_count = 0
             self.skipped_count_updated.emit(0)
+            self._search_failed = False
+            self._search_finalized = False
             self.scan_start_time = time.time()
             self._liveliness_seconds = 0  # 검색 시작 시 타이머 초기화
             self._liveliness_timer.start()  # 타이머 시작
@@ -789,6 +793,10 @@ class SearchTab(QMainWindow):
     def _on_worker_finished(self):
         """검색 작업이 완전히 종료(취소나 정리 포함)되었을 때 호출됩니다."""
         try:
+            if self._search_failed and not self._search_finalized:
+                # An unexpected outer worker exception may omit search_finished.
+                # Finalize before clearing the last, still-buffered result batch.
+                self._on_search_finished(self.total_files, self.total_matches, self.skipped_count)
             self.results_buffer = []
             if self.total_files > 0:
                 self.result_view_panel.update_ui_visibility()
@@ -907,6 +915,9 @@ class SearchTab(QMainWindow):
         """문자열 검색이 완료되었을 때 실행 시간을 계산하고 UI를 초기화합니다."""
         try:
             status_text = (
+                AppStrings.SUMMARY_PREFIX_FAILED
+                if getattr(self, "_search_failed", False)
+                else
                 AppStrings.SUMMARY_PREFIX_STOPPED
                 if self.search_state == Constants.SearchState.STOPPING
                 else AppStrings.SUMMARY_PREFIX_FINISHED
@@ -970,13 +981,14 @@ class SearchTab(QMainWindow):
                 self.result_view_panel.auto_select_first_result()
             else:
                 self.result_view_panel.show_empty_message(
-                    AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text()),
+                    AppStrings.SUMMARY_PREFIX_FAILED if getattr(self, "_search_failed", False) else AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text()),
                     emphasized=True,
                 )
             self.search_finished_with_data.emit()
         except Exception as e:
             logger.error(f"Error in _on_search_finished: {e}")
         finally:
+            self._search_finalized = True
             self._restore_search_button()
             self._set_inputs_enabled(True)
 
@@ -991,6 +1003,7 @@ class SearchTab(QMainWindow):
         """작업 도중 발생하는 치명적 오류를 처리하고 사용자에게 알립니다."""
         try:
             error_text = str(error_msg)
+            self._search_failed = True
             logger.error(AppStrings.LOG_SCH_ERROR.format(error_text))
             self.status_message_requested.emit(f"{AppStrings.STATUS_ERROR_PREFIX}{error_text}", 5000)
             if AppStrings.ERROR_MEMORY_CRITICAL in error_text and not self._memory_alert_shown:
@@ -1001,9 +1014,8 @@ class SearchTab(QMainWindow):
                     AppStrings.ERROR_MEMORY_CRITICAL_DETAIL,
                 )
         finally:
-            self._restore_search_button()
-            self.search_state = Constants.SearchState.IDLE
-            self._check_pending_restart()
+            # Keep the running worker and inputs locked until its finished signal.
+            self._search_failed = True
 
     def _open_file_from_view(self, file_path, line=0):
         """결과 테이블 특정 항목 더블클릭 시 해당 파일을 연결 프로그램으로 실행합니다."""

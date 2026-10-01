@@ -9,6 +9,7 @@ pub const MODE_EXACT: u32 = 1 << 3;
 pub const MODE_EXCEL: u32 = 1 << 4;
 pub const MODE_EXCLUDE_BINARY: u32 = 1 << 5;
 pub const MODE_EXISTENCE_ONLY: u32 = 1 << 6;
+pub const MODE_ALLOW_DUPLICATE_JSON_KEYS: u32 = 1 << 7;
 
 pub type RawMatch = (usize, String, Option<usize>, Option<usize>);
 

@@ -70,6 +70,10 @@ ENGLISH_STRINGS = {
     "EXTERNAL_EDITOR_BROWSE": "Browse",
     "EXTERNAL_EDITOR_FILE_FILTER": "Executables (*.exe);;All files (*)",
     "ADVANCED_COMMON_GROUP": "Common",
+    "ADVANCED_ALLOW_DUPLICATE_JSON_KEYS": "Duplicate JSON keys",
+    "JSON_DUPLICATE_KEYS_DENY": "Disallow",
+    "JSON_DUPLICATE_KEYS_ALLOW": "Allow",
+    "JSON_DUPLICATE_KEYS_DESCRIPTION": "Applies to JSON special search. When allowed, all values of repeated keys are searched.",
     "ADVANCED_MAX_TOTAL_MATCHES": "Total match limit",
     "ADVANCED_MAX_PER_FILE_MATCHES": "Per-file match limit",
     "ADVANCED_MAX_SEARCH_FILE_SIZE": "Search file size limit",
@@ -204,6 +208,7 @@ ENGLISH_STRINGS = {
     "SUMMARY_PREFIX_SEARCHING": "[Searching] ",
     "SUMMARY_PREFIX_STOPPED": "[Search stopped] ",
     "SUMMARY_PREFIX_FINISHED": "[Search complete] ",
+    "SUMMARY_PREFIX_FAILED": "[Search failed · incomplete results] ",
     "RESULT_MSG_SKIPPED_SIMPLE": "{} matches found. ({} files skipped)",
     "RESULT_MSG_SKIPPED_WITH_SHEETS": "{} matches found. ({} files skipped, {} sheets skipped)",
     "RESULT_MSG_ONLY_SHEETS_SKIPPED": "{} matches found. ({} sheets skipped)",
@@ -482,6 +487,7 @@ ENGLISH_STRINGS = {
     "XML_DETAIL_INVALID_DOCUMENT": "The XML document format is invalid.",
     "XML_DETAIL_WITH_POSITION": "{} (line {}, column {})",
     "JSON_DETAIL_INVALID_DOCUMENT": "The JSON document format is invalid.",
+    "JSON_DETAIL_DUPLICATE_KEYS": "The same JSON object contains duplicate keys. You can allow duplicate keys in settings.",
     "JSON_DETAIL_WITH_POSITION": "{} (line {}, column {})",
     "ERROR_FILE_ACCESS_BINARY": "[Error] Failed to determine whether the file is binary: {}",
     "ERROR_READ_FILE": "[Error] Failed to read file content ('{}'): {}",
@@ -493,11 +499,6 @@ ENGLISH_STRINGS = {
     "ERROR_MEMORY_CRITICAL_DETAIL": (
         "Search was stopped because system memory usage is high.\n\n"
         "Close other applications and try again, or reduce the search scope and result limit."
-    ),
-    "TITLE_LIMIT_REACHED": "Search limit reached",
-    "MSG_RESULT_LIMIT_REACHED": (
-        "Search results exceeded the application limit (100,000), so the search was stopped immediately.\n"
-        "Only results found so far are displayed."
     ),
     "MSG_MATCH_LIMIT_PER_FILE": "(Maximum matches per file reached: {})",
     "ERR_CRITICAL_SYSTEM": "[System] A critical internal application error occurred: {}",

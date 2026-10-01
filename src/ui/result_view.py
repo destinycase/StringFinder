@@ -356,7 +356,6 @@ class ResultView(QWidget):
         self.result_view.setItemDelegate(self.result_delegate)
         self._normal_result_row_height = self.result_view.verticalHeader().defaultSectionSize()
         self.result_model.sort_completed.connect(self._select_first_row_safely)
-        self.result_model.limit_reached.connect(self._on_limit_reached)
 
         # 텍스트 입력 시 즉시 필터링하지 않고 디바운스 타이머를 시작합니다.
         self.result_file_filter_edit.textChanged.connect(lambda: self._filter_timer.start())
@@ -1039,22 +1038,6 @@ class ResultView(QWidget):
             # QTimer 이벤트가 UI 객체 파괴 후에 실행될 때 발생하는 예외 무시
             pass
 
-    def _on_limit_reached(self, limit_count):
-        """결과 적재 한도 도달 시 팝업을 표시하고 검색을 중단합니다."""
-        from PySide6.QtWidgets import QMessageBox
-        
-        # 결과 한도 초과 시 안내 문자열을 표시하기 전 검색을 즉시 중단합니다.
-        # ResultView는 보통 Tab을 통해 MainWindow의 자식으로 존재
-        main_win = self.window()
-        if hasattr(main_win, "stop_search"):
-            main_win.stop_search()
-        
-        QMessageBox.warning(
-            self,
-            AppStrings.TITLE_LIMIT_REACHED,
-            AppStrings.MSG_RESULT_LIMIT_REACHED.format(limit_count)
-        )
-
     def sort_results(self):
         """검색 종료 시 호출되어 전체 결과를 정렬합니다 (비동기)."""
         self.result_model.sort_results()
@@ -1064,7 +1047,7 @@ class ResultView(QWidget):
 
     def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix=""):
         """상단 요약 정보를 업데이트합니다."""
-        if file_count > 0 or skip_count > 0:
+        if file_count > 0 or skip_count > 0 or AppStrings.SUMMARY_PREFIX_FAILED in state_prefix:
             summary_text = AppStrings.RESULT_SUMMARY_FORMAT.format(
                 file_count=file_count,
                 match_count=match_count,
@@ -1074,7 +1057,7 @@ class ResultView(QWidget):
             state = "finished"
             if AppStrings.SUMMARY_PREFIX_SEARCHING in state_prefix:
                 state = "searching"
-            elif AppStrings.SUMMARY_PREFIX_STOPPED in state_prefix:
+            elif AppStrings.SUMMARY_PREFIX_STOPPED in state_prefix or AppStrings.SUMMARY_PREFIX_FAILED in state_prefix:
                 state = "stopped"
             self.summary_label.setStyleSheet(
                 UIStyles.get_summary_label_style(self._is_dark_theme(), state)

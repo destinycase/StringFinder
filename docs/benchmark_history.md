@@ -259,3 +259,73 @@
 | 2026-09-25 17:46:13 | v5.9.21 | Set H: Sparse Stress | 0.113s | 0.112s | 0.0000 | 144.1 MB | 1 | 0 |  |
 | 2026-09-25 17:46:13 | v5.9.21 | Set I: No-Newline | 0.066s | 0.065s | 0.0000 | 103.1 MB | 1 | 0 |  |
 | 2026-09-25 17:46:13 | v5.9.21 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 53.7 MB | 2 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set A: Small/Many | 0.689s | 0.043s | 0.0326 | 51.0 MB | 100 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set B: Mixed/Large | 0.046s | 0.046s | 0.0000 | 125.9 MB | 1 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set C: Binary Mixed | 0.112s | 0.023s | 0.0000 | 47.0 MB | 50 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set D: Boolean Early | 0.019s | 0.018s | 0.0000 | 46.9 MB | 1 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set E: ASCII Fast | 0.079s | 0.079s | 0.0000 | 149.4 MB | 1 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set F: Monster JSON | 0.033s | 0.033s | 0.0000 | 75.3 MB | 1 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set G: Deep XML | 0.039s | 0.037s | 0.0000 | 80.6 MB | 1 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 140.7 MB | 1 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set I: No-Newline | 0.044s | 0.044s | 0.0000 | 92.7 MB | 1 | 0 |  |
+| 2026-10-01 08:16:19 | v5.9.24-reliability-recheck | Set J: Excel Mixed | 0.030s | 0.030s | 0.0000 | 47.4 MB | 2 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set A: Small/Many | 0.762s | 0.040s | 0.0327 | 51.6 MB | 100 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set B: Mixed/Large | 0.046s | 0.045s | 0.0000 | 128.7 MB | 1 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set C: Binary Mixed | 0.117s | 0.026s | 0.0000 | 47.6 MB | 50 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set D: Boolean Early | 0.018s | 0.018s | 0.0000 | 47.3 MB | 1 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 150.0 MB | 1 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set F: Monster JSON | 0.034s | 0.033s | 0.0000 | 74.7 MB | 1 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set G: Deep XML | 0.039s | 0.039s | 0.0000 | 83.0 MB | 1 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set H: Sparse Stress | 0.060s | 0.059s | 0.0000 | 138.4 MB | 1 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set I: No-Newline | 0.047s | 0.046s | 0.0000 | 97.6 MB | 1 | 0 |  |
+| 2026-10-01 08:17:21 | v5.9.24-reliability-recheck-cli | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 47.7 MB | 2 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set A: Small/Many | 0.734s | 0.029s | 0.0327 | 51.4 MB | 100 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set B: Mixed/Large | 0.049s | 0.048s | 0.0000 | 132.3 MB | 1 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set C: Binary Mixed | 0.128s | 0.025s | 0.0000 | 47.0 MB | 50 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set D: Boolean Early | 0.018s | 0.018s | 0.0000 | 46.8 MB | 1 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set E: ASCII Fast | 0.077s | 0.076s | 0.0000 | 149.4 MB | 1 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set F: Monster JSON | 0.034s | 0.033s | 0.0000 | 75.2 MB | 1 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 79.3 MB | 1 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 142.2 MB | 1 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set I: No-Newline | 0.077s | 0.077s | 0.0000 | 97.0 MB | 1 | 0 |  |
+| 2026-10-01 08:17:58 | v5.9.24-reliability-recheck-cli-2 | Set J: Excel Mixed | 0.031s | 0.030s | 0.0000 | 47.5 MB | 2 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set A: Small/Many | 0.709s | 0.028s | 0.0334 | 51.5 MB | 100 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set B: Mixed/Large | 0.077s | 0.077s | 0.0000 | 141.5 MB | 1 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set C: Binary Mixed | 0.116s | 0.027s | 0.0000 | 47.5 MB | 50 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set D: Boolean Early | 0.018s | 0.017s | 0.0000 | 47.3 MB | 1 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set E: ASCII Fast | 0.115s | 0.115s | 0.0000 | 149.9 MB | 1 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set F: Monster JSON | 0.041s | 0.040s | 0.0000 | 63.5 MB | 1 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set G: Deep XML | 0.060s | 0.060s | 0.0000 | 85.4 MB | 1 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set H: Sparse Stress | 0.097s | 0.097s | 0.0000 | 142.6 MB | 1 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set I: No-Newline | 0.063s | 0.062s | 0.0000 | 97.2 MB | 1 | 0 |  |
+| 2026-10-01 20:35:23 | v5.9.24-json-key-opt | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 48.4 MB | 2 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set A: Small/Many | 0.619s | 0.028s | 0.0355 | 51.5 MB | 100 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set B: Mixed/Large | 0.044s | 0.043s | 0.0000 | 127.5 MB | 1 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set C: Binary Mixed | 0.142s | 0.049s | 0.0000 | 47.5 MB | 50 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set D: Boolean Early | 0.018s | 0.017s | 0.0000 | 47.2 MB | 1 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set E: ASCII Fast | 0.078s | 0.078s | 0.0000 | 149.8 MB | 1 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set F: Monster JSON | 0.030s | 0.029s | 0.0000 | 75.6 MB | 1 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set G: Deep XML | 0.037s | 0.036s | 0.0000 | 82.4 MB | 1 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set H: Sparse Stress | 0.054s | 0.053s | 0.0000 | 118.2 MB | 1 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set I: No-Newline | 0.042s | 0.042s | 0.0000 | 93.5 MB | 1 | 0 |  |
+| 2026-10-01 20:39:50 | v5.9.24-json-key-opt-2 | Set J: Excel Mixed | 0.027s | 0.027s | 0.0000 | 47.8 MB | 2 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set A: Small/Many | 1.018s | 0.040s | 0.0265 | 56.6 MB | 100 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set B: Mixed/Large | 0.050s | 0.050s | 0.0000 | 139.1 MB | 1 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set C: Binary Mixed | 0.135s | 0.028s | 0.0000 | 52.7 MB | 50 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set D: Boolean Early | 0.023s | 0.022s | 0.0000 | 52.4 MB | 1 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set E: ASCII Fast | 0.093s | 0.093s | 0.0000 | 155.0 MB | 1 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 80.1 MB | 1 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set G: Deep XML | 0.044s | 0.044s | 0.0000 | 96.7 MB | 1 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set H: Sparse Stress | 0.062s | 0.061s | 0.0000 | 141.9 MB | 1 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set I: No-Newline | 0.050s | 0.049s | 0.0000 | 102.7 MB | 1 | 0 |  |
+| 2026-10-01 21:13:20 | v5.9.25 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 53.3 MB | 2 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set A: Small/Many | 0.716s | 0.039s | 0.0307 | 57.5 MB | 100 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set B: Mixed/Large | 0.052s | 0.051s | 0.0000 | 131.6 MB | 1 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set C: Binary Mixed | 0.118s | 0.022s | 0.0000 | 53.5 MB | 50 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set D: Boolean Early | 0.017s | 0.017s | 0.0000 | 53.2 MB | 1 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set E: ASCII Fast | 0.078s | 0.078s | 0.0000 | 155.8 MB | 1 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set F: Monster JSON | 0.031s | 0.030s | 0.0000 | 81.7 MB | 1 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set G: Deep XML | 0.038s | 0.038s | 0.0000 | 87.8 MB | 1 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set H: Sparse Stress | 0.055s | 0.054s | 0.0000 | 127.3 MB | 1 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set I: No-Newline | 0.042s | 0.041s | 0.0000 | 90.7 MB | 1 | 0 |  |
+| 2026-10-01 21:14:57 | v5.9.25-standalone | Set J: Excel Mixed | 0.029s | 0.029s | 0.0000 | 54.5 MB | 2 | 0 |  |

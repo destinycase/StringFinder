@@ -352,8 +352,13 @@ def run_benchmark(
     worker.signals.finished.connect(on_finished)
     worker.signals.finished.connect(mem_timer.stop)
 
-    QThreadPool.globalInstance().start(worker)
+    pool = QThreadPool()
+    pool.start(worker)
     loop.exec()
+    # finished is emitted just before run() returns. Do not destroy callbacks
+    # and timers while the runnable may still be completing that emission.
+    pool.waitForDone()
+    mem_timer.stop()
 
     assert finish_time is not None
 
@@ -618,6 +623,8 @@ def check_thresholds(results: List[Dict[str, Any]]) -> None:
 
 if __name__ == "__main__":
     try:
+        # Keep Qt alive across all sets, not just inside the first function call.
+        benchmark_app = QApplication.instance() or QApplication(sys.argv)
         if not BENCHMARK_DATA_DIR.exists() or "--force-gen" in sys.argv:
             create_dataset()
         else:

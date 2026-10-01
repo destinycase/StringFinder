@@ -133,7 +133,6 @@ def test_search_state_reset_on_completion(qtbot, search_tab_fixture):
 
     search_tab_fixture._on_search_finished(10, 0, 0)
     search_tab_fixture._on_worker_finished()
-
     assert search_tab_fixture.search_state == Constants.SearchState.IDLE
 
 
@@ -144,7 +143,9 @@ def test_search_state_reset_on_error(qtbot, search_tab_fixture):
     search_tab_fixture.search_state = Constants.SearchState.SEARCHING
 
     search_tab_fixture._on_search_error("Test Error")
-
+    assert search_tab_fixture.search_state == Constants.SearchState.SEARCHING
+    assert search_tab_fixture._search_failed
+    search_tab_fixture._on_worker_finished()
     assert search_tab_fixture.search_state == Constants.SearchState.IDLE
 
 

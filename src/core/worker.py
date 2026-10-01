@@ -232,6 +232,7 @@ class SearchWorker(QRunnable):
         self._total_limit_alert_emitted = False
         self._last_mem_check: Optional[float] = None
         self._memory_alert_emitted = False
+        self.all_skipped: List[Any] = []
 
     def _safe_emit(self, signal, *args):
         try:
@@ -418,7 +419,7 @@ class SearchWorker(QRunnable):
         # Legacy diagnostics/tests access all_results. Keep only a bounded
         # recent window; the complete result stream is delivered by signals.
         self.all_results: deque[Any] = deque(maxlen=Constants.WORKER_RESULT_RETENTION)
-        self.all_skipped: List[Any] = []
+        self.all_skipped = []
         self.skipped_sheets_list: List[Any] = []  # [(file_path, sheet_name), ...] 시트 스킵 목록
         try:
             if self.use_complex_search:
@@ -589,12 +590,17 @@ class SearchWorker(QRunnable):
         logger.info(AppStrings.LOG_WKR_DONE.format(total_found, total_matches, elapsed))
 
     def _run_python_search(self, force_python: bool = False):
+        scan_skipped_count = 0
         if not self.file_list and self.search_paths:
             try:
                 scanner = FileScanner(self.search_paths, self.extensions, filename_filter=self.filename_filter,
                     stop_check_callback=lambda: (not self.is_running.is_set()) or (self.stop_event is not None and self.stop_event.is_set()),
                     exclude_hidden=self.exclude_hidden)
                 self.file_list = scanner.scan()
+                if scanner.skipped:
+                    scan_skipped_count = len(scanner.skipped)
+                    self.all_skipped.extend(scanner.skipped)
+                    self._safe_emit(self.signals.skipped_found, scanner.skipped)
             except Exception as e:
                 logger.error(AppStrings.LOG_WKR_BATCH_ERROR.format(e), exc_info=True)
                 self._safe_emit(self.signals.error, AppStrings.ERR_CRITICAL_SYSTEM.format(e))
@@ -602,13 +608,13 @@ class SearchWorker(QRunnable):
                 return
         if not self.file_list:
             logger.warning(AppStrings.LOG_SCH_NO_FILES)
-            self._safe_emit(self.signals.search_finished, 0, 0, 0)
+            self._safe_emit(self.signals.search_finished, 0, 0, scan_skipped_count)
             return
         logger.info(AppStrings.LOG_WKR_RUNNING.format(len(self.file_list)))
         found_count, total_matches, skipped_count = self._run_batch_search(self.file_list, force_python=force_python)
         elapsed = time.time() - self.worker_start_time
         logger.info(AppStrings.LOG_WKR_DONE.format(found_count, total_matches, elapsed))
-        self._safe_emit(self.signals.search_finished, found_count, total_matches, skipped_count)
+        self._safe_emit(self.signals.search_finished, found_count, total_matches, skipped_count + scan_skipped_count)
 
     def _run_batch_search(self, files, force_python=False):
         total = len(files)
