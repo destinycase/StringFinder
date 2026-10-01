@@ -336,10 +336,57 @@ impl<'de: 'data, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data>
             self.state.depth_limit_reached = true;
             self.state.locations_reliable = false;
         }
-        deserializer.deserialize_any(JsonVisitor {
+        // The arbitrary-precision deserialize_any path allocates a string for
+        // every number. When the already-tracked source cursor proves this is
+        // an ordinary number, use serde's allocation-free numeric entry point.
+        // Large integers retain the arbitrary-precision path. Never speculate
+        // when positions are disabled (existence/depth/limit paths).
+        let fast_number = if self.state.should_track_locations() {
+            let mut start = self.state.scan_offset;
+            while start < self.state.mmap.len()
+                && matches!(
+                    self.state.mmap[start],
+                    b' ' | b'\t' | b'\r' | b'\n' | b',' | b':' | b'}' | b']'
+                )
+            {
+                start += 1;
+            }
+            if self
+                .state
+                .mmap
+                .get(start)
+                .is_some_and(|c| *c == b'-' || c.is_ascii_digit())
+            {
+                let mut end = start;
+                while end < self.state.mmap.len()
+                    && !matches!(
+                        self.state.mmap[end],
+                        b' ' | b'\t' | b'\r' | b'\n' | b',' | b'}' | b']'
+                    )
+                {
+                    end += 1;
+                }
+                std::str::from_utf8(&self.state.mmap[start..end]).is_ok_and(|raw| {
+                    raw != "-0"
+                        && (raw.contains(['.', 'e', 'E'])
+                            || raw.parse::<u64>().is_ok()
+                            || raw.parse::<i64>().is_ok())
+                })
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        let visitor = JsonVisitor {
             state: self.state,
             depth: self.depth,
-        })
+        };
+        if fast_number {
+            deserializer.deserialize_f64(visitor)
+        } else {
+            deserializer.deserialize_any(visitor)
+        }
     }
 }
 
@@ -360,7 +407,35 @@ impl<'de: 'data, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
         A: MapAccess<'de>,
     {
         let mut keys = ObjectKeys::default();
-        while let Some(JsonKey(key)) = map.next_key::<JsonKey<'de>>()? {
+        let mut pending = map.next_key::<JsonKey<'de>>()?;
+        // serde_json represents arbitrary-precision numbers as a synthetic map.
+        // Its borrowed key is static, not a slice of the source JSON. Checking
+        // provenance prevents a real object with this key from being mistaken
+        // for a number (escaped keys are owned and are never synthetic).
+        if let Some(JsonKey(Cow::Borrowed(key))) = &pending {
+            let address = key.as_ptr() as usize;
+            let start = self.state.mmap.as_ptr() as usize;
+            if *key == "$serde_json::private::Number"
+                && !(start..start + self.state.mmap.len()).contains(&address)
+            {
+                let raw = map.next_value::<String>()?;
+                let value = if raw.contains(['.', 'e', 'E']) {
+                    let number =
+                        serde_json::from_str::<f64>(&raw).map_err(serde::de::Error::custom)?;
+                    if !number.is_finite() {
+                        return Err(serde::de::Error::custom("number out of range"));
+                    }
+                    crate::utils::format_float(number)
+                } else if raw == "-0" {
+                    "0".to_owned()
+                } else {
+                    raw
+                };
+                self.state.record_scalar(&value);
+                return Ok(());
+            }
+        }
+        while let Some(JsonKey(key)) = pending {
             let move_owned_key = !self.state.allow_duplicate_keys && matches!(key, Cow::Owned(_));
             let duplicate = !self.state.allow_duplicate_keys
                 && if move_owned_key {
@@ -389,6 +464,7 @@ impl<'de: 'data, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
                     keys.insert_unique(key);
                 }
             }
+            pending = map.next_key::<JsonKey<'de>>()?;
         }
         Ok(())
     }
@@ -466,7 +542,7 @@ impl<'de: 'data, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
         E: serde::de::Error,
     {
         if self.state.should_process_scalar() {
-            self.state.record_scalar(&value.to_string());
+            self.state.record_scalar(&crate::utils::format_float(value));
         }
         Ok(())
     }

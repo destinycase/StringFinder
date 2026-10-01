@@ -93,6 +93,8 @@ def test_v2_migration_removes_unused_case_setting_and_normalizes_advanced_bounds
     for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
         if type(spec["default"]) is bool:
             assert type(advanced[key]) is bool
+        elif "choices" in spec:
+            assert advanced[key] in spec["choices"]
         else:
             assert spec["minimum"] <= advanced[key] <= spec["maximum"]
 

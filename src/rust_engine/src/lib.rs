@@ -1,3 +1,4 @@
+mod excel_date_formats;
 mod excel_search;
 mod json_search;
 mod types;
@@ -38,6 +39,7 @@ type KeywordFileHits = Vec<(String, u64)>;
 
 const REASON_ERR_MMAP: &str = "ERR_MMAP";
 const REASON_ERR_OPEN: &str = "ERR_OPEN";
+const REASON_ERR_ENCODING: &str = "ERR_ENCODING";
 const REASON_ERR_METADATA: &str = "ERR_METADATA";
 const REASON_ERR_WALK: &str = "ERR_WALK";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
@@ -352,9 +354,14 @@ fn load_file_snapshot(
     Ok(FileSnapshot::Owned(bytes))
 }
 
-fn search_walk_builder(root_path: &Path, exclude_hidden: bool) -> WalkBuilder {
+fn search_walk_builder(
+    root_path: &Path,
+    exclude_hidden: bool,
+    include_junctions: bool,
+) -> WalkBuilder {
     let mut builder = WalkBuilder::new(root_path);
     builder.hidden(exclude_hidden);
+    builder.follow_links(include_junctions);
     // Search results must not depend on repository ignore rules; the
     // precise-search scanner also traverses files listed in .gitignore/.ignore.
     builder.ignore(false);
@@ -362,6 +369,85 @@ fn search_walk_builder(root_path: &Path, exclude_hidden: bool) -> WalkBuilder {
     builder.git_exclude(false);
     builder.git_global(false);
     builder
+}
+
+/// Distinguish Windows mount-point junctions from symbolic links. Only linked
+/// directories need the reparse query; ordinary files retain the cheap path.
+fn is_junction(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+        use std::os::windows::io::AsRawHandle;
+        let Ok(metadata) = std::fs::symlink_metadata(path) else {
+            return false;
+        };
+        if metadata.file_attributes() & 0x400 == 0 {
+            return false;
+        }
+        let Ok(file) = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(0x02000000 | 0x00200000)
+            .open(path)
+        else {
+            return false;
+        };
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn DeviceIoControl(
+                handle: *mut std::ffi::c_void,
+                code: u32,
+                input: *mut std::ffi::c_void,
+                input_size: u32,
+                output: *mut std::ffi::c_void,
+                output_size: u32,
+                returned: *mut u32,
+                overlapped: *mut std::ffi::c_void,
+            ) -> i32;
+        }
+        let mut buffer = [0u8; 16384];
+        let mut returned = 0;
+        // The handle and output buffer remain alive throughout this synchronous call.
+        let ok = unsafe {
+            DeviceIoControl(
+                file.as_raw_handle(),
+                0x000900A8,
+                std::ptr::null_mut(),
+                0,
+                buffer.as_mut_ptr().cast(),
+                buffer.len() as u32,
+                &mut returned,
+                std::ptr::null_mut(),
+            )
+        };
+        ok != 0
+            && returned >= 4
+            && u32::from_le_bytes(buffer[..4].try_into().unwrap()) == 0xA0000003
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+fn claim_walk_entry(
+    path: &Path,
+    include_junctions: bool,
+    visited: &Mutex<std::collections::HashSet<std::path::PathBuf>>,
+) -> bool {
+    let junction = is_junction(path);
+    if (!include_junctions && junction) || (path.is_symlink() && !junction) {
+        return false;
+    }
+    if include_junctions {
+        // Atomic insertion is shared by all parallel walkers and all roots.
+        let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        return visited
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(resolved);
+    }
+    true
 }
 
 #[pyfunction]
@@ -379,8 +465,12 @@ fn search_file(
     mut max_json_size: u64,
     options: Option<Py<SearchOptions>>,
 ) -> Result<Vec<SearchMatch>, PyErr> {
+    let mut encoding = None;
+    let mut include_junctions = false;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
+        encoding = crate::utils::requested_encoding(config.encoding.as_deref());
+        include_junctions = config.include_junctions;
         if config.mode_bits.is_some() {
             mode_bits = config.mode_bits;
         }
@@ -402,6 +492,7 @@ fn search_file(
     }
     // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
     let _ = max_check_cells;
+    let _ = include_junctions; // No traversal in the single-file entry point.
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
         parse_search_mode(mode_bits);
@@ -448,6 +539,7 @@ fn search_file(
 
     let res = py.allow_threads(|| {
         search_file_internal(InternalSearchParams {
+            encoding,
             path: Path::new(&path),
             pattern: &pattern,
             pat_upper: &pat_upper,
@@ -644,6 +736,84 @@ fn decoded_line_matches(
     }
 }
 
+fn detect_text_search_encoding(
+    data: &[u8],
+    pattern: &str,
+    ac: &aho_corasick::AhoCorasick,
+    is_exact: bool,
+    existence_only: bool,
+) -> &'static Encoding {
+    // A hit entirely inside an ASCII prefix is valid in both UTF-8 and CP949.
+    // Do not fault in the rest of a huge file merely to confirm this one hit.
+    // NUL excludes UTF-16 and binary prefixes from this shortcut.
+    let prefix = &data[..data.len().min(65536)];
+    if existence_only
+        && !is_exact
+        && prefix.is_ascii()
+        && !prefix.contains(&0)
+        && ac.find(prefix).is_some()
+    {
+        return UTF_8;
+    }
+    // Literal ASCII matches are byte-compatible with CP949. Keep the existing
+    // sampled fast path; invalid decoded result snippets trigger a full recheck.
+    // Exact/Unicode searches cannot use that proof and validate the full input.
+    if !existence_only && !is_exact && pattern.is_ascii() {
+        let mut end = prefix.len();
+        while end < data.len() && end < prefix.len() + 3 && data[end] & 0xc0 == 0x80 {
+            end += 1;
+        }
+        let encoding = detect_encoding(&data[..end]);
+        // UTF-8 boundary extension may split a CP949 pair. Do not let that
+        // artificial failure override a valid CP949 sample with UTF-16.
+        if encoding == UTF_16LE || encoding == UTF_16BE {
+            return detect_encoding(prefix);
+        }
+        return encoding;
+    }
+    detect_encoding(data)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_decoded_line(
+    line: &str,
+    line_number: usize,
+    pat_upper: &str,
+    ac: &aho_corasick::AhoCorasick,
+    is_exact: bool,
+    existence_only: bool,
+    max_per_file: usize,
+    results: &mut Vec<RawMatch>,
+) -> bool {
+    if is_exact || existence_only {
+        if decoded_line_matches(line, pat_upper, ac, is_exact) {
+            let content = if existence_only {
+                "MATCH".to_string()
+            } else {
+                extract_line_content_bytes(line.as_bytes(), 0, line.len(), None, None)
+            };
+            results.push((line_number, content, None, None));
+            return existence_only || results.len() > max_per_file;
+        }
+    } else {
+        for hit in ac.find_iter(line) {
+            let content = extract_line_content_bytes(
+                line.as_bytes(),
+                0,
+                line.len(),
+                Some(hit.start()),
+                Some(hit.len()),
+            );
+            // Decoded byte positions are not offsets in the source encoding.
+            results.push((line_number, content, None, None));
+            if results.len() > max_per_file {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[allow(clippy::too_many_arguments)]
 fn search_non_utf8_chunks(
     mmap: &[u8],
@@ -693,12 +863,17 @@ fn search_non_utf8_chunks(
             let line = pending[line_start..newline]
                 .strip_suffix('\r')
                 .unwrap_or(&pending[line_start..newline]);
-            if decoded_line_matches(line, pat_upper, ac, is_exact) {
-                if existence_only {
-                    results.push((line_number, "MATCH".to_string(), None, None));
-                    return;
-                }
-                results.push((line_number, line.to_string(), None, None));
+            if collect_decoded_line(
+                line,
+                line_number,
+                pat_upper,
+                ac,
+                is_exact,
+                existence_only,
+                max_per_file,
+                results,
+            ) {
+                return;
             }
             line_start = newline + 1;
             next_search = line_start;
@@ -717,17 +892,21 @@ fn search_non_utf8_chunks(
 
     if !pending.is_empty() && results.len() <= max_per_file && !stop_flag.load(Ordering::Relaxed) {
         let line = pending.strip_suffix('\r').unwrap_or(&pending);
-        if decoded_line_matches(line, pat_upper, ac, is_exact) {
-            if existence_only {
-                results.push((line_number, "MATCH".to_string(), None, None));
-            } else {
-                results.push((line_number, line.to_string(), None, None));
-            }
-        }
+        collect_decoded_line(
+            line,
+            line_number,
+            pat_upper,
+            ac,
+            is_exact,
+            existence_only,
+            max_per_file,
+            results,
+        );
     }
 }
 
 struct InternalSearchParams<'a> {
+    encoding: Option<&'static encoding_rs::Encoding>,
     path: &'a Path,
     pattern: &'a str,
     pat_upper: &'a str,
@@ -748,6 +927,7 @@ struct InternalSearchParams<'a> {
 
 fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMatch>, String>> {
     let InternalSearchParams {
+        encoding,
         path,
         pattern,
         pat_upper,
@@ -860,7 +1040,19 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     };
     let mmap_c = file_snapshot.as_slice();
 
-    let enc = detect_encoding(mmap_c);
+    let enc = if let Some(encoding) = encoding {
+        if !crate::utils::selected_encoding_valid(mmap_c, encoding) {
+            return Some(Err(encode_skip_reason(
+                REASON_ERR_ENCODING,
+                "Invalid bytes for selected encoding",
+            )));
+        }
+        encoding
+    } else if is_json || is_xml {
+        detect_encoding(mmap_c)
+    } else {
+        detect_text_search_encoding(mmap_c, pattern, ac, is_exact, existence_only)
+    };
     let decoded =
         ((is_json || is_xml) && enc != UTF_8).then(|| decode_bytes(mmap_c, enc).into_bytes());
     // 구조화된 문서는 파서가 전체 버퍼를 요구하므로 기존 디코딩 경로를 유지합니다.
@@ -972,7 +1164,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 0
             };
             let searchable_mmap = &mmap_c[bom_len..];
-            do_search_with_mmap(
+            let mut matches = do_search_with_mmap(
                 searchable_mmap,
                 enc,
                 pat_upper,
@@ -981,7 +1173,23 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 existence_only,
                 &stop_flag,
                 max_per_file,
-            )
+            );
+            if enc == UTF_8 && !existence_only && matches.iter().any(|m| m.1.contains('\u{fffd}')) {
+                let verified_encoding = encoding.unwrap_or_else(|| detect_encoding(mmap_c));
+                if verified_encoding != UTF_8 {
+                    matches = do_search_with_mmap(
+                        mmap_c,
+                        verified_encoding,
+                        pat_upper,
+                        ac,
+                        is_exact,
+                        false,
+                        &stop_flag,
+                        max_per_file,
+                    );
+                }
+            }
+            matches
         })
     };
 
@@ -1029,8 +1237,12 @@ pub fn search_dir(
     _kwargs: Option<pyo3::PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
     let mut structured_memory_budget = None;
+    let mut encoding = None;
+    let mut include_junctions = false;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
+        encoding = crate::utils::requested_encoding(config.encoding.as_deref());
+        include_junctions = config.include_junctions;
         if config.extensions.is_some() {
             extensions = config.extensions.clone();
         }
@@ -1215,6 +1427,7 @@ pub fn search_dir(
         (tx, handle)
     });
 
+    let visited_paths = Arc::new(Mutex::new(std::collections::HashSet::new()));
     let results = Arc::new(Mutex::new(Vec::new()));
     let skipped = Arc::new(Mutex::new(Vec::new()));
     let tx_main = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
@@ -1224,9 +1437,10 @@ pub fn search_dir(
             if stop_flag.load(Ordering::Relaxed) {
                 break;
             }
-            search_walk_builder(Path::new(&root_path), exclude_hidden)
+            search_walk_builder(Path::new(&root_path), exclude_hidden, include_junctions)
                 .build_parallel()
                 .run(|| {
+                    let visited = visited_paths.clone();
                     let res_ref = results.clone();
                     let skip_ref = skipped.clone();
                     let ac_ref = ac.clone();
@@ -1258,6 +1472,11 @@ pub fn search_dir(
                         let Some(file_type) = entry.file_type() else {
                             return ignore::WalkState::Continue;
                         };
+                        if (include_junctions || file_type.is_dir() || file_type.is_symlink())
+                            && !claim_walk_entry(entry.path(), include_junctions, &visited)
+                        {
+                            return ignore::WalkState::Skip;
+                        }
                         if file_type.is_dir() && has_recycle_bin_component(entry.path()) {
                             return ignore::WalkState::Skip;
                         }
@@ -1330,6 +1549,7 @@ pub fn search_dir(
                             }
                         };
                         let res = search_file_internal(InternalSearchParams {
+                            encoding,
                             allow_duplicate_json_keys: mode_bits.unwrap_or(0)
                                 & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
                                 != 0,
@@ -1428,8 +1648,12 @@ fn search_files_list(
     _kwargs: Option<PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
     let mut structured_memory_budget = None;
+    let mut encoding = None;
+    let mut include_junctions = false;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
+        encoding = crate::utils::requested_encoding(config.encoding.as_deref());
+        include_junctions = config.include_junctions;
         if config.mode_bits.is_some() {
             mode_bits = config.mode_bits;
         }
@@ -1470,6 +1694,7 @@ fn search_files_list(
         structured_memory_budget = config.structured_memory_budget;
     }
     // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
+    let _ = include_junctions; // Candidate list was already selected by the caller.
     let _ = max_check_cells;
     let stop_flag = Arc::new(AtomicBool::new(false));
     let structured_limiter = structured_memory_budget
@@ -1661,6 +1886,7 @@ fn search_files_list(
                 }
             };
             let res = search_file_internal(InternalSearchParams {
+                encoding,
                 allow_duplicate_json_keys: mode_bits.unwrap_or(0)
                     & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
                     != 0,
@@ -1752,8 +1978,12 @@ fn find_files_with_keyword(
     options: Option<Py<SearchOptions>>,
 ) -> Result<(KeywordFileHits, SkippedEntries), PyErr> {
     let mut structured_memory_budget = None;
+    let mut encoding = None;
+    let mut include_junctions = false;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
+        encoding = crate::utils::requested_encoding(config.encoding.as_deref());
+        include_junctions = config.include_junctions;
         if config.extensions.is_some() {
             extensions = config.extensions.clone();
         }
@@ -1903,7 +2133,8 @@ fn find_files_with_keyword(
         if let Some(first_root) = roots.next() {
             // 모든 루트를 하나의 ignore 병렬 워커에 등록합니다. 루트마다 별도
             // 워커 풀을 만들면 바깥 Rayon 풀과 중첩되어 스레드가 과도하게 늘어납니다.
-            let mut builder = WalkBuilder::new(first_root);
+            let mut builder =
+                search_walk_builder(Path::new(&first_root), exclude_hidden, include_junctions);
             for root in roots {
                 builder.add(root);
             }
@@ -1914,6 +2145,7 @@ fn find_files_with_keyword(
                 .git_exclude(false)
                 .git_global(false);
             let walker = builder.build_parallel();
+            let visited_paths = Arc::new(Mutex::new(std::collections::HashSet::new()));
             let res_ref = Arc::clone(&results);
             let skipped_ref = Arc::clone(&skipped);
             let ac_ref = Arc::clone(&ac_shared);
@@ -1926,6 +2158,7 @@ fn find_files_with_keyword(
             let tx_kw = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
 
             walker.run(move || {
+                let visited = Arc::clone(&visited_paths);
                 let res_inner = Arc::clone(&res_ref);
                 let skipped_inner = Arc::clone(&skipped_ref);
                 let ac_inner = Arc::clone(&ac_ref);
@@ -1956,6 +2189,11 @@ fn find_files_with_keyword(
                     let Some(file_type) = entry.file_type() else {
                         return ignore::WalkState::Continue;
                     };
+                    if (include_junctions || file_type.is_dir() || file_type.is_symlink())
+                        && !claim_walk_entry(entry.path(), include_junctions, &visited)
+                    {
+                        return ignore::WalkState::Skip;
+                    }
                     if file_type.is_dir() && has_recycle_bin_component(entry.path()) {
                         return ignore::WalkState::Skip;
                     }
@@ -2077,8 +2315,23 @@ fn find_files_with_keyword(
                             }
                         };
                         let bytes = snapshot.as_slice();
+                        if encoding.is_some_and(|selected| {
+                            !crate::utils::selected_encoding_valid(bytes, selected)
+                        }) {
+                            skipped_inner
+                                .lock()
+                                .unwrap_or_else(|p| p.into_inner())
+                                .push((
+                                    f_path,
+                                    encode_skip_reason(
+                                        REASON_ERR_ENCODING,
+                                        "Invalid bytes for selected encoding",
+                                    ),
+                                ));
+                            return ignore::WalkState::Continue;
+                        }
                         let match_result: Result<(bool, bool), String> = if is_json_file {
-                            let encoding = detect_encoding(bytes);
+                            let encoding = encoding.unwrap_or_else(|| detect_encoding(bytes));
                             let decoded = if encoding == UTF_8 {
                                 None
                             } else {
@@ -2100,7 +2353,7 @@ fn find_files_with_keyword(
                             .map(|outcome| (outcome.found, outcome.depth_limit_reached))
                             .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
                         } else if is_xml_file {
-                            let encoding = detect_encoding(bytes);
+                            let encoding = encoding.unwrap_or_else(|| detect_encoding(bytes));
                             let decoded = if encoding == UTF_8 {
                                 None
                             } else {
@@ -2120,7 +2373,11 @@ fn find_files_with_keyword(
                             .map(|found| (found, false))
                             .map_err(encode_xml_skip_reason)
                         } else {
-                            let encoding = detect_encoding(bytes);
+                            let encoding = encoding.unwrap_or_else(|| {
+                                detect_text_search_encoding(
+                                    bytes, &kw_inner, &ac_inner, is_exact, true,
+                                )
+                            });
                             if exclude_binary && encoding == UTF_8 && is_binary(bytes) {
                                 Ok((false, false))
                             } else if encoding == UTF_8 && !is_exact {
@@ -2301,7 +2558,7 @@ mod tests {
         let custom_ignored_file = root.join("custom-ignored.json");
         fs::write(&custom_ignored_file, "{}\n").unwrap();
 
-        let found: HashSet<_> = search_walk_builder(root.as_path(), false)
+        let found: HashSet<_> = search_walk_builder(root.as_path(), false, false)
             .build()
             .filter_map(Result::ok)
             .map(|entry| entry.path().to_path_buf())
@@ -2359,7 +2616,21 @@ mod tests {
                         } else {
                             line.contains("needle")
                         };
-                        matched.then(|| (i + 1, line.to_string(), None, None))
+                        matched.then(|| {
+                            let start = line.find("needle");
+                            (
+                                i + 1,
+                                extract_line_content_bytes(
+                                    line.as_bytes(),
+                                    0,
+                                    line.len(),
+                                    start,
+                                    Some(6),
+                                ),
+                                None,
+                                None,
+                            )
+                        })
                     })
                     .collect();
                 let mut actual = Vec::new();
@@ -2391,6 +2662,76 @@ mod tests {
                     existence,
                     vec![(expected[0].0, "MATCH".to_string(), None, None)]
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn existence_encoding_shortcut_requires_a_proven_ascii_hit() {
+        let ac = build_test_ac("needle");
+        let mut bytes = b"needle\n".to_vec();
+        bytes.resize(65536, b'a');
+        bytes.extend_from_slice(&encoding_rs::EUC_KR.encode("한글").0);
+        assert_eq!(
+            detect_text_search_encoding(&bytes, "needle", &ac, false, true),
+            UTF_8
+        );
+        assert_eq!(
+            detect_text_search_encoding(&bytes, "needle", &ac, false, false),
+            UTF_8
+        );
+        assert_eq!(
+            detect_text_search_encoding(&bytes, "needle", &ac, true, false),
+            encoding_rs::EUC_KR
+        );
+        assert_eq!(
+            detect_text_search_encoding(&bytes, "한글", &build_test_ac("한글"), false, false),
+            encoding_rs::EUC_KR
+        );
+        assert_eq!(
+            detect_text_search_encoding(&bytes, "absent", &build_test_ac("absent"), false, true),
+            encoding_rs::EUC_KR
+        );
+        let utf16: Vec<u8> = "needle".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert_eq!(
+            detect_text_search_encoding(&utf16, "n", &build_test_ac("n"), false, true),
+            UTF_16LE
+        );
+    }
+
+    #[test]
+    fn decoded_lines_count_each_occurrence_and_obey_limit() {
+        let ac = build_test_ac("needle");
+        let text = "needle needle needle 한글";
+        for encoding in [UTF_16LE, UTF_16BE, encoding_rs::EUC_KR] {
+            let bytes = if encoding == encoding_rs::EUC_KR {
+                encoding.encode(text).0.into_owned()
+            } else {
+                text.encode_utf16()
+                    .flat_map(|unit| {
+                        if encoding == UTF_16LE {
+                            unit.to_le_bytes()
+                        } else {
+                            unit.to_be_bytes()
+                        }
+                    })
+                    .collect()
+            };
+            for limit in [1, 2, 3, 100] {
+                let mut results = Vec::new();
+                search_non_utf8_chunks(
+                    &bytes,
+                    encoding,
+                    "NEEDLE",
+                    &ac,
+                    false,
+                    false,
+                    &Arc::new(AtomicBool::new(false)),
+                    limit,
+                    &mut results,
+                );
+                assert_eq!(results.len(), 3.min(limit + 1));
+                assert!(results.iter().all(|m| m.0 == 1));
             }
         }
     }

@@ -7,6 +7,8 @@ be migrated without overwriting values that users intentionally chose.
 CONFIG_SCHEMA_VERSION = 5
 
 DEFAULTS = {
+    "include_junctions": False,
+    "search_encoding": "auto",
     "allow_duplicate_json_keys": False,
     "max_total_matches": 500_000,
     "max_per_file_matches": 10_000,
@@ -22,6 +24,8 @@ DEFAULTS = {
 
 # Increment only when the shipped default for that setting changes.
 DEFAULT_VERSIONS = {
+    "include_junctions": 1,
+    "search_encoding": 1,
     "allow_duplicate_json_keys": 1,
     "max_total_matches": 1,
     "max_per_file_matches": 2,

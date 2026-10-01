@@ -18,7 +18,7 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         return UTF_8;
     }
 
-    // 성능 최적화: 파일 전체가 아닌 최대 64KB 샘플만 사용하여 인코딩을 판별합니다.
+    // UTF-16 heuristics need only a prefix; UTF-8 validity needs the full input.
     let sample_len = data.len().min(64 * 1024);
     let sample = &data[..sample_len];
 
@@ -46,49 +46,137 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         }
     }
 
-    // B3: EUC-KR 오탐 방지 — 고바이트(0x80↑)가 없으면 ASCII-only 파일이므로 UTF-8 반환합니다.
-    // 한국어 EUC-KR 파일은 반드시 고바이트를 포함하므로 기존 동작에 영향 없습니다.
-    // UTF-16 ASCII 데이터는 NUL 바이트가 포함되어도 UTF-8로 형식상 해석될 수
-    // 있으므로, UTF-16 휴리스틱을 먼저 적용한 뒤 UTF-8 판정을 수행합니다.
-    if simd_from_utf8(sample).is_ok() {
+    // Validate the whole UTF-8 input: ASCII-only sampling can hide CP949 later.
+    // UTF-16 heuristics above take precedence over UTF-8 validity.
+    if simd_from_utf8(data).is_ok() {
         return UTF_8;
     }
-    // A bounded sample may end inside a valid UTF-8 code point.
-    if sample_len < data.len() {
-        if let Err(error) = std::str::from_utf8(sample) {
-            if error.error_len().is_none() {
-                let complete = &data[..data.len().min(sample_len + 3)];
-                if std::str::from_utf8(complete).is_ok() {
-                    return UTF_8;
-                }
-                // Validate just the sampled prefix including its final code point.
-                let mut end = sample_len;
-                while end < data.len() && end < sample_len + 3 && data[end] & 0xc0 == 0x80 {
-                    end += 1;
-                }
-                if std::str::from_utf8(&data[..end]).is_ok() {
-                    return UTF_8;
-                }
+    if valid_korean_bytes(data) {
+        return EUC_KR;
+    }
+    let korean_sample = &sample[..sample.len().min(2048) / 2 * 2];
+    let mut candidate = None;
+    for encoding in [UTF_16LE, UTF_16BE] {
+        let (decoded, _, errors) = encoding.decode(korean_sample);
+        let count = decoded.chars().count();
+        if !errors
+            && count >= 16
+            && decoded
+                .chars()
+                .filter(|c| ('\u{ac00}'..='\u{d7a3}').contains(c))
+                .count()
+                * 5
+                >= count * 4
+        {
+            if candidate.is_some() {
+                return if valid_korean_bytes(data) {
+                    EUC_KR
+                } else {
+                    UTF_8
+                };
             }
+            candidate = Some(encoding);
         }
     }
-
-    let has_high_bytes = sample.iter().any(|&b| b >= 0x80);
-    if !has_high_bytes {
-        return UTF_8;
-    }
-    let (_res, _, has_error) = EUC_KR.decode(sample);
-    if !has_error {
-        return EUC_KR;
+    if let Some(encoding) = candidate {
+        return encoding;
     }
 
     // 기본값으로 UTF-8 반환
     UTF_8
 }
 
+pub fn requested_encoding(label: Option<&str>) -> Option<&'static Encoding> {
+    match label {
+        Some("utf-8") => Some(UTF_8),
+        Some("cp949") => Some(EUC_KR),
+        Some("utf-16-le") => Some(UTF_16LE),
+        Some("utf-16-be") => Some(UTF_16BE),
+        _ => None,
+    }
+}
+
+pub fn selected_encoding_valid(data: &[u8], encoding: &'static Encoding) -> bool {
+    if (data.starts_with(b"\xff\xfe") && encoding != UTF_16LE)
+        || (data.starts_with(b"\xfe\xff") && encoding != UTF_16BE)
+        || (data.starts_with(b"\xef\xbb\xbf") && encoding != UTF_8)
+    {
+        return false;
+    }
+    let (_, errors) = encoding.decode_without_bom_handling(data);
+    !errors
+}
+
+fn valid_korean_bytes(data: &[u8]) -> bool {
+    let mut decoder = EUC_KR.new_decoder_without_bom_handling();
+    let mut decoded = String::with_capacity(65536 * 3);
+    let mut offset = 0;
+    while offset < data.len() {
+        decoded.clear();
+        let end = (offset + 65536).min(data.len());
+        let (_, consumed, had_errors) =
+            decoder.decode_to_string(&data[offset..end], &mut decoded, end == data.len());
+        if had_errors || consumed == 0 {
+            return false;
+        }
+        offset += consumed;
+    }
+    true
+}
+
 pub fn decode_bytes(bytes: &[u8], encoding: &'static Encoding) -> String {
     let (res, _, _) = encoding.decode(bytes);
     res.into_owned()
+}
+
+/// Python-compatible shortest float representation for decoded JSON scalars.
+pub fn format_float(value: f64) -> String {
+    let repr = format!("{value:?}");
+    if let Some((mantissa, exponent)) = repr.split_once('e') {
+        let exponent: i32 = exponent.parse().expect("float exponent is numeric");
+        format!("{mantissa}e{exponent:+03}")
+    } else {
+        repr
+    }
+}
+
+#[cfg(test)]
+mod reliability_tests {
+    use super::*;
+
+    #[test]
+    fn ascii_prefix_does_not_hide_korean_encoding() {
+        let mut bytes = vec![b'a'; 65536];
+        bytes.extend_from_slice(&EUC_KR.encode("가나다").0);
+        assert_eq!(detect_encoding(&bytes), EUC_KR);
+        let mut utf8 = vec![b'a'; 65535];
+        utf8.extend_from_slice("가나다".as_bytes());
+        assert_eq!(detect_encoding(&utf8), UTF_8);
+    }
+
+    #[test]
+    fn filename_filters_are_literal_substrings() {
+        for literal in ["report{a,b}", "report[a]", "report*", "report?"] {
+            let set = build_glob_set(&[literal.to_string()]);
+            assert!(match_filename_glob(&format!("prefix{literal}.txt"), &set));
+            assert!(!match_filename_glob("reporta.txt", &set));
+        }
+    }
+
+    #[test]
+    fn float_text_preserves_fraction_marker_and_python_exponents() {
+        for (value, expected) in [
+            (1.0, "1.0"),
+            (-0.0, "-0.0"),
+            (1e-5, "1e-05"),
+            (1e-4, "0.0001"),
+            (1e15, "1000000000000000.0"),
+            (1e16, "1e+16"),
+            (1e20, "1e+20"),
+        ] {
+            assert_eq!(format_float(value), expected);
+        }
+    }
 }
 
 pub fn parse_search_mode(mode_bits: Option<u32>) -> (bool, bool, bool, bool, bool, bool) {
@@ -109,11 +197,8 @@ pub fn build_glob_set(filters: &[String]) -> Option<GlobSet> {
     }
     let mut builder = GlobSetBuilder::new();
     for filter in filters {
-        let pattern = if !filter.contains('*') && !filter.contains('?') {
-            format!("*{}*", filter.to_lowercase())
-        } else {
-            filter.to_lowercase()
-        };
+        // Filters are literal substrings, including punctuation in saved filters.
+        let pattern = format!("*{}*", globset::escape(&filter.to_lowercase()));
         // GlobBuilder를 사용하여 대소문자 무시 속성을 직접 부여하여 힙 할당을 줄입니다.
         if let Ok(glob) = globset::GlobBuilder::new(&pattern)
             .case_insensitive(true)
@@ -251,6 +336,25 @@ pub fn normalize_unicode(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn korean_utf16_does_not_override_valid_cp949() {
+        let text = "가나다".repeat(32);
+        let (cp949, _, _) = EUC_KR.encode(&text);
+        assert_eq!(detect_encoding(&cp949), EUC_KR);
+        let le: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let be: Vec<u8> = text.encode_utf16().flat_map(u16::to_be_bytes).collect();
+        assert_eq!(detect_encoding(&le), UTF_16LE);
+        assert_eq!(detect_encoding(&be), UTF_16BE);
+    }
+
+    #[test]
+    fn selected_encoding_rejects_conflicting_bom_and_invalid_bytes() {
+        assert!(!selected_encoding_valid(b"\xfe\xff\x00A", UTF_16LE));
+        assert!(!selected_encoding_valid(b"\xff\xfeA\x00", UTF_8));
+        assert!(selected_encoding_valid(b"\xff\xfeA\x00", UTF_16LE));
+        assert!(!selected_encoding_valid(b"\xc7\xd1\xb1\xdb", UTF_8));
+    }
 
     #[test]
     fn parse_search_mode_none_defaults_to_all_false() {

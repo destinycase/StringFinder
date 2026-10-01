@@ -1,5 +1,6 @@
 """JSON decoding with explicit duplicate-key policy and stack-safe fallback."""
 import json
+import math
 from typing import Any, NoReturn
 
 
@@ -15,6 +16,13 @@ def _reject_constant(value):
     raise ValueError(f"Invalid JSON constant: {value}")
 
 
+def _finite_float(value):
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("JSON number out of range")
+    return result
+
+
 def loads_document(content: str, allow_duplicates: bool = False):
     def object_pairs(pairs):
         if allow_duplicates:
@@ -27,14 +35,14 @@ def loads_document(content: str, allow_duplicates: bool = False):
         return members
 
     try:
-        return json.loads(content, object_pairs_hook=object_pairs, parse_constant=_reject_constant)
+        return json.loads(content, object_pairs_hook=object_pairs, parse_constant=_reject_constant, parse_float=_finite_float)
     except RecursionError:
         return _loads_iterative(content, object_pairs)
 
 
 def _loads_iterative(content, object_pairs):
     """Validate the same JSON grammar without relying on Python's call stack."""
-    decoder = json.JSONDecoder(parse_constant=_reject_constant)
+    decoder = json.JSONDecoder(parse_constant=_reject_constant, parse_float=_finite_float)
     frames: list[list[Any]] = []
     root: list[Any] = []
     index = 0

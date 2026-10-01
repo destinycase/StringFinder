@@ -288,11 +288,15 @@ class ConfigManager:
             config[Constants.CONFIG_KEY_VERSION] = 3
         return config
 
-    def _normalize_advanced_settings(self, settings: Any) -> dict[str, int]:
+    def _normalize_advanced_settings(self, settings: Any) -> dict[str, Any]:
         """Validate advanced settings, restoring invalid values to defaults."""
         source = settings if isinstance(settings, dict) else {}
-        normalized: dict[str, int] = {}
+        normalized: dict[str, Any] = {}
         for key, spec in Constants.ADVANCED_SETTING_SPECS.items():
+            if "choices" in spec:
+                value = source.get(key, spec["default"])
+                normalized[key] = value if isinstance(value, str) and value in spec["choices"] else spec["default"]
+                continue
             if type(spec["default"]) is bool:
                 raw_value = source.get(key, spec["default"])
                 normalized[key] = raw_value if type(raw_value) is bool else spec["default"]

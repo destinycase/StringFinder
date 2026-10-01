@@ -307,6 +307,36 @@ class SettingsDialog(QDialog):
         common_layout.addLayout(hidden_row)
 
         adv_settings = self.config_manager.get_advanced_settings()
+        def add_choice_setting(key, label, items, description):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addStretch()
+            combo = QComboBox()
+            for text, value in items:
+                combo.addItem(text, value)
+            combo.setCurrentIndex(combo.findData(adv_settings[key]))
+            combo.setFixedWidth(INPUT_WIDTH)
+            combo.currentIndexChanged.connect(lambda i: self._on_advanced_setting_changed(key, combo.itemData(i)))
+            row.addWidget(combo)
+            common_layout.addLayout(row)
+            help_label = QLabel(description)
+            help_label.setObjectName("advancedSettingDescription")
+            help_label.setWordWrap(True)
+            help_label.setStyleSheet("color: #888888; font-size: 11px; padding: 0 2px 4px 2px;")
+            common_layout.addWidget(help_label)
+            return combo
+
+        self.include_junctions_combo = add_choice_setting(
+            Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, AppStrings.ADVANCED_INCLUDE_JUNCTIONS,
+            [(AppStrings.JUNCTION_EXCLUDE, False), (AppStrings.JUNCTION_INCLUDE, True)],
+            AppStrings.JUNCTION_DESCRIPTION,
+        )
+        self.search_encoding_combo = add_choice_setting(
+            Constants.CONFIG_KEY_SEARCH_ENCODING, AppStrings.ADVANCED_SEARCH_ENCODING,
+            [(AppStrings.SEARCH_ENCODING_AUTO, "auto"), ("UTF-8", "utf-8"),
+             ("CP949", "cp949"), ("UTF-16 LE", "utf-16-le"), ("UTF-16 BE", "utf-16-be")],
+            AppStrings.SEARCH_ENCODING_DESCRIPTION,
+        )
         duplicate_row = QHBoxLayout()
         duplicate_row.addWidget(QLabel(AppStrings.ADVANCED_ALLOW_DUPLICATE_JSON_KEYS))
         duplicate_row.addStretch()
@@ -735,6 +765,13 @@ class SettingsDialog(QDialog):
     def _reset_advanced_settings(self):
         defaults = self.config_manager.reset_advanced_settings()
         self.allow_duplicate_json_keys_combo.setCurrentIndex(0)
+        for key, combo in (
+            (Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, self.include_junctions_combo),
+            (Constants.CONFIG_KEY_SEARCH_ENCODING, self.search_encoding_combo),
+        ):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(combo.findData(defaults[key]))
+            combo.blockSignals(False)
         for key, spinbox in self.adv_spinboxes.items():
             spinbox.blockSignals(True)
             spinbox.setValue(defaults.get(key, 0))

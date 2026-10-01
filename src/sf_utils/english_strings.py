@@ -2,6 +2,14 @@
 
 
 ENGLISH_STRINGS = {
+    "ADVANCED_INCLUDE_JUNCTIONS": "Windows linked folders (junctions)",
+    "JUNCTION_EXCLUDE": "Exclude",
+    "JUNCTION_INCLUDE": "Include",
+    "JUNCTION_DESCRIPTION": "Include linked folders in searches. Circular links are not followed, and each physical folder is searched only once.",
+    "ADVANCED_SEARCH_ENCODING": "Text encoding",
+    "ERROR_SELECTED_ENCODING": "[Error] The file cannot be read using the selected encoding. Check its encoding or select Automatic.",
+    "SEARCH_ENCODING_AUTO": "Automatic",
+    "SEARCH_ENCODING_DESCRIPTION": "Automatic is the default. Select an encoding only when text is not found correctly and you know the file's encoding. This controls how text, JSON and XML files are read, not which files are selected. Excel is unaffected. Use Automatic for folders containing mixed encodings.",
     "TITLE_CRITICAL_ERROR": "StringFinder Error",
     "TITLE_QT_WARNING": "Thread Warning",
     "ERROR_DETAIL_FORMAT": "Error details:\n{}",

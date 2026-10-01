@@ -1,4 +1,5 @@
 import ctypes
+import datetime
 from contextlib import contextmanager
 from contextvars import ContextVar
 import logging
@@ -135,7 +136,19 @@ def _build_rust_options(**values: Any) -> Optional[Any]:
     options_type = getattr(sf_engine, "SearchOptions", None)
     if options_type is None:
         return None
+    include_junctions = _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False) is True
+    encoding = _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto")
+    if hasattr(options_type, "encoding"):
+        values.setdefault("include_junctions", include_junctions)
+        values.setdefault("encoding", encoding)
+    elif include_junctions or encoding != "auto":
+        raise RuntimeError("The Rust engine must be rebuilt to support junction and encoding options")
     return options_type(**values)
+
+
+def _rust_policy_kwargs() -> dict[str, Any]:
+    options = _build_rust_options()
+    return {"options": options} if options is not None else {}
 
 
 def _get_structured_memory_budget() -> int:
@@ -438,6 +451,7 @@ def format_excel_panic_reason(detail: Any) -> str:
 
 
 _LOCALIZED_SKIP_MESSAGE_NAMES = (
+    "ERROR_SELECTED_ENCODING",
     "ERROR_JSON_PARSE",
     "ERROR_EXCEL_ACCESS",
     "ERROR_EXCEL_SIGNATURE",
@@ -1124,6 +1138,16 @@ def is_binary_file(file_path: str) -> bool:
 
 def detect_encoding_quickly(data: bytes) -> str:
     """바이트 데이터의 BOM 및 패턴 기반 빠른 인코딩 감지를 수행합니다."""
+    requested = _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto")
+    if requested in ("utf-8", "cp949", "utf-16-le", "utf-16-be"):
+        for bom, declared in ((b"\xef\xbb\xbf", "utf-8"), (b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be")):
+            if data.startswith(bom) and requested != declared:
+                raise UnicodeError("File BOM conflicts with the selected encoding")
+        if requested == "utf-8" and data.startswith(b"\xef\xbb\xbf"):
+            return "utf-8-sig"
+        if requested.startswith("utf-16") and data.startswith(b"\xff\xfe" if requested.endswith("le") else b"\xfe\xff"):
+            return "utf-16"
+        return requested
     if not data:
         return Constants.ENC_UTF8
     if data.startswith(b"\xef\xbb\xbf"):
@@ -1158,6 +1182,25 @@ def detect_encoding_quickly(data: bytes) -> str:
         return Constants.ENC_UTF8
     except UnicodeDecodeError:
         pass
+    # A long Korean UTF-16 prefix need not have many NULs. Accept only an
+    # unambiguous, strictly decoded Hangul-dominant sample; never override UTF-8.
+    sample = data[:2048]
+    sample = sample[:len(sample) // 2 * 2]
+    candidates = []
+    for encoding in ("utf-16-le", "utf-16-be"):
+        try:
+            decoded = sample.decode(encoding, errors="strict")
+        except UnicodeDecodeError:
+            continue
+        if len(decoded) >= 16 and sum("\uac00" <= c <= "\ud7a3" for c in decoded) >= len(decoded) * 0.8:
+            candidates.append(encoding)
+    if len(candidates) == 1:
+        try:
+            sample.decode(Constants.ENC_CP949, errors="strict")
+        except UnicodeDecodeError:
+            return candidates[0]
+        # Valid CP949 Korean bytes can also look like Hangul in UTF-16 BE.
+        # Preserve the existing interpretation when both encodings are valid.
     # [L-03 Fix] EUC-KR 검사 제거 — CP949가 EUC-KR의 상위집합이므로 중복 처리 불필요
     try:
         decoded_cp = data.decode(Constants.ENC_CP949)
@@ -1193,16 +1236,50 @@ def _fast_existence_check(
         return True
 
 
+def _decode_text_bytes(data: bytes) -> Tuple[str, str]:
+    """Decode strictly; an ASCII prefix does not prove the rest is UTF-8."""
+    encoding = detect_encoding_quickly(data[:65536])
+    if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") != "auto":
+        return data.decode(encoding, errors="strict"), encoding
+    if encoding == Constants.ENC_CP949:
+        # A sample ending inside a UTF-8 character can look like CP949.
+        encoding = Constants.ENC_UTF8
+    try:
+        return data.decode(encoding, errors="strict"), encoding
+    except UnicodeDecodeError:
+        if encoding != Constants.ENC_UTF8:
+            raise
+        return data.decode(Constants.ENC_CP949, errors="strict"), Constants.ENC_CP949
+
+
+def _search_text_file(file_path: str, encoding: str, *args, **kwargs):
+    """Restart a failed UTF-8 scan without retaining partial results."""
+    if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") != "auto":
+        with open(file_path, "r", encoding=encoding, errors="strict") as stream:
+            return _search_text_stream(stream, *args, **kwargs)
+    if encoding == Constants.ENC_CP949:
+        encoding = Constants.ENC_UTF8
+    try:
+        with open(file_path, "r", encoding=encoding, errors="strict") as stream:
+            return _search_text_stream(stream, *args, **kwargs)
+    except UnicodeDecodeError:
+        if encoding == Constants.ENC_UTF8:
+            try:
+                with open(file_path, "r", encoding=Constants.ENC_CP949, errors="strict") as stream:
+                    return _search_text_stream(stream, *args, **kwargs)
+            except UnicodeDecodeError:
+                pass
+        # Ordinary text/binary searches retain the existing replacement policy
+        # for unsupported encodings. Structured parsers remain strict.
+        with open(file_path, "r", encoding=encoding, errors="replace") as stream:
+            return _search_text_stream(stream, *args, **kwargs)
+
+
 def read_text_file_with_encoding(file_path: str) -> Tuple[str, str]:
     """파일 경로를 받아 자동으로 인코딩을 감지한 뒤 텍스트를 반환합니다."""
     try:
-        # 샘플링 범위를 64 KB로 확대하여 EUC-KR/CP949 인코딩 오탐을 방지합니다.
         with open(file_path, "rb") as f:
-            head = f.read(65536)
-            encoding = detect_encoding_quickly(head)
-        with open(file_path, "r", encoding=encoding, errors="replace") as f:
-            content = f.read()
-        return content, encoding
+            return _decode_text_bytes(f.read())
     except (IOError, OSError) as e:
         logger.debug(AppStrings.ERROR_READ_FILE.format(file_path, e))
         raise
@@ -1228,16 +1305,8 @@ class FileScanner:
             self.filename_filters = [filename_filter.lower()]
         else:
             self.filename_filters = [f.lower() for f in filename_filter]
-        # 파일 패턴 필터를 __init__에서 한 번만 처리
-        # _scan_recursive 루프에서 파일마다 리스트 컴프리헨션을 실행하던 부하를 제거하고
-        # 생성 시점에 한 번 계산 후 멤버 변수로 재사용합니다.
-        import fnmatch as _fnmatch
-
-        self._fnmatch = _fnmatch
-        self.processed_filename_filters: List[str] = [
-            (f"*{f}*" if "*" not in f else f).lower() for f in self.filename_filters
-        ]
         self.exclude_hidden = bool(kwargs.get("exclude_hidden", False))
+        self.include_junctions = kwargs.get("include_junctions", _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False)) is True
         self.stop_check_callback = stop_check_callback
         self._yield_counter: int = 0
         self.skipped: List[Tuple[str, str]] = []
@@ -1255,7 +1324,9 @@ class FileScanner:
             if not os.path.exists(folder):
                 self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, "file not found"))))
                 continue
-            real_folder = os.path.realpath(folder)
+            if not self.include_junctions and os.path.isjunction(folder):
+                continue
+            real_folder = os.path.normcase(os.path.realpath(folder))
             if real_folder in visited:
                 continue
             visited.add(real_folder)
@@ -1277,6 +1348,8 @@ class FileScanner:
                         continue
                     if entry.is_symlink():
                         continue
+                    if not self.include_junctions and os.path.isjunction(entry.path):
+                        continue
                     if hasattr(self, "_yield_counter"):
                         self._yield_counter += 1
                         if self._yield_counter % 5000 == 0:
@@ -1287,7 +1360,7 @@ class FileScanner:
                         self._yield_counter = 1
                     try:
                         if entry.is_dir():
-                            real_path = os.path.realpath(entry.path)
+                            real_path = os.path.normcase(os.path.realpath(entry.path))
                             if real_path not in visited:
                                 visited.add(real_path)
                                 self._scan_recursive(entry.path, file_list, visited)
@@ -1296,12 +1369,11 @@ class FileScanner:
                                 continue
                             ext = splitext(entry.name)[1].lower()
                             if not self.extensions or ext in self.extensions:
-                                if self.processed_filename_filters:
+                                if self.filename_filters:
                                     is_matched = False
                                     fname_lower = entry.name.lower()
-                                    # __init__에서 전처리된 패턴 재사용 (파일마다 생성하던 것 제거)
-                                    for pattern in self.processed_filename_filters:
-                                        if self._fnmatch.fnmatch(fname_lower, pattern):
+                                    for pattern in self.filename_filters:
+                                        if pattern in fname_lower:
                                             is_matched = True
                                             break
                                     if not is_matched:
@@ -1319,6 +1391,17 @@ class FileScanner:
         except OSError as e:
             self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
             logger.error(AppStrings.LOG_SCH_SCAN_OS_ERROR.format(folder, e))
+
+
+def _excel_cell_text(value: Any) -> str:
+    """Use the same decoded cell representation as the native Excel reader."""
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, float) and value.is_integer():
+        return format(value, ".0f")
+    if isinstance(value, datetime.datetime) and value.time() == datetime.time():
+        return value.date().isoformat()
+    return str(value)
 
 
 def _check_excel_signature(file_path: str) -> Tuple[bool, Optional[str]]:
@@ -1374,6 +1457,7 @@ def search_in_excel_special(
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
+                **_rust_policy_kwargs(),
             )
             if results:
                 error_reason = _extract_marker_skip_reason(results)
@@ -1437,6 +1521,7 @@ def search_in_excel_special(
         count = 0
         matches = []
         sheet_errors = []
+        date_cells = None
         max_per_file = _positive_limit(
             None,
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
@@ -1471,7 +1556,18 @@ def search_in_excel_special(
                         break
                     for col_idx, cell_value in enumerate(row):
                         if cell_value is not None:
-                            val_str = normalize_unicode(str(cell_value))
+                            if isinstance(cell_value, datetime.time) and file_path.lower().endswith((".xlsx", ".xlsm")):
+                                if date_cells is None:
+                                    from core.excel_date_formats import read_date_cells
+                                    date_cells = read_date_cells(file_path)
+                                actual_col = col_idx + (sheet.start[1] if sheet.start else 0)
+                                from openpyxl.utils.cell import get_column_letter
+                                coordinate = f"{get_column_letter(actual_col + 1)}{row_idx + 1}"
+                                if (sheet_name, coordinate) in date_cells:
+                                    cell_value = datetime.datetime.combine(datetime.date(1904, 1, 1), cell_value)
+                                    if cell_value.time() == datetime.time():
+                                        cell_value = cell_value.date()
+                            val_str = normalize_unicode(_excel_cell_text(cell_value))
                             val_norm = val_str.casefold().strip()
                             val_lower = val_str.casefold()
                             is_match = False
@@ -1563,6 +1659,7 @@ def search_in_json_special(
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
+                **_rust_policy_kwargs(),
             )
             if results:
                 skip_reason = _extract_marker_skip_reason(results)
@@ -1656,15 +1753,11 @@ def search_in_json_special(
                 if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
                     mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
                     try:
-                        # 1. 인코딩 감지 (최대 64KB 참조)
-                        sample_len = min(f_size, 65536)
-                        encoding = detect_encoding_quickly(mm[:sample_len])
-                        
                         # Avoid the additional ``mm[:]`` copy. ``read()`` still creates
                         # the byte buffer required before DOM parsing creates a string.
                         try:
                             # JSON loads를 위해 전체 텍스트 변환 (DOM 방식의 한계)
-                            processed_content = mm.read().decode(encoding, errors="strict")
+                            processed_content, encoding = _decode_text_bytes(mm.read())
                             # 디코딩 성공 시 메모리 절감을 위해 raw_bytes를 유지하지 않습니다.
                         except UnicodeDecodeError:
                             processed_content = None
@@ -1689,7 +1782,7 @@ def search_in_json_special(
                 # raw_bytes가 None인 경우를 대비한 가드 로직입니다.
                 if raw_bytes is not None:
                     try:
-                        processed_content = raw_bytes.decode(encoding, errors="strict")
+                        processed_content, encoding = _decode_text_bytes(raw_bytes)
                     except UnicodeDecodeError:
                         # 인코딩 감지가 틀렸거나 데이터가 손상됨. UTF-16 재시도 게이트
                         processed_content = None
@@ -1709,7 +1802,8 @@ def search_in_json_special(
             if data is missing:
                 # 데이터가 확보된 경우에만 재시도를 수행하여 무결성을 유지합니다.
                 # mmap 디코딩 성공 후 파싱이 실패한 경우(raw_bytes=None)는 메시지 왜곡 방지를 위해 즉시 실패 처리
-                if raw_bytes is not None and encoding not in ["utf-16-le", "utf-16-be", "utf-16"]:
+                if (_get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") == "auto"
+                        and raw_bytes is not None and encoding not in ["utf-16-le", "utf-16-be", "utf-16"]):
                     for alt_enc in ["utf-16-le", "utf-16-be"]:
                         try:
                             alt_content = raw_bytes.decode(alt_enc, errors="strict")
@@ -1858,6 +1952,7 @@ def search_in_xml_special(
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
+                **_rust_policy_kwargs(),
             )
             if results:
                 if existence_only:
@@ -2145,6 +2240,7 @@ def search_in_file(
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
+                **_rust_policy_kwargs(),
             )
             t_rust = time.time() - t_start
             if not rust_results:
@@ -2267,15 +2363,14 @@ def search_in_file(
                 if not _fast_existence_check(file_path, search_string, is_exact, encoding=encoding):
                     return None
 
-            with open(file_path, "r", encoding=encoding, errors="replace") as f_text:
-                matches, count, existence_found, stopped = _search_text_stream(
-                    f_text,
-                    search_string_nfc,
-                    exact_match=is_exact,
-                    existence_only=existence_only,
-                    stop_event=stop_event,
-                    max_per_file=max_per_file,
-                )
+            matches, count, existence_found, stopped = _search_text_file(
+                file_path, encoding,
+                search_string_nfc,
+                exact_match=is_exact,
+                existence_only=existence_only,
+                stop_event=stop_event,
+                max_per_file=max_per_file,
+            )
 
             if stopped:
                 return Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER
@@ -2298,15 +2393,14 @@ def search_in_file(
                 detected_enc = "utf-8"
 
             try:
-                with open(file_path, "r", encoding=detected_enc, errors="replace") as f_text:
-                    matches, count, existence_found, stopped = _search_text_stream(
-                        f_text,
-                        search_string_nfc,
-                        exact_match=is_exact,
-                        existence_only=existence_only,
-                        stop_event=stop_event,
-                        max_per_file=max_per_file,
-                    )
+                matches, count, existence_found, stopped = _search_text_file(
+                    file_path, detected_enc,
+                    search_string_nfc,
+                    exact_match=is_exact,
+                    existence_only=existence_only,
+                    stop_event=stop_event,
+                    max_per_file=max_per_file,
+                )
             except Exception as e:
                 logger.debug(AppStrings.LOG_SCH_STREAM_ERROR.format(e))
                 return (
@@ -2334,6 +2428,11 @@ def search_in_file(
                         normalized_matches.append(m)
                 return (file_path, final_count, normalized_matches)
             return None
+    except UnicodeError as e:
+        _log_raw_skip_detail("Text encoding", e)
+        if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") != "auto":
+            return Constants.STATUS_SKIPPED, AppStrings.ERROR_SELECTED_ENCODING
+        return Constants.STATUS_SKIPPED, AppStrings.ERROR_UNEXPECTED_FILE.format(file_path, _localize_internal_error_detail("file search", e))
     except (IOError, OSError) as e:
         logger.debug(AppStrings.LOG_SCH_ERROR_FILE.format(file_path, e))
         return (
@@ -2473,6 +2572,10 @@ def search_directory_fast(
 ) -> Dict[str, List]:
     """Rust 엔진을 사용하여 디렉토리를 고속으로 검색합니다."""
     try:
+        if _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False) is not True:
+            search_paths = [path for path in search_paths if not os.path.isjunction(path)]
+        if not search_paths:
+            return {"results": [], "skipped": []}
         search_paths = _deduplicate_overlapping_roots(search_paths)
         rust_pattern = normalize_unicode(search_string)
         rust_exts = None
@@ -2530,6 +2633,7 @@ def search_directory_fast(
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
+                options=_build_rust_options(),
             )
         formatted_results = []
         skipped_results = []
@@ -2625,6 +2729,7 @@ def search_files_list_fast(
                 max_check_cells=max_check_cells,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
+                options=_build_rust_options(),
             )
         formatted_results = []
         skipped_results = []
@@ -2752,6 +2857,7 @@ def find_files_with_keyword_fast(
                 results_callback=results_callback,
                 max_json_depth=max_json_depth,
                 max_json_size=max_json_size,
+                options=_build_rust_options(),
             )
         found_files: List[FileInfo] = []
         skipped_files: List[SkippedResult] = []

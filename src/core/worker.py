@@ -595,7 +595,8 @@ class SearchWorker(QRunnable):
             try:
                 scanner = FileScanner(self.search_paths, self.extensions, filename_filter=self.filename_filter,
                     stop_check_callback=lambda: (not self.is_running.is_set()) or (self.stop_event is not None and self.stop_event.is_set()),
-                    exclude_hidden=self.exclude_hidden)
+                    exclude_hidden=self.exclude_hidden,
+                    include_junctions=self.search_settings_snapshot.get(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False))
                 self.file_list = scanner.scan()
                 if scanner.skipped:
                     scan_skipped_count = len(scanner.skipped)
@@ -797,6 +798,13 @@ class SearchWorker(QRunnable):
                     try:
                         batch_res = future.result()
                         if batch_res:
+                            # Notices belong to the completed batch, even when its
+                            # results subsequently reach the global match limit.
+                            skip_list = batch_res.get(Constants.PAYLOAD_SKIPPED, [])
+                            if skip_list:
+                                self._safe_emit(self.signals.skipped_found, skip_list)
+                                skipped_count += len(skip_list)
+                                self.all_skipped.extend(skip_list)
                             if batch_res.get(Constants.PAYLOAD_RESULTS):
                                 res_list = batch_res[Constants.PAYLOAD_RESULTS]
                                 # 실질적인 매치 수(m[1])를 합산하여 집계 정확도를 높입니다.
@@ -820,8 +828,6 @@ class SearchWorker(QRunnable):
                                     break
                             if batch_res.get(Constants.PAYLOAD_SKIPPED):
                                 skip_list = batch_res[Constants.PAYLOAD_SKIPPED]
-                                self._safe_emit(self.signals.skipped_found, skip_list)
-                                skipped_count += len(skip_list)
                                 if self._is_memory_skip(skip_list):
                                     self._stop_for_memory_pressure()
                                     for pending in list(pending_futures):

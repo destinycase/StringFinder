@@ -22,6 +22,10 @@ pub type RawMatch = (usize, String, Option<usize>, Option<usize>);
 #[derive(Default)]
 pub struct SearchOptions {
     #[pyo3(get)]
+    pub include_junctions: bool,
+    #[pyo3(get)]
+    pub encoding: Option<String>,
+    #[pyo3(get)]
     pub mode_bits: Option<u32>,
     #[pyo3(get)]
     pub extensions: Option<Vec<String>>,
@@ -69,6 +73,8 @@ impl SearchOptions {
         max_json_depth=None,
         max_json_size=None,
         structured_memory_budget=None,
+        include_junctions=false,
+        encoding=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -86,8 +92,12 @@ impl SearchOptions {
         max_json_depth: Option<usize>,
         max_json_size: Option<u64>,
         structured_memory_budget: Option<u64>,
+        include_junctions: bool,
+        encoding: Option<String>,
     ) -> Self {
         Self {
+            include_junctions,
+            encoding,
             mode_bits,
             extensions,
             filename_filter,

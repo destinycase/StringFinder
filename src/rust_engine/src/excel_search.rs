@@ -19,6 +19,8 @@ pub enum ExcelFileError {
 
 // M3: 포맷별 공통 컨텍스트
 struct ExcelCtx<'a> {
+    path: &'a Path,
+    date_cells: std::cell::OnceCell<Result<crate::excel_date_formats::DateCells, String>>,
     pat_upper: &'a str,
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
@@ -88,6 +90,14 @@ where
         if results.len() > ctx.max_per_file {
             break;
         } // H2: 시트 간에도 확인
+        if let Some(Err(error)) = ctx.date_cells.get() {
+            results.push((
+                0,
+                format!("{EXCEL_MARKER_SHEET_ERROR_PREFIX}{sheet_name}|{error}"),
+                None,
+                None,
+            ));
+        }
     }
     results
 }
@@ -98,7 +108,7 @@ where
     R: std::io::Read + std::io::Seek,
     WB: Reader<R>,
 {
-    // C1: 매우 큰 파일에서 첫 매치가 극히 마지막에 있어도 무한 순회하지 않도록 상한을 둡니다.
+    // Search all cells until the first hit or cancellation; there is no cell cap.
     let mut first_sheet_error = None;
 
     for sheet_name in wb.sheet_names() {
@@ -108,18 +118,30 @@ where
         if let Ok(Ok(range)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             wb.worksheet_range(&sheet_name)
         })) {
-            for row in range.rows() {
+            let (offset_row, offset_col) = range.start().unwrap_or((0, 0));
+            for (row_idx, row) in range.rows().enumerate() {
                 if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                     return ExcelCheckOutcome::default();
                 }
-                for cell in row.iter() {
-                    if cell_matches(cell, ctx) {
+                for (col_idx, cell) in row.iter().enumerate() {
+                    if cell_text(
+                        cell,
+                        &sheet_name,
+                        row_idx + offset_row as usize,
+                        col_idx + offset_col as usize,
+                        ctx,
+                    )
+                    .is_some_and(|value| cell_matches_val(&value, ctx))
+                    {
                         return ExcelCheckOutcome {
                             found: true,
                             sheet_error: first_sheet_error,
                         };
                     }
                 }
+            }
+            if let Some(Err(error)) = ctx.date_cells.get() {
+                first_sheet_error = Some(format!("{sheet_name}|{error}"));
             }
         } else if first_sheet_error.is_none() {
             first_sheet_error = Some(sheet_name);
@@ -148,6 +170,8 @@ pub fn search_excel_file(
     let pat_nfc: String = pattern.chars().nfc().collect();
     let pat_upper = pat_nfc.to_lowercase().to_uppercase();
     let ctx = ExcelCtx {
+        path,
+        date_cells: std::cell::OnceCell::new(),
         pat_upper: &pat_upper,
         ac,
         is_exact,
@@ -197,6 +221,8 @@ pub fn check_excel_file(
     let pat_nfc: String = pattern.chars().nfc().collect();
     let pat_upper = pat_nfc.to_lowercase().to_uppercase();
     let ctx = ExcelCtx {
+        path,
+        date_cells: std::cell::OnceCell::new(),
         pat_upper: &pat_upper,
         ac,
         is_exact,
@@ -237,7 +263,7 @@ fn match_cell(
     col_idx: usize,
     ctx: &ExcelCtx<'_>,
 ) -> Option<RawMatch> {
-    let val = cell_to_string(cell)?;
+    let val = cell_text(cell, sheet_name, row_idx, col_idx, ctx)?;
     if !cell_matches_val(&val, ctx) {
         return None;
     }
@@ -257,11 +283,53 @@ fn match_cell(
 }
 
 /// 셀 매치 여부만 확인 (존재 확인 경로용)
-fn cell_matches(cell: &Data, ctx: &ExcelCtx<'_>) -> bool {
-    let Some(val) = cell_to_string(cell) else {
-        return false;
-    };
-    cell_matches_val(&val, ctx)
+fn cell_text(
+    cell: &Data,
+    sheet: &str,
+    row: usize,
+    col: usize,
+    ctx: &ExcelCtx<'_>,
+) -> Option<String> {
+    if let Data::DateTime(value) = cell {
+        let (year, month, day, hour, minute, second, millis) = value.to_ymd_hms_milli();
+        if year == 1904
+            && month == 1
+            && day == 1
+            && (0.0..1.0).contains(&value.as_f64())
+            && ctx
+                .path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("xlsx") || e.eq_ignore_ascii_case("xlsm"))
+        {
+            if let Ok(cells) = ctx
+                .date_cells
+                .get_or_init(|| crate::excel_date_formats::read_date_cells(ctx.path))
+            {
+                let mut letters = String::new();
+                let mut index = col + 1;
+                while index > 0 {
+                    index -= 1;
+                    letters.insert(0, (b'A' + (index % 26) as u8) as char);
+                    index /= 26;
+                }
+                if cells.contains(&(sheet.to_owned(), format!("{letters}{}", row + 1))) {
+                    if hour == 0 && minute == 0 && second == 0 && millis == 0 {
+                        return Some("1904-01-01".to_owned());
+                    }
+                    let fraction = if millis == 0 {
+                        String::new()
+                    } else {
+                        format!(".{:06}", millis * 1000)
+                    };
+                    return Some(format!(
+                        "1904-01-01 {hour:02}:{minute:02}:{second:02}{fraction}"
+                    ));
+                }
+            }
+        }
+    }
+    cell_to_string(cell)
 }
 
 /// 문자열 값의 패턴 매치 여부 확인 공통 로직
@@ -287,17 +355,18 @@ fn cell_to_string(cell: &Data) -> Option<String> {
     let s = match cell {
         Data::String(s) => s.to_string(),
         Data::Float(f) => {
-            if (f - f.round()).abs() < 1e-10 {
+            if f.fract() == 0.0 {
                 format!("{:.0}", f)
             } else {
-                f.to_string()
+                crate::utils::format_float(*f)
             }
         }
         Data::Int(i) => i.to_string(),
         Data::Bool(b) => b.to_string(),
         // 날짜/기간/오류 셀도 사용자가 확인할 수 있는 값으로 변환하여 검색 대상에 포함합니다.
-        Data::DateTime(value) => value.to_string(),
-        Data::DateTimeIso(value) | Data::DurationIso(value) => value.to_string(),
+        Data::DateTime(value) => format_excel_datetime(value),
+        Data::DateTimeIso(value) => format_iso_datetime(value),
+        Data::DurationIso(value) => value.to_string(),
         Data::Error(value) => format!("{:?}", value),
         _ => return None,
     };
@@ -305,6 +374,69 @@ fn cell_to_string(cell: &Data) -> Option<String> {
         None
     } else {
         Some(s)
+    }
+}
+
+fn format_iso_datetime(value: &str) -> String {
+    let Some((date, time)) = value.split_once('T') else {
+        return value.to_string();
+    };
+    let time = if let Some((seconds, fraction)) = time.split_once('.') {
+        if fraction.bytes().all(|byte| byte == b'0') {
+            seconds.to_string()
+        } else {
+            format!("{seconds}.{fraction:0<6}")
+        }
+    } else {
+        time.to_string()
+    };
+    if time == "00:00:00" || time == "00:00:00.000000" {
+        date.to_string()
+    } else {
+        format!("{date} {time}")
+    }
+}
+
+fn format_excel_datetime(value: &calamine::ExcelDateTime) -> String {
+    let suffix = |millis: u16| {
+        if millis == 0 {
+            String::new()
+        } else {
+            format!(".{:06}", u32::from(millis) * 1000)
+        }
+    };
+    if value.is_duration() {
+        let millis = (value.as_f64() * 86_400_000.0).round() as i64;
+        let days = millis.div_euclid(86_400_000);
+        let remainder = millis.rem_euclid(86_400_000);
+        let time = format!(
+            "{}:{:02}:{:02}{}",
+            remainder / 3_600_000,
+            remainder / 60_000 % 60,
+            remainder / 1000 % 60,
+            suffix((remainder % 1000) as u16)
+        );
+        return if days == 0 {
+            time
+        } else {
+            format!(
+                "{days} day{}, {time}",
+                if days == 1 || days == -1 { "" } else { "s" }
+            )
+        };
+    }
+    let (year, month, mut day, hour, minute, second, millis) = value.to_ymd_hms_milli();
+    // Python's calendar cannot represent Excel's fictitious leap day.
+    if year == 1900 && month == 2 && day == 29 {
+        day = 28;
+    }
+    let time = format!("{hour:02}:{minute:02}:{second:02}{}", suffix(millis));
+    if (0.0..1.0).contains(&value.as_f64()) {
+        time
+    } else if hour == 0 && minute == 0 && second == 0 && millis == 0 {
+        format!("{year:04}-{month:02}-{day:02}")
+    } else {
+        format!("{year:04}-{month:02}-{day:02} {time}")
     }
 }
 
@@ -332,25 +464,39 @@ mod tests {
             .build([pat_nfc])
             .expect("valid test pattern");
         let ctx = ExcelCtx {
+            path: Path::new("test.xlsx"),
+            date_cells: std::cell::OnceCell::new(),
             pat_upper: &pat_upper,
             ac: &ac,
             is_exact: exact,
             stop_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             max_per_file: 5_000,
         };
-        assert_eq!(cell_matches(&cell, &ctx), expected);
+        assert_eq!(
+            cell_text(&cell, "Sheet", 0, 0, &ctx).is_some_and(|v| cell_matches_val(&v, &ctx)),
+            expected
+        );
     }
 
     #[test]
     fn iso_date_and_duration_cells_are_searchable() {
         assert_eq!(
             cell_to_string(&Data::DateTimeIso("2026-08-28T12:30:00".to_string())),
-            Some("2026-08-28T12:30:00".to_string())
+            Some("2026-08-28 12:30:00".to_string())
         );
         assert_eq!(
             cell_to_string(&Data::DurationIso("PT1H30M".to_string())),
             Some("PT1H30M".to_string())
         );
+        assert_eq!(
+            format_iso_datetime("2026-08-28T12:30:00.000"),
+            "2026-08-28 12:30:00"
+        );
+        assert_eq!(
+            format_iso_datetime("2026-08-28T12:30:00.123"),
+            "2026-08-28 12:30:00.123000"
+        );
+        assert_eq!(format_iso_datetime("2026-08-28T00:00:00.000"), "2026-08-28");
     }
 
     #[test]
