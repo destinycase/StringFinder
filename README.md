@@ -35,4 +35,6 @@ python run.py
 
 - [사용자 가이드](docs/USER_GUIDE.md) — 화면, 검색 방식, 설정, 결과 및 문제 해결
 - [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 검색 계약, 현지화, 테스트와 릴리스 절차
-- [성능 기준](docs/ENGINE_PERFORMANCE_BASELINE.md) — 공식 벤치마크 기준과 해석 방법
+- [검색 성능과 최적화 기록](docs/ENGINE_PERFORMANCE_BASELINE.md) — 적용·보류한 최적화와 측정 근거
+- [벤치마크 히스토리](docs/benchmark_history.md) — 실행별 A–J 측정 원본
+- [개발 이력](docs/DEVELOPMENT_HISTORY.md) — 버전별 기능 변경과 수정 내역
