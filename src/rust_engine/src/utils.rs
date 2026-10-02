@@ -124,9 +124,59 @@ fn valid_korean_bytes(data: &[u8]) -> bool {
     true
 }
 
-pub fn decode_bytes(bytes: &[u8], encoding: &'static Encoding) -> String {
-    let (res, _, _) = encoding.decode(bytes);
-    res.into_owned()
+pub fn decode_structured_bytes(
+    bytes: &[u8],
+    encoding: &'static Encoding,
+) -> Result<Option<String>, String> {
+    if encoding == encoding_rs::UTF_8 {
+        simdutf8::basic::from_utf8(bytes)
+            .map_err(|_| "ERR_DECODING|Invalid UTF-8 document".to_owned())?;
+        return Ok(None);
+    }
+    let (res, _, errors) = encoding.decode(bytes);
+    if errors {
+        Err("ERR_DECODING|Invalid encoded document".to_owned())
+    } else {
+        Ok(Some(res.into_owned()))
+    }
+}
+
+#[cfg(test)]
+mod structured_decode_tests {
+    use super::*;
+
+    #[test]
+    fn malformed_utf16_is_not_repaired_into_a_document() {
+        for (bytes, encoding) in [
+            (&[0xff, 0xfe, 0x00, 0xd8][..], encoding_rs::UTF_16LE),
+            (&[0xfe, 0xff, 0xd8, 0x00][..], encoding_rs::UTF_16BE),
+        ] {
+            assert!(decode_structured_bytes(bytes, encoding)
+                .unwrap_err()
+                .starts_with("ERR_DECODING|"));
+        }
+    }
+
+    #[test]
+    fn utf8_validation_keeps_the_borrowed_fast_path() {
+        assert_eq!(
+            decode_structured_bytes(b"{\"v\":true}", encoding_rs::UTF_8),
+            Ok(None)
+        );
+        assert!(decode_structured_bytes(b"<r>\xed\xa0\x80</r>", encoding_rs::UTF_8).is_err());
+    }
+
+    #[test]
+    fn valid_utf16_keeps_its_content() {
+        let bytes: Vec<_> = "<r>needle</r>"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        assert_eq!(
+            decode_structured_bytes(&bytes, encoding_rs::UTF_16LE).unwrap(),
+            Some("<r>needle</r>".into())
+        );
+    }
 }
 
 /// Python-compatible shortest float representation for decoded JSON scalars.

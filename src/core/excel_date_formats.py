@@ -10,7 +10,7 @@ def date_format(code):
     return 'y' in code or 'd' in code
 
 
-def read_date_cells(path):
+def read_date_cells(path, sheet_name):
     cells = set()
     with zipfile.ZipFile(path) as archive:
         workbook = ET.fromstring(archive.read('xl/workbook.xml'))
@@ -31,6 +31,9 @@ def read_date_cells(path):
         relations = ET.fromstring(archive.read('xl/_rels/workbook.xml.rels'))
         targets = {e.attrib['Id']: e.attrib['Target'] for e in relations}
         for sheet in workbook.findall('s:sheets/s:sheet', ns):
+            # Another damaged worksheet must not invalidate this sheet's dates.
+            if sheet.attrib['name'] != sheet_name:
+                continue
             relation = next(v for k, v in sheet.attrib.items() if k.endswith('}id'))
             target = targets[relation]
             member = target.lstrip('/') if target.startswith('/') else posixpath.normpath('xl/' + target)

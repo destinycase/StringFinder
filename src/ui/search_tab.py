@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from sf_utils.file_helper import is_potentially_executable_file, open_in_external_editor
 from core.worker import SearchWorker
+from core.search_query import validate_search_query
 from sf_utils.app_strings import AppStrings
 from sf_utils.localization import get_korean_strings
 from sf_utils.constants import Constants
@@ -356,9 +357,8 @@ class SearchTab(QMainWindow):
             self._log_throttle_timer.stop()
 
     def _load_histories(self):
-        """설정 파일에서 검색어 및 파일명 필터 히스토리를 불러와 콤보박스에 로드합니다."""
-        current_search = self.search_panel.get_search_text()
-        self.search_panel.search_combo.setEditText(current_search)
+        """Reload saved search history without changing the current input."""
+        self.search_panel.search_combo.load_history(self.config_manager.get_history())
 
     def _remove_history_item(self, text, history_type):
         """검색어나 파일명 필터의 특정 히스토리 항목을 삭제합니다."""
@@ -640,6 +640,11 @@ class SearchTab(QMainWindow):
                 self._stop_existing_search()
                 return
             search_text = self.search_panel.get_search_text()
+            try:
+                validate_search_query(self.search_panel.search_combo.currentText())
+            except ValueError as error:
+                QMessageBox.warning(self, AppStrings.ERROR_TITLE, str(error))
+                return
             selected_folders = self.folder_panel.get_selected_folders()
             selected_exts = self.ext_panel.get_selected_extensions()
             special_mode = self.ext_panel.get_special_mode()
@@ -734,6 +739,13 @@ class SearchTab(QMainWindow):
             self.scanned_count = 0
             if self.worker:
                 QThreadPool.globalInstance().start(self.worker)
+                # Record after dispatch, not on Enter or failed validation.
+                # History persistence must never interrupt an active search.
+                try:
+                    self.config_manager.add_history(search_text)
+                    self._load_histories()
+                except Exception:
+                    logger.exception("Failed to save search history")
         except Exception as e:
             # [하] L-02: 예외 처리 단일화 및 메시지 정책 정리
             logger.error(AppStrings.LOG_SCH_ERROR_START.format(e), exc_info=True)

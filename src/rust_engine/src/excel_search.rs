@@ -20,7 +20,9 @@ pub enum ExcelFileError {
 // M3: 포맷별 공통 컨텍스트
 struct ExcelCtx<'a> {
     path: &'a Path,
-    date_cells: std::cell::OnceCell<Result<crate::excel_date_formats::DateCells, String>>,
+    date_cells: std::cell::RefCell<
+        std::collections::HashMap<String, Result<crate::excel_date_formats::DateCells, String>>,
+    >,
     pat_upper: &'a str,
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
@@ -36,6 +38,7 @@ where
     WB: Reader<R>,
 {
     let mut results: Vec<RawMatch> = Vec::new();
+    let mut match_count = 0;
     for sheet_name in wb.sheet_names() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             break;
@@ -51,7 +54,7 @@ where
                         break 'outer;
                     }
                     for (col_idx, cell) in row.iter().enumerate() {
-                        if results.len() > ctx.max_per_file {
+                        if match_count > ctx.max_per_file {
                             break 'outer;
                         } // H2: 결과 상한
                         if let Some(m) = match_cell(
@@ -62,6 +65,7 @@ where
                             ctx,
                         ) {
                             results.push(m);
+                            match_count += 1;
                         }
                     }
                 }
@@ -87,10 +91,10 @@ where
                 ));
             }
         }
-        if results.len() > ctx.max_per_file {
+        if match_count > ctx.max_per_file {
             break;
         } // H2: 시트 간에도 확인
-        if let Some(Err(error)) = ctx.date_cells.get() {
+        if let Some(Err(error)) = ctx.date_cells.borrow().get(&sheet_name) {
             results.push((
                 0,
                 format!("{EXCEL_MARKER_SHEET_ERROR_PREFIX}{sheet_name}|{error}"),
@@ -140,7 +144,7 @@ where
                     }
                 }
             }
-            if let Some(Err(error)) = ctx.date_cells.get() {
+            if let Some(Err(error)) = ctx.date_cells.borrow().get(&sheet_name) {
                 first_sheet_error = Some(format!("{sheet_name}|{error}"));
             }
         } else if first_sheet_error.is_none() {
@@ -171,7 +175,7 @@ pub fn search_excel_file(
     let pat_upper = pat_nfc.to_lowercase().to_uppercase();
     let ctx = ExcelCtx {
         path,
-        date_cells: std::cell::OnceCell::new(),
+        date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
         pat_upper: &pat_upper,
         ac,
         is_exact,
@@ -222,7 +226,7 @@ pub fn check_excel_file(
     let pat_upper = pat_nfc.to_lowercase().to_uppercase();
     let ctx = ExcelCtx {
         path,
-        date_cells: std::cell::OnceCell::new(),
+        date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
         pat_upper: &pat_upper,
         ac,
         is_exact,
@@ -304,7 +308,9 @@ fn cell_text(
         {
             if let Ok(cells) = ctx
                 .date_cells
-                .get_or_init(|| crate::excel_date_formats::read_date_cells(ctx.path))
+                .borrow_mut()
+                .entry(sheet.to_owned())
+                .or_insert_with(|| crate::excel_date_formats::read_date_cells(ctx.path, sheet))
             {
                 let mut letters = String::new();
                 let mut index = col + 1;
@@ -465,7 +471,7 @@ mod tests {
             .expect("valid test pattern");
         let ctx = ExcelCtx {
             path: Path::new("test.xlsx"),
-            date_cells: std::cell::OnceCell::new(),
+            date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
             pat_upper: &pat_upper,
             ac: &ac,
             is_exact: exact,

@@ -356,6 +356,37 @@ fn process_xml_text_item(
     }
 }
 
+fn attribute_value(
+    attr: &quick_xml::events::attributes::Attribute<'_>,
+) -> Result<String, XmlSearchError> {
+    let raw = std::str::from_utf8(attr.value.as_ref()).map_err(XmlSearchError::parse)?;
+    if !raw.bytes().any(|b| matches!(b, b'\t' | b'\r' | b'\n')) {
+        return attr
+            .unescape_value()
+            .map(|v| v.into_owned())
+            .map_err(XmlSearchError::parse);
+    }
+    // XML normalizes literal attribute whitespace BEFORE expanding references.
+    // Thus &#xA; remains a newline, whereas a literal CRLF becomes one space.
+    let mut normalized = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                normalized.push(' ');
+            }
+            '\n' | '\t' => normalized.push(' '),
+            _ => normalized.push(c),
+        }
+    }
+    quick_xml::escape::unescape(&normalized)
+        .map(|v| v.into_owned())
+        .map_err(XmlSearchError::parse)
+}
+
 fn process_xml_attributes(
     e: &quick_xml::events::BytesStart,
     start_pos: usize,
@@ -364,10 +395,7 @@ fn process_xml_attributes(
     for attr in e.attributes() {
         let attr = attr.map_err(XmlSearchError::parse)?;
         let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-        let val = attr
-            .unescape_value()
-            .map_err(XmlSearchError::parse)?
-            .into_owned();
+        let val = attribute_value(&attr)?;
 
         // Iteration and unescaping still validate attributes after collection stops.
         if ctx.results.len() > ctx.max_per_file {
@@ -526,10 +554,7 @@ fn check_xml_attributes(
     let mut found = false;
     for attr in e.attributes() {
         let attr = attr.map_err(XmlSearchError::parse)?;
-        let val = attr
-            .unescape_value()
-            .map_err(XmlSearchError::parse)?
-            .into_owned();
+        let val = attribute_value(&attr)?;
         if found {
             continue;
         }
@@ -555,6 +580,27 @@ mod tests {
             .ascii_case_insensitive(true)
             .build([pattern])
             .unwrap()
+    }
+
+    #[test]
+    fn literal_attribute_whitespace_normalizes_before_references() {
+        let ac = test_ac("needle value");
+        for whitespace in ["\t", "\n", "\r", "\r\n", "&#xA;"] {
+            let xml = format!("<r v=\"needle{whitespace}value\"/>");
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let expected = usize::from(whitespace != "&#xA;");
+            let rows =
+                search_xml_file(xml.as_bytes(), "needle value", &ac, false, stop.clone(), 10)
+                    .unwrap();
+            assert_eq!(rows.len(), expected);
+            assert_eq!(
+                check_xml_file(xml.as_bytes(), "needle value", &ac, false, stop).unwrap(),
+                expected == 1
+            );
+            if expected == 1 {
+                assert_eq!(rows[0].2, None);
+            }
+        }
     }
 
     #[test]

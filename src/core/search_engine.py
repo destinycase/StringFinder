@@ -17,10 +17,13 @@ from sf_utils.constants import Constants
 from sf_utils.english_strings import ENGLISH_STRINGS
 from sf_utils.localization import get_korean_strings, get_language
 from core.json_policy import DuplicateKeyError, ObjectPairs, loads_document
+from core.search_query import validate_search_query
 from core.skip_reason_codes import (
     EXPAT_XML_DETAIL_TRANSLATION_NAMES,
     LEGACY_MARKERS,
     SKIP_CODE_CRITICAL,
+    SKIP_CODE_DECODING,
+    SKIP_CODE_ENCODING,
     SKIP_CODE_EXCEL_PANIC,
     SKIP_CODE_EXCEL_PROCESS,
     SKIP_CODE_JSON_PARSE,
@@ -452,6 +455,7 @@ def format_excel_panic_reason(detail: Any) -> str:
 
 _LOCALIZED_SKIP_MESSAGE_NAMES = (
     "ERROR_SELECTED_ENCODING",
+    "ERROR_DOCUMENT_ENCODING",
     "ERROR_JSON_PARSE",
     "ERROR_EXCEL_ACCESS",
     "ERROR_EXCEL_SIGNATURE",
@@ -477,6 +481,7 @@ _LOCALIZED_SKIP_MESSAGE_NAMES = (
     "SKIP_REASON_FILE_MATCH_LIMIT",
     "SKIP_REASON_JSON_DEPTH_LIMIT",
     "SKIP_REASON_EXCEL_CELL_LIMIT",
+    "SKIP_REASON_EXCEL_PARTIAL",
     "SKIP_REASON_PANIC",
     "SKIP_REASON_CRITICAL",
     "SKIP_REASON_BATCH",
@@ -551,9 +556,17 @@ def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> 
         "ERROR_EXCEL_CALAMINE",
         "ERROR_MEMORY_CRITICAL",
         "SKIP_EMPTY_FILE",
+        "ERROR_DOCUMENT_ENCODING",
+        "ERROR_SELECTED_ENCODING",
     }
     if resource_name in direct_resources:
         return str(getattr(AppStrings, resource_name))
+    if resource_name == "SKIP_REASON_EXCEL_PARTIAL":
+        for catalog in (get_korean_strings(), ENGLISH_STRINGS):
+            prefix, suffix = str(catalog[resource_name]).split("{}", 1)
+            if source_reason.startswith(prefix) and source_reason.endswith(suffix):
+                sheets = source_reason[len(prefix):len(source_reason) - len(suffix)]
+                return AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(sheets)
     if resource_name == "ERROR_JSON_PARSE":
         return AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT)
     if resource_name == "ERROR_XML_PARSE":
@@ -678,6 +691,21 @@ def _split_excel_match_content(content: str) -> Tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+def _structured_decode_failure() -> SkippedResult:
+    reason = (AppStrings.ERROR_DOCUMENT_ENCODING
+              if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") == "auto"
+              else AppStrings.ERROR_SELECTED_ENCODING)
+    return Constants.STATUS_SKIPPED, reason
+
+
+def _split_json_match_content(content: str) -> List[str]:
+    """Decode explicit fields when a JSON path contains the tab delimiter."""
+    if content.startswith("JSON_FIELDS|"):
+        import json
+        return json.loads(content[len("JSON_FIELDS|"):])
+    return content.split("\t", 1)
+
+
 def _normalize_rust_matches(
     matches: List[Any], 
     special_mode: Optional[str] = None, 
@@ -749,7 +777,9 @@ def _normalize_rust_matches(
                 continue
 
         if existence_only:
-            return [(_rust_match_field(m, 0, "line", 1), AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length"))], 0, []
+            if not res:
+                res.append((_rust_match_field(m, 0, "line", 1), AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
+            continue
 
         try:
             line = _rust_match_field(m, 0, "line", 1)
@@ -771,9 +801,9 @@ def _normalize_rust_matches(
                     res.append((line, tag_path, val, offset, length))
                     continue
 
-                if "JSON" in mode_up and "\t" in c:
+                if "JSON" in mode_up and ("\t" in c or c.startswith("JSON_FIELDS|")):
                     # 예) "/root/key\tvalue" -> (line, "root.key", "value", offset, length)
-                    pts = c.split("\t", 1)
+                    pts = _split_json_match_content(c)
                     json_path = pts[0].lstrip("/").replace("/", ".")
                     val = pts[1] if len(pts) > 1 else ""
                     position = "" if line == 0 else line
@@ -860,6 +890,7 @@ def _positive_limit(value: Any, key: str, default: int) -> int:
 def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
     """Build one localized file notice for non-fatal result omissions."""
     reasons: List[str] = []
+    failed_sheets: List[str] = []
 
     for match in matches or []:
         line = _rust_match_field(match, 0, "line")
@@ -869,6 +900,15 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
         detail = getattr(match, "detail", None)
 
         is_tuple_metadata = isinstance(match, (tuple, list)) and line == 0
+        if code == "EXCEL_SHEET_ERROR" or (
+            (is_tuple_metadata or kind == "sheet_error")
+            and content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR)
+        ):
+            payload = str(detail) if detail is not None else content[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):]
+            sheet, _, raw_error = payload.partition("|")
+            _log_raw_skip_detail(f"Excel sheet {sheet}", raw_error)
+            failed_sheets.append(sheet)
+            continue
         if kind == "truncated" or (is_tuple_metadata and content == RUST_MATCH_MARKER_TRUNCATED):
             limit = _positive_limit(
                 detail,
@@ -916,6 +956,8 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
             )
             reasons.append(AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(limit))
 
+    if failed_sheets:
+        reasons.append(AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(", ".join(dict.fromkeys(failed_sheets))))
     unique_reasons = list(dict.fromkeys(reasons))
     return "\n".join(unique_reasons) if unique_reasons else None
 
@@ -1330,13 +1372,19 @@ class FileScanner:
             if real_folder in visited:
                 continue
             visited.add(real_folder)
-            self._scan_recursive(folder, file_list, visited)
+            self._scan_iterative(folder, file_list, visited)
         return file_list
 
-    def _scan_recursive(self, folder: str, file_list: List[FileInfo], visited: Optional[set] = None):
-        """폴더를 재귀적으로 탐색하며 대상 파일을 수집합니다."""
-        if visited is None:
-            visited = set()
+    def _scan_iterative(self, folder: str, file_list: List[FileInfo], visited: set):
+        """Directory depth must not depend on Python's recursion limit."""
+        pending = [folder]
+        while pending:
+            if self.stop_check_callback and self.stop_check_callback():
+                return
+            self._scan_directory(pending.pop(), file_list, visited, pending)
+
+    def _scan_directory(self, folder: str, file_list: List[FileInfo], visited: set, pending: List[str]):
+        """Close the directory handle before processing its children."""
         if _has_recycle_bin_component(folder):
             return
         try:
@@ -1363,7 +1411,7 @@ class FileScanner:
                             real_path = os.path.normcase(os.path.realpath(entry.path))
                             if real_path not in visited:
                                 visited.add(real_path)
-                                self._scan_recursive(entry.path, file_list, visited)
+                                pending.append(entry.path)
                         elif entry.is_file():
                             if is_recycle_bin_path(entry.path):
                                 continue
@@ -1438,6 +1486,7 @@ def search_in_excel_special(
     existence_only: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """엑셀 파일 내의 텍스트를 검색하는 특수 엔진을 실행합니다."""
+    validate_search_query(search_string)
     signature_ok, signature_error = _check_excel_signature(file_path)
     if not signature_ok:
         return (Constants.STATUS_SKIPPED, signature_error or AppStrings.ERROR_EXCEL_SIGNATURE)
@@ -1465,10 +1514,12 @@ def search_in_excel_special(
                     return (Constants.STATUS_SKIPPED, error_reason)
                 partial_reason = _extract_partial_skip_reason(results)
                 if existence_only:
-                    if partial_reason:
-                        return (Constants.STATUS_SKIPPED, partial_reason)
-                    # [Boolean] 일치 항목 발견 시 즉시 반환
-                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
+                    processed, _, _ = _normalize_rust_matches(results, Constants.MODE_EXCEL, True)
+                    if processed:
+                        if partial_reason:
+                            processed.append((-2, partial_reason, "", ""))
+                        return (file_path, 1, processed)
+                    return (Constants.STATUS_SKIPPED, partial_reason) if partial_reason else None
                 processed, _binary_count, sheet_skips = _normalize_rust_matches(
                     results,
                     Constants.MODE_EXCEL,
@@ -1480,7 +1531,8 @@ def search_in_excel_special(
                 for sheet_error in sheet_errors:
                     logger.warning("[%s] %s", file_path, sheet_error)
                 if processed:
-                    processed.extend((-2, reason, "", "") for reason in sheet_errors)
+                    if partial_reason:
+                        processed.append((-2, partial_reason, "", ""))
                     return (file_path, _visible_match_count(processed), processed)
                 if sheet_errors:
                     return (Constants.STATUS_SKIPPED, sheet_errors[0])
@@ -1521,7 +1573,7 @@ def search_in_excel_special(
         count = 0
         matches = []
         sheet_errors = []
-        date_cells = None
+        date_cells = {}
         max_per_file = _positive_limit(
             None,
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
@@ -1557,13 +1609,13 @@ def search_in_excel_special(
                     for col_idx, cell_value in enumerate(row):
                         if cell_value is not None:
                             if isinstance(cell_value, datetime.time) and file_path.lower().endswith((".xlsx", ".xlsm")):
-                                if date_cells is None:
+                                if sheet_name not in date_cells:
                                     from core.excel_date_formats import read_date_cells
-                                    date_cells = read_date_cells(file_path)
+                                    date_cells[sheet_name] = read_date_cells(file_path, sheet_name)
                                 actual_col = col_idx + (sheet.start[1] if sheet.start else 0)
                                 from openpyxl.utils.cell import get_column_letter
                                 coordinate = f"{get_column_letter(actual_col + 1)}{row_idx + 1}"
-                                if (sheet_name, coordinate) in date_cells:
+                                if (sheet_name, coordinate) in date_cells[sheet_name]:
                                     cell_value = datetime.datetime.combine(datetime.date(1904, 1, 1), cell_value)
                                     if cell_value.time() == datetime.time():
                                         cell_value = cell_value.date()
@@ -1595,10 +1647,7 @@ def search_in_excel_special(
                                     matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", ""))
             except BaseException as e:  # 특정 시트에서 패닉 발생 시 해당 시트만 스킵
                 _log_raw_skip_detail(f"Excel sheet {sheet_name}", e)
-                sheet_err_msg = AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(
-                    sheet_name,
-                    AppStrings.EXCEL_DETAIL_SHEET_FAILURE,
-                )
+                sheet_err_msg = AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(sheet_name)
                 logger.warning(f"[{file_path}] {sheet_err_msg}")
                 sheet_errors.append(sheet_err_msg)
                 continue
@@ -1635,6 +1684,7 @@ def search_in_json_special(
     """
     JSON 특수 검색을 수행합니다.
     """
+    validate_search_query(search_string)
     initial_engine: Literal["rust", "python"] = (
         "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
     )
@@ -1693,7 +1743,7 @@ def search_in_json_special(
                         continue
                     if line == 0:
                         line = ""
-                    parts = content.split("\t", 1)
+                    parts = _split_json_match_content(content)
                     # JSON 경로 정규화: /를 .으로 변경하고 시작 / 문자를 제거합니다.
                     json_path = parts[0].lstrip("/").replace("/", ".")
                     val = parts[1] if len(parts) > 1 else ""
@@ -1709,7 +1759,7 @@ def search_in_json_special(
             logger.error(AppStrings.LOG_SCH_RUST_JSON_FAIL.format(file_path, e))
             # [Policy] 자동 폴백 중단
             reason = str(e)
-            if reason.startswith(f"{SKIP_CODE_JSON_PARSE}|"):
+            if reason.startswith((f"{SKIP_CODE_JSON_PARSE}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
                 return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
             return (
                 Constants.STATUS_SKIPPED,
@@ -1819,11 +1869,16 @@ def search_in_json_special(
                 if data is missing:
                     # 모든 재시도 실패 시 SKIPPED 보고 (None 반환 방지)
                     _log_raw_skip_detail("JSON", "Integrity check failed")
+                    if processed_content is None:
+                        return _structured_decode_failure()
                     return (
                         Constants.STATUS_SKIPPED,
                         AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT),
                     )
 
+        except UnicodeError as e:
+            _log_raw_skip_detail("JSON decoding", e)
+            return _structured_decode_failure()
         except Exception as e:
             return (
                 Constants.STATUS_SKIPPED,
@@ -1906,6 +1961,9 @@ def search_in_json_special(
                 final_count = 1
             return (file_path, final_count, matches)
         return None
+    except UnicodeError as e:
+        _log_raw_skip_detail("JSON decoding", e)
+        return _structured_decode_failure()
     except (json.JSONDecodeError, ValueError) as e:
         return (
             Constants.STATUS_SKIPPED,
@@ -1930,6 +1988,7 @@ def search_in_xml_special(
     """
     XML 특수 검색을 수행합니다.
     """
+    validate_search_query(search_string)
     initial_engine: Literal["rust", "python"] = (
         "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
     )
@@ -1977,7 +2036,7 @@ def search_in_xml_special(
             logger.error(AppStrings.LOG_SCH_RUST_XML_FAIL.format(file_path, e))
             # [Policy] 자동 폴백 중단
             reason = str(e)
-            if reason.startswith((f"{SKIP_CODE_XML_PARSE}|", f"{SKIP_CODE_XML_UNSUPPORTED_DTD}|")):
+            if reason.startswith((f"{SKIP_CODE_XML_PARSE}|", f"{SKIP_CODE_XML_UNSUPPORTED_DTD}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
                 return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
             return (
                 Constants.STATUS_SKIPPED,
@@ -2112,6 +2171,9 @@ def search_in_xml_special(
             final_count = min(count, max_per_file + 1)
             return (file_path, final_count, matches)
         return None
+    except UnicodeError as e:
+        _log_raw_skip_detail("XML decoding", e)
+        return _structured_decode_failure()
     except Exception as e:
         logger.error(AppStrings.LOG_SCH_XML_FAIL.format(e))
         return (
@@ -2131,6 +2193,7 @@ def search_in_file(
     **kwargs,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """파일의 성격에 따라 적절한 검색 엔진을 선택하여 검색을 수행합니다."""
+    validate_search_query(search_string)
     if is_recycle_bin_path(file_path):
         return None
     if use_complex_search or force_python or not HAS_RUST_ENGINE:
@@ -2175,22 +2238,13 @@ def search_in_file(
     if special_mode:
         is_exact = Constants.MODE_EXACT in special_mode
         existence_only = bool(kwargs.get(Constants.PAYLOAD_EXISTENCE_ONLY, False))
-        if Constants.MODE_XML in special_mode:
+        if Constants.MODE_XML in special_mode and ext in (".xml", ".sf_xml"):
             return search_in_xml_special(
                 file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event, existence_only=existence_only
             )
-        elif Constants.MODE_JSON in special_mode:
+        elif Constants.MODE_JSON in special_mode and ext == ".json":
             return search_in_json_special(
                 file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event, existence_only=existence_only
-            )
-        elif Constants.MODE_EXCEL in special_mode:
-            return search_in_excel_special(
-                file_path,
-                search_string_nfc,
-                is_exact,
-                use_complex_search=use_complex_search,
-                stop_event=stop_event,
-                existence_only=existence_only,
             )
     if file_size is None:
         try:
@@ -2517,6 +2571,7 @@ def search_in_files_batch(
     **kwargs,
 ) -> Dict[str, List]:
     """Search one batch using the settings snapshot captured by its parent worker."""
+    validate_search_query(search_string)
     settings_snapshot = kwargs.pop("search_settings_snapshot", None)
     with use_search_settings_snapshot(settings_snapshot):
         return _search_in_files_batch_impl(
@@ -2571,6 +2626,7 @@ def search_directory_fast(
     **kwargs,
 ) -> Dict[str, List]:
     """Rust 엔진을 사용하여 디렉토리를 고속으로 검색합니다."""
+    validate_search_query(search_string)
     try:
         if _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False) is not True:
             search_paths = [path for path in search_paths if not os.path.isjunction(path)]
@@ -2685,6 +2741,7 @@ def search_files_list_fast(
     **kwargs,
 ) -> Dict[str, List]:
     """Rust 엔진을 사용하여 파일 목록을 고속으로 검색합니다."""
+    validate_search_query(search_string)
     if not file_list:
         return {"results": [], "skipped": []}
     try:
@@ -2804,6 +2861,7 @@ def find_files_with_keyword_fast(
     경로가 되며, 반환되는 found 목록은 의도적으로 비어 있습니다.
     callback은 ``(path, size)`` 항목의 batch를 받습니다.
     """
+    validate_search_query(search_string)
     if not search_paths:
         return ([], []) if return_skipped else []
     try:

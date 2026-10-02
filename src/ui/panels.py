@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Union
 
-from PySide6.QtCore import QRegularExpression, Qt, Signal
+from PySide6.QtCore import QRegularExpression, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -20,11 +20,41 @@ from PySide6.QtWidgets import (
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
+from core.search_query import validate_search_query
 from ui.styles import UIStyles
 
 
 class SearchInputComboBox(QComboBox):
-    """Editable search input without persistent history."""
+    """Editable input; only accepted searches are inserted into shared history."""
+
+    def __init__(self, parent=None, history_provider=None):
+        super().__init__(parent)
+        self.history_provider = history_provider
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+
+    def load_history(self, history):
+        current_text = self.currentText()
+        items = []
+        for text in history:
+            if not isinstance(text, str) or not text.strip() or text in items:
+                continue
+            try:
+                validate_search_query(text)
+            except ValueError:
+                continue
+            items.append(text)
+            if len(items) == 20:
+                break
+        # Reloading items must not clear the user's draft or trigger a search.
+        with QSignalBlocker(self):
+            self.clear()
+            self.addItems(items)
+            self.setEditText(current_text)
+
+    def showPopup(self):
+        if self.history_provider is not None:
+            self.load_history(self.history_provider())
+        super().showPopup()
 
     def set_current_text(self, text: str):
         self.setCurrentText(text)
@@ -108,7 +138,9 @@ class SearchOptionsPanel(QWidget):
         input_layout.addWidget(self.search_profile_combo)
         input_layout.addWidget(self.complex_search_warning)
         label = QLabel(AppStrings.SEARCH_LABEL)
-        self.search_combo = SearchInputComboBox()
+        self.search_combo = SearchInputComboBox(
+            history_provider=self.config_manager.get_history if self.config_manager is not None else None
+        )
         self.search_combo.setEditable(True)
         self.search_combo.setPlaceholderText(AppStrings.SEARCH_EDIT_PLACEHOLDER)
         le = self.search_combo.lineEdit()
@@ -117,6 +149,13 @@ class SearchOptionsPanel(QWidget):
         input_layout.addWidget(label)
         input_layout.addWidget(self.search_combo, 1)
         layout.addLayout(input_layout)
+        self.query_length_notice = QLabel()
+        self.query_length_notice.setObjectName("queryLengthNotice")
+        self.query_length_notice.setWordWrap(True)
+        self.query_length_notice.setStyleSheet("color: #d99030;")
+        self.query_length_notice.hide()
+        layout.addWidget(self.query_length_notice)
+        self.search_combo.currentTextChanged.connect(self._update_query_length_notice)
         self.search_btn = QPushButton(AppStrings.SEARCH_BTN)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)
         self.search_btn.clicked.connect(self.search_started.emit)
@@ -142,6 +181,17 @@ class SearchOptionsPanel(QWidget):
         self.boolean_search_check.setVisible(True)
         self.exclude_hidden_check.setVisible(False)
         layout.addLayout(options_layout)
+
+    def _update_query_length_notice(self, text: str):
+        # Do not use QLineEdit.maxLength: it silently truncates pasted input.
+        try:
+            validate_search_query(text)
+        except ValueError as error:
+            self.query_length_notice.setText(str(error))
+            self.query_length_notice.show()
+        else:
+            self.query_length_notice.clear()
+            self.query_length_notice.hide()
 
     def set_searching(self, searching: bool):
         self.search_btn.setVisible(not searching)

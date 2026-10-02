@@ -87,7 +87,7 @@ fn is_date_format(code: &str) -> bool {
     false
 }
 
-pub fn read_date_cells(path: &Path) -> Result<DateCells, String> {
+pub fn read_date_cells(path: &Path, sheet_name: &str) -> Result<DateCells, String> {
     let mut archive =
         ZipArchive::new(File::open(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     let styles = metadata(&mut archive, "xl/styles.xml")?;
@@ -118,6 +118,9 @@ pub fn read_date_cells(path: &Path) -> Result<DateCells, String> {
     let mut cells = DateCells::new();
     for (_, sheet) in sheets.into_iter().filter(|(n, _)| n == "sheet") {
         let name = sheet.get("name").ok_or("Missing sheet name")?;
+        if name != sheet_name {
+            continue;
+        }
         let target = targets
             .get(sheet.get("id").ok_or("Missing sheet relation")?)
             .ok_or("Missing sheet target")?;

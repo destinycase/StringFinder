@@ -244,7 +244,7 @@ def test_precise_scanner_rejects_symlink_entries_without_following_them(tmp_path
     scanner = FileScanner([str(tmp_path)], ["txt"], exclude_hidden=False)
     files = []
 
-    scanner._scan_recursive(str(tmp_path), files, set())
+    scanner._scan_iterative(str(tmp_path), files, set())
 
     assert files == []
 

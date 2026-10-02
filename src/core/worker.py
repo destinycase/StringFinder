@@ -411,6 +411,14 @@ class SearchWorker(QRunnable):
 
     @Slot()
     def run(self):
+        from core.search_query import validate_search_query
+        try:
+            validate_search_query(self.search_string)
+        except ValueError as error:
+            self.is_running.clear()
+            self._safe_emit(self.signals.error, str(error))
+            self._safe_emit(self.signals.finished)
+            return
         ext_info = ",".join(self.extensions) if self.extensions else "*"
         mode_info = self.special_mode if self.special_mode else Constants.MODE_NORMAL
         logger.info(AppStrings.LOG_WKR_STARTED.format(self.search_string, ext_info, mode_info))

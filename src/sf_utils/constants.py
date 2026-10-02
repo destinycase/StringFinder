@@ -5,6 +5,7 @@ from sf_utils.settings_defaults import CONFIG_SCHEMA_VERSION, DEFAULTS, DEFAULT_
 class Constants:
     """애플리케이션 전반에서 사용되는 설정 키, 임계값, 상수 값들을 정의합니다."""
     APP_NAME = "StringFinder"
+    MAX_SEARCH_QUERY_LENGTH = 1000
     APP_VERSION = AppStrings.APP_VERSION  # 애플리케이션 버전 정보를 통합 관리합니다.
     ENV_APPDATA = "APPDATA"
     APPDATA_FALLBACK_DIR = ".stringfinder"

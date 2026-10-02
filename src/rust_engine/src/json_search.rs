@@ -311,12 +311,16 @@ impl<'data> JsonSearchState<'data> {
         });
 
         let path_string = self.path_string();
-        self.results.push((
-            line,
-            format!("{}\t{}", path_string, value),
-            found_pos,
-            found_len,
-        ));
+        // A tab in a JSON key is legal; it cannot be a field delimiter.
+        let content = if path_string.contains('\t') {
+            format!(
+                "JSON_FIELDS|{}",
+                serde_json::to_string(&(&path_string, &value)).expect("string serialization")
+            )
+        } else {
+            format!("{}\t{}", path_string, value)
+        };
+        self.results.push((line, content, found_pos, found_len));
     }
 }
 

@@ -1,6 +1,7 @@
 """JSON decoding with explicit duplicate-key policy and stack-safe fallback."""
 import json
 import math
+import sys
 from typing import Any, NoReturn
 
 
@@ -10,6 +11,21 @@ class ObjectPairs(list):
 
 class DuplicateKeyError(ValueError):
     pass
+
+
+class JsonInteger(str):
+    """A validated decimal integer retained without expensive bigint conversion."""
+
+
+def _parse_integer(value):
+    # Keep Python's process-wide security limit unchanged. JSON's decoder has
+    # already validated the numeric grammar; search only needs its text.
+    if len(value) <= sys.int_info.str_digits_check_threshold:
+        return int(value)
+    limit = sys.get_int_max_str_digits()
+    if len(value.lstrip("-")) > (limit or 4300):
+        return JsonInteger(value)
+    return int(value)
 
 
 def _reject_constant(value):
@@ -35,14 +51,27 @@ def loads_document(content: str, allow_duplicates: bool = False):
         return members
 
     try:
+        # Preserve the C integer fast path for ordinary documents. A Python
+        # callback for every small integer measurably slows numeric datasets.
         return json.loads(content, object_pairs_hook=object_pairs, parse_constant=_reject_constant, parse_float=_finite_float)
     except RecursionError:
         return _loads_iterative(content, object_pairs)
+    except ValueError as error:
+        # CPython reports its integer safety limit separately from JSON grammar
+        # errors. Retry only that case; duplicate keys and invalid numbers remain
+        # failures. Do not change the process-wide conversion limit.
+        if "integer string conversion" not in str(error) or "sys.set_int_max_str_digits" not in str(error):
+            raise
+        try:
+            return json.loads(content, object_pairs_hook=object_pairs, parse_constant=_reject_constant,
+                              parse_float=_finite_float, parse_int=_parse_integer)
+        except RecursionError:
+            return _loads_iterative(content, object_pairs)
 
 
 def _loads_iterative(content, object_pairs):
     """Validate the same JSON grammar without relying on Python's call stack."""
-    decoder = json.JSONDecoder(parse_constant=_reject_constant, parse_float=_finite_float)
+    decoder = json.JSONDecoder(parse_constant=_reject_constant, parse_float=_finite_float, parse_int=_parse_integer)
     frames: list[list[Any]] = []
     root: list[Any] = []
     index = 0

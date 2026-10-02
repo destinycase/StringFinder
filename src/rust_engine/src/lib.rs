@@ -26,7 +26,7 @@ use crate::json_search::{
 };
 use crate::types::{RawMatch, SearchMatch, SearchOptions};
 use crate::utils::{
-    build_glob_set, decode_bytes, detect_encoding, generate_search_patterns, is_binary,
+    build_glob_set, decode_structured_bytes, detect_encoding, generate_search_patterns, is_binary,
     match_filename_glob, parse_search_mode,
 };
 use crate::xml_search::{check_xml_file, search_xml_file, XmlSearchError};
@@ -465,6 +465,7 @@ fn search_file(
     mut max_json_size: u64,
     options: Option<Py<SearchOptions>>,
 ) -> Result<Vec<SearchMatch>, PyErr> {
+    validate_query_length(&pattern)?;
     let mut encoding = None;
     let mut include_junctions = false;
     if let Some(config) = options.as_ref() {
@@ -984,13 +985,19 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 Err(error) => return Some(Err(encode_excel_skip_reason(error))),
             };
             if outcome.found {
-                return Some(Ok(vec![(1, "MATCH".to_string(), None, None)]));
+                let mut matches = vec![(1, "MATCH".to_string(), None, None)];
+                if let Some(error) = outcome.sheet_error {
+                    matches.push((0, format!("__SF_EXCEL_SHEET_ERR__|{error}"), None, None));
+                }
+                return Some(Ok(matches));
             }
             if let Some(sheet_name) = outcome.sheet_error {
-                return Some(Err(encode_skip_reason(
-                    REASON_ERR_EXCEL_PROCESS,
-                    sheet_name,
-                )));
+                return Some(Ok(vec![(
+                    0,
+                    format!("__SF_EXCEL_SHEET_ERR__|{sheet_name}"),
+                    None,
+                    None,
+                )]));
             }
             return None;
         }
@@ -1040,6 +1047,8 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     };
     let mmap_c = file_snapshot.as_slice();
 
+    let structured_document =
+        (is_json && ext_l == ".json") || (is_xml && (ext_l == ".xml" || ext_l == ".sf_xml"));
     let enc = if let Some(encoding) = encoding {
         if !crate::utils::selected_encoding_valid(mmap_c, encoding) {
             return Some(Err(encode_skip_reason(
@@ -1048,16 +1057,22 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             )));
         }
         encoding
-    } else if is_json || is_xml {
+    } else if structured_document {
         detect_encoding(mmap_c)
     } else {
         detect_text_search_encoding(mmap_c, pattern, ac, is_exact, existence_only)
     };
-    let decoded =
-        ((is_json || is_xml) && enc != UTF_8).then(|| decode_bytes(mmap_c, enc).into_bytes());
+    let decoded = if structured_document {
+        match decode_structured_bytes(mmap_c, enc) {
+            Ok(decoded) => decoded,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        None
+    };
     // 구조화된 문서는 파서가 전체 버퍼를 요구하므로 기존 디코딩 경로를 유지합니다.
     // 일반 Non-UTF8 텍스트는 아래의 청크 디코딩 경로에서 처리하여 파일 전체 String 복사를 피합니다.
-    let final_mmap = decoded.as_deref().unwrap_or(mmap_c);
+    let final_mmap = decoded.as_ref().map(|s| s.as_bytes()).unwrap_or(mmap_c);
 
     let res: Result<Vec<RawMatch>, String> = if is_json && ext_l == ".json" {
         if existence_only {
@@ -1236,6 +1251,7 @@ pub fn search_dir(
     options: Option<Py<SearchOptions>>,
     _kwargs: Option<pyo3::PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
+    validate_query_length(&pattern)?;
     let mut structured_memory_budget = None;
     let mut encoding = None;
     let mut include_junctions = false;
@@ -1647,6 +1663,7 @@ fn search_files_list(
     options: Option<Py<SearchOptions>>,
     _kwargs: Option<PyObject>,
 ) -> Result<(FileMatches, SkippedEntries), PyErr> {
+    validate_query_length(&search_string)?;
     let mut structured_memory_budget = None;
     let mut encoding = None;
     let mut include_junctions = false;
@@ -1977,6 +1994,7 @@ fn find_files_with_keyword(
     mut max_json_size: u64,
     options: Option<Py<SearchOptions>>,
 ) -> Result<(KeywordFileHits, SkippedEntries), PyErr> {
+    validate_query_length(&keyword)?;
     let mut structured_memory_budget = None;
     let mut encoding = None;
     let mut include_junctions = false;
@@ -2332,10 +2350,15 @@ fn find_files_with_keyword(
                         }
                         let match_result: Result<(bool, bool), String> = if is_json_file {
                             let encoding = encoding.unwrap_or_else(|| detect_encoding(bytes));
-                            let decoded = if encoding == UTF_8 {
-                                None
-                            } else {
-                                Some(decode_bytes(bytes, encoding))
+                            let decoded = match decode_structured_bytes(bytes, encoding) {
+                                Ok(decoded) => decoded,
+                                Err(error) => {
+                                    skipped_inner
+                                        .lock()
+                                        .unwrap_or_else(|p| p.into_inner())
+                                        .push((f_path, error));
+                                    return ignore::WalkState::Continue;
+                                }
                             };
                             let searchable = decoded
                                 .as_ref()
@@ -2354,10 +2377,15 @@ fn find_files_with_keyword(
                             .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
                         } else if is_xml_file {
                             let encoding = encoding.unwrap_or_else(|| detect_encoding(bytes));
-                            let decoded = if encoding == UTF_8 {
-                                None
-                            } else {
-                                Some(decode_bytes(bytes, encoding))
+                            let decoded = match decode_structured_bytes(bytes, encoding) {
+                                Ok(decoded) => decoded,
+                                Err(error) => {
+                                    skipped_inner
+                                        .lock()
+                                        .unwrap_or_else(|p| p.into_inner())
+                                        .push((f_path, error));
+                                    return ignore::WalkState::Continue;
+                                }
                             };
                             let searchable = decoded
                                 .as_ref()
@@ -2461,6 +2489,19 @@ fn find_files_with_keyword(
     })
 }
 
+// Kept in sync with Constants.MAX_SEARCH_QUERY_LENGTH by contract tests.
+const MAX_SEARCH_QUERY_LENGTH: usize = 1000;
+
+fn validate_query_length(query: &str) -> PyResult<()> {
+    if query.chars().take(MAX_SEARCH_QUERY_LENGTH + 1).count() > MAX_SEARCH_QUERY_LENGTH {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "Search text is limited to {MAX_SEARCH_QUERY_LENGTH} characters (received {}).",
+            query.chars().count()
+        )));
+    }
+    Ok(())
+}
+
 #[pymodule]
 fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // [Stability] 커스텀 패닉 훅 설치:
@@ -2477,6 +2518,7 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;
     m.add_function(wrap_pyfunction!(find_files_with_keyword, m)?)?;
     m.add("API_VERSION", 7)?;
+    m.add("MAX_SEARCH_QUERY_LENGTH", MAX_SEARCH_QUERY_LENGTH)?;
     // Cargo.toml version 필드를 빌드 시점에 자동으로 읽어 Python 측에 노출합니다.
     m.add("ENGINE_VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
@@ -2541,6 +2583,14 @@ fn extract_line_content_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn query_length_counts_unicode_characters_not_bytes() {
+        for value in ["a", "가", "😀"] {
+            assert!(validate_query_length(&value.repeat(MAX_SEARCH_QUERY_LENGTH)).is_ok());
+            assert!(validate_query_length(&value.repeat(MAX_SEARCH_QUERY_LENGTH + 1)).is_err());
+        }
+    }
     use std::fs;
 
     #[test]
