@@ -2,6 +2,10 @@
 name = "sf_engine"
 version = "6.0.1"
 edition = "2021"
+rust-version = "1.88"
+authors = ["N2"]
+description = "Rust search engine for StringFinder: parallel text search and JSON, XML, and Excel parsing."
+repository = "https://github.com/destinycase/StringFinder"
 
 [dependencies]
 pyo3 = { version = "0.23.0", features = ["extension-module"] }

@@ -54,26 +54,6 @@ class TestAppStringsContract:
         if undefined_refs:
             pytest.fail("Undefined AppStrings constants found:\n" + "\n".join(undefined_refs))
 
-    def test_unique_values(self):
-        """상수 값들의 중복 여부를 체크 (의도치 않은 복사/붙여넣기 방지)"""
-        values = {}
-        # 설정 관련 상수들은 키값이 같을 수 있으므로 예외 처리 필요할 수 있음
-        # 여기서는 단순 로깅 메시지 등이 완전히 똑같은지 체크
-
-        exceptions = ["", " ", "검색", "준비"]  # 중복 허용할 만한 일반적인 단어들
-
-        for name in dir(AppStrings):
-            if name.startswith("_"):
-                continue
-            val = getattr(AppStrings, name)
-            if not isinstance(val, str):
-                continue
-
-            if val in values and val not in exceptions:
-                # 중복 허용 (필요 시 주석 해제)
-                pass
-            values[val] = name
-
     def test_no_duplicate_constant_names(self):
         """AppStrings 클래스 내 상수명 중복 정의를 방지한다."""
         app_strings_path = os.path.abspath(

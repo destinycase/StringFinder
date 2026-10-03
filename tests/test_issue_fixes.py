@@ -1,8 +1,8 @@
 import os
 import sys
-import time
-import threading
-import psutil
+from pathlib import Path
+import subprocess
+import textwrap
 import pytest
 from unittest.mock import patch
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
@@ -57,41 +57,53 @@ def test_signal_integrity_on_error():
     assert sf_signal[1:] == (0, 0, 0)
 
 
-def test_rust_monitor_thread_leak():
-    """이슈 #2, #3 검증: 반복 호출 후 스레드 누수 여부 확인"""
-    print("\n--- Starting Thread Leak Test ---")
+def test_rust_monitor_thread_leak(tmp_path):
+    """Isolate native shutdown and fail on search errors, leaks, or deadlock."""
+    pytest.importorskip("rust_engine.sf_engine")
+    target = tmp_path / "monitor.txt"
+    target.write_text("needle\n", encoding="utf-8")
+    code = textwrap.dedent("""
+        import faulthandler
+        import sys
+        import threading
+        import time
+        import psutil
+        from rust_engine import sf_engine
+
+        faulthandler.dump_traceback_later(8)
+        path = sys.argv[1]
+        def values(matches):
+            return [(item.line, item.content, item.offset, item.length) for item in matches]
+        expected = values(sf_engine.search_file(path, "needle"))
+        assert len(expected) == 1, expected
+        process = psutil.Process()
+        initial_threads = process.num_threads()
+        for _ in range(20):
+            actual = values(sf_engine.search_file(path, "needle", stop_event=threading.Event()))
+            assert actual == expected, (actual, expected)
+        deadline = time.monotonic() + 1
+        while process.num_threads() > initial_threads and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert process.num_threads() <= initial_threads, (initial_threads, process.num_threads())
+        faulthandler.cancel_dump_traceback_later()
+        print("DONE", flush=True)
+    """)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [str(Path(__file__).resolve().parents[1] / "src"), env.get("PYTHONPATH")])
+    )
     try:
-        from rust_engine import sf_engine  # type: ignore
-
-        print(f"sf_engine version: {getattr(sf_engine, 'API_VERSION', 'unknown')}")
-    except ImportError as e:
-        print(f"Import failed: {e}")
-        pytest.skip("Rust engine (sf_engine) not found")
-
-    process = psutil.Process()
-    initial_threads = process.num_threads()
-    print(f"Initial threads: {initial_threads}")
-
-    dummy_event = threading.Event()
-    test_file = os.path.abspath(__file__)
-
-    # 5번만 호출하여 행 걸림 여부 확인
-    for i in range(5):
-        print(f"Calling search_file {i + 1}/5...")
-        try:
-            # sf_engine.search_file(path, pattern, mode_bits, stop_event)
-            res = sf_engine.search_file(test_file, "dummy", None, dummy_event)
-            print(f"Call {i + 1} returned {len(res)} matches")
-        except Exception as e:
-            print(f"Call {i + 1} failed: {e}")
-
-    print("Waiting for monitor threads to cleanup...")
-    time.sleep(1)
-
-    final_threads = process.num_threads()
-    print(f"Final threads: {final_threads}")
-
-    assert final_threads <= initial_threads + 3
+        result = subprocess.run(
+            [sys.executable, "-c", code, str(target)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired as error:
+        pytest.fail(f"Native monitor did not shut down: {error.stdout!r}\n{error.stderr!r}")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "DONE" in result.stdout
 
 
 if __name__ == "__main__":
