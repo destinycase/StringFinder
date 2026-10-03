@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.20 (StringFinder v6.0.1 기준)
+- **문서 버전:** 1.21 (StringFinder v6.0.2 기준)
 - **최종 수정일:** 2026-10-03
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 6.0.1** · Updated: **2026-10-03**
+> Documentation baseline: **StringFinder 6.0.2** · Updated: **2026-10-03**
 
 ### 필요한 내용부터 읽기
 
@@ -860,3 +860,11 @@ python tools/benchmark_json_policy.py --compare-engine C:/bench/before/sf_engine
 ```
 
 공식 기준 통과와 특정 구조화 검색의 비용 증가를 구분합니다. 손상 문서, 존재 확인, 제한 안내 등 신뢰도 계약을 바꾸어 얻은 속도는 같은 조건의 개선으로 인정하지 않습니다.
+
+### 9.5 v6.0.2: Excel 빈 셀 비교 비용 감소
+
+누락 방지 Excel 검색에서 calamine이 빈 영역을 채운 빈 문자열은 검색어 정규화 결과가 비어 있지 않을 때 변환·정규화·비교를 생략합니다. 한 셀의 `casefold()` 결과도 재사용합니다. 셀 범위나 좌표를 줄이지 않으며 숫자 0, False, 공백 문자열, 날짜·시간, 취소 및 결과 제한은 유지합니다. 정규화된 검색어가 빈 경우의 기존 함수 계약도 보존합니다.
+
+변경 전후 함수를 같은 프로세스에서 비교한 합성 표본에서 넓은 빈 영역의 누락 방지 검색 중앙값은 약 2.17~2.42초에서 0.49~0.56초로 약 77% 감소했습니다. 10만 값의 밀집 표본은 준비 조건을 맞춘 25회 비교에서 약 -3%~+2.5% 범위였습니다. 최종 실제 파일 비교 364회에서 함수 반환값·개수·좌표가 일치했습니다. 이는 Python 함수의 합성 표본 측정이며 전체 앱이나 Rust 일반 검색의 개선율이 아닙니다. 로컬 원본은 `samples/excel_formula_hypotheses_261003/OPTIMIZATION_SUMMARY.md`에 있습니다.
+
+이 변경은 파서의 시트 직사각형 배열 할당을 제거하지 않습니다. 거대한 빈 영역의 메모리 위험과 셀 단위 읽기 후보는 [별도 조사](EXCEL_RANGE_MEMORY_INVESTIGATION.md)에 기록했으며, 셀 단위 읽기 후보는 6.0.2 제품에 포함하지 않습니다. 현재 A–J 성능 비교 기준은 기존 6.0.1 측정값을 유지합니다.

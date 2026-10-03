@@ -1623,7 +1623,10 @@ def search_in_excel_special(
                     if row_idx % 100 == 0 and stop_event and stop_event.is_set():
                         break
                     for col_idx, cell_value in enumerate(row):
-                        if cell_value is not None:
+                        # Calamine fills gaps with "". Avoid conversion/normalization
+                        # for those cells, but preserve whitespace-only/empty query
+                        # behavior when the normalized search string is empty.
+                        if cell_value is not None and (cell_value != "" or not search_string_norm):
                             if isinstance(cell_value, datetime.time) and file_path.lower().endswith((".xlsx", ".xlsm")):
                                 if sheet_name not in date_cells:
                                     from core.excel_date_formats import read_date_cells
@@ -1636,8 +1639,8 @@ def search_in_excel_special(
                                     if cell_value.time() == datetime.time():
                                         cell_value = cell_value.date()
                             val_str = normalize_unicode(_excel_cell_text(cell_value))
-                            val_norm = val_str.casefold().strip()
                             val_lower = val_str.casefold()
+                            val_norm = val_lower.strip()
                             is_match = False
                             if exact_match:
                                 is_match = val_norm == search_string_norm
