@@ -3,7 +3,9 @@ import subprocess
 import sys
 import threading
 import tempfile
+import uuid
 from pathlib import Path
+from functools import lru_cache
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
 from PySide6.QtCore import QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
@@ -127,9 +129,44 @@ class ContextPreviewWorker(QRunnable):
             self.signals.finished.emit(self.request_id, None, error, self.cancel_event.is_set())
 
 
+@lru_cache(maxsize=1)
+def _walk_reason_prefixes():
+    from sf_utils.english_strings import ENGLISH_STRINGS
+    from sf_utils.localization import get_korean_strings
+
+    return tuple(template.split("{}", 1)[0] for template in (
+        get_korean_strings()["SKIP_REASON_WALK"], ENGLISH_STRINGS["SKIP_REASON_WALK"]
+    ))
+
+
+def _is_walk_failure(path, reason):
+    from core.skip_reason_codes import (
+        LEGACY_UNKNOWN_WALK_PATHS, UNKNOWN_WALK_PATH_PREFIX, decode_skip_reason,
+    )
+
+    return (
+        path.startswith(UNKNOWN_WALK_PATH_PREFIX)
+        or path.casefold() in LEGACY_UNKNOWN_WALK_PATHS
+        or decode_skip_reason(reason)[0] == "ERR_WALK"
+        or any(
+            line.startswith(prefix)
+            for line in reason.splitlines()
+            for prefix in _walk_reason_prefixes()
+        )
+    )
+
+
+def _skipped_count_text(entries, total):
+    template = AppStrings.SKIPPED_ITEMS_COUNT if any(
+        _is_walk_failure(path, reason) for path, reason in entries
+    ) else AppStrings.SKIPPED_FILES_COUNT
+    return template.format(total)
+
+
 def normalize_skipped_files(skipped_files, *, strict_session: bool = False):
     """스킵 항목을 팝업과 세션 저장에 안전한 ``(경로, 사유)`` 튜플로 정규화합니다."""
     from core.search_engine import is_supported_skip_reason, localize_skip_reason_for_display
+    from core.skip_reason_codes import LEGACY_UNKNOWN_WALK_PATHS, UNKNOWN_WALK_PATH_PREFIX
 
     normalized_by_path: dict[str, str] = {}
     if not isinstance(skipped_files, (list, tuple)):
@@ -161,6 +198,10 @@ def normalize_skipped_files(skipped_files, *, strict_session: bool = False):
         path = str(raw_path).strip()
         if not path:
             continue
+        if path.casefold() in LEGACY_UNKNOWN_WALK_PATHS:
+            # Legacy engines supplied no path. Preserve each failure as an event;
+            # generated identifiers survive subsequent normalization and sessions.
+            path = UNKNOWN_WALK_PATH_PREFIX + uuid.uuid4().hex
         reason = localize_skip_reason_for_display(raw_reason)
         previous_reason = normalized_by_path.get(path, "")
         if previous_reason and reason:
@@ -184,7 +225,17 @@ def _format_skipped_files_text(skipped_files, total_count):
     """건너뛴 파일 경로와 사유를 클립보드 친화적인 일반 텍스트로 만듭니다."""
     entries = normalize_skipped_files(skipped_files)
     blocks = []
+    from core.skip_reason_codes import UNKNOWN_WALK_PATH_PREFIX
+
+    walk_count = sum(_is_walk_failure(path, reason) for path, reason in entries)
+    if walk_count:
+        blocks.append(AppStrings.SKIPPED_FILES_AND_WALK_ERRORS.format(len(entries) - walk_count, walk_count))
     for index, (path, reason) in enumerate(entries, start=1):
+        is_walk = _is_walk_failure(path, reason)
+        if path.startswith(UNKNOWN_WALK_PATH_PREFIX):
+            path = AppStrings.SKIPPED_WALK_PATH_UNKNOWN
+        if is_walk:
+            path = AppStrings.SKIPPED_WALK_ENTRY.format(path)
         lines = [f"{index}. {path}"]
         if reason:
             lines.append(f"   {AppStrings.SKIPPED_FILES_REASON.format(reason)}")
@@ -205,11 +256,12 @@ class SkippedFilesDialog(QDialog):
         self.total_count = max(int(total_count or 0), len(self.skipped_files))
         self.list_text = _format_skipped_files_text(self.skipped_files, self.total_count)
 
-        self.setWindowTitle(AppStrings.SKIPPED_FILES_DIALOG_TITLE)
+        has_walk_errors = any(_is_walk_failure(path, reason) for path, reason in self.skipped_files)
+        self.setWindowTitle(AppStrings.SKIPPED_ITEMS_DIALOG_TITLE if has_walk_errors else AppStrings.SKIPPED_FILES_DIALOG_TITLE)
         self.resize(760, 460)
         layout = QVBoxLayout(self)
 
-        count_label = QLabel(AppStrings.SKIPPED_FILES_COUNT.format(self.total_count))
+        count_label = QLabel(_skipped_count_text(self.skipped_files, self.total_count))
         count_label.setStyleSheet("font-weight: 700;")
         layout.addWidget(count_label)
 
@@ -1082,7 +1134,9 @@ class ResultView(QWidget):
         self._skipped_files = normalize_skipped_files(skipped_files)
         requested_count = len(self._skipped_files) if total_count is None else int(total_count or 0)
         self._skipped_file_count = max(requested_count, len(self._skipped_files), 0)
-        self.skipped_files_label.setText(AppStrings.SKIPPED_FILES_COUNT.format(self._skipped_file_count))
+        self.skipped_files_label.setText(_skipped_count_text(self._skipped_files, self._skipped_file_count))
+        has_walk_errors = any(_is_walk_failure(path, reason) for path, reason in self._skipped_files)
+        self.skipped_files_button.setText(AppStrings.SKIPPED_ITEMS_VIEW_BUTTON if has_walk_errors else AppStrings.SKIPPED_FILES_VIEW_BUTTON)
         self.skipped_files_banner.setVisible(self._skipped_file_count > 0)
 
     def set_total_match_limit_reached(self, limit_count=0):

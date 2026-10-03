@@ -283,6 +283,45 @@ fn encode_skip_reason<T: std::fmt::Display>(code: &str, detail: T) -> String {
     format!("{}|{}", code, detail)
 }
 
+fn walk_error_entries(error: &ignore::Error) -> SkippedEntries {
+    // Only error handling allocates these records. Do not parse Display text
+    // for paths: wrappers and aggregate errors have a structured path already.
+    static UNKNOWN_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut entries = Vec::new();
+    let mut pending = vec![(error, None::<&Path>)];
+    while let Some((current, path)) = pending.pop() {
+        match current {
+            ignore::Error::WithPath { path, err } => pending.push((err, Some(path))),
+            ignore::Error::WithDepth { err, .. } | ignore::Error::WithLineNumber { err, .. } => {
+                pending.push((err, path))
+            }
+            ignore::Error::Partial(errors) if !errors.is_empty() => {
+                pending.extend(errors.iter().rev().map(|err| (err, path)));
+            }
+            _ => {
+                let path = match current {
+                    ignore::Error::Loop { child, .. } => Some(child.as_path()),
+                    _ => path,
+                };
+                let identifier = path
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| {
+                        format!(
+                            "__SF_WALK_UNKNOWN__|{}",
+                            UNKNOWN_ID.fetch_add(1, Ordering::Relaxed)
+                        )
+                    });
+                let detail = match path {
+                    Some(path) => format!("{}: {}", path.display(), current),
+                    None => current.to_string(),
+                };
+                entries.push((identifier, encode_skip_reason(REASON_ERR_WALK, detail)));
+            }
+        }
+    }
+    entries
+}
+
 fn encode_xml_skip_reason(error: XmlSearchError) -> String {
     match error {
         XmlSearchError::Parse(detail) => encode_skip_reason(REASON_ERR_XML_PARSE, detail),
@@ -1477,10 +1516,7 @@ pub fn search_dir(
                             Ok(e) => e,
                             Err(e) => {
                                 if let Ok(mut s) = skip_ref.lock() {
-                                    s.push((
-                                        "walker error".to_string(),
-                                        encode_skip_reason(REASON_ERR_WALK, e),
-                                    ));
+                                    s.extend(walk_error_entries(&e));
                                 }
                                 return ignore::WalkState::Continue;
                             }
@@ -2197,10 +2233,7 @@ fn find_files_with_keyword(
                             skipped_inner
                                 .lock()
                                 .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                .push((
-                                    "walker error".to_string(),
-                                    encode_skip_reason(REASON_ERR_WALK, error),
-                                ));
+                                .extend(walk_error_entries(&error));
                             return ignore::WalkState::Continue;
                         }
                     };
@@ -2583,6 +2616,44 @@ fn extract_line_content_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn walk_errors_preserve_paths_and_individual_causes() {
+        let errors = ignore::Error::Partial(vec![
+            ignore::Error::WithPath {
+                path: "missing-folder".into(),
+                err: Box::new(ignore::Error::WithDepth {
+                    depth: 2,
+                    err: Box::new(ignore::Error::Io(std::io::Error::from_raw_os_error(2))),
+                }),
+            },
+            ignore::Error::WithPath {
+                path: "restricted-folder".into(),
+                err: Box::new(ignore::Error::Io(std::io::Error::from_raw_os_error(5))),
+            },
+        ]);
+        let entries = walk_error_entries(&errors);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, "missing-folder");
+        assert_eq!(entries[1].0, "restricted-folder");
+        assert!(entries[0].1.contains("os error 2"));
+        assert!(!entries[0].1.contains("os error 5"));
+        assert!(entries[1].1.contains("os error 5"));
+    }
+
+    #[test]
+    fn walk_errors_without_paths_remain_distinct_and_loops_identify_child() {
+        let error = ignore::Error::Io(std::io::Error::from_raw_os_error(5));
+        assert_ne!(
+            walk_error_entries(&error)[0].0,
+            walk_error_entries(&error)[0].0
+        );
+        let error = ignore::Error::Loop {
+            ancestor: "root".into(),
+            child: "root/link".into(),
+        };
+        assert_eq!(walk_error_entries(&error)[0].0, "root/link");
+    }
 
     #[test]
     fn query_length_counts_unicode_characters_not_bytes() {

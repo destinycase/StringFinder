@@ -2,6 +2,7 @@ import ctypes
 import os
 import time
 import warnings
+from contextlib import nullcontext
 
 import qdarktheme
 from PySide6.QtCore import QByteArray, Qt, QThread, QTimer
@@ -37,9 +38,10 @@ class MainWindow(QMainWindow):
     검색 탭, 창 상태, 테마 및 애플리케이션 종료 처리를 담당합니다.
     """
 
-    def __init__(self):
+    def __init__(self, startup_timings=None):
         """메인 윈도우를 초기화하고 필요한 시스템 설정을 수행합니다."""
         super().__init__()
+        self._startup_timings = startup_timings
         self.config_manager = ConfigManager()
         if os.name == "nt":
             # Constants.APP_VERSION은 raw 버전을 반환하므로 명시적으로 v를 붙여 AppID 생성
@@ -54,7 +56,8 @@ class MainWindow(QMainWindow):
             self.resize(1200, 800)
         self.setMinimumSize(600, 400)
         self._search_lock_owner = None
-        self._init_ui()
+        with startup_timings.measure("window_ui_and_sessions") if startup_timings else nullcontext():
+            self._init_ui()
         from sf_utils.logger import qt_log_handler
 
         qt_log_handler.signaler.level_message_logged.connect(self._on_global_error_logged)
@@ -66,7 +69,8 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
         # 사용자에게는 프로그램명과 앱 버전만 표시합니다. 엔진 버전은 진단 정보로만 사용합니다.
         self.setWindowTitle(f"{Constants.APP_NAME} v{Constants.APP_VERSION}")
-        self._apply_theme()
+        with startup_timings.measure("theme") if startup_timings else nullcontext():
+            self._apply_theme()
         self.new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
         self.new_tab_shortcut.activated.connect(lambda: self.add_new_tab())
 
@@ -172,7 +176,9 @@ class MainWindow(QMainWindow):
         sb.addPermanentWidget(self.status_spinner)
 
         self.tab_widget.currentChanged.connect(self._sync_status_bar_with_active_tab)
-        self._load_all_tabs()
+        timings = self._startup_timings
+        with timings.measure("session_restore") if timings else nullcontext():
+            self._load_all_tabs()
 
     def add_new_tab(self, name=None, state=None):
         """새로운 검색 세션(탭)을 추가하고 필요한 시그널을 연결합니다."""

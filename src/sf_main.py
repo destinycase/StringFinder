@@ -1,6 +1,9 @@
 import multiprocessing
 import os
 import sys
+import time
+
+_PYTHON_STARTUP_STARTED_AT = time.perf_counter()
 
 # Run before normal imports/exception dialogs, and never open user sessions.
 if __name__ == "__main__" and sys.argv[1:] == ["--smoke-test"]:
@@ -23,23 +26,32 @@ if __name__ == "__main__" and sys.argv[1:] == ["--smoke-test"]:
         sys.exit(1)
     sys.exit(smoke_code)
 
-import qdarktheme
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication  # noqa: E402 - Timestamp precedes imports.
 
-from sf_utils.app_strings import AppStrings
-from sf_utils.logger import logger
-from sf_utils.localization import apply_saved_language
+from sf_utils.app_strings import AppStrings  # noqa: E402
+from sf_utils.logger import logger  # noqa: E402
+from sf_utils.localization import apply_saved_language  # noqa: E402
 
 
 def main():
+    from sf_utils.startup import StartupLogCleanup, StartupTimings
+
+    def report_startup(stage, seconds, cumulative):
+        template = AppStrings.LOG_SYS_STARTUP_ELAPSED if cumulative else AppStrings.LOG_SYS_STARTUP_STAGE
+        logger.info(template.format(stage, seconds))
+
+    timings = StartupTimings(report_startup, _PYTHON_STARTUP_STARTED_AT)
     # UI 및 검색 모듈이 문자열 상수를 캐시하기 전에 저장된 언어를 적용합니다.
     apply_saved_language()
+    timings.mark("entry_imports_and_language")
     from sf_utils.constants import Constants
     from sf_utils.single_instance import ensure_single_instance
-    from ui.main_window import MainWindow
+    with timings.measure("ui_module_imports"):
+        from ui.main_window import MainWindow
 
     logger.info(AppStrings.LOG_SYS_APP_STARTED_DECO)
-    app = QApplication(sys.argv)
+    with timings.measure("qt_application"):
+        app = QApplication(sys.argv)
     app.setApplicationName(Constants.APP_NAME)
     app.setApplicationVersion(Constants.APP_VERSION)
 
@@ -51,7 +63,8 @@ def main():
 
     # [필수] Rust 엔진 로드 상태 사전 확인 (QApplication 생성 후, MainWindow 생성 전)
     # Rust 엔진이 없으면 애플리케이션을 실행할 수 없습니다.
-    from core.search_engine import HAS_RUST_ENGINE, _RUST_ENGINE_ERROR
+    with timings.measure("engine_check_import"):
+        from core.search_engine import HAS_RUST_ENGINE, _RUST_ENGINE_ERROR
     if not HAS_RUST_ENGINE:
         from PySide6.QtWidgets import QMessageBox
         msg = QMessageBox()
@@ -66,7 +79,8 @@ def main():
 
     # 애플리케이션의 중복 실행을 방지합니다 (QLockFile 사용).
     # 이미 실행 중이면 경고 메시지 표시 후 sys.exit(0) 호출
-    ensure_single_instance()
+    with timings.measure("single_instance"):
+        ensure_single_instance()
 
 
     class QThreadWarningDetector:
@@ -135,24 +149,39 @@ def main():
             return False
 
     sys.stderr = QThreadWarningDetector()
-    app.setStyleSheet(qdarktheme.load_stylesheet())
-    window = MainWindow()
-    # 앱 시작 시점에 로그 정리 수행 (종료 시뿐만 아니라 시작 시에도 공간 확보)
-    try:
-        from core.system_manager import SystemManager
-        from sf_utils.config_manager import ConfigManager
+    # MainWindow applies the saved theme once; do not apply a default theme first.
+    with timings.measure("main_window"):
+        window = MainWindow(startup_timings=timings)
+    retention = dict(window.config_manager.get_log_retention())
+    app_data = os.getenv("APPDATA")
 
-        config_mgr = ConfigManager()
-        retention = config_mgr.get_log_retention()
-        app_data = os.getenv("APPDATA")
-        if app_data:
-            log_dir = os.path.join(app_data, "StringFinder")
-            SystemManager().cleanup_logs(log_dir, retention)
-    except Exception as e:
-        logger.debug(AppStrings.LOG_SYS_STARTUP_LOG_CLEANUP_FAIL.format(e))
-    window.show()
+    def clean_startup_logs():
+        from core.system_manager import SystemManager
+
+        with timings.measure("background_log_cleanup"):
+            if app_data:
+                SystemManager().cleanup_logs(os.path.join(app_data, "StringFinder"), retention)
+
+    startup_cleanup = StartupLogCleanup(
+        clean_startup_logs,
+        lambda error: logger.debug(AppStrings.LOG_SYS_STARTUP_LOG_CLEANUP_FAIL.format(error)),
+    )
+
+    def after_first_paint():
+        timings.mark("first_paint_completed")
+        startup_cleanup.start()
+
+    from ui.startup import FirstPaintObserver
+
+    paint_observer = FirstPaintObserver(window, lambda: timings.mark("first_paint_begin"), after_first_paint)
+    # Keep the Python wrapper alive alongside its QObject parent.
+    window._startup_paint_observer = paint_observer
+    with timings.measure("show_request"):
+        window.show()
 
     def cleanup_on_exit():
+        # Also prevents a queued first-paint callback from starting after shutdown.
+        startup_cleanup.stop()
         from core.system_manager import SystemManager
         from core.worker import GlobalExecutor, shutdown_global_manager
         from sf_utils.config_manager import ConfigManager

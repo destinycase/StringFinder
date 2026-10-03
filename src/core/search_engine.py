@@ -373,6 +373,19 @@ def _localize_io_error_detail(detail: Any) -> str:
         return AppStrings.SKIP_DETAIL_FILE_NOT_FOUND
 
     normalized = raw_detail.casefold()
+    if os.name == "nt":
+        # Rust reports localized Windows messages with a stable OS error code.
+        code = re.search(r"(?:os error|winerror)\s*(\d+)", normalized)
+        if code:
+            detail_by_code = {
+                "5": AppStrings.SKIP_DETAIL_PERMISSION_DENIED,
+                "2": AppStrings.SKIP_DETAIL_FILE_NOT_FOUND,
+                "3": AppStrings.SKIP_DETAIL_FILE_NOT_FOUND,
+                "32": AppStrings.SKIP_DETAIL_FILE_IN_USE,
+                "206": AppStrings.SKIP_DETAIL_PATH_TOO_LONG,
+            }
+            if code.group(1) in detail_by_code:
+                return detail_by_code[code.group(1)]
     if any(token in normalized for token in ("permission denied", "access denied", "winerror 5", "접근이 거부", "접근 거부")):
         return AppStrings.SKIP_DETAIL_PERMISSION_DENIED
     if any(token in normalized for token in ("sharing violation", "winerror 32", "being used by another process", "다른 프로세스", "사용 중")):
@@ -437,6 +450,9 @@ def format_skip_reason(reason: Any) -> str:
     elif code == SKIP_CODE_RESOURCE_BUDGET:
         _log_raw_skip_detail("resource-budget", safe_detail)
         safe_detail = AppStrings.SKIP_DETAIL_RESOURCE_BUDGET
+    elif code == SKIP_CODE_WALK and "file system loop" in safe_detail.casefold():
+        _log_raw_skip_detail("walk", safe_detail)
+        safe_detail = AppStrings.SKIP_DETAIL_WALK_LOOP
     elif code in (SKIP_CODE_WALK, SKIP_CODE_OPEN, SKIP_CODE_METADATA, SKIP_CODE_MMAP):
         safe_detail = _localize_io_error_detail(safe_detail)
     elif code in (SKIP_CODE_PANIC, SKIP_CODE_CRITICAL, SKIP_CODE_UNKNOWN) or code not in _SKIP_REASON_TEMPLATE_NAMES:
