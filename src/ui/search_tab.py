@@ -943,7 +943,9 @@ class SearchTab(QMainWindow):
                 skipped_sheets = list(self.worker.skipped_sheets_list)
             total_sheet_skipped = len(skipped_sheets)
 
-            if total_skipped > 0 and total_sheet_skipped > 0:
+            if self._search_failed:
+                msg = AppStrings.LOG_SCH_FAILED_PARTIAL.format(found_count, total_matches, total_skipped)
+            elif total_skipped > 0 and total_sheet_skipped > 0:
                 msg = AppStrings.RESULT_MSG_SKIPPED_WITH_SHEETS.format(found_count, total_skipped, total_sheet_skipped)
             elif total_skipped > 0:
                 msg = AppStrings.RESULT_MSG_SKIPPED_SIMPLE.format(found_count, total_skipped)
@@ -969,7 +971,7 @@ class SearchTab(QMainWindow):
             else:
                 logger.info(AppStrings.STATUS_FOUND_COUNT.format(found_count))
 
-            if hasattr(self, "scan_start_time"):
+            if hasattr(self, "scan_start_time") and not self._search_failed:
                 total_elapsed = time.time() - self.scan_start_time
                 logger.info(AppStrings.LOG_SCH_ALL_DONE.format(total_elapsed))
             

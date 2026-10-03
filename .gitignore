@@ -1,11 +1,10 @@
-# Python
+# Hidden directories (caches, IDE settings, local QA and temporary work)
+.*/
+
+# Python bytecode and local environments
 __pycache__/
 *.py[cod]
 *$py.class
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.benchmarks/
 .env
 .venv
 env/
@@ -16,13 +15,6 @@ venv.bak/
 
 # Rust
 target/
-
-# IDE files
-.vscode/
-.idea/
-
-# Ignore hidden directories at any depth
-.*/
 
 # Distribution / packaging
 build/
@@ -35,8 +27,6 @@ htmlcov/
 data/
 /sample/
 /samples/
-/.qa_593_ui/
-/.test_remediation_full/
 
 # Local PC performance diagnostic reports
 /docs/PC*/

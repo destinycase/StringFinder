@@ -579,7 +579,13 @@ class SearchWorker(QRunnable):
             error_msg = AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format("SearchWorker.Batch", e)
             logger.error(error_msg, exc_info=True)
             self._safe_emit(self.signals.error, error_msg)
-            self._safe_emit(self.signals.search_finished, 0, 0, 0)
+            # Native callbacks may have delivered results before the failure.
+            self._safe_emit(
+                self.signals.search_finished,
+                self._rust_found_files,
+                self._rust_total_matches,
+                len(self.all_skipped),
+            )
             return
 
         total_found = getattr(self, "_rust_found_files", 0)

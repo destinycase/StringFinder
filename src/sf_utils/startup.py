@@ -1,27 +1,6 @@
-"""Bounded startup instrumentation and non-UI log maintenance."""
+"""Non-UI startup log maintenance."""
 
-from contextlib import contextmanager
 import threading
-import time
-
-
-class StartupTimings:
-    """Measure Python startup only; executable extraction precedes this clock."""
-
-    def __init__(self, report, started_at=None):
-        self.started_at = time.perf_counter() if started_at is None else started_at
-        self.report = report
-
-    def mark(self, stage):
-        self.report(stage, time.perf_counter() - self.started_at, True)
-
-    @contextmanager
-    def measure(self, stage):
-        started = time.perf_counter()
-        try:
-            yield
-        finally:
-            self.report(stage, time.perf_counter() - started, False)
 
 
 class StartupLogCleanup:

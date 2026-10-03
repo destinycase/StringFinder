@@ -2,7 +2,7 @@
 
 StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색하는 데스크톱 애플리케이션입니다.
 
-현재 버전은 **5.9.29**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
+현재 마스터(안정) 버전은 **6.0.1**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -36,6 +36,6 @@ python run.py
 
 - [사용자 가이드](docs/USER_GUIDE.md) — 화면, 검색 방식, 설정, 결과 및 문제 해결
 - [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 검색 계약, 현지화, 테스트와 릴리스 절차
-- [검색 성능과 최적화 기록](docs/ENGINE_PERFORMANCE_BASELINE.md) — 적용·보류한 최적화와 측정 근거
+- [검색 성능 기준](docs/ENGINE_PERFORMANCE_BASELINE.md) — 6.0.1 기준값·측정 범위·판정 규칙
 - [벤치마크 히스토리](docs/benchmark_history.md) — 실행별 A–J 측정 원본
 - [개발 이력](docs/DEVELOPMENT_HISTORY.md) — 버전별 기능 변경과 수정 내역

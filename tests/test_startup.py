@@ -9,20 +9,8 @@ from unittest.mock import Mock
 
 from PySide6.QtWidgets import QWidget
 
-from sf_utils.startup import StartupLogCleanup, StartupTimings
+from sf_utils.startup import StartupLogCleanup
 from ui.startup import FirstPaintObserver
-
-
-def test_startup_clock_reports_stage_and_elapsed(monkeypatch):
-    ticks = iter([12.0, 13.0, 15.0, 18.0])
-    monkeypatch.setattr("sf_utils.startup.time.perf_counter", lambda: next(ticks))
-    report = Mock()
-    timing = StartupTimings(report)
-    with timing.measure("imports"):
-        pass
-    timing.mark("paint")
-    assert report.call_args_list[0].args == ("imports", 2.0, False)
-    assert report.call_args_list[1].args == ("paint", 6.0, True)
 
 
 def test_cleanup_is_nonblocking_runs_once_and_joins():
@@ -83,27 +71,22 @@ def test_thread_start_failure_does_not_break_shutdown(monkeypatch):
 
 
 def test_first_paint_callback_runs_once_after_paint(qtbot):
-    window = QWidget()
-    qtbot.addWidget(window)
     events = []
-    observer = FirstPaintObserver(window, lambda: events.append("paint"), lambda: events.append("ready"))
+
+    class PaintWindow(QWidget):
+        def paintEvent(self, event):
+            super().paintEvent(event)
+            if not events:
+                events.append("paint")
+
+    window = PaintWindow()
+    qtbot.addWidget(window)
+    observer = FirstPaintObserver(window, lambda: events.append("ready"))
     window.show()
     qtbot.waitUntil(lambda: events == ["paint", "ready"])
     window.repaint()
     assert events == ["paint", "ready"]
     assert observer.parent() is window
-
-
-def test_session_and_theme_stages_are_measured(qtbot, mock_config_manager):
-    from ui.main_window import MainWindow
-
-    report = Mock()
-    window = MainWindow(startup_timings=StartupTimings(report))
-    qtbot.addWidget(window)
-    stages = [call.args[0] for call in report.call_args_list]
-    assert "session_restore" in stages
-    assert "window_ui_and_sessions" in stages
-    assert "theme" in stages
 
 
 def test_real_entry_applies_theme_once_and_cleans_after_paint(tmp_path):
@@ -114,6 +97,7 @@ import qdarktheme
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 from core.system_manager import SystemManager
+from ui.main_window import MainWindow
 import sf_utils.single_instance
 sf_utils.single_instance.ensure_single_instance = lambda: None
 loads = []
@@ -123,7 +107,17 @@ def load(*args, **kwargs):
     return original_load(*args, **kwargs)
 qdarktheme.load_stylesheet = load
 threads = []
-SystemManager.cleanup_logs = lambda *args: threads.append(threading.current_thread())
+painted = threading.Event()
+original_paint = MainWindow.paintEvent
+def paint(self, event):
+    original_paint(self, event)
+    painted.set()
+MainWindow.paintEvent = paint
+def clean_logs(*args):
+    if threading.current_thread() is not threading.main_thread():
+        assert painted.is_set(), 'Cleanup started before first paint completed'
+    threads.append(threading.current_thread())
+SystemManager.cleanup_logs = clean_logs
 def app_factory(*args):
     app = QApplication(*args)
     QTimer.singleShot(1000, app.quit)
@@ -134,6 +128,7 @@ try:
 except SystemExit as result:
     assert result.code == 0
 assert len(loads) == 1, loads
+assert len(threads) == 2, threads
 assert threads[0] is not threading.main_thread()
 assert threads[-1] is threading.main_thread()
 '''
@@ -142,5 +137,8 @@ assert threads[-1] is threading.main_thread()
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
     result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, timeout=30)
     assert result.returncode == 0, result.stderr.decode(errors="replace")
-    output = result.stdout.decode(errors="replace")
-    assert output.index("first_paint_completed") < output.index("background_log_cleanup")
+    output = (result.stdout + result.stderr).decode(errors="replace")
+    assert "first_paint_completed" not in output
+    assert "background_log_cleanup" not in output
+    assert "[시작 계측]" not in output
+    assert "[Startup timing]" not in output
