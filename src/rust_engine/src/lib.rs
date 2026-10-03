@@ -2546,6 +2546,7 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<SearchMatch>()?;
     m.add_class::<SearchOptions>()?;
+    m.add_class::<excel_search::SparseExcelWorkbook>()?;
     m.add_function(wrap_pyfunction!(search_file, m)?)?;
     m.add_function(wrap_pyfunction!(search_dir, m)?)?;
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;

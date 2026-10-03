@@ -10,6 +10,7 @@ from sf_utils.constants import Constants
 
 @pytest.fixture
 def fake_sheet(monkeypatch):
+    monkeypatch.setattr(se, 'HAS_RUST_ENGINE', False)
     rows = [[None, "", " ", 0, False, "가나다", "needle"]]
     sheet = SimpleNamespace(start=(0, 0), iter_rows=lambda: iter(rows))
     workbook = SimpleNamespace(sheet_names=['Data'], get_sheet_by_name=lambda _: sheet)
@@ -98,7 +99,7 @@ def test_empty_rows_keep_cancellation_checks(fake_sheet):
 
     def is_set():
         checks.append(True)
-        return len(checks) == 3  # Before sheet, row 0, then row 100.
+        return len(checks) == 3  # Before sheet, first cell, then 100 cells.
 
     result = se.search_in_excel_special('fake.xlsx', 'needle', use_complex_search=True,
                                        stop_event=SimpleNamespace(is_set=is_set))

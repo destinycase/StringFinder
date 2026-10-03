@@ -1,9 +1,172 @@
 use crate::types::RawMatch;
-use calamine::{Data, Reader, Xls, Xlsb, Xlsx};
+use calamine::{Cell, Data, Range, Reader, Xls, Xlsb, Xlsx, XlsxError};
 use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
 
 const EXCEL_MARKER_SHEET_ERROR_PREFIX: &str = "__SF_EXCEL_SHEET_ERR__|";
+
+enum SheetCells {
+    Dense(Range<Data>),
+    Sparse(Vec<Cell<Data>>),
+}
+
+impl SheetCells {
+    fn cells(&self) -> Box<dyn Iterator<Item = (usize, usize, &Data)> + '_> {
+        match self {
+            Self::Dense(range) => {
+                let (r, c) = range.start().unwrap_or((0, 0));
+                Box::new(
+                    range
+                        .cells()
+                        .map(move |(row, col, value)| (row + r as usize, col + c as usize, value)),
+                )
+            }
+            Self::Sparse(cells) => Box::new(cells.iter().map(|cell| {
+                let (r, c) = cell.get_position();
+                (r as usize, c as usize, cell.get_value())
+            })),
+        }
+    }
+}
+
+fn read_sparse_sheet<R: std::io::Read + std::io::Seek>(
+    wb: &mut Xlsx<R>,
+    name: &str,
+) -> Result<Vec<Cell<Data>>, XlsxError> {
+    let mut reader = match wb.worksheet_cells_reader(name) {
+        Ok(reader) => reader,
+        // Match worksheet_range's treatment of charts and other non-worksheets.
+        Err(XlsxError::NotAWorksheet(_)) => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut cells = Vec::new();
+    while let Some(cell) = reader.next_cell()? {
+        let value = Data::from(cell.get_value().clone());
+        if value != Data::Empty {
+            cells.push(Cell::new(cell.get_position(), value));
+        }
+    }
+    // Range::from_sparse orders by coordinate and the last nonempty cell wins.
+    // Keep that contract even for duplicate or out-of-order XML cells.
+    if !cells
+        .windows(2)
+        .all(|pair| pair[0].get_position() < pair[1].get_position())
+    {
+        cells.sort_by_key(Cell::get_position);
+        cells.reverse();
+        cells.dedup_by_key(|cell| cell.get_position());
+        cells.reverse();
+    }
+    Ok(cells)
+}
+
+/// Parsed values only, never a rectangular sheet allocation. Python retains
+/// ownership of precise matching/Unicode policy; this class only decodes cells.
+#[pyo3::pyclass]
+pub struct SparseExcelWorkbook {
+    workbook: Xlsx<std::io::BufReader<std::fs::File>>,
+    path: std::path::PathBuf,
+}
+
+type SparsePythonSheet = (
+    Vec<(usize, usize, String)>,
+    Option<(u32, u32)>,
+    Option<(u32, u32)>,
+);
+
+#[pyo3::pymethods]
+impl SparseExcelWorkbook {
+    #[new]
+    fn new(py: pyo3::Python<'_>, path: String) -> pyo3::PyResult<Self> {
+        let result = py.allow_threads(|| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                calamine::open_workbook(&path)
+            }))
+        });
+        let workbook = result
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(panic_to_string(e)))?
+            .map_err(|e: XlsxError| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(Self {
+            workbook,
+            path: path.into(),
+        })
+    }
+
+    #[getter]
+    fn sheet_names(&self) -> Vec<String> {
+        self.workbook.sheet_names()
+    }
+
+    fn read_sheet(
+        &mut self,
+        py: pyo3::Python<'_>,
+        name: String,
+    ) -> pyo3::PyResult<SparsePythonSheet> {
+        let result = py.allow_threads(|| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let cells = read_sparse_sheet(&mut self.workbook, &name)?;
+                let start = cells
+                    .iter()
+                    .map(Cell::get_position)
+                    .reduce(|a, b| (a.0.min(b.0), a.1.min(b.1)));
+                let end = cells
+                    .iter()
+                    .map(Cell::get_position)
+                    .reduce(|a, b| (a.0.max(b.0), a.1.max(b.1)));
+                let ac = aho_corasick::AhoCorasick::new([""]).expect("empty literal is valid");
+                let ctx = ExcelCtx {
+                    path: &self.path,
+                    date_cells: Default::default(),
+                    pat_upper: "",
+                    ac: &ac,
+                    is_exact: false,
+                    stop_flag: Default::default(),
+                    max_per_file: usize::MAX,
+                };
+                let values = cells
+                    .iter()
+                    .map(|cell| {
+                        let (r, c) = cell.get_position();
+                        // python-calamine exposes Excel error/empty cells as empty text.
+                        let value = if matches!(cell.get_value(), Data::Error(_)) {
+                            String::new()
+                        } else {
+                            cell_text(cell.get_value(), &name, r as usize, c as usize, &ctx)
+                                .unwrap_or_default()
+                        };
+                        (r as usize, c as usize, value)
+                    })
+                    .collect();
+                if let Some(Err(error)) = ctx.date_cells.borrow().get(&name) {
+                    return Err(XlsxError::Io(std::io::Error::other(error.clone())));
+                }
+                Ok::<_, XlsxError>((values, start, end))
+            }))
+        });
+        result
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(panic_to_string(e)))?
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+}
+
+trait SheetReader<R: std::io::Read + std::io::Seek>: Reader<R> {
+    fn read_cells(&mut self, name: &str) -> Result<SheetCells, Self::Error>;
+}
+impl<R: std::io::Read + std::io::Seek> SheetReader<R> for Xlsx<R> {
+    fn read_cells(&mut self, name: &str) -> Result<SheetCells, Self::Error> {
+        read_sparse_sheet(self, name).map(SheetCells::Sparse)
+    }
+}
+impl<R: std::io::Read + std::io::Seek> SheetReader<R> for Xls<R> {
+    fn read_cells(&mut self, name: &str) -> Result<SheetCells, Self::Error> {
+        self.worksheet_range(name).map(SheetCells::Dense)
+    }
+}
+impl<R: std::io::Read + std::io::Seek> SheetReader<R> for Xlsb<R> {
+    fn read_cells(&mut self, name: &str) -> Result<SheetCells, Self::Error> {
+        self.worksheet_range(name).map(SheetCells::Dense)
+    }
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ExcelCheckOutcome {
@@ -35,7 +198,7 @@ struct ExcelCtx<'a> {
 fn search_wb<R, WB>(wb: &mut WB, ctx: &ExcelCtx<'_>) -> Vec<RawMatch>
 where
     R: std::io::Read + std::io::Seek,
-    WB: Reader<R>,
+    WB: SheetReader<R>,
 {
     let mut results: Vec<RawMatch> = Vec::new();
     let mut match_count = 0;
@@ -43,30 +206,20 @@ where
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
-        let range_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            wb.worksheet_range(&sheet_name)
-        }));
+        let range_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| wb.read_cells(&sheet_name)));
         match range_result {
             Ok(Ok(range)) => {
-                let (offset_row, offset_col): (u32, u32) = range.start().unwrap_or((0, 0));
-                'outer: for (row_idx, row) in range.rows().enumerate() {
+                'outer: for (row_idx, col_idx, cell) in range.cells() {
                     if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                         break 'outer;
                     }
-                    for (col_idx, cell) in row.iter().enumerate() {
-                        if match_count > ctx.max_per_file {
-                            break 'outer;
-                        } // H2: 결과 상한
-                        if let Some(m) = match_cell(
-                            cell,
-                            &sheet_name,
-                            offset_row as usize + row_idx,
-                            offset_col as usize + col_idx,
-                            ctx,
-                        ) {
-                            results.push(m);
-                            match_count += 1;
-                        }
+                    if match_count > ctx.max_per_file {
+                        break 'outer;
+                    } // H2: 결과 상한
+                    if let Some(m) = match_cell(cell, &sheet_name, row_idx, col_idx, ctx) {
+                        results.push(m);
+                        match_count += 1;
                     }
                 }
             }
@@ -110,7 +263,7 @@ where
 fn check_wb<R, WB>(wb: &mut WB, ctx: &ExcelCtx<'_>) -> ExcelCheckOutcome
 where
     R: std::io::Read + std::io::Seek,
-    WB: Reader<R>,
+    WB: SheetReader<R>,
 {
     // Search all cells until the first hit or cancellation; there is no cell cap.
     let mut first_sheet_error = None;
@@ -119,29 +272,20 @@ where
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             return ExcelCheckOutcome::default();
         }
-        if let Ok(Ok(range)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            wb.worksheet_range(&sheet_name)
-        })) {
-            let (offset_row, offset_col) = range.start().unwrap_or((0, 0));
-            for (row_idx, row) in range.rows().enumerate() {
+        if let Ok(Ok(range)) =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| wb.read_cells(&sheet_name)))
+        {
+            for (row_idx, col_idx, cell) in range.cells() {
                 if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                     return ExcelCheckOutcome::default();
                 }
-                for (col_idx, cell) in row.iter().enumerate() {
-                    if cell_text(
-                        cell,
-                        &sheet_name,
-                        row_idx + offset_row as usize,
-                        col_idx + offset_col as usize,
-                        ctx,
-                    )
+                if cell_text(cell, &sheet_name, row_idx, col_idx, ctx)
                     .is_some_and(|value| cell_matches_val(&value, ctx))
-                    {
-                        return ExcelCheckOutcome {
-                            found: true,
-                            sheet_error: first_sheet_error,
-                        };
-                    }
+                {
+                    return ExcelCheckOutcome {
+                        found: true,
+                        sheet_error: first_sheet_error,
+                    };
                 }
             }
             if let Some(Err(error)) = ctx.date_cells.borrow().get(&sheet_name) {

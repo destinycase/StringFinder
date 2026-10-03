@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "6.0.2"
+version = "6.0.3"
 authors = [{ name = "N2" }]
 
 description = "Windows desktop search for text, JSON, XML, and Excel files, powered by Rust and Python with Korean and English interfaces."

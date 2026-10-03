@@ -1572,7 +1572,9 @@ def search_in_excel_special(
         from python_calamine import CalamineWorkbook
 
         try:
-            workbook = CalamineWorkbook.from_path(file_path)
+            sparse_reader = getattr(sf_engine, "SparseExcelWorkbook", None) if HAS_RUST_ENGINE else None
+            use_sparse = isinstance(sparse_reader, type) and file_path.lower().endswith((".xlsx", ".xlsm"))
+            workbook = sparse_reader(file_path) if use_sparse else CalamineWorkbook.from_path(file_path)
         except (IOError, OSError) as e:
             return (
                 Constants.STATUS_SKIPPED,
@@ -1602,68 +1604,52 @@ def search_in_excel_special(
             if stop_event and stop_event.is_set():
                 break
             try:
-                # [성능 최적화] to_python() 대신 상위 이너레이터를 사용하여 메모리 효율 향상
-                sheet = workbook.get_sheet_by_name(sheet_name)
-
-                # [Stability] 빈 시트 체크: python-calamine 0.1.x 버그 대응
-                # total_height/total_width는 개수가 아니라 0 기반 마지막 인덱스라서
-                # 값이 0인 정상적인 단일 행/열 시트도 있습니다. 지원 버전에서는
-                # 빈 시트만 start=None이므로 이를 우선 판별합니다.
-                if hasattr(sheet, "start"):
-                    if sheet.start is None:
-                        continue
-                elif hasattr(sheet, "total_height") and hasattr(sheet, "total_width"):
-                    if sheet.total_height == 0 and sheet.total_width == 0:
-                        continue
-
-                # iter_rows() 호출 후 회수 시점에서 발생하는 패닉 처리
-                # calamine iter_rows includes leading empty rows, but crops columns.
-                rows_iter = sheet.iter_rows()
-                for row_idx, row in enumerate(rows_iter):
-                    if row_idx % 100 == 0 and stop_event and stop_event.is_set():
+                from core.excel_sparse import iter_legacy_cells, iter_sparse_cells
+                if use_sparse:
+                    cells_iter = iter_sparse_cells(workbook, sheet_name, include_empty=not search_string_norm)
+                else:
+                    sheet = workbook.get_sheet_by_name(sheet_name)
+                    cells_iter = iter_legacy_cells(sheet)
+                for cell_index, (row_idx, col_idx, cell_value) in enumerate(cells_iter):
+                    # read_sheet has already validated this entire sheet. Once
+                    # detail capacity is exhausted, still parse later sheets,
+                    # but do not enumerate potentially billions of empty gaps.
+                    if use_sparse and count > max_per_file:
                         break
-                    for col_idx, cell_value in enumerate(row):
-                        # Calamine fills gaps with "". Avoid conversion/normalization
-                        # for those cells, but preserve whitespace-only/empty query
-                        # behavior when the normalized search string is empty.
-                        if cell_value is not None and (cell_value != "" or not search_string_norm):
-                            if isinstance(cell_value, datetime.time) and file_path.lower().endswith((".xlsx", ".xlsm")):
-                                if sheet_name not in date_cells:
-                                    from core.excel_date_formats import read_date_cells
-                                    date_cells[sheet_name] = read_date_cells(file_path, sheet_name)
-                                actual_col = col_idx + (sheet.start[1] if sheet.start else 0)
-                                from openpyxl.utils.cell import get_column_letter
-                                coordinate = f"{get_column_letter(actual_col + 1)}{row_idx + 1}"
-                                if (sheet_name, coordinate) in date_cells[sheet_name]:
-                                    cell_value = datetime.datetime.combine(datetime.date(1904, 1, 1), cell_value)
-                                    if cell_value.time() == datetime.time():
-                                        cell_value = cell_value.date()
-                            val_str = normalize_unicode(_excel_cell_text(cell_value))
-                            val_lower = val_str.casefold()
-                            val_norm = val_lower.strip()
-                            is_match = False
-                            if exact_match:
-                                is_match = val_norm == search_string_norm
-                            else:
-                                is_match = (search_string_norm in val_norm) or (search_string_lower in val_lower)
-                            if is_match:
-                                count += 1
-                                if existence_only:
-                                    # [Boolean] 일치 항목 발견 시 즉시 반환
-                                    return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)] + [(-2, reason, "", "") for reason in sheet_errors])
-                                
-                                # [상] Python 경로 매치 상한 적용
-                                if count <= max_per_file:
-                                    col_letter = ""
-                                    temp_col = col_idx + (sheet.start[1] if hasattr(sheet, "start") and sheet.start else 0)
-                                    while temp_col >= 0:
-                                        col_letter = chr(65 + (temp_col % 26)) + col_letter
-                                        temp_col = (temp_col // 26) - 1
-                                    # iter_rows already includes the leading empty rows.
-                                    abs_row = row_idx + 1
-                                    matches.append((0, sheet_name, f"{col_letter}{abs_row}", val_str))
-                                elif count == max_per_file + 1:
-                                    matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", ""))
+                    if cell_index % 100 == 0 and stop_event and stop_event.is_set():
+                        break
+                    # Empty cells need no normalization for a nonempty query.
+                    if cell_value is not None and (cell_value != "" or not search_string_norm):
+                        if not use_sparse and isinstance(cell_value, datetime.time) and file_path.lower().endswith((".xlsx", ".xlsm")):
+                            if sheet_name not in date_cells:
+                                from core.excel_date_formats import read_date_cells
+                                date_cells[sheet_name] = read_date_cells(file_path, sheet_name)
+                            from openpyxl.utils.cell import get_column_letter
+                            coordinate = f"{get_column_letter(col_idx + 1)}{row_idx + 1}"
+                            if (sheet_name, coordinate) in date_cells[sheet_name]:
+                                cell_value = datetime.datetime.combine(datetime.date(1904, 1, 1), cell_value)
+                                if cell_value.time() == datetime.time():
+                                    cell_value = cell_value.date()
+                        val_str = normalize_unicode(_excel_cell_text(cell_value))
+                        val_lower = val_str.casefold()
+                        val_norm = val_lower.strip()
+                        if exact_match:
+                            is_match = val_norm == search_string_norm
+                        else:
+                            is_match = (search_string_norm in val_norm) or (search_string_lower in val_lower)
+                        if is_match:
+                            count += 1
+                            if existence_only:
+                                return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)] + [(-2, reason, "", "") for reason in sheet_errors])
+                            if count <= max_per_file:
+                                col_letter = ""
+                                temp_col = col_idx
+                                while temp_col >= 0:
+                                    col_letter = chr(65 + (temp_col % 26)) + col_letter
+                                    temp_col = (temp_col // 26) - 1
+                                matches.append((0, sheet_name, f"{col_letter}{row_idx + 1}", val_str))
+                            elif count == max_per_file + 1:
+                                matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", ""))
             except BaseException as e:  # 특정 시트에서 패닉 발생 시 해당 시트만 스킵
                 _log_raw_skip_detail(f"Excel sheet {sheet_name}", e)
                 sheet_err_msg = AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(sheet_name)

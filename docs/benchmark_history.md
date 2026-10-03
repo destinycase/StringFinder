@@ -559,3 +559,193 @@
 | 2026-10-03 17:34:37 | v6.0.1-baseline-r5 | Set H: Sparse Stress | 0.061s | 0.061s | 0.0000 | 145.5 MB | 1 | 0 |  |
 | 2026-10-03 17:34:37 | v6.0.1-baseline-r5 | Set I: No-Newline | 0.044s | 0.044s | 0.0000 | 103.1 MB | 1 | 0 |  |
 | 2026-10-03 17:34:37 | v6.0.1-baseline-r5 | Set J: Excel Mixed | 0.031s | 0.030s | 0.0000 | 53.1 MB | 2 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set A: Small/Many | 0.931s | 0.043s | 0.0260 | 79.6 MB | 100 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set B: Mixed/Large | 0.071s | 0.071s | 0.0000 | 157.5 MB | 1 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set C: Binary Mixed | 0.136s | 0.038s | 0.0000 | 75.5 MB | 50 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set D: Boolean Early | 0.038s | 0.037s | 0.0000 | 74.9 MB | 1 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set E: ASCII Fast | 0.114s | 0.113s | 0.0000 | 177.6 MB | 1 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set F: Monster JSON | 0.066s | 0.065s | 0.0000 | 100.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set G: Deep XML | 0.066s | 0.065s | 0.0000 | 124.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set H: Sparse Stress | 0.152s | 0.151s | 0.0000 | 164.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set I: No-Newline | 0.081s | 0.079s | 0.0000 | 125.3 MB | 1 | 0 |  |
+| 2026-10-04 00:17:40 | v6.0.2-xlsx-sparse-after-warmup | Set J: Excel Mixed | 0.045s | 0.044s | 0.0000 | 76.0 MB | 2 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set A: Small/Many | 0.912s | 0.053s | 0.0269 | 52.5 MB | 100 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set B: Mixed/Large | 0.060s | 0.059s | 0.0000 | 110.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set C: Binary Mixed | 0.129s | 0.032s | 0.0000 | 48.2 MB | 50 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set D: Boolean Early | 0.025s | 0.025s | 0.0000 | 47.6 MB | 1 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set E: ASCII Fast | 0.086s | 0.086s | 0.0000 | 150.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set F: Monster JSON | 0.041s | 0.040s | 0.0000 | 68.1 MB | 1 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set G: Deep XML | 0.049s | 0.048s | 0.0000 | 95.7 MB | 1 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set H: Sparse Stress | 0.071s | 0.071s | 0.0000 | 123.6 MB | 1 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set I: No-Newline | 0.056s | 0.056s | 0.0000 | 92.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:42 | v6.0.2-xlsx-sparse-before-warmup | Set J: Excel Mixed | 0.039s | 0.039s | 0.0000 | 49.1 MB | 2 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set A: Small/Many | 0.881s | 0.048s | 0.0282 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set B: Mixed/Large | 0.054s | 0.053s | 0.0000 | 123.9 MB | 1 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set C: Binary Mixed | 0.127s | 0.032s | 0.0000 | 48.6 MB | 50 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set D: Boolean Early | 0.028s | 0.028s | 0.0000 | 48.1 MB | 1 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set E: ASCII Fast | 0.091s | 0.091s | 0.0000 | 150.7 MB | 1 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set F: Monster JSON | 0.043s | 0.042s | 0.0000 | 67.1 MB | 1 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set G: Deep XML | 0.055s | 0.053s | 0.0000 | 89.5 MB | 1 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set H: Sparse Stress | 0.077s | 0.076s | 0.0000 | 142.7 MB | 1 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set I: No-Newline | 0.060s | 0.060s | 0.0000 | 98.5 MB | 1 | 0 |  |
+| 2026-10-04 00:17:44 | v6.0.2-xlsx-sparse-before-run1 | Set J: Excel Mixed | 0.039s | 0.039s | 0.0000 | 49.4 MB | 2 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set A: Small/Many | 0.901s | 0.044s | 0.0264 | 52.4 MB | 100 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set B: Mixed/Large | 0.056s | 0.056s | 0.0000 | 110.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set C: Binary Mixed | 0.139s | 0.033s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set D: Boolean Early | 0.029s | 0.028s | 0.0000 | 48.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set E: ASCII Fast | 0.092s | 0.091s | 0.0000 | 150.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set F: Monster JSON | 0.043s | 0.042s | 0.0000 | 59.1 MB | 1 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set G: Deep XML | 0.051s | 0.051s | 0.0000 | 96.5 MB | 1 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set H: Sparse Stress | 0.073s | 0.072s | 0.0000 | 137.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set I: No-Newline | 0.057s | 0.056s | 0.0000 | 96.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:46 | v6.0.2-xlsx-sparse-after-run1 | Set J: Excel Mixed | 0.042s | 0.040s | 0.0000 | 49.3 MB | 2 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set A: Small/Many | 0.876s | 0.045s | 0.0289 | 52.0 MB | 100 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set B: Mixed/Large | 0.060s | 0.059s | 0.0000 | 121.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set C: Binary Mixed | 0.128s | 0.030s | 0.0000 | 47.7 MB | 50 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set D: Boolean Early | 0.028s | 0.028s | 0.0000 | 47.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set E: ASCII Fast | 0.090s | 0.089s | 0.0000 | 149.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set F: Monster JSON | 0.045s | 0.044s | 0.0000 | 67.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set G: Deep XML | 0.051s | 0.050s | 0.0000 | 94.6 MB | 1 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set H: Sparse Stress | 0.078s | 0.077s | 0.0000 | 143.5 MB | 1 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set I: No-Newline | 0.063s | 0.062s | 0.0000 | 97.5 MB | 1 | 0 |  |
+| 2026-10-04 00:17:48 | v6.0.2-xlsx-sparse-after-run2 | Set J: Excel Mixed | 0.037s | 0.036s | 0.0000 | 49.0 MB | 2 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set A: Small/Many | 0.888s | 0.041s | 0.0283 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set B: Mixed/Large | 0.062s | 0.061s | 0.0000 | 119.5 MB | 1 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set C: Binary Mixed | 0.132s | 0.035s | 0.0000 | 48.3 MB | 50 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set D: Boolean Early | 0.030s | 0.028s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set E: ASCII Fast | 0.090s | 0.089s | 0.0000 | 150.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set F: Monster JSON | 0.041s | 0.040s | 0.0000 | 65.9 MB | 1 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set G: Deep XML | 0.052s | 0.051s | 0.0000 | 87.3 MB | 1 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set H: Sparse Stress | 0.070s | 0.069s | 0.0000 | 125.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set I: No-Newline | 0.055s | 0.055s | 0.0000 | 97.7 MB | 1 | 0 |  |
+| 2026-10-04 00:17:51 | v6.0.2-xlsx-sparse-before-run2 | Set J: Excel Mixed | 0.041s | 0.040s | 0.0000 | 49.1 MB | 2 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set A: Small/Many | 0.887s | 0.051s | 0.0283 | 52.7 MB | 100 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set B: Mixed/Large | 0.059s | 0.058s | 0.0000 | 111.0 MB | 1 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set C: Binary Mixed | 0.126s | 0.030s | 0.0000 | 48.6 MB | 50 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set D: Boolean Early | 0.026s | 0.026s | 0.0000 | 47.9 MB | 1 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set E: ASCII Fast | 0.088s | 0.087s | 0.0000 | 150.6 MB | 1 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set F: Monster JSON | 0.045s | 0.044s | 0.0000 | 61.3 MB | 1 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set G: Deep XML | 0.051s | 0.051s | 0.0000 | 89.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set H: Sparse Stress | 0.070s | 0.070s | 0.0000 | 125.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set I: No-Newline | 0.057s | 0.056s | 0.0000 | 91.0 MB | 1 | 0 |  |
+| 2026-10-04 00:17:53 | v6.0.2-xlsx-sparse-before-run3 | Set J: Excel Mixed | 0.048s | 0.047s | 0.0000 | 50.0 MB | 2 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set A: Small/Many | 0.895s | 0.048s | 0.0268 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set B: Mixed/Large | 0.064s | 0.063s | 0.0000 | 126.7 MB | 1 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set C: Binary Mixed | 0.127s | 0.034s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set D: Boolean Early | 0.026s | 0.026s | 0.0000 | 47.7 MB | 1 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set E: ASCII Fast | 0.094s | 0.093s | 0.0000 | 150.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set F: Monster JSON | 0.043s | 0.042s | 0.0000 | 62.9 MB | 1 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set G: Deep XML | 0.048s | 0.048s | 0.0000 | 98.0 MB | 1 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set H: Sparse Stress | 0.076s | 0.076s | 0.0000 | 141.7 MB | 1 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set I: No-Newline | 0.056s | 0.055s | 0.0000 | 94.3 MB | 1 | 0 |  |
+| 2026-10-04 00:17:55 | v6.0.2-xlsx-sparse-after-run3 | Set J: Excel Mixed | 0.041s | 0.039s | 0.0000 | 49.0 MB | 2 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set A: Small/Many | 0.859s | 0.051s | 0.0284 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set B: Mixed/Large | 0.057s | 0.056s | 0.0000 | 110.1 MB | 1 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set C: Binary Mixed | 0.128s | 0.037s | 0.0000 | 48.3 MB | 50 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set D: Boolean Early | 0.029s | 0.028s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set E: ASCII Fast | 0.092s | 0.091s | 0.0000 | 150.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set F: Monster JSON | 0.043s | 0.042s | 0.0000 | 63.3 MB | 1 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set G: Deep XML | 0.051s | 0.050s | 0.0000 | 92.3 MB | 1 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set H: Sparse Stress | 0.075s | 0.074s | 0.0000 | 140.1 MB | 1 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set I: No-Newline | 0.058s | 0.057s | 0.0000 | 95.8 MB | 1 | 0 |  |
+| 2026-10-04 00:17:57 | v6.0.2-xlsx-sparse-after-run4 | Set J: Excel Mixed | 0.040s | 0.039s | 0.0000 | 49.3 MB | 2 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set A: Small/Many | 0.866s | 0.046s | 0.0287 | 52.7 MB | 100 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set B: Mixed/Large | 0.057s | 0.056s | 0.0000 | 110.2 MB | 1 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set C: Binary Mixed | 0.129s | 0.036s | 0.0000 | 48.4 MB | 50 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set D: Boolean Early | 0.030s | 0.030s | 0.0000 | 48.0 MB | 1 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set E: ASCII Fast | 0.092s | 0.091s | 0.0000 | 150.6 MB | 1 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set F: Monster JSON | 0.040s | 0.039s | 0.0000 | 67.3 MB | 1 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set G: Deep XML | 0.050s | 0.049s | 0.0000 | 97.0 MB | 1 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set H: Sparse Stress | 0.071s | 0.070s | 0.0000 | 128.4 MB | 1 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set I: No-Newline | 0.056s | 0.055s | 0.0000 | 91.6 MB | 1 | 0 |  |
+| 2026-10-04 00:17:59 | v6.0.2-xlsx-sparse-before-run4 | Set J: Excel Mixed | 0.039s | 0.039s | 0.0000 | 49.2 MB | 2 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set A: Small/Many | 0.885s | 0.053s | 0.0279 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set B: Mixed/Large | 0.055s | 0.054s | 0.0000 | 119.9 MB | 1 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set C: Binary Mixed | 0.133s | 0.032s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set D: Boolean Early | 0.027s | 0.027s | 0.0000 | 47.9 MB | 1 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set E: ASCII Fast | 0.088s | 0.088s | 0.0000 | 150.6 MB | 1 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set F: Monster JSON | 0.042s | 0.041s | 0.0000 | 64.2 MB | 1 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set G: Deep XML | 0.046s | 0.046s | 0.0000 | 82.2 MB | 1 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set H: Sparse Stress | 0.070s | 0.069s | 0.0000 | 130.0 MB | 1 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set I: No-Newline | 0.055s | 0.054s | 0.0000 | 98.3 MB | 1 | 0 |  |
+| 2026-10-04 00:18:01 | v6.0.2-xlsx-sparse-before-run5 | Set J: Excel Mixed | 0.039s | 0.038s | 0.0000 | 49.4 MB | 2 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set A: Small/Many | 0.826s | 0.047s | 0.0282 | 52.3 MB | 100 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set B: Mixed/Large | 0.058s | 0.057s | 0.0000 | 108.7 MB | 1 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set C: Binary Mixed | 0.126s | 0.039s | 0.0000 | 48.2 MB | 50 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set D: Boolean Early | 0.026s | 0.025s | 0.0000 | 47.7 MB | 1 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set E: ASCII Fast | 0.090s | 0.089s | 0.0000 | 150.3 MB | 1 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set F: Monster JSON | 0.039s | 0.038s | 0.0000 | 69.9 MB | 1 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set G: Deep XML | 0.047s | 0.047s | 0.0000 | 97.0 MB | 1 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set H: Sparse Stress | 0.072s | 0.071s | 0.0000 | 134.1 MB | 1 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set I: No-Newline | 0.055s | 0.055s | 0.0000 | 92.7 MB | 1 | 0 |  |
+| 2026-10-04 00:18:02 | v6.0.2-xlsx-sparse-after-run5 | Set J: Excel Mixed | 0.039s | 0.038s | 0.0000 | 49.2 MB | 2 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set A: Small/Many | 0.661s | 0.042s | 0.0348 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 138.0 MB | 1 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set C: Binary Mixed | 0.117s | 0.030s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set D: Boolean Early | 0.019s | 0.018s | 0.0000 | 48.2 MB | 1 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set E: ASCII Fast | 0.087s | 0.086s | 0.0000 | 150.5 MB | 1 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set F: Monster JSON | 0.033s | 0.033s | 0.0000 | 74.5 MB | 1 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set G: Deep XML | 0.040s | 0.040s | 0.0000 | 78.0 MB | 1 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set H: Sparse Stress | 0.059s | 0.058s | 0.0000 | 135.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set I: No-Newline | 0.045s | 0.044s | 0.0000 | 93.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:11 | v6.0.2-xlsx-sparse-v601-compare-warmup | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 48.6 MB | 2 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set A: Small/Many | 0.650s | 0.038s | 0.0354 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 135.9 MB | 1 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set C: Binary Mixed | 0.115s | 0.030s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set D: Boolean Early | 0.020s | 0.019s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set E: ASCII Fast | 0.081s | 0.080s | 0.0000 | 150.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set F: Monster JSON | 0.034s | 0.033s | 0.0000 | 75.8 MB | 1 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set G: Deep XML | 0.040s | 0.039s | 0.0000 | 82.9 MB | 1 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set H: Sparse Stress | 0.058s | 0.057s | 0.0000 | 138.9 MB | 1 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set I: No-Newline | 0.052s | 0.051s | 0.0000 | 96.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:13 | v6.0.2-xlsx-sparse-v601-compare-r1 | Set J: Excel Mixed | 0.030s | 0.030s | 0.0000 | 48.8 MB | 2 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set A: Small/Many | 0.651s | 0.033s | 0.0349 | 52.9 MB | 100 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set B: Mixed/Large | 0.049s | 0.048s | 0.0000 | 132.1 MB | 1 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set C: Binary Mixed | 0.116s | 0.034s | 0.0000 | 48.7 MB | 50 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set D: Boolean Early | 0.021s | 0.020s | 0.0000 | 48.0 MB | 1 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set E: ASCII Fast | 0.090s | 0.090s | 0.0000 | 150.6 MB | 1 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 75.8 MB | 1 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set G: Deep XML | 0.040s | 0.040s | 0.0000 | 80.8 MB | 1 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set H: Sparse Stress | 0.059s | 0.058s | 0.0000 | 142.1 MB | 1 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set I: No-Newline | 0.047s | 0.046s | 0.0000 | 98.3 MB | 1 | 0 |  |
+| 2026-10-04 00:37:14 | v6.0.2-xlsx-sparse-v601-compare-r2 | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 48.7 MB | 2 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set A: Small/Many | 0.625s | 0.040s | 0.0353 | 52.7 MB | 100 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set B: Mixed/Large | 0.047s | 0.047s | 0.0000 | 135.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set C: Binary Mixed | 0.123s | 0.035s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set D: Boolean Early | 0.019s | 0.018s | 0.0000 | 47.9 MB | 1 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set E: ASCII Fast | 0.081s | 0.081s | 0.0000 | 150.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 76.2 MB | 1 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set G: Deep XML | 0.040s | 0.040s | 0.0000 | 78.3 MB | 1 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 142.8 MB | 1 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set I: No-Newline | 0.044s | 0.044s | 0.0000 | 90.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:16 | v6.0.2-xlsx-sparse-v601-compare-r3 | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 48.4 MB | 2 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set A: Small/Many | 0.618s | 0.034s | 0.0349 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set B: Mixed/Large | 0.048s | 0.047s | 0.0000 | 139.3 MB | 1 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set C: Binary Mixed | 0.114s | 0.024s | 0.0000 | 48.3 MB | 50 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set D: Boolean Early | 0.021s | 0.020s | 0.0000 | 48.2 MB | 1 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 150.7 MB | 1 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 75.1 MB | 1 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set G: Deep XML | 0.040s | 0.040s | 0.0000 | 81.6 MB | 1 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 136.4 MB | 1 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set I: No-Newline | 0.045s | 0.045s | 0.0000 | 98.1 MB | 1 | 0 |  |
+| 2026-10-04 00:37:17 | v6.0.2-xlsx-sparse-v601-compare-r4 | Set J: Excel Mixed | 0.033s | 0.032s | 0.0000 | 49.6 MB | 2 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set A: Small/Many | 0.638s | 0.035s | 0.0352 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set B: Mixed/Large | 0.047s | 0.046s | 0.0000 | 128.7 MB | 1 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set C: Binary Mixed | 0.111s | 0.032s | 0.0000 | 48.3 MB | 50 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set D: Boolean Early | 0.020s | 0.020s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set E: ASCII Fast | 0.080s | 0.080s | 0.0000 | 150.3 MB | 1 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 76.0 MB | 1 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set G: Deep XML | 0.042s | 0.041s | 0.0000 | 81.3 MB | 1 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set H: Sparse Stress | 0.061s | 0.060s | 0.0000 | 142.9 MB | 1 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 98.1 MB | 1 | 0 |  |
+| 2026-10-04 00:37:19 | v6.0.2-xlsx-sparse-v601-compare-r5 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 48.4 MB | 2 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set A: Small/Many | 0.713s | 0.048s | 0.0315 | 52.6 MB | 100 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set B: Mixed/Large | 0.047s | 0.047s | 0.0000 | 132.8 MB | 1 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set C: Binary Mixed | 0.117s | 0.027s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set D: Boolean Early | 0.018s | 0.018s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set E: ASCII Fast | 0.082s | 0.081s | 0.0000 | 150.5 MB | 1 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set F: Monster JSON | 0.034s | 0.033s | 0.0000 | 76.4 MB | 1 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set G: Deep XML | 0.041s | 0.040s | 0.0000 | 78.3 MB | 1 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set H: Sparse Stress | 0.060s | 0.060s | 0.0000 | 141.8 MB | 1 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set I: No-Newline | 0.045s | 0.044s | 0.0000 | 98.2 MB | 1 | 0 |  |
+| 2026-10-04 00:48:37 | v6.0.3-release-verify | Set J: Excel Mixed | 0.029s | 0.028s | 0.0000 | 48.9 MB | 2 | 0 |  |
