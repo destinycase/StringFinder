@@ -25,12 +25,8 @@ htmlcov/
 
 # Local data
 data/
-/sample/
 /samples/
-
-# Local PC performance diagnostic reports
-/docs/PC*/
-/docs/diagnostic/
+/diagnostic/
 
 # Logs and History
 *.log
