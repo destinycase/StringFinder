@@ -360,22 +360,6 @@ class SearchTab(QMainWindow):
         """Reload saved search history without changing the current input."""
         self.search_panel.search_combo.load_history(self.config_manager.get_history())
 
-    def _remove_history_item(self, text, history_type):
-        """검색어나 파일명 필터의 특정 히스토리 항목을 삭제합니다."""
-        if history_type == Constants.TYPE_SEARCH:
-            self.config_manager.remove_history_item(text)
-        else:
-            self.config_manager.remove_filename_history_item(text)
-        self._load_histories()
-
-    def _clear_history(self, history_type):
-        """전체 히스토리 내역을 삭제합니다."""
-        if history_type == Constants.TYPE_SEARCH:
-            self.config_manager.clear_history()
-        else:
-            self.config_manager.clear_filename_history()
-        self._load_histories()
-
     def stop(self):
         """
         현재 진행 중인 검색 작업을 안전하게 중단하도록 플래그를 설정합니다.

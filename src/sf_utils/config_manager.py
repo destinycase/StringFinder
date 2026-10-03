@@ -148,9 +148,15 @@ class ConfigManager:
 
     def _load(self):
         """설정 파일을 로드하고 기본값과 병합해 반환한다."""
-        if os.path.exists(self.config_path):
+        load_path = self.config_path
+        if not os.path.exists(load_path):
+            # Recover files stranded by the former rename-based save fallback.
+            backup_path = self.config_path + Constants.BACKUP_FILE_SUFFIX
+            if os.path.exists(backup_path):
+                load_path = backup_path
+        if os.path.exists(load_path):
             try:
-                with open(self.config_path, "r", encoding=Constants.ENC_UTF8) as f:
+                with open(load_path, "r", encoding=Constants.ENC_UTF8) as f:
                     data = json.load(f)
                     if not isinstance(data, dict):
                         logger.warning(AppStrings.LOG_CFG_INVALID_VER)
@@ -350,7 +356,6 @@ class ConfigManager:
     def save_immediately(self) -> bool:
         """설정 파일을 원자적으로 즉시 저장한다."""
         temp_path = self.config_path + Constants.TEMP_FILE_SUFFIX
-        old_path = self.config_path + Constants.BACKUP_FILE_SUFFIX
         
         # 교착 상태 방지: _save_lock을 먼저 획득한 후 내부에서 _config_lock을 잡습니다.
         # 다른 메서드들과의 획득 순서를 일원화합니다.
@@ -374,17 +379,9 @@ class ConfigManager:
                     if not os.path.exists(self.config_path):
                         os.rename(temp_path, self.config_path)
                     else:
-                        try:
-                            os.replace(temp_path, self.config_path)
-                        except (PermissionError, OSError):
-                            if os.path.exists(old_path):
-                                os.remove(old_path)
-                            os.rename(self.config_path, old_path)
-                            os.rename(temp_path, self.config_path)
-                            try:
-                                os.remove(old_path)
-                            except OSError as e:
-                                logger.debug(AppStrings.LOG_CFG_BACKUP_CLEANUP_FAIL.format(e))
+                        # Retry without moving the previous settings away.
+                        # Failed replacement must preserve the original path.
+                        os.replace(temp_path, self.config_path)
                     self.last_save_error = None  # 성공 시 에러 상태 초기화
                     return True
                 except (IOError, OSError) as e:

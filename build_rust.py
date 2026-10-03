@@ -5,9 +5,12 @@ import sys
 import time
 import argparse
 import tempfile
+from build_support import checked_cleanup_path, walk_project_tree
 
-SSOT_ENGINE_PYD = os.path.join("src", "rust_engine", "sf_engine.pyd")
-SSOT_ENGINE_SO = os.path.join("src", "rust_engine", "sf_engine.so")
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+SSOT_ENGINE_PYD = os.path.join(PROJECT_ROOT, "src", "rust_engine", "sf_engine.pyd")
+SSOT_ENGINE_SO = os.path.join(PROJECT_ROOT, "src", "rust_engine", "sf_engine.so")
 
 def install_binary(source: str, destination: str) -> None:
     """Stage a complete binary beside the target, then replace it atomically."""
@@ -34,7 +37,7 @@ def _is_target_artifact(path: str) -> bool:
 
 def clean_non_ssot_engine_binaries():
     """Remove duplicate Rust engine binaries outside the SSOT location."""
-    src_dir = "src"
+    src_dir = os.path.join(PROJECT_ROOT, "src")
     if not os.path.isdir(src_dir):
         return
 
@@ -43,7 +46,7 @@ def clean_non_ssot_engine_binaries():
         os.path.normcase(os.path.abspath(SSOT_ENGINE_SO)),
     }
 
-    for root, _, files in os.walk(src_dir):
+    for root, _, files in walk_project_tree(src_dir, PROJECT_ROOT):
         for file in files:
             if not (file.startswith("sf_engine.pyd") or file.startswith("sf_engine.so")):
                 continue
@@ -54,7 +57,7 @@ def clean_non_ssot_engine_binaries():
             if file in {"sf_engine.pyd", "sf_engine.so"} and norm_path in keep_paths:
                 continue
             try:
-                os.remove(path)
+                os.remove(checked_cleanup_path(path, PROJECT_ROOT))
                 print(f"Removed non-SSOT engine binary: {path}")
             except Exception as e:
                 print(f"Debug: Non-SSOT engine cleanup skipped for {path}: {e}")
@@ -66,13 +69,13 @@ def build_rust_engine(clean_target=False):
     clean_old_binaries()
     clean_non_ssot_engine_binaries()
 
-    rust_dir = os.path.join("src", "rust_engine")
+    rust_dir = os.path.join(PROJECT_ROOT, "src", "rust_engine")
     if clean_target:
         target_dir = os.path.join(rust_dir, "target")
         if os.path.exists(target_dir):
             print(f"[빌드] 기존 target 폴더 삭제 중: {target_dir}")
             try:
-                shutil.rmtree(target_dir)
+                shutil.rmtree(checked_cleanup_path(target_dir, PROJECT_ROOT))
             except Exception as e:
                 print(f"Warning: target 폴더 삭제 실패: {e}")
 
@@ -134,14 +137,14 @@ def build_rust_engine(clean_target=False):
 
 def clean_old_binaries():
     """배포된 바이너리의 .old 부산물들만 정리"""
-    src_dir = os.path.join("src", "rust_engine")
+    src_dir = os.path.join(PROJECT_ROOT, "src", "rust_engine")
     if not os.path.exists(src_dir):
         return
     for file in os.listdir(src_dir):
         if file.startswith("sf_engine.pyd.old_") or ".pyd.old_" in file:
             try:
                 path = os.path.join(src_dir, file)
-                os.remove(path)
+                os.remove(checked_cleanup_path(path, PROJECT_ROOT))
                 print(f"Removed old binary: {file}")
             except Exception as e:
                 print(f"Debug: Old binary removal skipped: {e}")
@@ -152,7 +155,7 @@ def clean_binary(clean_all=False):
     dst_pyd = SSOT_ENGINE_PYD
     if os.path.exists(dst_pyd):
         try:
-            os.remove(dst_pyd)
+            os.remove(checked_cleanup_path(dst_pyd, PROJECT_ROOT))
             print(f"Removed binary: {dst_pyd}")
         except Exception as e:
             print(f"Error removing {dst_pyd}: {e}")
@@ -162,10 +165,10 @@ def clean_binary(clean_all=False):
     clean_non_ssot_engine_binaries()
 
     if clean_all:
-        target_dir = os.path.join("src", "rust_engine", "target")
+        target_dir = os.path.join(PROJECT_ROOT, "src", "rust_engine", "target")
         if os.path.exists(target_dir):
             print(f"Cleaning rust target: {target_dir}")
-            shutil.rmtree(target_dir, ignore_errors=True)
+            shutil.rmtree(checked_cleanup_path(target_dir, PROJECT_ROOT), ignore_errors=True)
 
 
 if __name__ == "__main__":

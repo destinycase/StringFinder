@@ -44,48 +44,13 @@ SCENARIOS = (
 )
 
 SCENARIO_LABELS = {
-    "normal_no_match": "일반 검색 · 매치 없음",
-    "normal_existence": "일반 검색 · 존재만 확인",
-    "miss_prevention_no_match": "누락 방지 검색 · 매치 없음",
-    "miss_prevention_existence": "누락 방지 검색 · 존재만 확인",
-}
-
-LATENCY_BUCKETS = (0.001, 0.005, 0.025, 0.1, 1.0, 10.0)
-
-SCENARIO_LABELS.update({
     "normal_no_match": "Normal search - no match",
     "normal_existence": "Normal search - existence only",
     "miss_prevention_no_match": "Miss-prevention search - no match",
     "miss_prevention_existence": "Miss-prevention search - existence only",
-})
+}
 
-
-def _rss_mb() -> float | None:
-    try:
-        import psutil
-
-        return round(psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024), 2)
-    except (ImportError, OSError):
-        return None
-
-
-def _hardware() -> dict[str, object]:
-    result: dict[str, object] = {"logical_cpus": os.cpu_count() or 1}
-    try:
-        import platform
-
-        result["os"] = platform.platform()
-        result["machine"] = platform.machine()
-        result["processor"] = platform.processor()
-    except Exception:
-        pass
-    try:
-        import psutil
-
-        result["memory_total_mb"] = round(psutil.virtual_memory().total / (1024 * 1024), 2)
-    except (ImportError, OSError):
-        pass
-    return result
+LATENCY_BUCKETS = (0.001, 0.005, 0.025, 0.1, 1.0, 10.0)
 
 
 def _classify(path: Path) -> str:

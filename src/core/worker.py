@@ -60,7 +60,6 @@ def shutdown_global_manager():
 
 
 class GlobalExecutor:
-    _instance = None
     _executor = None
     _is_active = False
     _owner = None
@@ -704,8 +703,8 @@ class SearchWorker(QRunnable):
             executor_workers = max(1, int(getattr(executor, "_max_workers", 1)))
             max_in_flight = self._recommended_structured_in_flight(batches, executor_workers)
             # Excel parsing is memory-heavy and internally allocates per workbook.
-            # Keep only one Excel batch in flight so ProcessPool workers cannot
-            # inflate RSS concurrently. Other formats retain the adaptive policy.
+            # Bound Excel batches by the configured concurrency; when a large
+            # workbook is present, serialize them. Other formats stay adaptive.
             if Constants.MODE_EXCEL.upper() in str(self.special_mode or "").upper():
                 try:
                     excel_concurrency = max(
@@ -871,7 +870,7 @@ class SearchWorker(QRunnable):
                             logger.debug(AppStrings.LOG_WKR_FUTURE_SCHEDULING_SKIPPED.format(e))
         finally:
             # 로컬 참조를 해제하고 실행기의 생명주기 관리는 전역적으로 관리됩니다.
-            # 다음 검색 시 _run_batch_search에서 새 Executor 할당.
+            # 정상 실행기는 다음 검색에서 재사용하고, 손상된 실행기는 폐기합니다.
             GlobalExecutor.release(executor, owner=self)
             self._executor = None
         return found_count, total_matches, skipped_count

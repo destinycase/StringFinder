@@ -753,10 +753,6 @@ class SettingsDialog(QDialog):
             self.config_manager.clear_all_logs()
             QMessageBox.information(self, AppStrings.SUCCESS_TITLE, AppStrings.INFO_LOGS_DELETED)
 
-    def _on_exclude_binary_changed(self, state):
-        enabled = state == 2  # Qt.CheckState.Checked
-        self.config_manager.set_exclude_binary(enabled)
-
     def _on_advanced_setting_changed(self, key, value):
         settings = self.config_manager.get_advanced_settings()
         settings[key] = value

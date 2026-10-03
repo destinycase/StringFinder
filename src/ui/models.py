@@ -465,21 +465,21 @@ class MatchDetailModel(QAbstractTableModel):
                 # EditRole: 필터링용 순수 텍스트
                 if role == Qt.ItemDataRole.EditRole:
                     if is_excel:
-                        sheet_or_pos = str(row_data.position).strip()
-                        cell_or_value = str(row_data.content).strip()
+                        sheet_or_pos = str(row_data.position or "").strip()
+                        cell_or_value = str(row_data.content if row_data.content is not None else "").strip()
                         extra_val = row_data.extra_1
 
                         if "!" in sheet_or_pos:
                             location = sheet_or_pos
-                            value_part = str(extra_val) if extra_val not in (None, "", "None") else cell_or_value
+                            value_part = str(extra_val) if extra_val is not None else cell_or_value
                         else:
                             location = (
-                                f"{sheet_or_pos}!{cell_or_value}" if cell_or_value not in ("", "None") else sheet_or_pos
+                                f"{sheet_or_pos}!{cell_or_value}" if cell_or_value else sheet_or_pos
                             )
-                            value_part = str(extra_val) if extra_val not in (None, "", "None") else ""
+                            value_part = str(extra_val) if extra_val is not None else ""
 
                         parts = [location]
-                        if value_part not in ("", "None"):
+                        if value_part:
                             parts.append(value_part)
                         return " | ".join(parts)
                     return f"{row_data.position} | {row_data.content}"
@@ -487,13 +487,12 @@ class MatchDetailModel(QAbstractTableModel):
                 # DisplayRole: 하이라이팅 포함
                 if is_excel:
                     # 엑셀: 시트!셀 | [하이라이팅된 값]
-                    val = str(row_data.extra_1 if row_data.extra_1 is not None else row_data.content)
-                    if val == "None":
-                        val = ""  # 방어적 처리
+                    value = row_data.extra_1 if row_data.extra_1 is not None else row_data.content
+                    val = str(value if value is not None else "")
                     rendered_val = self._render_highlighted(val)
 
-                    sheet_or_pos = str(row_data.position).replace("None", "").strip()
-                    cell = str(row_data.content).replace("None", "").strip()
+                    sheet_or_pos = str(row_data.position if row_data.position is not None else "").strip()
+                    cell = str(row_data.content if row_data.content is not None else "").strip()
                     if "!" in sheet_or_pos:
                         location = sheet_or_pos
                     elif sheet_or_pos and cell:
@@ -506,13 +505,11 @@ class MatchDetailModel(QAbstractTableModel):
                     return f"<html>{rendered_val}</html>"
                 else:
                     # 텍스트: 줄 번호 | [하이라이팅된내용]
-                    val = str(row_data.content)
+                    val = str(row_data.content if row_data.content is not None else "")
                     if row_data.position == "-1":
                         # 상한 도달 메시지는 굵은 빨간색으로 강조 표시합니다.
                         return f"<html><span style='color: #d9534f; font-weight: bold;'>⚠️ {escape(val)}</span></html>"
                         
-                    if val == "None":
-                        val = ""
                     rendered_val = self._render_highlighted(val)
                     return f"<html>{escape(row_data.position)} | {rendered_val}</html>"
 
@@ -525,8 +522,6 @@ class MatchDetailModel(QAbstractTableModel):
                 return ""
 
             val = str(val_obj)
-            if val == "None":  # 문자열 "None"도 빈 값으로 처리
-                return ""
 
             if role == Qt.ItemDataRole.EditRole:
                 return val
@@ -704,7 +699,8 @@ class MatchDetailModel(QAbstractTableModel):
 
                 # Case 1: Excel 모드 (Line, Sheet, Cell, Val, [Offset, Length])
                 if Constants.MODE_EXCEL.upper() in mode_upper and len(m) >= 4 and isinstance(m[1], str):
-                    s, c, v = str(m[1]).strip(), str(m[2]).strip(), str(m[3]).strip()
+                    s, c = str(m[1]).strip(), str(m[2]).strip()
+                    v = str(m[3]).strip() if m[3] is not None else ""
                     off = m[4] if (len(m) > 4 and m[4] is not None) else f"{s}!{c}"
                     normalized_matches.append(
                         SearchMatchSchema(
@@ -724,7 +720,7 @@ class MatchDetailModel(QAbstractTableModel):
                             SearchMatchSchema(
                                 position=str(m[0]),
                                 content=str(m[1]),
-                                extra_1=str(m[2]),
+                                extra_1=str(m[2]) if m[2] is not None else "",
                                 offset=m[3],
                                 length=m[4],
                             )
@@ -732,7 +728,7 @@ class MatchDetailModel(QAbstractTableModel):
                     elif len(m) == 3:
                         # Python XML/JSON 파서가 반환하는 (line, key, value) 3-tuple
                         key_part = str(m[1])
-                        val_part = str(m[2])
+                        val_part = str(m[2]) if m[2] is not None else ""
                         if Constants.MODE_XML.upper() in mode_upper:
                             key_part = key_part.lstrip("/").replace("/", " > ")
                         else:
@@ -777,7 +773,7 @@ class MatchDetailModel(QAbstractTableModel):
                     sheet_candidate = str(m[1]).strip()
                     cell_candidate = str(m[2]).strip()
                     if excel_cell_pattern and excel_cell_pattern.fullmatch(cell_candidate):
-                        value_candidate = str(m[3]) if len(m) > 3 else ""
+                        value_candidate = str(m[3]) if len(m) > 3 and m[3] is not None else ""
                         pos = f"{sheet_candidate}!{cell_candidate}"
                         normalized_matches.append(
                             SearchMatchSchema(
@@ -791,7 +787,7 @@ class MatchDetailModel(QAbstractTableModel):
 
                 # 기본 파싱 (Line, Content, [Offset, Length])
                 line_no = str(m[0])
-                content = str(m[1])
+                content = str(m[1]) if m[1] is not None else ""
                 offset = m[2] if (len(m) > 2 and m[2] is not None) else None
                 length = m[3] if (len(m) > 3 and m[3] is not None) else None
 

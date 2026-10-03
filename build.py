@@ -2,6 +2,7 @@ import os
 import shutil
 import sys
 import argparse
+from build_support import checked_cleanup_path, is_path_within, walk_project_tree
 
 # [격리 강화] 프로젝트 루트를 스크립트 위치 기준으로 고정하여 작업 디렉토리 영향을 차단
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -21,7 +22,7 @@ isolated_initial_path = []
 for path in sys.path:
     norm_path = os.path.normpath(path).lower()
     # 파이썬 홈이나 현재 프로젝트 경로 내부에 있는 것만 허용
-    if norm_path.startswith(python_home_early) or norm_path.startswith(PROJECT_ROOT.lower()):
+    if is_path_within(norm_path, python_home_early) or is_path_within(norm_path, PROJECT_ROOT):
         isolated_initial_path.append(path)
     else:
         print(f"Purging external path from sys.path: {path}")
@@ -65,14 +66,14 @@ def cleanup():
     for target in targets:
         abs_target = os.path.join(PROJECT_ROOT, target)
         if os.path.exists(abs_target):
-            shutil.rmtree(abs_target, ignore_errors=True)
+            shutil.rmtree(checked_cleanup_path(abs_target, PROJECT_ROOT), ignore_errors=True)
             print(f"Removed folder: {abs_target}")
 
     # 2. PyInstaller 생성 .spec 파일 삭제
     for file in os.listdir(PROJECT_ROOT):
         if file.endswith(".spec") and file != "StringFinder.spec":
             abs_file = os.path.join(PROJECT_ROOT, file)
-            os.remove(abs_file)
+            os.remove(checked_cleanup_path(abs_file, PROJECT_ROOT))
             print(f"Removed spec file: {abs_file}")
 
     # 3. 모든 __pycache__ 폴더 재귀적 삭제
@@ -81,14 +82,15 @@ def cleanup():
         os.path.normpath(os.path.join(PROJECT_ROOT, ".venv")),
         os.path.normpath(os.path.join(PROJECT_ROOT, "venv")),
     }
-    for root, dirs, _ in os.walk(PROJECT_ROOT, topdown=False):
+    for root, dirs, _ in walk_project_tree(PROJECT_ROOT, PROJECT_ROOT, excluded_roots):
         norm_root = os.path.normpath(root)
         if any(norm_root == ex or norm_root.startswith(ex + os.sep) for ex in excluded_roots):
             continue
-        for name in dirs:
+        for name in list(dirs):
             if name == "__pycache__":
                 pycache_path = os.path.join(root, name)
-                shutil.rmtree(pycache_path, ignore_errors=True)
+                shutil.rmtree(checked_cleanup_path(pycache_path, PROJECT_ROOT), ignore_errors=True)
+                dirs.remove(name)
                 print(f"Removed: {pycache_path}")
 
 
@@ -110,6 +112,10 @@ def build(clean_first=False):
     print("--- Starting Build Process ---")
     if clean_first:
         cleanup()
+
+    for path in ("src", "src/assets", "build", "dist"):
+        if not is_path_within(os.path.join(PROJECT_ROOT, path), PROJECT_ROOT):
+            raise ValueError(f"Build path outside project: {path}")
 
     # pyproject.toml에서 버전 획득
     app_version = get_project_version()
@@ -192,7 +198,7 @@ def build(clean_first=False):
         "StringFinder",
         f"--icon={os.path.abspath(ico_icon_path)}",
         f"--add-data={assets_dir}{os.pathsep}assets",
-        f"--add-binary={os.path.abspath(rust_pyd_path)}{os.pathsep}.",
+        f"--add-binary={os.path.abspath(rust_pyd_path)}{os.pathsep}rust_engine",
         "--paths",
         os.path.join(PROJECT_ROOT, "src"),
         "--workpath",
@@ -237,7 +243,7 @@ def build(clean_first=False):
 
             # 화이트리스트: 현재 파이썬 환경(venv 포함) 내부이거나 프로젝트 소스 내부인 경우만 허용
             # 이를 통해 시스템 전역에 설치된 타 프로젝트의 site-packages나 사용자 레벨의 불필요한 경로를 차단합니다.
-            if norm_p.startswith(python_home) or norm_p.startswith(project_root):
+            if is_path_within(norm_p, python_home) or is_path_within(norm_p, project_root):
                 isolated_path.append(p)
 
         sys.path = isolated_path
@@ -250,7 +256,7 @@ def build(clean_first=False):
         os.environ.pop("PYTHONPATH", None)
         os.environ.pop("PYTHONHOME", None)
         os.environ["PYTHONNOUSERSITE"] = "1"  # 사용자 레벨 site-packages 무시
-        from build_support import isolated_packaging_path, smoke_test_executable, verify_qt_icu
+        from build_support import isolated_packaging_path, smoke_test_executable, verify_project_payload, verify_qt_icu
 
         os.environ["PATH"] = isolated_packaging_path()
         for key in tuple(os.environ):
@@ -263,6 +269,7 @@ def build(clean_first=False):
         from build_rust import install_binary
 
         candidate = os.path.join(dist_dir, "StringFinder.exe")
+        verify_project_payload(candidate, PROJECT_ROOT)
         verify_qt_icu(candidate)
         smoke_test_executable(candidate)
         print("Frozen Qt/theme/engine smoke test passed.")

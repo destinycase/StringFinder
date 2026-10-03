@@ -1052,7 +1052,7 @@ def _search_text_stream(
             if folded_line.strip() != search_fold:
                 continue
 
-            occurrences = 1 if exact_match else normalized_line.casefold().count(search_fold)
+            occurrences = 1
             count += occurrences
             if existence_only:
                 return matches, count, True, False
@@ -1073,7 +1073,7 @@ def _search_text_stream(
             if search_fold not in folded_line:
                 continue
 
-            occurrences = normalized_line.casefold().count(search_fold)
+            occurrences = folded_line.count(search_fold)
             count += occurrences
             if existence_only:
                 return matches, count, True, False
@@ -2020,15 +2020,11 @@ def search_in_xml_special(
                 skip_reason = _extract_marker_skip_reason(results)
                 if skip_reason:
                     return (Constants.STATUS_SKIPPED, skip_reason)
-                processed = []
-                for m in results:
-                    line = _rust_match_field(m, 0, "line", 1)
-                    content = str(_rust_match_field(m, 1, "content", ""))
-                    parts = content.split("\t", 1)
-                    tag_path = parts[0].lstrip("/").replace("/", " > ")
-                    val = parts[1] if len(parts) > 1 else ""
-                    processed.append((line, tag_path, val, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
-                return (file_path, len(processed), processed)
+                processed, _, _ = _normalize_rust_matches(results, Constants.MODE_XML)
+                partial_reason = _extract_partial_skip_reason(results)
+                if partial_reason:
+                    processed.append((-2, partial_reason, None, None))
+                return (file_path, _visible_match_count(processed), processed)
             
             # XML 모드에서 탐지 누락을 방지합니다.
             pass
@@ -2282,12 +2278,11 @@ def search_in_file(
             # Rust 단일 파일 검색 시 중단 이벤트(stop_event) 체크를 포함합니다.
             import time
             t_start = time.time()
-            # A leading BOM is file metadata, not part of the user's query.
-            clean_pattern = search_string_nfc.replace("\ufeff", "")
+            # File decoders handle BOM metadata. Preserve the user's query.
             max_per_file, max_check_cells, max_json_depth, max_json_size = _get_rust_search_limits()
             rust_results = sf_engine.search_file(  # type: ignore
                 str(file_path),
-                clean_pattern,
+                search_string_nfc,
                 mode_bits,
                 stop_event=stop_event,
                 max_per_file=max_per_file,
@@ -2427,7 +2422,10 @@ def search_in_file(
             )
 
             if stopped:
-                return Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER
+                if not matches:
+                    return Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER
+                matches.append((-2, AppStrings.LOG_SCH_STOPPED_BY_USER, None, None))
+                return (file_path, _visible_match_count(matches), matches)
             if existence_found:
                 return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
 
@@ -2463,7 +2461,10 @@ def search_in_file(
                 )
 
             if stopped:
-                return Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER
+                if not matches:
+                    return Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER
+                matches.append((-2, AppStrings.LOG_SCH_STOPPED_BY_USER, None, None))
+                return (file_path, _visible_match_count(matches), matches)
             if existence_found:
                 return (file_path, 1, [(1, AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT, None, None)])
             if count > 0:
@@ -2648,8 +2649,7 @@ def search_directory_fast(
         search_dir_func = getattr(sf_engine, "search_dir", None)
         if not search_dir_func:
             logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
-            # 엔진 사용 중 예외 발생 시 Python 폴백을 통해 재검색을 시도합니다.
-            # (위에서 HAS_RUST_ENGINE 체크가 통과했음에도 엔진이 없는 경우여서 이러한 처리)
+            # A missing Rust API is an engine error, not a Python retry.
             raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(kwargs.get("special_mode"), exclude_binary=exclude_binary, existence_only=existence_only)

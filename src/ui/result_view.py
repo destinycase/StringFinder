@@ -900,6 +900,15 @@ class ResultView(QWidget):
                         match_start = hint_pos + query_in_hint
                 if match_start < 0:
                     match_start = 0
+                # Case folding can expand characters (ß -> ss, İ -> i + dot).
+                # Translate the comparison index back before slicing the source.
+                if not line.isascii():
+                    folded_offset = 0
+                    for source_offset, character in enumerate(line):
+                        folded_offset += len(character.casefold())
+                        if folded_offset > match_start:
+                            match_start = source_offset
+                            break
                 start = max(0, match_start - self.CONTEXT_TRUNCATED_BEFORE_CHARS)
                 end = min(len(line), match_start + self.CONTEXT_TRUNCATED_AFTER_CHARS)
                 line = ("..." if start else "") + line[start:end] + ("..." if end < len(line) else "")

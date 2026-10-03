@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.16 (StringFinder v5.9.27 기준)
+- **문서 버전:** 1.17 (StringFinder v5.9.28 기준)
 - **최종 수정일:** 2026-10-03
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 5.9.27** · Updated: **2026-10-03**
+> Documentation baseline: **StringFinder 5.9.28** · Updated: **2026-10-03**
 
 ### 필요한 내용부터 읽기
 
@@ -361,6 +361,16 @@ python build.py
 ```
 
 ---
+
+### 5.9.28 결과 보존 및 배포 방어 계약
+
+- XML 단일 파일 결과도 `_normalize_rust_matches()`와 `_visible_match_count()`를 사용합니다. 제한 메타데이터는 결과 수에 포함하지 않고 배치의 부분 검색 사유로 전달합니다.
+- Python 일반 텍스트 검색 중지는 확보한 결과와 `-2` 부분 검색 안내를 함께 반환합니다. 강제 종료된 프로세스의 미전달 결과까지 복구하는 것은 아닙니다. JSON/XML은 구문 검증 전 결과를 확정하지 않는 기존 계약을 유지합니다.
+- 화면 모델은 실제 `None`만 빈 값으로 처리하며 문자열 `"None"`을 지우지 않습니다. `casefold()`의 위치는 원문 위치가 아닐 수 있으므로 긴 줄 미리보기에서 환산합니다. 파일의 BOM 처리와 검색어의 문자 보존은 별개입니다.
+- 설정 저장은 `os.replace()` 실패 시 기존 파일을 이동하지 않고 재시도합니다. 원래 파일이 없고 이전 `.old` 백업만 남은 경우에도 일반 로딩과 같은 타입·설정 검증을 거칩니다.
+- 빌드·정리 경로는 `build_support.py`의 실제 경로 검사를 사용합니다. 문자열 접두사 비교는 다른 프로젝트를 포함할 수 있으므로 사용하지 않습니다. 정션·심볼릭 링크 탐색을 차단하고 삭제 전 대상 경로를 재검사합니다.
+- Rust 엔진은 EXE의 `rust_engine/sf_engine.pyd` 한 곳에만 포함합니다. `verify_project_payload()`는 패키징한 프로젝트 모듈·진입점의 실행 코드와 현재 소스, 엔진 바이트를 비교합니다. 불일치·엔진 중복·ICU 검사·스모크 실패 시 배포본을 교체하지 않습니다. Python/Qt 등 제삼자 의존성이 설치된 Python 경로에서 수집되는 것은 정상입니다.
+- 실패 주입·문자열 표시·XML 제한·정션·패키징 코드 변조 회귀 테스트는 `tests/test_audit_integrity_fixes.py`에 있습니다.
 
 ## 7. 코딩 컨벤션 및 기여 가이드
 
