@@ -71,6 +71,7 @@ checksum = "96ae094b353c7810cd5efd2e69413ebb9354816138a387c09f7b90d4e826a49f"
 dependencies = [
  "atoi_simd",
  "byteorder",
+ "chrono",
  "codepage",
  "encoding_rs",
  "fast-float2",
@@ -95,6 +96,16 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "chrono"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
+dependencies = [
+ "num-traits",
+ "serde",
+]
 
 [[package]]
 name = "codepage"
@@ -317,6 +328,15 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]
@@ -558,10 +578,11 @@ dependencies = [
 
 [[package]]
 name = "sf_engine"
-version = "6.0.3"
+version = "6.0.4"
 dependencies = [
  "aho-corasick",
  "calamine",
+ "chrono",
  "crossbeam-channel",
  "encoding_rs",
  "fs2",

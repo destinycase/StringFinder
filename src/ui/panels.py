@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Union
 
-from PySide6.QtCore import QRegularExpression, QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QRegularExpressionValidator
+from PySide6.QtCore import QEvent, QRegularExpression, QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtGui import QPalette, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -92,12 +92,100 @@ class FilterItemWidget(QWidget):
         layout = self.layout()
         if layout is not None:
             layout.setContentsMargins(4, 0 if compact else 2, 4, 0 if compact else 2)
+            self.setMinimumHeight(20 if compact else 24)
 
     def text(self):
         return self.checkbox.text()
 
     def isChecked(self):
         return self.checkbox.isChecked()
+
+
+class FilterListWidget(QListWidget):
+    """Scroll filter text normally, but keep row actions outside the viewport."""
+
+    ACTION_WIDTH = 28
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._actions = []
+        self._position_pending = False
+        self._action_column = QWidget(self)
+        self._action_column.setAutoFillBackground(True)
+        self._action_column.setBackgroundRole(QPalette.ColorRole.Base)
+        self.setViewportMargins(0, 0, self.ACTION_WIDTH, 0)
+        self.viewport().installEventFilter(self)
+
+    def setItemWidget(self, item, widget):
+        super().setItemWidget(item, widget)
+        if isinstance(widget, FilterItemWidget):
+            button = widget.delete_btn
+            widget.layout().removeWidget(button)
+            button.setParent(self._action_column)
+            button.hide()
+            self._actions.append((item, button))
+            # Removing the action must not remove the original row-height floor.
+            widget.setMinimumHeight(20 + widget.layout().contentsMargins().top()
+                                    + widget.layout().contentsMargins().bottom())
+            item.setSizeHint(widget.sizeHint())
+            # Coalesce inserts: measuring every existing row after each insert
+            # makes a restored list quadratic in size.
+            if not self._position_pending:
+                self._position_pending = True
+                QTimer.singleShot(0, self, self._position_actions)
+
+    def _position_actions(self):
+        self._position_pending = False
+        if not hasattr(self, "_action_column"):
+            return
+        viewport = self.viewport().geometry()
+        self._action_column.setGeometry(viewport.right() + 1, viewport.top(), self.ACTION_WIDTH, viewport.height())
+        for item, button in self._actions:
+            rect = self.visualItemRect(item)
+            visible = rect.isValid() and rect.bottom() >= 0 and rect.top() < viewport.height()
+            button.setVisible(visible)
+            if visible:
+                button.move((self.ACTION_WIDTH - button.width()) // 2,
+                            rect.top() + (rect.height() - button.height()) // 2)
+        self._action_column.raise_()
+
+    def eventFilter(self, watched, event):
+        if watched is self.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
+            self._position_actions()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_actions()
+
+    def scrollContentsBy(self, dx, dy):
+        super().scrollContentsBy(dx, dy)
+        self._position_actions()
+
+    def doItemsLayout(self):
+        super().doItemsLayout()
+        self._position_actions()
+
+    def takeItem(self, row):
+        item = self.item(row)
+        retained = []
+        for action_item, button in self._actions:
+            if action_item is item:
+                button.hide()
+                button.deleteLater()
+            else:
+                retained.append((action_item, button))
+        self._actions = retained
+        taken = super().takeItem(row)
+        self._position_actions()
+        return taken
+
+    def clear(self):
+        for _, button in self._actions:
+            button.hide()
+            button.deleteLater()
+        self._actions.clear()
+        super().clear()
 
 
 class SearchOptionsPanel(QWidget):
@@ -240,10 +328,16 @@ class SearchOptionsPanel(QWidget):
         }
 
     def load_state(self, state: dict):
-        self.search_combo.set_current_text(state.get(Constants.STATE_KEY_SEARCH, ""))
-        self.search_profile_combo.setCurrentIndex(1 if state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH, False) else 0)
-        self.boolean_search_check.setChecked(bool(state.get(Constants.PAYLOAD_EXISTENCE_ONLY, False)))
-        self.exclude_hidden_check.setChecked(state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True))
+        state = state if isinstance(state, dict) else {}
+        search_text = state.get(Constants.STATE_KEY_SEARCH, "")
+        self.search_combo.set_current_text(search_text if isinstance(search_text, str) else "")
+        # Invalid JSON types must not enable a different search policy through truthiness.
+        self.search_profile_combo.setCurrentIndex(
+            1 if state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH) is True else 0
+        )
+        self.boolean_search_check.setChecked(state.get(Constants.PAYLOAD_EXISTENCE_ONLY) is True)
+        exclude_hidden = state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True)
+        self.exclude_hidden_check.setChecked(exclude_hidden if isinstance(exclude_hidden, bool) else True)
 
 
 class DenseFilterPanel(QWidget):
@@ -278,7 +372,7 @@ class FolderFilterPanel(DenseFilterPanel):
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
-        self.folder_list = QListWidget()
+        self.folder_list = FilterListWidget()
         # 폴더 목록의 가독성을 위해 적절한 최소 크기를 보장합니다.
         self.folder_list.setMinimumHeight(50)
         main_layout.addWidget(self.folder_list, 1)  # 1: Stretch 부여
@@ -303,6 +397,8 @@ class FolderFilterPanel(DenseFilterPanel):
             self.add_folder(folder)
 
     def add_folder(self, folder: str, checked: bool = True):
+        if not isinstance(folder, str) or not folder.strip() or not isinstance(checked, bool):
+            return
         for i in range(self.folder_list.count()):
             widget = self.folder_list.itemWidget(self.folder_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.text() == folder:
@@ -356,11 +452,7 @@ class FolderFilterPanel(DenseFilterPanel):
         return folder_states
 
     def load_state(self, state: dict):
-        for i in range(self.folder_list.count()):
-            item = self.folder_list.item(i)
-            widget = self.folder_list.itemWidget(item)
-            if isinstance(widget, FilterItemWidget) and widget.text() in state:
-                widget.checkbox.setChecked(state[widget.text()])
+        self.restore_state(state)
 
 
 class ExtensionFilterPanel(DenseFilterPanel):
@@ -383,13 +475,17 @@ class ExtensionFilterPanel(DenseFilterPanel):
         special_layout.addWidget(self.special_combo, 1)
         main_layout.addLayout(special_layout)
 
-        self.ext_list = QListWidget()
+        self.ext_list = FilterListWidget()
         self.ext_list.setMinimumHeight(50)
         main_layout.addWidget(self.ext_list, 1)  # 확장자 목록이 가용한 영역을 최대한 활용하도록 설정합니다.
 
         input_layout = QHBoxLayout()
         self.ext_edit = QLineEdit()
         self.ext_edit.setPlaceholderText(AppStrings.EXT_EDIT_PLACEHOLDER)
+        self.ext_edit.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"[^*?\[\]\\]*"), self.ext_edit)
+        )
+        self.ext_edit.inputRejected.connect(self._show_rejected_extension_input)
         self.ext_edit.returnPressed.connect(self._on_add_clicked)
         self.add_btn = QPushButton(AppStrings.ADD_EXT_BTN)
         self.add_btn.setFixedWidth(50)
@@ -397,6 +493,11 @@ class ExtensionFilterPanel(DenseFilterPanel):
         input_layout.addWidget(self.ext_edit)
         input_layout.addWidget(self.add_btn)
         main_layout.addLayout(input_layout)
+
+        self.extension_input_notice = QLabel(AppStrings.EXTENSION_FILTER_WILDCARD_NOT_ALLOWED)
+        self.extension_input_notice.setWordWrap(True)
+        self.extension_input_notice.hide()
+        main_layout.addWidget(self.extension_input_notice)
 
         toggle_layout = QHBoxLayout()
         self.sel_all_btn = QPushButton(AppStrings.SELECT_ALL_BTN)
@@ -436,17 +537,28 @@ class ExtensionFilterPanel(DenseFilterPanel):
             target_index = 0
         self.special_combo.setCurrentIndex(target_index)
 
+    def _show_rejected_extension_input(self):
+        self.extension_input_notice.show()
+
     def _on_add_clicked(self):
         ext = self.ext_edit.text().strip().lower().replace(".", "")
         if ext:
-            self.add_extension(ext)
+            if not self.add_extension(ext):
+                self._show_rejected_extension_input()
+                return
             self.ext_edit.clear()
+            self.extension_input_notice.hide()
 
-    def add_extension(self, ext: str, checked: bool = True):
+    def add_extension(self, ext: str, checked: bool = True) -> bool:
+        if not isinstance(ext, str) or not ext.strip() or not isinstance(checked, bool):
+            return False
+        if any(char in ext for char in "*?[]\\"):
+            self._show_rejected_extension_input()
+            return False
         for i in range(self.ext_list.count()):
             widget = self.ext_list.itemWidget(self.ext_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.text() == ext:
-                return
+                return True
         item = QListWidgetItem(self.ext_list)
         widget = FilterItemWidget(
             ext, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self.filter_changed.emit()
@@ -456,6 +568,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.ext_list.addItem(item)
         self.ext_list.setItemWidget(item, widget)
         self.filter_changed.emit()
+        return True
 
     def _delete_item(self, item):
         row = self.ext_list.row(item)
@@ -494,6 +607,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
 
     def restore_state(self, data: Union[List[str], Dict[str, Any]]):
         self.ext_list.clear()
+        self.extension_input_notice.hide()
         if isinstance(data, dict):
             if Constants.PAYLOAD_SPECIAL_MODE in data:
                 self._set_special_mode(data[Constants.PAYLOAD_SPECIAL_MODE])
@@ -523,13 +637,11 @@ class ExtensionFilterPanel(DenseFilterPanel):
         }
 
     def load_state(self, state: dict):
-        self._set_special_mode(state.get(Constants.PAYLOAD_SPECIAL_MODE, AppStrings.SPECIAL_SEARCH_OFF))
-        ext_states = state.get(Constants.CONFIG_KEY_EXTENSIONS, {})
-        for i in range(self.ext_list.count()):
-            item = self.ext_list.item(i)
-            widget = self.ext_list.itemWidget(item)
-            if isinstance(widget, FilterItemWidget) and widget.text() in ext_states:
-                widget.checkbox.setChecked(ext_states[widget.text()])
+        if Constants.CONFIG_KEY_EXTENSIONS in state:
+            self._set_special_mode(state.get(Constants.PAYLOAD_SPECIAL_MODE, AppStrings.SPECIAL_SEARCH_OFF))
+            self.restore_state(state)
+        elif Constants.PAYLOAD_SPECIAL_MODE in state:
+            self._set_special_mode(state[Constants.PAYLOAD_SPECIAL_MODE])
 
 
 class FilenameFilterPanel(DenseFilterPanel):
@@ -548,7 +660,7 @@ class FilenameFilterPanel(DenseFilterPanel):
         self.filename_combo = SearchInputComboBox()
         self.filename_combo.setEditable(True)
         self.filename_combo.setVisible(False)
-        self.filename_list = QListWidget()
+        self.filename_list = FilterListWidget()
         self.filename_list.setMinimumHeight(50)
         main_layout.addWidget(self.filename_list, 1)
 
@@ -560,6 +672,7 @@ class FilenameFilterPanel(DenseFilterPanel):
                 QRegularExpression(r"[^*?\[\]\\]*"), self.add_edit
             )
         )
+        self.add_edit.inputRejected.connect(self._show_rejected_filename_input)
         self.add_edit.returnPressed.connect(self._on_add_clicked)
         add_btn = QPushButton(AppStrings.ADD_EXT_BTN)
         add_btn.setFixedWidth(50)
@@ -567,6 +680,11 @@ class FilenameFilterPanel(DenseFilterPanel):
         add_layout.addWidget(self.add_edit)
         add_layout.addWidget(add_btn)
         main_layout.addLayout(add_layout)
+
+        self.filename_input_notice = QLabel(AppStrings.FILENAME_FILTER_WILDCARD_NOT_ALLOWED)
+        self.filename_input_notice.setWordWrap(True)
+        self.filename_input_notice.hide()
+        main_layout.addWidget(self.filename_input_notice)
 
         toggle_layout = QHBoxLayout()
         sel_all = QPushButton(AppStrings.SELECT_ALL_BTN)
@@ -576,6 +694,10 @@ class FilenameFilterPanel(DenseFilterPanel):
         toggle_layout.addWidget(sel_all)
         toggle_layout.addWidget(desel_all)
         main_layout.addLayout(toggle_layout)
+
+    def _show_rejected_filename_input(self):
+        # Inline feedback avoids modal warnings for each rejected keystroke.
+        self.filename_input_notice.show()
 
     def _on_add_clicked(self):
         fn = self.add_edit.text().strip()
@@ -588,8 +710,11 @@ class FilenameFilterPanel(DenseFilterPanel):
                 )
                 return
             self.add_edit.clear()
+            self.filename_input_notice.hide()
 
     def add_filename(self, fn: str, checked: bool = True) -> bool:
+        if not isinstance(fn, str) or not fn.strip() or not isinstance(checked, bool):
+            return False
         if any(char in fn for char in "*?[]\\"):
             return False
         for i in range(self.filename_list.count()):
@@ -635,7 +760,9 @@ class FilenameFilterPanel(DenseFilterPanel):
         target_data = data
         if isinstance(data, dict) and Constants.CONFIG_KEY_FILENAMES in data:
             target_data = data.get(Constants.CONFIG_KEY_FILENAMES, {})
-            legacy_text = str(data.get(Constants.PAYLOAD_FILENAME_FILTER, "") or "")
+            legacy_text = data.get(Constants.PAYLOAD_FILENAME_FILTER, "")
+            if not isinstance(legacy_text, str):
+                legacy_text = ""
             if legacy_text.strip():
                 for fn in (part.strip() for part in legacy_text.split(",")):
                     if fn and not (isinstance(target_data, dict) and fn in target_data):
@@ -660,23 +787,9 @@ class FilenameFilterPanel(DenseFilterPanel):
         }
 
     def load_state(self, state: dict):
-        legacy_text = str(state.get(Constants.PAYLOAD_FILENAME_FILTER, "") or "")
-        filename_states = state.get(Constants.CONFIG_KEY_FILENAMES, {})
-        if legacy_text.strip():
-            for fn in (part.strip() for part in legacy_text.split(",")):
-                if fn and not (isinstance(filename_states, dict) and fn in filename_states):
-                    self.add_filename(fn, checked=True)
-        if isinstance(filename_states, dict):
-            existing = {
-                self.filename_list.itemWidget(self.filename_list.item(i)).text()
-                for i in range(self.filename_list.count())
-                if isinstance(self.filename_list.itemWidget(self.filename_list.item(i)), FilterItemWidget)
-            }
-            for fn in filename_states:
-                if fn not in existing:
-                    self.add_filename(str(fn), checked=bool(filename_states[fn]))
-        for i in range(self.filename_list.count()):
-            item = self.filename_list.item(i)
-            widget = self.filename_list.itemWidget(item)
-            if isinstance(widget, FilterItemWidget) and widget.text() in filename_states:
-                widget.checkbox.setChecked(filename_states[widget.text()])
+        if (Constants.CONFIG_KEY_FILENAMES in state
+                or Constants.PAYLOAD_FILENAME_FILTER in state):
+            self.restore_state({
+                Constants.CONFIG_KEY_FILENAMES: state.get(Constants.CONFIG_KEY_FILENAMES, {}),
+                Constants.PAYLOAD_FILENAME_FILTER: state.get(Constants.PAYLOAD_FILENAME_FILTER, ""),
+            })

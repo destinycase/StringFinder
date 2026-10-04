@@ -4,7 +4,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QByteArray, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -445,6 +445,15 @@ class SearchTab(QMainWindow):
             if self.result_view_panel.result_model
             else [],
             "results_existence_only": self.result_existence_only,
+            # Input controls may have changed since these results were made.
+            "results_search_context": {
+                "search_text": self.result_view_panel.search_text,
+                "search_mode": self._result_mode_code(self.result_view_panel.search_mode),
+                "exact": any(marker in str(self.result_view_panel.search_mode).casefold()
+                             for marker in ("정확", "exact")),
+                "existence_only": self.result_existence_only,
+                "filename_filters": list(self.result_view_panel.result_model.filename_filters),
+            },
             Constants.PAYLOAD_SUMMARY: {
                 "total_files": self.total_files,
                 "total_matches": self.total_matches,
@@ -493,6 +502,14 @@ class SearchTab(QMainWindow):
         self._liveliness_seconds += 1
         self.liveliness_updated.emit(True, self._liveliness_seconds)
 
+    @staticmethod
+    def _result_mode_code(mode):
+        """Persist a language-independent result format, not a UI label."""
+        for code in (Constants.MODE_JSON, Constants.MODE_XML, Constants.MODE_EXCEL):
+            if isinstance(mode, str) and code.casefold() in mode.casefold():
+                return code
+        return Constants.MODE_NORMAL
+
     def load_state(self, state):
         """저장된 세션 상태를 불러와 UI 항목들을 복원합니다."""
         if not isinstance(state, dict) or not state:
@@ -503,18 +520,37 @@ class SearchTab(QMainWindow):
         # 과거 키를 최신 키로 매핑
         if Constants.STATE_KEY_FILENAME in inputs and Constants.PAYLOAD_FILENAME_FILTER not in inputs:
             inputs[Constants.PAYLOAD_FILENAME_FILTER] = inputs[Constants.STATE_KEY_FILENAME]
-        self.search_panel.load_state(inputs)
-        self.ext_panel.load_state(inputs)
-        self.filename_panel.load_state(inputs)
-        self.folder_panel.load_state(inputs.get(Constants.CONFIG_KEY_FOLDERS, {}))
+        # Restoring one tab must not write intermediate filter states to the
+        # shared configuration or retain unrelated filters from another tab.
+        with QSignalBlocker(self.ext_panel), QSignalBlocker(self.filename_panel), QSignalBlocker(self.folder_panel):
+            self.search_panel.load_state(inputs)
+            self.ext_panel.load_state(inputs)
+            self.filename_panel.load_state(inputs)
+            if Constants.CONFIG_KEY_FOLDERS in inputs:
+                self.folder_panel.load_state(inputs[Constants.CONFIG_KEY_FOLDERS])
 
-        # 세션 복원 시 검색어와 필터를 동기화하여 결과 뷰의 하이라이팅이 즉시 반영되도록 합니다.
-        search_text = inputs.get(Constants.STATE_KEY_SEARCH, "")
+        # Restore result-producing conditions separately from editable drafts.
+        search_text = self.search_panel.search_combo.currentText()
         search_mode = self.ext_panel.get_special_mode()
-        filename_filters = inputs.get(Constants.PAYLOAD_FILENAME_FILTER, [])
+        result_context = state.get("results_search_context")
+        if isinstance(result_context, dict):
+            saved_text = result_context.get("search_text")
+            saved_mode = result_context.get("search_mode")
+            if isinstance(saved_text, str):
+                search_text = saved_text
+            if saved_mode in (Constants.MODE_NORMAL, Constants.MODE_JSON, Constants.MODE_XML, Constants.MODE_EXCEL):
+                search_mode = saved_mode
+                if result_context.get("exact") is True and saved_mode != Constants.MODE_NORMAL:
+                    search_mode = f"{saved_mode} ({Constants.MODE_EXACT})"
+        filename_filters = self.filename_panel.get_selected_filenames()
+        if isinstance(result_context, dict) and isinstance(result_context.get("filename_filters"), list):
+            filename_filters = [value for value in result_context["filename_filters"] if isinstance(value, str)]
 
-        has_result_mode = "results_existence_only" in state
-        existence_only = bool(state.get("results_existence_only", False))
+        has_result_mode = isinstance(state.get("results_existence_only"), bool)
+        existence_only = state.get("results_existence_only", False) if has_result_mode else False
+        if isinstance(result_context, dict) and isinstance(result_context.get("existence_only"), bool):
+            existence_only = result_context["existence_only"]
+            has_result_mode = True
         results = self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
         if not has_result_mode:
             # Legacy sessions have no mode metadata. Only reinterpret rows when
@@ -1021,7 +1057,8 @@ class SearchTab(QMainWindow):
 
         if not self._confirm_potentially_executable_open(file_path):
             return
-        open_file(file_path)
+        if not open_file(file_path):
+            self._report_file_open_failure(file_path)
 
     def _open_match_in_editor(self, file_path, line=0):
         """매치 행을 설정된 외부 편집기의 해당 줄에서 엽니다."""
@@ -1032,14 +1069,22 @@ class SearchTab(QMainWindow):
                     return
             else:
                 # 명시적으로 선택한 텍스트 편집기가 없을 때 시스템 실행으로 폴백하지 않습니다.
-                open_in_external_editor(
+                success = open_in_external_editor(
                     file_path,
                     line,
                     editor_settings,
                     allow_system_fallback=False,
                 )
+                if not success:
+                    self._report_file_open_failure(file_path)
                 return
-        open_in_external_editor(file_path, line, editor_settings)
+        if not open_in_external_editor(file_path, line, editor_settings):
+            self._report_file_open_failure(file_path)
+
+    def _report_file_open_failure(self, file_path):
+        message = AppStrings.ERROR_OPEN_FILE.format(file_path)
+        logger.warning(message)
+        self.status_message_requested.emit(message, 5000)
 
     def _confirm_potentially_executable_open(self, file_path: str) -> bool:
         """검색 결과를 통한 실행 가능 파일 열기를 명시적으로 확인합니다."""

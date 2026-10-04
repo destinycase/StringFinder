@@ -146,4 +146,6 @@ def mock_memory_usage(monkeypatch):
 
     mock_mem = MagicMock()
     mock_mem.percent = 50.0  # 안전한 범위로 고정
+    mock_mem.total = 16 * 1024**3
+    mock_mem.available = 8 * 1024**3
     monkeypatch.setattr(psutil, "virtual_memory", lambda: mock_mem)

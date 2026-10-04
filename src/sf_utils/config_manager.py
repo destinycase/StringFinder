@@ -2,8 +2,10 @@ import copy
 import hashlib
 import json
 import os
+import tempfile
 import threading
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from sf_utils.app_strings import AppStrings
@@ -44,13 +46,13 @@ class ConfigManager:
         if not app_data:
             app_data = os.path.join(os.path.expanduser("~"), Constants.APPDATA_FALLBACK_DIR)
         self.config_dir = os.path.join(app_data, Constants.APP_NAME)
+        self.uses_temporary_storage = False
         try:
             os.makedirs(self.config_dir, exist_ok=True)
         except Exception as e:
-            import tempfile
-
             self.config_dir = os.path.join(tempfile.gettempdir(), Constants.APPDATA_TEMP_DIR)
             os.makedirs(self.config_dir, exist_ok=True)
+            self.uses_temporary_storage = True
             # AppData 접근이 실패하면 임시 폴더로 전환한다.
             logger.warning(AppStrings.LOG_CFG_APPDATA_FALLBACK.format(e, self.config_dir))
         self.config_path = os.path.join(self.config_dir, Constants.CONFIG_FILENAME)
@@ -355,8 +357,6 @@ class ConfigManager:
 
     def save_immediately(self) -> bool:
         """설정 파일을 원자적으로 즉시 저장한다."""
-        temp_path = self.config_path + Constants.TEMP_FILE_SUFFIX
-        
         # 교착 상태 방지: _save_lock을 먼저 획득한 후 내부에서 _config_lock을 잡습니다.
         # 다른 메서드들과의 획득 순서를 일원화합니다.
         with self._save_lock:
@@ -369,12 +369,20 @@ class ConfigManager:
                 config_snapshot = copy.deepcopy(self._config)
 
             for attempt in range(5):
+                temp_path = None
                 try:
                     config_dir = os.path.dirname(self.config_path)
                     if not os.path.exists(config_dir):
                         os.makedirs(config_dir, exist_ok=True)
                     
-                    with open(temp_path, "w", encoding=Constants.ENC_UTF8) as f:
+                    candidate = os.path.join(config_dir, f".config_{uuid.uuid4().hex}{Constants.TEMP_FILE_SUFFIX}")
+                    # Exclusive creation protects other writers. Unlike the
+                    # Windows tempfile helper, permission failures are bounded
+                    # by our five retries rather than an internal name loop.
+                    with open(candidate, "x", encoding=Constants.ENC_UTF8) as f:
+                        # Register before writing so a partial serialization is
+                        # also cleaned up. Close before replacing on Windows.
+                        temp_path = candidate
                         json.dump(config_snapshot, f, indent=4, ensure_ascii=False)
                     if not os.path.exists(self.config_path):
                         os.rename(temp_path, self.config_path)
@@ -396,7 +404,7 @@ class ConfigManager:
                     logger.error(AppStrings.LOG_CFG_SAVE_FAIL.format(e), exc_info=True)
                     break
                 finally:
-                    if os.path.exists(temp_path):
+                    if temp_path is not None and os.path.exists(temp_path):
                         try:
                             os.remove(temp_path)
                         except OSError as e:
@@ -486,11 +494,17 @@ class ConfigManager:
 
     def _normalize_filter_container(self, value, fallback):
         if isinstance(value, dict):
-            return copy.deepcopy(value)
-        if isinstance(value, list):
-            return copy.deepcopy(value)
-        if isinstance(value, tuple):
-            return list(value)
+            normalized = {}
+            for name, entry in value.items():
+                if isinstance(name, str) and name.strip() and isinstance(entry, bool):
+                    normalized[name] = entry
+                elif name in (Constants.CONFIG_KEY_EXTENSIONS, Constants.CONFIG_KEY_FILENAMES):
+                    normalized[name] = self._normalize_filter_container(entry, [])
+                elif name in (Constants.PAYLOAD_SPECIAL_MODE, Constants.PAYLOAD_FILENAME_FILTER):
+                    normalized[name] = entry if isinstance(entry, str) else ""
+            return normalized
+        if isinstance(value, (list, tuple)):
+            return [entry for entry in value if isinstance(entry, str) and entry.strip()]
         return copy.deepcopy(fallback)
 
     def _ensure_filters_dict(self):

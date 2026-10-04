@@ -1,6 +1,6 @@
 [package]
 name = "sf_engine"
-version = "6.0.3"
+version = "6.0.4"
 edition = "2021"
 rust-version = "1.88"
 authors = ["N2"]
@@ -16,7 +16,8 @@ encoding_rs = "0.8.33"
 ignore = "0.4"
 rayon = "1.8"
 simdutf8 = "0.1"
-calamine = "0.33"
+calamine = { version = "0.33", features = ["chrono"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 zip = { version = "7.2", default-features = false, features = ["deflate"] }
 crossbeam-channel = "0.5"
 serde_json = { version = "1.0", features = ["preserve_order", "unbounded_depth", "float_roundtrip", "arbitrary_precision"] }

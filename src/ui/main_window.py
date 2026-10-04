@@ -69,6 +69,19 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         self.new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
         self.new_tab_shortcut.activated.connect(lambda: self.add_new_tab())
+        self._temporary_storage_warning_shown = False
+        if self.config_manager.uses_temporary_storage is True:
+            QTimer.singleShot(0, self, self._warn_temporary_config_storage)
+
+    def _warn_temporary_config_storage(self):
+        """Explain a real temporary-folder fallback once, after startup."""
+        if self.config_manager.uses_temporary_storage is not True or self._temporary_storage_warning_shown:
+            return
+        self._temporary_storage_warning_shown = True
+        QMessageBox.warning(
+            self, AppStrings.ERROR_TITLE,
+            AppStrings.CONFIG_TEMP_STORAGE_WARNING.format(self.config_manager.config_dir),
+        )
 
     def closeEvent(self, event):
         """창을 닫을 때 호출되어 애플리케이션 종료 절차를 수행합니다."""
@@ -186,7 +199,13 @@ class MainWindow(QMainWindow):
         if self._search_lock_owner is not None:
             new_tab.set_search_allowed(False)
         if state:
-            new_tab.load_state(state)
+            try:
+                new_tab.load_state(state)
+            except Exception:
+                # A partially restored tab must not remain connected to the UI.
+                new_tab.cleanup()
+                new_tab.deleteLater()
+                raise
         if name:
             tab_title = name
         else:
@@ -342,22 +361,36 @@ class MainWindow(QMainWindow):
         ordered_tabs = self.config_manager.get_tab_order()
         all_sessions = self.config_manager.get_all_session_names()
         loaded_tabs = set()
-        for name in ordered_tabs:
-            if name in all_sessions:
+        failed_tabs = set()
+
+        def restore_session(name):
+            try:
                 state = self.config_manager.load_session(name)
                 if state:
                     self.add_new_tab(name=name, state=state)
                     loaded_tabs.add(name)
-        remaining_tabs = sorted(list(set(all_sessions) - loaded_tabs))
+            except Exception as error:
+                # Isolate corrupt sessions at the startup boundary; keep their files for recovery.
+                failed_tabs.add(name)
+                logger.error(AppStrings.LOG_SES_LOAD_FAIL.format(name, error), exc_info=True)
+
+        for name in ordered_tabs:
+            if name in all_sessions and name not in loaded_tabs and name not in failed_tabs:
+                restore_session(name)
+        remaining_tabs = sorted(list(set(all_sessions) - loaded_tabs - failed_tabs))
         for name in remaining_tabs:
-            state = self.config_manager.load_session(name)
-            if state:
-                self.add_new_tab(name=name, state=state)
-                loaded_tabs.add(name)
-        if remaining_tabs:
+            restore_session(name)
+        if remaining_tabs and not failed_tabs:
             self._save_tab_order()
         if self.tab_widget.count() == 0:
-            self.add_new_tab()
+            # Do not let a new empty tab overwrite an unreadable session on shutdown.
+            number = 1
+            while True:
+                title = AppStrings.SEARCH_TAB_TITLE_TEMPLATE.format(AppStrings.SEARCH_TAB_DEFAULT_TITLE, number)
+                if title not in all_sessions:
+                    break
+                number += 1
+            self.add_new_tab(name=title)
 
 
     def _show_settings(self):

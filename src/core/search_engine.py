@@ -470,6 +470,7 @@ def format_excel_panic_reason(detail: Any) -> str:
 
 
 _LOCALIZED_SKIP_MESSAGE_NAMES = (
+    "SKIP_ROOT_JUNCTION",
     "ERROR_SELECTED_ENCODING",
     "ERROR_DOCUMENT_ENCODING",
     "ERROR_JSON_PARSE",
@@ -574,6 +575,7 @@ def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> 
         "SKIP_EMPTY_FILE",
         "ERROR_DOCUMENT_ENCODING",
         "ERROR_SELECTED_ENCODING",
+        "SKIP_ROOT_JUNCTION",
     }
     if resource_name in direct_resources:
         return str(getattr(AppStrings, resource_name))
@@ -1383,6 +1385,7 @@ class FileScanner:
                 self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, "file not found"))))
                 continue
             if not self.include_junctions and os.path.isjunction(folder):
+                self.skipped.append((folder, AppStrings.SKIP_ROOT_JUNCTION))
                 continue
             real_folder = os.path.normcase(os.path.realpath(folder))
             if real_folder in visited:
@@ -1801,9 +1804,14 @@ def search_in_json_special(
         processed_content = None
 
         try:
-            f_size = os.path.getsize(file_path)
-            
             with open(file_path, "rb") as f_raw:
+                # Check the opened file, not the path again: it may have been
+                # replaced or grown since preflight. Keep the size guard before
+                # either read() or mmap allocation.
+                f_size = os.fstat(f_raw.fileno()).st_size
+                size_limit_result = _file_size_limit_result(f_size)
+                if size_limit_result:
+                    return size_limit_result
                 # 성능 최적화를 위해 일정 크기 이상의 파일은 mmap(메모리 매핑)을 사용합니다.
                 if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
                     mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
@@ -1833,7 +1841,7 @@ def search_in_json_special(
         try:
             # 손상된 바이트가 무음 치환되는 것을 방지하기 위해 strict 모드로 디코딩합니다.
             # mmap 분기에서 이미 디코딩을 시도했을 수 있으므로 가드 추가
-            if 'processed_content' not in locals() or processed_content is None:
+            if processed_content is None:
                 # raw_bytes가 None인 경우를 대비한 가드 로직입니다.
                 if raw_bytes is not None:
                     try:
@@ -2634,10 +2642,18 @@ def search_directory_fast(
     """Rust 엔진을 사용하여 디렉토리를 고속으로 검색합니다."""
     validate_search_query(search_string)
     try:
+        excluded_roots = []
         if _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False) is not True:
-            search_paths = [path for path in search_paths if not os.path.isjunction(path)]
+            included_paths = []
+            for path in search_paths:
+                if os.path.isjunction(path):
+                    if (path, AppStrings.SKIP_ROOT_JUNCTION) not in excluded_roots:
+                        excluded_roots.append((path, AppStrings.SKIP_ROOT_JUNCTION))
+                else:
+                    included_paths.append(path)
+            search_paths = included_paths
         if not search_paths:
-            return {"results": [], "skipped": []}
+            return {"results": [], "skipped": excluded_roots}
         search_paths = _deduplicate_overlapping_roots(search_paths)
         rust_pattern = normalize_unicode(search_string)
         rust_exts = None
@@ -2697,7 +2713,7 @@ def search_directory_fast(
                 options=_build_rust_options(),
             )
         formatted_results = []
-        skipped_results = []
+        skipped_results = list(excluded_roots)
         if raw_ret:
             matches_list, skipped_list = raw_ret
             # [Optim] results_callback이 제공된 경우, 결과는 이미 실시간으로 처리되었으므로

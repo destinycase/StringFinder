@@ -1,5 +1,6 @@
 use crate::types::RawMatch;
-use calamine::{Cell, Data, Range, Reader, Xls, Xlsb, Xlsx, XlsxError};
+use calamine::{Cell, Data, DataType, Range, Reader, Xls, Xlsb, Xlsx, XlsxError};
+use chrono::{Datelike, Timelike};
 use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
 
@@ -131,7 +132,7 @@ impl SparseExcelWorkbook {
                         let value = if matches!(cell.get_value(), Data::Error(_)) {
                             String::new()
                         } else {
-                            cell_text(cell.get_value(), &name, r as usize, c as usize, &ctx)
+                            precise_cell_text(cell.get_value(), &name, r as usize, c as usize, &ctx)
                                 .unwrap_or_default()
                         };
                         (r as usize, c as usize, value)
@@ -480,6 +481,90 @@ fn cell_text(
         }
     }
     cell_to_string(cell)
+}
+
+/// Preserve python-calamine's precise-search representation rather than
+/// inheriting the normal engine's ISO/date formatting policy.
+fn precise_cell_text(
+    cell: &Data,
+    sheet: &str,
+    row: usize,
+    col: usize,
+    ctx: &ExcelCtx<'_>,
+) -> Option<String> {
+    match cell {
+        Data::DateTime(value) if value.is_datetime() => {
+            // Use the same calamine/chrono conversion as python-calamine.
+            // Component arithmetic differs at floating-point rounding edges.
+            let converted = if value.as_f64() < 1.0 {
+                cell.as_time().map(|time| {
+                    let text = format_python_time(time);
+                    // Retain the application's existing 1904 date-style fix.
+                    if (0.0..1.0).contains(&value.as_f64())
+                        && value.to_ymd_hms_milli().0 == 1904
+                        && cell_text(cell, sheet, row, col, ctx)
+                            .is_some_and(|s| s.starts_with("1904-01-01"))
+                    {
+                        join_python_datetime("1904-01-01", &text)
+                    } else {
+                        text
+                    }
+                })
+            } else {
+                cell.as_datetime().and_then(format_python_datetime)
+            };
+            converted.or_else(|| cell_to_string(&Data::Float(value.as_f64())))
+        }
+        Data::DateTimeIso(source) => {
+            let converted = if source.contains('T') {
+                cell.as_datetime().and_then(format_python_datetime)
+            } else if source.contains(':') {
+                cell.as_time().map(format_python_time)
+            } else {
+                cell.as_date()
+                    .filter(|date| (1..=9999).contains(&date.year()))
+                    .map(|date| date.to_string())
+            };
+            // Invalid / timezone-bearing literals stay literal, not rewritten.
+            Some(converted.unwrap_or_else(|| source.clone()))
+        }
+        Data::DurationIso(source) => Some(
+            cell.as_time()
+                .map(format_python_time)
+                .unwrap_or_else(|| source.clone()),
+        ),
+        _ => cell_text(cell, sheet, row, col, ctx),
+    }
+}
+
+fn format_python_time(time: chrono::NaiveTime) -> String {
+    // PyO3 truncates nanoseconds to microseconds and discards leap seconds.
+    let micros = (time.nanosecond() % 1_000_000_000) / 1000;
+    let suffix = if micros == 0 {
+        String::new()
+    } else {
+        format!(".{micros:06}")
+    };
+    format!(
+        "{:02}:{:02}:{:02}{suffix}",
+        time.hour(),
+        time.minute(),
+        time.second()
+    )
+}
+
+fn format_python_datetime(value: chrono::NaiveDateTime) -> Option<String> {
+    (1..=9999)
+        .contains(&value.year())
+        .then(|| join_python_datetime(&value.date().to_string(), &format_python_time(value.time())))
+}
+
+fn join_python_datetime(date: &str, time: &str) -> String {
+    if time == "00:00:00" {
+        date.to_owned()
+    } else {
+        format!("{date} {time}")
+    }
 }
 
 /// 문자열 값의 패턴 매치 여부 확인 공통 로직

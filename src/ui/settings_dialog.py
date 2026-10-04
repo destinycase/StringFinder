@@ -63,6 +63,8 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(520, 560)
         self.resize(560, 720)
         self._doctor_msg_box = None
+        self._doctor_running = False
+        self._doctor_wait_dismissed = False
         self.doctor_finished.connect(self._on_doctor_finished)
         self._init_ui()
 
@@ -440,9 +442,9 @@ class SettingsDialog(QDialog):
 
         diagnostic_group = QGroupBox(AppStrings.ADVANCED_DIAGNOSTICS_GROUP)
         diagnostic_layout = QVBoxLayout(diagnostic_group)
-        doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
-        doctor_btn.clicked.connect(self._run_system_doctor)
-        diagnostic_layout.addWidget(doctor_btn)
+        self.doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
+        self.doctor_btn.clicked.connect(self._run_system_doctor)
+        diagnostic_layout.addWidget(self.doctor_btn)
         diagnostic_btn = QPushButton(AppStrings.BTN_PERFORMANCE_DIAGNOSTIC)
         diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
         diagnostic_layout.addWidget(diagnostic_btn)
@@ -487,35 +489,54 @@ class SettingsDialog(QDialog):
         from core.doctor import run_doctor_and_open
         import threading
         
-        # 진단 중임을 알리는 팝업 (버튼 없이 표시)
-        if self._doctor_msg_box:
-            self._doctor_msg_box.close()
-            self._doctor_msg_box.deleteLater()
-
-        self._doctor_msg_box = QMessageBox(self)
+        if self._doctor_running:
+            return
+        self._doctor_running = True
+        self._doctor_wait_dismissed = False
+        self.doctor_btn.setEnabled(False)
+        self._doctor_msg_box = QProgressDialog(
+            AppStrings.DOCTOR_WAIT_DESCRIPTION, AppStrings.DOCTOR_CLOSE_WAIT, 0, 0, self
+        )
         self._doctor_msg_box.setWindowTitle(AppStrings.INFO_TITLE)
-        self._doctor_msg_box.setText(AppStrings.LOG_SYS_DOCTOR_RUNNING)
-        self._doctor_msg_box.setStandardButtons(QMessageBox.StandardButton.NoButton)
         self._doctor_msg_box.setWindowModality(Qt.WindowModality.WindowModal)
+        self._doctor_msg_box.setMinimumDuration(0)
+        self._doctor_msg_box.canceled.connect(self._dismiss_doctor_wait)
+        self._doctor_msg_box.rejected.connect(self._dismiss_doctor_wait)
         self._doctor_msg_box.show()
 
         def thread_target():
             try:
                 success = run_doctor_and_open()
-                self.doctor_finished.emit(success)
             except Exception as e:
                 logger.error(f"Doctor thread error: {e}")
-                self.doctor_finished.emit(False)
+                success = False
+            try:
+                self.doctor_finished.emit(success)
+            except RuntimeError:
+                # Settings may have been destroyed while diagnostics finished.
+                pass
         
-        threading.Thread(target=thread_target, daemon=True).start()
+        try:
+            threading.Thread(target=thread_target, daemon=True).start()
+        except RuntimeError:
+            logger.exception("Failed to start system doctor thread")
+            self._on_doctor_finished(False)
+
+    def _dismiss_doctor_wait(self):
+        # Dismiss only the wait UI; do not forcefully terminate its Python thread.
+        self._doctor_wait_dismissed = True
 
     def _on_doctor_finished(self, success):
         """자가 진단 완료 시 호출되는 슬롯."""
         if self._doctor_msg_box:
             logger.debug("Closing system doctor progress popup via signal.")
-            self._doctor_msg_box.accept()
+            self._doctor_msg_box.reset()
             self._doctor_msg_box.deleteLater()
             self._doctor_msg_box = None
+        self._doctor_running = False
+        self.doctor_btn.setEnabled(True)
+        if self._doctor_wait_dismissed or not self.isVisible():
+            return
         if success:
             QMessageBox.information(self, AppStrings.INFO_TITLE, AppStrings.LOG_SYS_DOCTOR_DONE)
         else:

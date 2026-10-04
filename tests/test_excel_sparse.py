@@ -2,6 +2,7 @@
 from datetime import datetime, time, timedelta
 from types import SimpleNamespace
 import os
+import random
 from pathlib import Path
 import subprocess
 import sys
@@ -71,6 +72,106 @@ def test_typed_decoding_preserved(tmp_path, monkeypatch, value, epoch1904):
         assert_precise_equals_legacy(monkeypatch, path, query, True)
     else:
         assert_precise_equals_legacy(monkeypatch, path, '#DIV/0!')
+
+
+@pytest.mark.parametrize('value', ['2026-10-04T00:00:00Z',
+                                  '2026-10-04T12:34:56+09:00',
+                                  '2026-10-04T12:34:56.123456-05:30'])
+@pytest.mark.parametrize('exact', [False, True])
+@pytest.mark.parametrize('existence', [False, True])
+def test_precise_timezone_iso_keeps_source_literal(book, monkeypatch, value, exact, existence):
+    replace_sheet(book, f'''<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+    <sheetData><row r="1"><c r="A1" t="d"><v>{value}</v></c></row></sheetData></worksheet>'''.encode())
+    result = assert_precise_equals_legacy(monkeypatch, book, value, exact, existence)
+    assert result and result[1] == 1
+    if not existence:
+        assert result[2][0][3] == value
+    # The normal engine's existing ISO policy is intentionally unchanged.
+    normal_query = value.replace('T', ' ')
+    native = se.search_in_excel_special(str(book), normal_query, exact_match=True)
+    assert native and native[1] == 1 and native[2][0][3] == normal_query
+
+
+@pytest.mark.parametrize('serial', [-1, -.1, 0, .1, .9999999999,
+                                   1.9999999999, 59.9999999999,
+                                   60.9999999999, 365.9999999999, 1461.9999999999])
+@pytest.mark.parametrize('epoch1904', [False, True])
+@pytest.mark.parametrize('style', ['yyyy-mm-dd', 'hh:mm:ss.000'])
+def test_precise_serial_time_rounding_preserves_legacy(tmp_path, monkeypatch, serial, epoch1904, style):
+    path = tmp_path / 'serial.xlsx'
+    wb = Workbook()
+    if epoch1904:
+        wb.epoch = CALENDAR_MAC_1904
+    wb.active['A1'] = serial
+    wb.active['A1'].number_format = style
+    wb.save(path)
+    from python_calamine import CalamineWorkbook
+    old = CalamineWorkbook.from_path(str(path)).get_sheet_by_index(0)
+    query = se._excel_cell_text(list(old.iter_rows())[0][0])
+    if epoch1904 and 0 <= serial < 1 and style == 'yyyy-mm-dd':
+        query = '1904-01-01' if query == '00:00:00' else '1904-01-01 ' + query
+    for exact in (False, True):
+        for existence in (False, True):
+            result = assert_precise_equals_legacy(monkeypatch, path, query, exact, existence)
+            assert result and result[1] == 1
+            if not existence:
+                assert result[2][0][3] == query
+
+
+@pytest.mark.parametrize('value', [
+    '2026-10-04T12:34:56.123456789', '2026-10-04T00:00:00.000000001',
+    '2026-10-04T12:34', '2026-02-30T12:34:56', 'not-a-dateTvalue',
+    '2026-10-04T23:59:60', '2026-10-04t12:34:56',
+    '12:34:56.123456789', '2026-10-04', '0001-01-01T00:00:00',
+    '10000-01-01T00:00:00',
+])
+@pytest.mark.parametrize('exact', [False, True])
+@pytest.mark.parametrize('existence', [False, True])
+def test_precise_iso_parse_and_microsecond_contract(book, monkeypatch, value, exact, existence):
+    replace_sheet(book, f'''<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+    <sheetData><row r="1"><c r="A1" t="d"><v>{value}</v></c></row></sheetData></worksheet>'''.encode())
+    from python_calamine import CalamineWorkbook
+    old = CalamineWorkbook.from_path(str(book)).get_sheet_by_index(0)
+    query = se._excel_cell_text(list(old.iter_rows())[0][0])
+    result = assert_precise_equals_legacy(monkeypatch, book, query, exact, existence)
+    assert result and result[1] == 1
+    if not existence:
+        assert result[2][0][3] == query
+
+
+@pytest.mark.parametrize('epoch1904', [False, True])
+@pytest.mark.parametrize('style', ['hh:mm:ss.000', '[h]:mm:ss.000'])
+def test_precise_random_serial_conversion_matches_legacy(tmp_path, epoch1904, style):
+    path = tmp_path / 'serial_bulk.xlsx'
+    wb = Workbook()
+    if epoch1904:
+        wb.epoch = CALENDAR_MAC_1904
+    rng = random.Random(603)
+    serials = [66659.81668219328, -2000.1, -.9999999999, .9999999999,
+               59.9999999999, 60.9999999999, 61.0000000001]
+    serials += [rng.uniform(-1, 100000) for _ in range(400)]
+    for index, serial in enumerate(serials, 1):
+        wb.active.cell(index, 1, serial).number_format = style
+    wb.save(path)
+    from python_calamine import CalamineWorkbook
+    old = CalamineWorkbook.from_path(str(path)).get_sheet_by_index(0)
+    expected = [se._excel_cell_text(row[0]) for row in old.iter_rows()]
+    actual = se.sf_engine.SparseExcelWorkbook(str(path)).read_sheet('Sheet')[0]
+    assert actual == [(index, 0, text) for index, text in enumerate(expected)]
+
+
+def test_precise_1904_millisecond_rounding_search(tmp_path, monkeypatch):
+    path = tmp_path / 'millisecond.xlsx'
+    wb = Workbook()
+    wb.epoch = CALENDAR_MAC_1904
+    wb.active['A1'] = 66659.81668219328
+    wb.active['A1'].number_format = 'hh:mm:ss.000'
+    wb.save(path)
+    query = '2086-07-03 19:36:01.342000'
+    for exact in (False, True):
+        for existence in (False, True):
+            result = assert_precise_equals_legacy(monkeypatch, path, query, exact, existence)
+            assert result and result[1] == 1
 
 
 def test_duplicate_out_of_order_cells_last_value_wins(book, monkeypatch):
