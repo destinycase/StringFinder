@@ -779,3 +779,63 @@
 | 2026-10-04 09:47:40 | v6.0.4-release-check | Set H: Sparse Stress | 0.101s | 0.100s | 0.0000 | 151.2 MB | 1 | 0 |  |
 | 2026-10-04 09:47:40 | v6.0.4-release-check | Set I: No-Newline | 0.073s | 0.072s | 0.0000 | 106.2 MB | 1 | 0 |  |
 | 2026-10-04 09:47:40 | v6.0.4-release-check | Set J: Excel Mixed | 0.039s | 0.039s | 0.0000 | 57.6 MB | 2 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set A: Small/Many | 0.840s | 0.055s | 0.0292 | 81.3 MB | 100 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set B: Mixed/Large | 0.052s | 0.051s | 0.0000 | 156.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set C: Binary Mixed | 0.123s | 0.033s | 0.0000 | 76.1 MB | 50 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set D: Boolean Early | 0.024s | 0.023s | 0.0000 | 75.5 MB | 1 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set E: ASCII Fast | 0.080s | 0.079s | 0.0000 | 178.4 MB | 1 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 104.2 MB | 1 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set G: Deep XML | 0.045s | 0.044s | 0.0000 | 104.2 MB | 1 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set H: Sparse Stress | 0.106s | 0.106s | 0.0000 | 163.9 MB | 1 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set I: No-Newline | 0.047s | 0.046s | 0.0000 | 126.1 MB | 1 | 0 |  |
+| 2026-10-04 11:56:18 | v6.1.1-baseline-warmup | Set J: Excel Mixed | 0.035s | 0.035s | 0.0000 | 77.4 MB | 2 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set A: Small/Many | 0.841s | 0.042s | 0.0298 | 52.4 MB | 100 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set B: Mixed/Large | 0.049s | 0.048s | 0.0000 | 137.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set C: Binary Mixed | 0.116s | 0.027s | 0.0000 | 48.3 MB | 50 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set D: Boolean Early | 0.023s | 0.022s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set E: ASCII Fast | 0.084s | 0.083s | 0.0000 | 150.5 MB | 1 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set F: Monster JSON | 0.035s | 0.034s | 0.0000 | 71.8 MB | 1 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 77.5 MB | 1 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set H: Sparse Stress | 0.055s | 0.055s | 0.0000 | 124.8 MB | 1 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set I: No-Newline | 0.045s | 0.045s | 0.0000 | 98.1 MB | 1 | 0 |  |
+| 2026-10-04 11:56:20 | v6.1.1-baseline-r1 | Set J: Excel Mixed | 0.035s | 0.034s | 0.0000 | 49.4 MB | 2 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set A: Small/Many | 0.729s | 0.051s | 0.0318 | 52.5 MB | 100 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set B: Mixed/Large | 0.059s | 0.059s | 0.0000 | 131.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set C: Binary Mixed | 0.124s | 0.028s | 0.0000 | 48.6 MB | 50 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 48.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set E: ASCII Fast | 0.083s | 0.082s | 0.0000 | 150.9 MB | 1 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set F: Monster JSON | 0.036s | 0.035s | 0.0000 | 72.6 MB | 1 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set G: Deep XML | 0.043s | 0.042s | 0.0000 | 77.7 MB | 1 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set H: Sparse Stress | 0.057s | 0.056s | 0.0000 | 121.4 MB | 1 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set I: No-Newline | 0.048s | 0.047s | 0.0000 | 98.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:21 | v6.1.1-baseline-r2 | Set J: Excel Mixed | 0.034s | 0.033s | 0.0000 | 50.0 MB | 2 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set A: Small/Many | 0.767s | 0.041s | 0.0320 | 52.5 MB | 100 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set B: Mixed/Large | 0.052s | 0.051s | 0.0000 | 129.6 MB | 1 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set C: Binary Mixed | 0.130s | 0.031s | 0.0000 | 48.4 MB | 50 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set E: ASCII Fast | 0.078s | 0.077s | 0.0000 | 150.5 MB | 1 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set F: Monster JSON | 0.035s | 0.034s | 0.0000 | 76.4 MB | 1 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set G: Deep XML | 0.042s | 0.041s | 0.0000 | 75.5 MB | 1 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set H: Sparse Stress | 0.054s | 0.053s | 0.0000 | 119.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 98.2 MB | 1 | 0 |  |
+| 2026-10-04 11:56:23 | v6.1.1-baseline-r3 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 48.6 MB | 2 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set A: Small/Many | 0.734s | 0.048s | 0.0323 | 52.4 MB | 100 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set B: Mixed/Large | 0.051s | 0.050s | 0.0000 | 132.4 MB | 1 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set C: Binary Mixed | 0.122s | 0.029s | 0.0000 | 48.4 MB | 50 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set D: Boolean Early | 0.023s | 0.022s | 0.0000 | 47.7 MB | 1 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set E: ASCII Fast | 0.079s | 0.079s | 0.0000 | 150.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 73.8 MB | 1 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set G: Deep XML | 0.044s | 0.043s | 0.0000 | 78.1 MB | 1 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set H: Sparse Stress | 0.057s | 0.056s | 0.0000 | 126.1 MB | 1 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set I: No-Newline | 0.048s | 0.047s | 0.0000 | 98.0 MB | 1 | 0 |  |
+| 2026-10-04 11:56:25 | v6.1.1-baseline-r4 | Set J: Excel Mixed | 0.033s | 0.032s | 0.0000 | 49.6 MB | 2 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set A: Small/Many | 0.735s | 0.046s | 0.0321 | 52.4 MB | 100 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set B: Mixed/Large | 0.051s | 0.050s | 0.0000 | 127.6 MB | 1 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set C: Binary Mixed | 0.131s | 0.026s | 0.0000 | 48.2 MB | 50 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 47.6 MB | 1 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set E: ASCII Fast | 0.077s | 0.076s | 0.0000 | 150.3 MB | 1 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set F: Monster JSON | 0.035s | 0.035s | 0.0000 | 72.4 MB | 1 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 78.2 MB | 1 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set H: Sparse Stress | 0.057s | 0.056s | 0.0000 | 120.0 MB | 1 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set I: No-Newline | 0.047s | 0.046s | 0.0000 | 98.0 MB | 1 | 0 |  |
+| 2026-10-04 11:56:26 | v6.1.1-baseline-r5 | Set J: Excel Mixed | 0.034s | 0.033s | 0.0000 | 48.5 MB | 2 | 0 |  |
