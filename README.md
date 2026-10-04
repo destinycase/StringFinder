@@ -34,8 +34,13 @@ python run.py
 
 ## 문서
 
+전체 분류와 작성 규칙은 [문서 안내](docs/README.md)를 확인합니다.
+
 - [사용자 가이드](docs/USER_GUIDE.md) — 화면, 검색 방식, 설정, 결과 및 문제 해결
-- [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 검색 계약, 현지화, 테스트와 릴리스 절차
+- [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 채택한 설계의 배경, 개발·검증 절차
+- [구현 정책](docs/IMPLEMENTATION_POLICY.md) — 현재 검색·설정·UI 계약
+- [설계 검토 기록](docs/DESIGN_REVIEW_HISTORY.md) — 반려·보류한 접근과 이유
+- [성능 개선 기록](docs/PERFORMANCE_HISTORY.md) — 과거 실험, 개선 효과와 한계
 - [검색 성능 기준](docs/ENGINE_PERFORMANCE_BASELINE.md) — 6.1.1 기준값·측정 범위·판정 규칙
 - [벤치마크 히스토리](docs/benchmark_history.md) — 실행별 A–J 측정 원본
 - [개발 이력](docs/DEVELOPMENT_HISTORY.md) — 버전별 기능 변경과 수정 내역
