@@ -1,6 +1,8 @@
 use crate::types::RawMatch;
 use calamine::{Cell, Data, DataType, Range, Reader, Xls, Xlsb, Xlsx, XlsxError};
 use chrono::{Datelike, Timelike};
+use std::borrow::Cow;
+use std::fmt::Write;
 use std::path::Path;
 use unicode_normalization::UnicodeNormalization;
 
@@ -203,6 +205,7 @@ where
 {
     let mut results: Vec<RawMatch> = Vec::new();
     let mut match_count = 0;
+    let mut cell_buffer = String::with_capacity(64);
     for sheet_name in wb.sheet_names() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
             break;
@@ -218,7 +221,9 @@ where
                     if match_count > ctx.max_per_file {
                         break 'outer;
                     } // H2: 결과 상한
-                    if let Some(m) = match_cell(cell, &sheet_name, row_idx, col_idx, ctx) {
+                    if let Some(m) =
+                        match_cell(cell, &sheet_name, row_idx, col_idx, ctx, &mut cell_buffer)
+                    {
                         results.push(m);
                         match_count += 1;
                     }
@@ -268,6 +273,7 @@ where
 {
     // Search all cells until the first hit or cancellation; there is no cell cap.
     let mut first_sheet_error = None;
+    let mut cell_buffer = String::with_capacity(64);
 
     for sheet_name in wb.sheet_names() {
         if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -280,7 +286,7 @@ where
                 if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                     return ExcelCheckOutcome::default();
                 }
-                if cell_text(cell, &sheet_name, row_idx, col_idx, ctx)
+                if search_cell_text(cell, &sheet_name, row_idx, col_idx, ctx, &mut cell_buffer)
                     .is_some_and(|value| cell_matches_val(&value, ctx))
                 {
                     return ExcelCheckOutcome {
@@ -411,8 +417,9 @@ fn match_cell(
     row_idx: usize,
     col_idx: usize,
     ctx: &ExcelCtx<'_>,
+    cell_buffer: &mut String,
 ) -> Option<RawMatch> {
-    let val = cell_text(cell, sheet_name, row_idx, col_idx, ctx)?;
+    let val = search_cell_text(cell, sheet_name, row_idx, col_idx, ctx, cell_buffer)?;
     if !cell_matches_val(&val, ctx) {
         return None;
     }
@@ -431,7 +438,39 @@ fn match_cell(
     ))
 }
 
-/// 셀 매치 여부만 확인 (존재 확인 경로용)
+/// Borrow string cells for comparison; only stored results need owned text.
+fn search_cell_text<'a>(
+    cell: &'a Data,
+    sheet: &str,
+    row: usize,
+    col: usize,
+    ctx: &ExcelCtx<'_>,
+    buffer: &'a mut String,
+) -> Option<Cow<'a, str>> {
+    match cell {
+        Data::String(value) if value.is_empty() => None,
+        Data::String(value) => Some(Cow::Borrowed(value)),
+        Data::Int(value) => {
+            buffer.clear();
+            write!(buffer, "{value}").expect("writing to String cannot fail");
+            Some(Cow::Borrowed(buffer))
+        }
+        Data::Bool(value) => Some(Cow::Borrowed(if *value { "true" } else { "false" })),
+        Data::Float(value) if value.fract() == 0.0 => {
+            buffer.clear();
+            write!(buffer, "{value:.0}").expect("writing to String cannot fail");
+            Some(Cow::Borrowed(buffer))
+        }
+        Data::DateTime(value) if !(0.0..1.0).contains(&value.as_f64()) => {
+            buffer.clear();
+            write_excel_datetime(buffer, value).expect("writing to String cannot fail");
+            Some(Cow::Borrowed(buffer))
+        }
+        _ => cell_text(cell, sheet, row, col, ctx).map(Cow::Owned),
+    }
+}
+
+/// Convert cell values while preserving date-style handling.
 fn cell_text(
     cell: &Data,
     sheet: &str,
@@ -633,45 +672,54 @@ fn format_iso_datetime(value: &str) -> String {
 }
 
 fn format_excel_datetime(value: &calamine::ExcelDateTime) -> String {
-    let suffix = |millis: u16| {
-        if millis == 0 {
-            String::new()
-        } else {
-            format!(".{:06}", u32::from(millis) * 1000)
+    let mut result = String::with_capacity(64);
+    write_excel_datetime(&mut result, value).expect("writing to String cannot fail");
+    result
+}
+
+fn write_excel_datetime(buffer: &mut String, value: &calamine::ExcelDateTime) -> std::fmt::Result {
+    fn suffix(buffer: &mut String, millis: u16) -> std::fmt::Result {
+        if millis != 0 {
+            write!(buffer, ".{:06}", u32::from(millis) * 1000)?;
         }
-    };
+        Ok(())
+    }
     if value.is_duration() {
         let millis = (value.as_f64() * 86_400_000.0).round() as i64;
         let days = millis.div_euclid(86_400_000);
         let remainder = millis.rem_euclid(86_400_000);
-        let time = format!(
-            "{}:{:02}:{:02}{}",
+        if days != 0 {
+            write!(
+                buffer,
+                "{days} day{}, ",
+                if days == 1 || days == -1 { "" } else { "s" }
+            )?;
+        }
+        write!(
+            buffer,
+            "{}:{:02}:{:02}",
             remainder / 3_600_000,
             remainder / 60_000 % 60,
-            remainder / 1000 % 60,
-            suffix((remainder % 1000) as u16)
-        );
-        return if days == 0 {
-            time
-        } else {
-            format!(
-                "{days} day{}, {time}",
-                if days == 1 || days == -1 { "" } else { "s" }
-            )
-        };
+            remainder / 1000 % 60
+        )?;
+        return suffix(buffer, (remainder % 1000) as u16);
     }
     let (year, month, mut day, hour, minute, second, millis) = value.to_ymd_hms_milli();
     // Python's calendar cannot represent Excel's fictitious leap day.
     if year == 1900 && month == 2 && day == 29 {
         day = 28;
     }
-    let time = format!("{hour:02}:{minute:02}:{second:02}{}", suffix(millis));
     if (0.0..1.0).contains(&value.as_f64()) {
-        time
+        write!(buffer, "{hour:02}:{minute:02}:{second:02}")?;
+        suffix(buffer, millis)
     } else if hour == 0 && minute == 0 && second == 0 && millis == 0 {
-        format!("{year:04}-{month:02}-{day:02}")
+        write!(buffer, "{year:04}-{month:02}-{day:02}")
     } else {
-        format!("{year:04}-{month:02}-{day:02} {time}")
+        write!(
+            buffer,
+            "{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}"
+        )?;
+        suffix(buffer, millis)
     }
 }
 
@@ -711,6 +759,19 @@ mod tests {
             cell_text(&cell, "Sheet", 0, 0, &ctx).is_some_and(|v| cell_matches_val(&v, &ctx)),
             expected
         );
+        let mut buffer = String::with_capacity(64);
+        let text = search_cell_text(&cell, "Sheet", 0, 0, &ctx, &mut buffer);
+        assert_eq!(
+            text.as_deref(),
+            cell_text(&cell, "Sheet", 0, 0, &ctx).as_deref()
+        );
+        assert_eq!(
+            text.as_deref().is_some_and(|v| cell_matches_val(v, &ctx)),
+            expected
+        );
+        if matches!(&cell, Data::String(value) if !value.is_empty()) {
+            assert!(matches!(text, Some(Cow::Borrowed(_))));
+        }
     }
 
     #[test]
@@ -758,5 +819,35 @@ mod tests {
         assert_cell_match(Data::Float(10.0), "10", true, true);
         assert_cell_match(Data::Float(10.5), "10.5", true, true);
         assert_cell_match(Data::Bool(true), "true", true, true);
+    }
+
+    #[test]
+    fn buffered_datetime_preserves_duration_and_time_display() {
+        use calamine::{ExcelDateTime, ExcelDateTimeType};
+        let mut buffer = String::with_capacity(64);
+        for (serial, kind, expected) in [
+            (2.5, ExcelDateTimeType::TimeDelta, "2 days, 12:00:00"),
+            (1.0, ExcelDateTimeType::TimeDelta, "1 day, 0:00:00"),
+            (-1.0, ExcelDateTimeType::TimeDelta, "-1 day, 0:00:00"),
+            (-1.5, ExcelDateTimeType::TimeDelta, "-2 days, 12:00:00"),
+            (0.5, ExcelDateTimeType::DateTime, "12:00:00"),
+            (0.0, ExcelDateTimeType::DateTime, "00:00:00"),
+        ] {
+            buffer.clear();
+            write_excel_datetime(&mut buffer, &ExcelDateTime::new(serial, kind, false)).unwrap();
+            assert_eq!(buffer, expected);
+        }
+    }
+
+    #[test]
+    fn scalar_comparison_keeps_signed_zero_and_integer_edges() {
+        for (value, expected) in [
+            (Data::Float(-0.0), "-0"),
+            (Data::Int(i64::MIN), "-9223372036854775808"),
+            (Data::Bool(false), "false"),
+            (Data::Float(1e-5), "1e-05"),
+        ] {
+            assert_cell_match(value, expected, true, true);
+        }
     }
 }

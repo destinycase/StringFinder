@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.26 (StringFinder v6.1.1 안정 버전 기준)
-- **최종 수정일:** 2026-10-04
+- **문서 버전:** 1.27 (StringFinder v6.1.2 기준)
+- **최종 수정일:** 2026-10-21
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 6.1.1 (stable)** · Updated: **2026-10-04**
+> Documentation baseline: **StringFinder 6.1.2** · Updated: **2026-10-21**
 
 ## 문서별 역할과 읽는 순서
 
@@ -430,7 +430,7 @@ python tools/benchmark_excel.py
 Excel 보완 세트는 아래 명령으로 측정합니다. 기존 밀집 Rust 전용 도구와 달리 제품의 `search_in_excel_special()`을 사용하여 **일반/누락 방지 × 전체 결과/존재 확인**을 비교합니다. 기본값은 표본별 준비 실행 후 조합당 5회이며 64개 조합의 결과 수·전체 결과의 시트/좌표/값을 매회 검사합니다. 검증 실패나 부분 검색은 정상 측정으로 기록하지 않습니다.
 
 ```powershell
-python tools/benchmark_excel_suite.py --repeats 5 --output .qa_excel_suite/results.json --record-tag v6.1.1-excel
+python tools/benchmark_excel_suite.py --repeats 5 --output .qa_excel_suite/results.json --record-tag v6.1.2-excel
 ```
 
 - 표본은 밀집 문자열 10만 셀, 실제 값 2개가 있는 1억 셀 직사각형 범위, 캐시된 수식 결과 10만 셀, 날짜/시간 10만 셀의 XLSX입니다. 각 표본에서 첫 위치·끝 위치·2건 적중·무결과를 검사합니다. `--rows`/`--columns`를 바꾸면 다른 크기의 측정이므로 기본 기준선과 구분한 태그를 사용합니다.

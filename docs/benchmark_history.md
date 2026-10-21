@@ -1159,3 +1159,503 @@
 | 2026-10-04 12:24:02 | v6.1.1-excel-r5 | Excel dates/precise/existence/last | 0.240s | 0.240s | 0.0000 | 77.2 MB | 1 | 0 |  |
 | 2026-10-04 12:24:02 | v6.1.1-excel-r5 | Excel dates/precise/existence/both | 0.156s | 0.156s | 0.0000 | 76.2 MB | 1 | 0 |  |
 | 2026-10-04 12:24:02 | v6.1.1-excel-r5 | Excel dates/precise/existence/absent | 0.201s | 0.201s | 0.0000 | 78.6 MB | 0 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set A: Small/Many | 0.731s | 0.031s | 0.0345 | 53.1 MB | 100 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set B: Mixed/Large | 0.045s | 0.045s | 0.0000 | 118.4 MB | 1 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set C: Binary Mixed | 0.113s | 0.022s | 0.0000 | 48.5 MB | 50 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set D: Boolean Early | 0.020s | 0.020s | 0.0000 | 47.9 MB | 1 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set E: ASCII Fast | 0.078s | 0.077s | 0.0000 | 150.4 MB | 1 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set F: Monster JSON | 0.048s | 0.047s | 0.0000 | 73.9 MB | 1 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set G: Deep XML | 0.038s | 0.038s | 0.0000 | 79.4 MB | 1 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set H: Sparse Stress | 0.057s | 0.057s | 0.0000 | 142.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set I: No-Newline | 0.060s | 0.060s | 0.0000 | 98.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:47 | v6.1.1-excel-alloc-buffer-r1 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 48.4 MB | 2 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set A: Small/Many | 0.703s | 0.030s | 0.0344 | 53.7 MB | 100 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set B: Mixed/Large | 0.045s | 0.045s | 0.0000 | 123.8 MB | 1 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set C: Binary Mixed | 0.037s | 0.037s | 0.0000 | 48.4 MB | 50 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set D: Boolean Early | 0.020s | 0.019s | 0.0000 | 48.5 MB | 1 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set E: ASCII Fast | 0.076s | 0.076s | 0.0000 | 151.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set F: Monster JSON | 0.034s | 0.033s | 0.0000 | 75.0 MB | 1 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set G: Deep XML | 0.039s | 0.038s | 0.0000 | 81.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set H: Sparse Stress | 0.054s | 0.053s | 0.0000 | 120.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set I: No-Newline | 0.043s | 0.042s | 0.0000 | 86.4 MB | 1 | 0 |  |
+| 2026-10-21 20:47:48 | v6.1.1-excel-alloc-baseline-r1 | Set J: Excel Mixed | 0.038s | 0.037s | 0.0000 | 49.6 MB | 2 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set A: Small/Many | 0.839s | 0.046s | 0.0291 | 53.9 MB | 100 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set B: Mixed/Large | 0.046s | 0.046s | 0.0000 | 139.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set C: Binary Mixed | 0.113s | 0.036s | 0.0000 | 49.2 MB | 50 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 48.7 MB | 1 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set E: ASCII Fast | 0.074s | 0.073s | 0.0000 | 151.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set F: Monster JSON | 0.032s | 0.032s | 0.0000 | 70.2 MB | 1 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set G: Deep XML | 0.038s | 0.038s | 0.0000 | 81.7 MB | 1 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set H: Sparse Stress | 0.054s | 0.053s | 0.0000 | 120.2 MB | 1 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set I: No-Newline | 0.043s | 0.042s | 0.0000 | 83.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:50 | v6.1.1-excel-alloc-baseline-r2 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 49.8 MB | 2 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set A: Small/Many | 0.744s | 0.035s | 0.0332 | 53.8 MB | 100 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set B: Mixed/Large | 0.047s | 0.047s | 0.0000 | 131.0 MB | 1 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set C: Binary Mixed | 0.043s | 0.042s | 0.0000 | 48.7 MB | 50 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set D: Boolean Early | 0.020s | 0.020s | 0.0000 | 48.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set E: ASCII Fast | 0.075s | 0.074s | 0.0000 | 151.2 MB | 1 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set F: Monster JSON | 0.033s | 0.033s | 0.0000 | 77.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set G: Deep XML | 0.037s | 0.037s | 0.0000 | 89.0 MB | 1 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set H: Sparse Stress | 0.054s | 0.053s | 0.0000 | 121.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set I: No-Newline | 0.042s | 0.042s | 0.0000 | 82.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:51 | v6.1.1-excel-alloc-buffer-r2 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 49.3 MB | 2 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set A: Small/Many | 0.747s | 0.049s | 0.0342 | 54.4 MB | 100 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set B: Mixed/Large | 0.045s | 0.044s | 0.0000 | 123.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set C: Binary Mixed | 0.040s | 0.039s | 0.0000 | 49.0 MB | 50 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 49.0 MB | 1 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set E: ASCII Fast | 0.075s | 0.074s | 0.0000 | 151.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 77.5 MB | 1 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set G: Deep XML | 0.038s | 0.038s | 0.0000 | 83.9 MB | 1 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set H: Sparse Stress | 0.054s | 0.054s | 0.0000 | 118.9 MB | 1 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set I: No-Newline | 0.044s | 0.044s | 0.0000 | 98.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:52 | v6.1.1-excel-alloc-buffer-r3 | Set J: Excel Mixed | 0.031s | 0.030s | 0.0000 | 49.3 MB | 2 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set A: Small/Many | 0.730s | 0.050s | 0.0327 | 54.0 MB | 100 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set B: Mixed/Large | 0.046s | 0.046s | 0.0000 | 125.7 MB | 1 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set C: Binary Mixed | 0.116s | 0.026s | 0.0000 | 49.5 MB | 50 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 49.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set E: ASCII Fast | 0.094s | 0.093s | 0.0000 | 151.9 MB | 1 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set F: Monster JSON | 0.033s | 0.032s | 0.0000 | 77.8 MB | 1 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set G: Deep XML | 0.039s | 0.039s | 0.0000 | 81.9 MB | 1 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set H: Sparse Stress | 0.055s | 0.054s | 0.0000 | 116.2 MB | 1 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set I: No-Newline | 0.044s | 0.043s | 0.0000 | 86.2 MB | 1 | 0 |  |
+| 2026-10-21 20:47:53 | v6.1.1-excel-alloc-baseline-r3 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 49.9 MB | 2 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set A: Small/Many | 0.707s | 0.037s | 0.0345 | 54.2 MB | 100 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set B: Mixed/Large | 0.046s | 0.045s | 0.0000 | 134.8 MB | 1 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set C: Binary Mixed | 0.117s | 0.026s | 0.0000 | 49.9 MB | 50 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 49.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set E: ASCII Fast | 0.074s | 0.073s | 0.0000 | 151.7 MB | 1 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set F: Monster JSON | 0.032s | 0.032s | 0.0000 | 77.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set G: Deep XML | 0.037s | 0.037s | 0.0000 | 83.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set H: Sparse Stress | 0.055s | 0.054s | 0.0000 | 121.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set I: No-Newline | 0.043s | 0.043s | 0.0000 | 88.4 MB | 1 | 0 |  |
+| 2026-10-21 20:47:54 | v6.1.1-excel-alloc-baseline-r4 | Set J: Excel Mixed | 0.034s | 0.034s | 0.0000 | 50.7 MB | 2 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set A: Small/Many | 0.664s | 0.036s | 0.0369 | 54.2 MB | 100 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set B: Mixed/Large | 0.049s | 0.048s | 0.0000 | 131.3 MB | 1 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set C: Binary Mixed | 0.117s | 0.039s | 0.0000 | 49.6 MB | 50 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set D: Boolean Early | 0.021s | 0.020s | 0.0000 | 49.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set E: ASCII Fast | 0.079s | 0.078s | 0.0000 | 151.7 MB | 1 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 73.7 MB | 1 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set G: Deep XML | 0.039s | 0.038s | 0.0000 | 85.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set H: Sparse Stress | 0.053s | 0.053s | 0.0000 | 123.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set I: No-Newline | 0.042s | 0.042s | 0.0000 | 83.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:56 | v6.1.1-excel-alloc-buffer-r4 | Set J: Excel Mixed | 0.030s | 0.030s | 0.0000 | 49.5 MB | 2 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set A: Small/Many | 0.686s | 0.036s | 0.0362 | 54.7 MB | 100 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set B: Mixed/Large | 0.061s | 0.061s | 0.0000 | 115.5 MB | 1 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set C: Binary Mixed | 0.121s | 0.027s | 0.0000 | 50.3 MB | 50 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set D: Boolean Early | 0.024s | 0.024s | 0.0000 | 50.0 MB | 1 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set E: ASCII Fast | 0.075s | 0.075s | 0.0000 | 152.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 78.5 MB | 1 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set G: Deep XML | 0.039s | 0.038s | 0.0000 | 83.0 MB | 1 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set H: Sparse Stress | 0.053s | 0.053s | 0.0000 | 120.2 MB | 1 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set I: No-Newline | 0.043s | 0.043s | 0.0000 | 88.6 MB | 1 | 0 |  |
+| 2026-10-21 20:47:57 | v6.1.1-excel-alloc-buffer-r5 | Set J: Excel Mixed | 0.033s | 0.033s | 0.0000 | 50.5 MB | 2 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set A: Small/Many | 0.755s | 0.040s | 0.0339 | 54.5 MB | 100 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set B: Mixed/Large | 0.046s | 0.046s | 0.0000 | 134.4 MB | 1 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set C: Binary Mixed | 0.114s | 0.037s | 0.0000 | 50.2 MB | 50 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 49.9 MB | 1 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set E: ASCII Fast | 0.073s | 0.072s | 0.0000 | 152.5 MB | 1 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 77.0 MB | 1 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set G: Deep XML | 0.038s | 0.038s | 0.0000 | 87.7 MB | 1 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set H: Sparse Stress | 0.054s | 0.053s | 0.0000 | 123.1 MB | 1 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set I: No-Newline | 0.042s | 0.042s | 0.0000 | 86.4 MB | 1 | 0 |  |
+| 2026-10-21 20:47:58 | v6.1.1-excel-alloc-baseline-r5 | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 50.0 MB | 2 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set A: Small/Many | 0.730s | 0.025s | 0.0340 | 52.7 MB | 100 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set B: Mixed/Large | 0.047s | 0.046s | 0.0000 | 135.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set C: Binary Mixed | 0.116s | 0.028s | 0.0000 | 48.2 MB | 50 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set D: Boolean Early | 0.021s | 0.020s | 0.0000 | 47.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set E: ASCII Fast | 0.079s | 0.079s | 0.0000 | 150.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 76.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set G: Deep XML | 0.040s | 0.040s | 0.0000 | 80.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 139.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 97.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:06 | v6.1.1-excel-alloc-final-final-r1 | Set J: Excel Mixed | 0.030s | 0.030s | 0.0000 | 48.3 MB | 2 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set A: Small/Many | 0.700s | 0.034s | 0.0345 | 53.8 MB | 100 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 133.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set C: Binary Mixed | 0.116s | 0.031s | 0.0000 | 49.3 MB | 50 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 48.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set E: ASCII Fast | 0.079s | 0.078s | 0.0000 | 151.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 77.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set G: Deep XML | 0.041s | 0.040s | 0.0000 | 82.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set H: Sparse Stress | 0.059s | 0.058s | 0.0000 | 136.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set I: No-Newline | 0.048s | 0.047s | 0.0000 | 99.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:07 | v6.1.1-excel-alloc-final-baseline-r1 | Set J: Excel Mixed | 0.033s | 0.032s | 0.0000 | 50.1 MB | 2 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set A: Small/Many | 0.690s | 0.044s | 0.0362 | 53.7 MB | 100 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set B: Mixed/Large | 0.050s | 0.050s | 0.0000 | 139.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set C: Binary Mixed | 0.128s | 0.032s | 0.0000 | 49.4 MB | 50 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set D: Boolean Early | 0.020s | 0.020s | 0.0000 | 48.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set E: ASCII Fast | 0.080s | 0.079s | 0.0000 | 151.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set F: Monster JSON | 0.035s | 0.034s | 0.0000 | 77.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 79.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set H: Sparse Stress | 0.060s | 0.059s | 0.0000 | 126.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 99.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:08 | v6.1.1-excel-alloc-final-baseline-r2 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 49.4 MB | 2 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set A: Small/Many | 0.715s | 0.031s | 0.0346 | 54.0 MB | 100 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 134.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set C: Binary Mixed | 0.115s | 0.032s | 0.0000 | 49.4 MB | 50 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set D: Boolean Early | 0.026s | 0.026s | 0.0000 | 48.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set E: ASCII Fast | 0.085s | 0.085s | 0.0000 | 151.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set F: Monster JSON | 0.032s | 0.032s | 0.0000 | 77.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set G: Deep XML | 0.038s | 0.038s | 0.0000 | 82.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 145.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set I: No-Newline | 0.044s | 0.044s | 0.0000 | 85.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:09 | v6.1.1-excel-alloc-final-final-r2 | Set J: Excel Mixed | 0.033s | 0.033s | 0.0000 | 50.0 MB | 2 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set A: Small/Many | 0.716s | 0.032s | 0.0329 | 53.8 MB | 100 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 135.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set C: Binary Mixed | 0.111s | 0.033s | 0.0000 | 49.6 MB | 50 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 48.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set E: ASCII Fast | 0.083s | 0.082s | 0.0000 | 151.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 71.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set G: Deep XML | 0.044s | 0.044s | 0.0000 | 72.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set H: Sparse Stress | 0.062s | 0.062s | 0.0000 | 136.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 99.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:11 | v6.1.1-excel-alloc-final-final-r3 | Set J: Excel Mixed | 0.030s | 0.030s | 0.0000 | 49.4 MB | 2 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set A: Small/Many | 0.718s | 0.031s | 0.0344 | 54.1 MB | 100 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set B: Mixed/Large | 0.052s | 0.051s | 0.0000 | 126.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set C: Binary Mixed | 0.118s | 0.041s | 0.0000 | 49.4 MB | 50 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set D: Boolean Early | 0.025s | 0.023s | 0.0000 | 48.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set E: ASCII Fast | 0.081s | 0.081s | 0.0000 | 151.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 77.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set G: Deep XML | 0.040s | 0.039s | 0.0000 | 83.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set H: Sparse Stress | 0.057s | 0.057s | 0.0000 | 132.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set I: No-Newline | 0.045s | 0.045s | 0.0000 | 99.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:12 | v6.1.1-excel-alloc-final-baseline-r3 | Set J: Excel Mixed | 0.037s | 0.036s | 0.0000 | 50.1 MB | 2 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set A: Small/Many | 0.770s | 0.047s | 0.0332 | 53.9 MB | 100 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set B: Mixed/Large | 0.048s | 0.047s | 0.0000 | 137.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set C: Binary Mixed | 0.040s | 0.040s | 0.0000 | 49.0 MB | 50 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set D: Boolean Early | 0.021s | 0.020s | 0.0000 | 49.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set E: ASCII Fast | 0.081s | 0.080s | 0.0000 | 151.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 77.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set G: Deep XML | 0.041s | 0.040s | 0.0000 | 79.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 140.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set I: No-Newline | 0.044s | 0.044s | 0.0000 | 99.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:13 | v6.1.1-excel-alloc-final-baseline-r4 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 50.1 MB | 2 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set A: Small/Many | 0.712s | 0.047s | 0.0337 | 54.4 MB | 100 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 127.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set C: Binary Mixed | 0.115s | 0.026s | 0.0000 | 50.0 MB | 50 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set D: Boolean Early | 0.024s | 0.023s | 0.0000 | 49.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set E: ASCII Fast | 0.083s | 0.082s | 0.0000 | 151.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set F: Monster JSON | 0.038s | 0.037s | 0.0000 | 77.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set G: Deep XML | 0.041s | 0.040s | 0.0000 | 77.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set H: Sparse Stress | 0.062s | 0.061s | 0.0000 | 141.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 99.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:14 | v6.1.1-excel-alloc-final-final-r4 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 49.6 MB | 2 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set A: Small/Many | 0.691s | 0.042s | 0.0338 | 54.1 MB | 100 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set B: Mixed/Large | 0.047s | 0.047s | 0.0000 | 132.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set C: Binary Mixed | 0.114s | 0.026s | 0.0000 | 49.7 MB | 50 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set D: Boolean Early | 0.023s | 0.023s | 0.0000 | 49.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 151.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set F: Monster JSON | 0.035s | 0.035s | 0.0000 | 76.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 79.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 136.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set I: No-Newline | 0.047s | 0.047s | 0.0000 | 99.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:15 | v6.1.1-excel-alloc-final-final-r5 | Set J: Excel Mixed | 0.033s | 0.033s | 0.0000 | 50.2 MB | 2 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set A: Small/Many | 0.746s | 0.040s | 0.0341 | 54.4 MB | 100 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 136.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set C: Binary Mixed | 0.117s | 0.026s | 0.0000 | 49.7 MB | 50 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 49.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set E: ASCII Fast | 0.080s | 0.080s | 0.0000 | 151.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set F: Monster JSON | 0.035s | 0.034s | 0.0000 | 77.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 80.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set H: Sparse Stress | 0.058s | 0.058s | 0.0000 | 134.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set I: No-Newline | 0.045s | 0.044s | 0.0000 | 99.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:17 | v6.1.1-excel-alloc-final-baseline-r5 | Set J: Excel Mixed | 0.036s | 0.036s | 0.0000 | 50.5 MB | 2 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set A: Small/Many | 0.633s | 0.033s | 0.0366 | 53.0 MB | 100 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set B: Mixed/Large | 0.051s | 0.051s | 0.0000 | 121.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set C: Binary Mixed | 0.115s | 0.039s | 0.0000 | 48.1 MB | 50 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set D: Boolean Early | 0.025s | 0.025s | 0.0000 | 47.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set E: ASCII Fast | 0.084s | 0.084s | 0.0000 | 150.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 69.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 78.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set H: Sparse Stress | 0.058s | 0.058s | 0.0000 | 137.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 98.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:51 | v6.1.1-excel-alloc-confirm-final-r1 | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 48.3 MB | 2 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set A: Small/Many | 0.750s | 0.028s | 0.0340 | 53.7 MB | 100 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set B: Mixed/Large | 0.054s | 0.054s | 0.0000 | 115.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set C: Binary Mixed | 0.039s | 0.038s | 0.0000 | 49.3 MB | 50 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 48.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set E: ASCII Fast | 0.080s | 0.079s | 0.0000 | 151.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set F: Monster JSON | 0.036s | 0.035s | 0.0000 | 77.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set G: Deep XML | 0.041s | 0.040s | 0.0000 | 77.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set H: Sparse Stress | 0.060s | 0.060s | 0.0000 | 143.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 98.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:52 | v6.1.1-excel-alloc-confirm-baseline-r1 | Set J: Excel Mixed | 0.107s | 0.031s | 0.0000 | 48.8 MB | 2 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set A: Small/Many | 0.739s | 0.050s | 0.0343 | 53.9 MB | 100 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set B: Mixed/Large | 0.050s | 0.049s | 0.0000 | 136.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set C: Binary Mixed | 0.122s | 0.043s | 0.0000 | 49.3 MB | 50 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 48.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set E: ASCII Fast | 0.079s | 0.078s | 0.0000 | 151.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set F: Monster JSON | 0.035s | 0.035s | 0.0000 | 75.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set G: Deep XML | 0.042s | 0.042s | 0.0000 | 77.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set H: Sparse Stress | 0.060s | 0.059s | 0.0000 | 145.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 99.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:53 | v6.1.1-excel-alloc-confirm-baseline-r2 | Set J: Excel Mixed | 0.034s | 0.034s | 0.0000 | 50.2 MB | 2 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set A: Small/Many | 0.776s | 0.048s | 0.0337 | 53.9 MB | 100 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set B: Mixed/Large | 0.057s | 0.056s | 0.0000 | 116.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set C: Binary Mixed | 0.119s | 0.043s | 0.0000 | 49.3 MB | 50 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set D: Boolean Early | 0.023s | 0.023s | 0.0000 | 48.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set E: ASCII Fast | 0.082s | 0.081s | 0.0000 | 151.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set F: Monster JSON | 0.037s | 0.036s | 0.0000 | 71.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 78.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set H: Sparse Stress | 0.060s | 0.060s | 0.0000 | 144.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 97.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:55 | v6.1.1-excel-alloc-confirm-final-r2 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 50.1 MB | 2 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set A: Small/Many | 0.817s | 0.044s | 0.0308 | 54.2 MB | 100 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 133.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set C: Binary Mixed | 0.115s | 0.039s | 0.0000 | 49.6 MB | 50 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set D: Boolean Early | 0.024s | 0.023s | 0.0000 | 49.1 MB | 1 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set E: ASCII Fast | 0.085s | 0.084s | 0.0000 | 151.8 MB | 1 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 72.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set G: Deep XML | 0.041s | 0.040s | 0.0000 | 79.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 144.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 99.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:56 | v6.1.1-excel-alloc-confirm-final-r3 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 49.4 MB | 2 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set A: Small/Many | 0.754s | 0.042s | 0.0335 | 54.2 MB | 100 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 135.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set C: Binary Mixed | 0.118s | 0.029s | 0.0000 | 49.8 MB | 50 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set D: Boolean Early | 0.024s | 0.023s | 0.0000 | 49.2 MB | 1 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set E: ASCII Fast | 0.085s | 0.084s | 0.0000 | 151.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set F: Monster JSON | 0.035s | 0.035s | 0.0000 | 77.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 78.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set H: Sparse Stress | 0.056s | 0.056s | 0.0000 | 123.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set I: No-Newline | 0.045s | 0.045s | 0.0000 | 99.5 MB | 1 | 0 |  |
+| 2026-10-21 20:51:57 | v6.1.1-excel-alloc-confirm-baseline-r3 | Set J: Excel Mixed | 0.033s | 0.032s | 0.0000 | 49.5 MB | 2 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set A: Small/Many | 0.760s | 0.044s | 0.0336 | 56.1 MB | 100 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set B: Mixed/Large | 0.048s | 0.047s | 0.0000 | 128.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set C: Binary Mixed | 0.117s | 0.040s | 0.0000 | 49.8 MB | 50 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set D: Boolean Early | 0.023s | 0.023s | 0.0000 | 49.3 MB | 1 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set E: ASCII Fast | 0.080s | 0.080s | 0.0000 | 151.9 MB | 1 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set F: Monster JSON | 0.037s | 0.036s | 0.0000 | 72.7 MB | 1 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set G: Deep XML | 0.043s | 0.042s | 0.0000 | 82.4 MB | 1 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set H: Sparse Stress | 0.059s | 0.058s | 0.0000 | 138.0 MB | 1 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 99.6 MB | 1 | 0 |  |
+| 2026-10-21 20:51:59 | v6.1.1-excel-alloc-confirm-baseline-r4 | Set J: Excel Mixed | 0.033s | 0.033s | 0.0000 | 49.7 MB | 2 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set A: Small/Many | 0.652s | 0.040s | 0.0338 | 56.1 MB | 100 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 133.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set C: Binary Mixed | 0.118s | 0.027s | 0.0000 | 50.1 MB | 50 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set D: Boolean Early | 0.021s | 0.020s | 0.0000 | 49.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set E: ASCII Fast | 0.081s | 0.080s | 0.0000 | 152.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 73.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set G: Deep XML | 0.043s | 0.042s | 0.0000 | 80.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set H: Sparse Stress | 0.058s | 0.058s | 0.0000 | 133.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set I: No-Newline | 0.048s | 0.047s | 0.0000 | 99.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:00 | v6.1.1-excel-alloc-confirm-final-r4 | Set J: Excel Mixed | 0.033s | 0.032s | 0.0000 | 50.8 MB | 2 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set A: Small/Many | 0.639s | 0.049s | 0.0369 | 55.9 MB | 100 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set B: Mixed/Large | 0.049s | 0.048s | 0.0000 | 137.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set C: Binary Mixed | 0.112s | 0.024s | 0.0000 | 50.1 MB | 50 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set D: Boolean Early | 0.023s | 0.022s | 0.0000 | 49.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set E: ASCII Fast | 0.082s | 0.081s | 0.0000 | 152.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 78.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set G: Deep XML | 0.040s | 0.040s | 0.0000 | 80.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set H: Sparse Stress | 0.062s | 0.062s | 0.0000 | 140.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set I: No-Newline | 0.047s | 0.046s | 0.0000 | 100.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:01 | v6.1.1-excel-alloc-confirm-final-r5 | Set J: Excel Mixed | 0.033s | 0.033s | 0.0000 | 51.1 MB | 2 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set A: Small/Many | 0.771s | 0.047s | 0.0314 | 56.1 MB | 100 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 131.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set C: Binary Mixed | 0.039s | 0.038s | 0.0000 | 49.8 MB | 50 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set D: Boolean Early | 0.030s | 0.029s | 0.0000 | 49.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set E: ASCII Fast | 0.079s | 0.078s | 0.0000 | 152.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set F: Monster JSON | 0.035s | 0.034s | 0.0000 | 77.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 77.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set H: Sparse Stress | 0.058s | 0.058s | 0.0000 | 136.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set I: No-Newline | 0.045s | 0.044s | 0.0000 | 94.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:02 | v6.1.1-excel-alloc-confirm-baseline-r5 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 49.6 MB | 2 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set A: Small/Many | 0.753s | 0.031s | 0.0340 | 54.8 MB | 100 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set B: Mixed/Large | 0.050s | 0.050s | 0.0000 | 131.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set C: Binary Mixed | 0.117s | 0.029s | 0.0000 | 50.3 MB | 50 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 50.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set E: ASCII Fast | 0.083s | 0.083s | 0.0000 | 152.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 76.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set G: Deep XML | 0.115s | 0.039s | 0.0000 | 80.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set H: Sparse Stress | 0.058s | 0.057s | 0.0000 | 145.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set I: No-Newline | 0.045s | 0.045s | 0.0000 | 99.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:03 | v6.1.1-excel-alloc-confirm-baseline-r6 | Set J: Excel Mixed | 0.032s | 0.031s | 0.0000 | 50.2 MB | 2 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set A: Small/Many | 0.741s | 0.028s | 0.0342 | 54.6 MB | 100 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 142.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set C: Binary Mixed | 0.117s | 0.027s | 0.0000 | 50.4 MB | 50 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 50.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 152.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set F: Monster JSON | 0.036s | 0.035s | 0.0000 | 77.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 77.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set H: Sparse Stress | 0.135s | 0.058s | 0.0000 | 142.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set I: No-Newline | 0.121s | 0.045s | 0.0000 | 100.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:05 | v6.1.1-excel-alloc-confirm-final-r6 | Set J: Excel Mixed | 0.034s | 0.032s | 0.0000 | 51.1 MB | 2 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set A: Small/Many | 0.726s | 0.034s | 0.0325 | 56.3 MB | 100 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set B: Mixed/Large | 0.049s | 0.048s | 0.0000 | 137.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set C: Binary Mixed | 0.118s | 0.024s | 0.0000 | 51.0 MB | 50 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set D: Boolean Early | 0.025s | 0.024s | 0.0000 | 50.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set E: ASCII Fast | 0.084s | 0.083s | 0.0000 | 153.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 75.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set G: Deep XML | 0.043s | 0.043s | 0.0000 | 75.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set H: Sparse Stress | 0.061s | 0.060s | 0.0000 | 141.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set I: No-Newline | 0.048s | 0.048s | 0.0000 | 100.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:06 | v6.1.1-excel-alloc-confirm-final-r7 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 50.7 MB | 2 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set A: Small/Many | 0.744s | 0.031s | 0.0340 | 55.5 MB | 100 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set B: Mixed/Large | 0.050s | 0.049s | 0.0000 | 131.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set C: Binary Mixed | 0.121s | 0.026s | 0.0000 | 50.8 MB | 50 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set D: Boolean Early | 0.024s | 0.024s | 0.0000 | 49.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set E: ASCII Fast | 0.082s | 0.081s | 0.0000 | 152.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set F: Monster JSON | 0.038s | 0.036s | 0.0000 | 72.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set G: Deep XML | 0.043s | 0.042s | 0.0000 | 80.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set H: Sparse Stress | 0.061s | 0.061s | 0.0000 | 142.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set I: No-Newline | 0.044s | 0.044s | 0.0000 | 98.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:07 | v6.1.1-excel-alloc-confirm-baseline-r7 | Set J: Excel Mixed | 0.038s | 0.038s | 0.0000 | 51.2 MB | 2 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set A: Small/Many | 0.777s | 0.043s | 0.0323 | 55.5 MB | 100 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set B: Mixed/Large | 0.050s | 0.050s | 0.0000 | 130.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set C: Binary Mixed | 0.115s | 0.038s | 0.0000 | 50.5 MB | 50 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set D: Boolean Early | 0.024s | 0.023s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set E: ASCII Fast | 0.081s | 0.080s | 0.0000 | 153.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set F: Monster JSON | 0.036s | 0.035s | 0.0000 | 74.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set G: Deep XML | 0.043s | 0.042s | 0.0000 | 79.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set H: Sparse Stress | 0.060s | 0.059s | 0.0000 | 145.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set I: No-Newline | 0.047s | 0.047s | 0.0000 | 100.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:08 | v6.1.1-excel-alloc-confirm-baseline-r8 | Set J: Excel Mixed | 0.039s | 0.039s | 0.0000 | 51.4 MB | 2 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set A: Small/Many | 0.752s | 0.032s | 0.0341 | 54.8 MB | 100 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 137.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set C: Binary Mixed | 0.115s | 0.029s | 0.0000 | 50.8 MB | 50 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set E: ASCII Fast | 0.085s | 0.085s | 0.0000 | 153.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set F: Monster JSON | 0.035s | 0.035s | 0.0000 | 76.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set G: Deep XML | 0.043s | 0.042s | 0.0000 | 75.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set H: Sparse Stress | 0.060s | 0.060s | 0.0000 | 144.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 100.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:10 | v6.1.1-excel-alloc-confirm-final-r8 | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 51.4 MB | 2 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set A: Small/Many | 0.741s | 0.032s | 0.0339 | 55.0 MB | 100 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set B: Mixed/Large | 0.051s | 0.050s | 0.0000 | 134.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set C: Binary Mixed | 0.118s | 0.039s | 0.0000 | 50.9 MB | 50 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 50.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set E: ASCII Fast | 0.082s | 0.081s | 0.0000 | 153.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set F: Monster JSON | 0.036s | 0.035s | 0.0000 | 74.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set G: Deep XML | 0.043s | 0.042s | 0.0000 | 76.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set H: Sparse Stress | 0.061s | 0.060s | 0.0000 | 143.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set I: No-Newline | 0.048s | 0.047s | 0.0000 | 100.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:11 | v6.1.1-excel-alloc-confirm-final-r9 | Set J: Excel Mixed | 0.034s | 0.033s | 0.0000 | 51.2 MB | 2 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set A: Small/Many | 0.743s | 0.032s | 0.0338 | 54.9 MB | 100 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set B: Mixed/Large | 0.049s | 0.048s | 0.0000 | 134.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set C: Binary Mixed | 0.115s | 0.028s | 0.0000 | 50.5 MB | 50 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set D: Boolean Early | 0.024s | 0.024s | 0.0000 | 50.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set E: ASCII Fast | 0.083s | 0.082s | 0.0000 | 152.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 78.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 77.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set H: Sparse Stress | 0.059s | 0.058s | 0.0000 | 144.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set I: No-Newline | 0.049s | 0.047s | 0.0000 | 100.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:12 | v6.1.1-excel-alloc-confirm-baseline-r9 | Set J: Excel Mixed | 0.035s | 0.035s | 0.0000 | 51.2 MB | 2 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set A: Small/Many | 0.677s | 0.041s | 0.0365 | 56.7 MB | 100 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set B: Mixed/Large | 0.047s | 0.046s | 0.0000 | 140.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set C: Binary Mixed | 0.115s | 0.030s | 0.0000 | 50.7 MB | 50 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 153.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set F: Monster JSON | 0.036s | 0.036s | 0.0000 | 74.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set G: Deep XML | 0.044s | 0.044s | 0.0000 | 74.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set H: Sparse Stress | 0.062s | 0.061s | 0.0000 | 145.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 100.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:13 | v6.1.1-excel-alloc-confirm-baseline-r10 | Set J: Excel Mixed | 0.030s | 0.030s | 0.0000 | 50.8 MB | 2 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set A: Small/Many | 0.709s | 0.037s | 0.0337 | 55.7 MB | 100 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 133.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set C: Binary Mixed | 0.116s | 0.027s | 0.0000 | 50.7 MB | 50 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 50.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 152.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 75.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set G: Deep XML | 0.042s | 0.042s | 0.0000 | 76.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 138.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set I: No-Newline | 0.047s | 0.047s | 0.0000 | 100.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:15 | v6.1.1-excel-alloc-confirm-final-r10 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 51.2 MB | 2 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set A: Small/Many | 0.663s | 0.039s | 0.0368 | 55.2 MB | 100 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set B: Mixed/Large | 0.050s | 0.050s | 0.0000 | 133.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set C: Binary Mixed | 0.115s | 0.028s | 0.0000 | 50.9 MB | 50 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set D: Boolean Early | 0.019s | 0.019s | 0.0000 | 50.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set E: ASCII Fast | 0.079s | 0.079s | 0.0000 | 153.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set F: Monster JSON | 0.032s | 0.032s | 0.0000 | 79.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set G: Deep XML | 0.041s | 0.040s | 0.0000 | 77.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set H: Sparse Stress | 0.058s | 0.058s | 0.0000 | 141.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set I: No-Newline | 0.053s | 0.052s | 0.0000 | 100.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:16 | v6.1.1-excel-alloc-confirm-final-r11 | Set J: Excel Mixed | 0.035s | 0.035s | 0.0000 | 51.7 MB | 2 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set A: Small/Many | 0.670s | 0.031s | 0.0354 | 55.0 MB | 100 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 137.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set C: Binary Mixed | 0.042s | 0.041s | 0.0000 | 50.4 MB | 50 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set D: Boolean Early | 0.021s | 0.020s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set E: ASCII Fast | 0.079s | 0.079s | 0.0000 | 153.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 77.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set G: Deep XML | 0.041s | 0.041s | 0.0000 | 78.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set H: Sparse Stress | 0.133s | 0.058s | 0.0000 | 146.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set I: No-Newline | 0.046s | 0.045s | 0.0000 | 100.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:17 | v6.1.1-excel-alloc-confirm-baseline-r11 | Set J: Excel Mixed | 0.032s | 0.032s | 0.0000 | 51.3 MB | 2 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set A: Small/Many | 0.764s | 0.033s | 0.0341 | 56.7 MB | 100 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set B: Mixed/Large | 0.050s | 0.049s | 0.0000 | 137.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set C: Binary Mixed | 0.118s | 0.031s | 0.0000 | 50.8 MB | 50 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set D: Boolean Early | 0.025s | 0.024s | 0.0000 | 50.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set E: ASCII Fast | 0.086s | 0.086s | 0.0000 | 153.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 79.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set G: Deep XML | 0.039s | 0.039s | 0.0000 | 81.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set H: Sparse Stress | 0.132s | 0.056s | 0.0000 | 124.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 100.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:18 | v6.1.1-excel-alloc-confirm-baseline-r12 | Set J: Excel Mixed | 0.031s | 0.030s | 0.0000 | 51.4 MB | 2 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set A: Small/Many | 0.735s | 0.031s | 0.0341 | 57.1 MB | 100 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set B: Mixed/Large | 0.054s | 0.054s | 0.0000 | 115.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set C: Binary Mixed | 0.116s | 0.036s | 0.0000 | 50.7 MB | 50 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set D: Boolean Early | 0.023s | 0.023s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 153.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set F: Monster JSON | 0.037s | 0.037s | 0.0000 | 72.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set G: Deep XML | 0.042s | 0.042s | 0.0000 | 80.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set H: Sparse Stress | 0.060s | 0.060s | 0.0000 | 145.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 100.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:19 | v6.1.1-excel-alloc-confirm-final-r12 | Set J: Excel Mixed | 0.030s | 0.030s | 0.0000 | 51.6 MB | 2 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set A: Small/Many | 0.716s | 0.042s | 0.0345 | 56.7 MB | 100 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set B: Mixed/Large | 0.050s | 0.050s | 0.0000 | 138.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set C: Binary Mixed | 0.119s | 0.026s | 0.0000 | 51.6 MB | 50 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 51.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set E: ASCII Fast | 0.080s | 0.080s | 0.0000 | 152.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set F: Monster JSON | 0.035s | 0.034s | 0.0000 | 76.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set G: Deep XML | 0.043s | 0.043s | 0.0000 | 80.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set H: Sparse Stress | 0.060s | 0.059s | 0.0000 | 146.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 100.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:21 | v6.1.1-excel-alloc-confirm-final-r13 | Set J: Excel Mixed | 0.031s | 0.031s | 0.0000 | 51.4 MB | 2 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set A: Small/Many | 0.766s | 0.029s | 0.0336 | 55.9 MB | 100 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set B: Mixed/Large | 0.050s | 0.049s | 0.0000 | 140.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set C: Binary Mixed | 0.114s | 0.036s | 0.0000 | 50.5 MB | 50 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 50.1 MB | 1 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set E: ASCII Fast | 0.083s | 0.082s | 0.0000 | 152.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set F: Monster JSON | 0.037s | 0.037s | 0.0000 | 72.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set G: Deep XML | 0.043s | 0.043s | 0.0000 | 77.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set H: Sparse Stress | 0.060s | 0.059s | 0.0000 | 146.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set I: No-Newline | 0.047s | 0.046s | 0.0000 | 100.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:22 | v6.1.1-excel-alloc-confirm-baseline-r13 | Set J: Excel Mixed | 0.033s | 0.033s | 0.0000 | 51.4 MB | 2 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set A: Small/Many | 0.732s | 0.046s | 0.0337 | 56.1 MB | 100 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set B: Mixed/Large | 0.048s | 0.048s | 0.0000 | 143.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set C: Binary Mixed | 0.115s | 0.034s | 0.0000 | 53.1 MB | 50 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 52.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set E: ASCII Fast | 0.082s | 0.081s | 0.0000 | 155.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set F: Monster JSON | 0.037s | 0.036s | 0.0000 | 78.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set G: Deep XML | 0.042s | 0.042s | 0.0000 | 75.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 145.2 MB | 1 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set I: No-Newline | 0.046s | 0.046s | 0.0000 | 100.8 MB | 1 | 0 |  |
+| 2026-10-21 20:52:23 | v6.1.1-excel-alloc-confirm-baseline-r14 | Set J: Excel Mixed | 0.035s | 0.035s | 0.0000 | 51.6 MB | 2 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set A: Small/Many | 0.772s | 0.029s | 0.0338 | 57.0 MB | 100 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set B: Mixed/Large | 0.049s | 0.049s | 0.0000 | 140.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set C: Binary Mixed | 0.122s | 0.028s | 0.0000 | 53.0 MB | 50 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set D: Boolean Early | 0.022s | 0.022s | 0.0000 | 52.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set E: ASCII Fast | 0.080s | 0.079s | 0.0000 | 155.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set F: Monster JSON | 0.035s | 0.034s | 0.0000 | 80.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set G: Deep XML | 0.042s | 0.042s | 0.0000 | 80.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set H: Sparse Stress | 0.062s | 0.062s | 0.0000 | 142.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set I: No-Newline | 0.045s | 0.045s | 0.0000 | 103.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:24 | v6.1.1-excel-alloc-confirm-final-r14 | Set J: Excel Mixed | 0.035s | 0.035s | 0.0000 | 53.0 MB | 2 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set A: Small/Many | 0.759s | 0.043s | 0.0337 | 58.0 MB | 100 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set B: Mixed/Large | 0.057s | 0.057s | 0.0000 | 120.4 MB | 1 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set C: Binary Mixed | 0.119s | 0.028s | 0.0000 | 51.3 MB | 50 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set D: Boolean Early | 0.022s | 0.021s | 0.0000 | 51.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set E: ASCII Fast | 0.090s | 0.090s | 0.0000 | 153.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set F: Monster JSON | 0.034s | 0.034s | 0.0000 | 77.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set G: Deep XML | 0.052s | 0.052s | 0.0000 | 90.5 MB | 1 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set H: Sparse Stress | 0.064s | 0.063s | 0.0000 | 132.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set I: No-Newline | 0.047s | 0.047s | 0.0000 | 101.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:26 | v6.1.1-excel-alloc-confirm-final-r15 | Set J: Excel Mixed | 0.037s | 0.037s | 0.0000 | 52.0 MB | 2 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set A: Small/Many | 0.749s | 0.031s | 0.0337 | 57.4 MB | 100 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set B: Mixed/Large | 0.047s | 0.047s | 0.0000 | 137.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set C: Binary Mixed | 0.117s | 0.030s | 0.0000 | 51.0 MB | 50 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set D: Boolean Early | 0.021s | 0.021s | 0.0000 | 50.7 MB | 1 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set E: ASCII Fast | 0.081s | 0.081s | 0.0000 | 153.3 MB | 1 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set F: Monster JSON | 0.035s | 0.035s | 0.0000 | 77.6 MB | 1 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set G: Deep XML | 0.042s | 0.042s | 0.0000 | 80.0 MB | 1 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 145.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set I: No-Newline | 0.047s | 0.047s | 0.0000 | 100.9 MB | 1 | 0 |  |
+| 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set J: Excel Mixed | 0.034s | 0.034s | 0.0000 | 51.3 MB | 2 | 0 |  |
