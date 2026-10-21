@@ -461,6 +461,18 @@ fn search_cell_text<'a>(
             write!(buffer, "{value:.0}").expect("writing to String cannot fail");
             Some(Cow::Borrowed(buffer))
         }
+        Data::Float(value) => {
+            buffer.clear();
+            write!(buffer, "{value:?}").expect("writing to String cannot fail");
+            if let Some(index) = buffer.find('e') {
+                let exponent: i32 = buffer[index + 1..]
+                    .parse()
+                    .expect("float exponent is numeric");
+                buffer.truncate(index + 1);
+                write!(buffer, "{exponent:+03}").expect("writing to String cannot fail");
+            }
+            Some(Cow::Borrowed(buffer))
+        }
         Data::DateTime(value) if !(0.0..1.0).contains(&value.as_f64()) => {
             buffer.clear();
             write_excel_datetime(buffer, value).expect("writing to String cannot fail");
@@ -610,7 +622,7 @@ fn join_python_datetime(date: &str, time: &str) -> String {
 fn cell_matches_val(val: &str, ctx: &ExcelCtx<'_>) -> bool {
     if val.is_ascii() {
         if ctx.is_exact {
-            val.trim().to_lowercase().to_uppercase() == ctx.pat_upper
+            val.trim().eq_ignore_ascii_case(ctx.pat_upper)
         } else {
             ctx.ac.find(val).is_some()
         }
@@ -848,6 +860,67 @@ mod tests {
             (Data::Float(1e-5), "1e-05"),
         ] {
             assert_cell_match(value, expected, true, true);
+        }
+    }
+
+    #[test]
+    fn fractional_buffer_matches_existing_float_representation() {
+        let ac = aho_corasick::AhoCorasick::new(["needle"]).unwrap();
+        let ctx = ExcelCtx {
+            path: Path::new("test.xlsx"),
+            date_cells: Default::default(),
+            pat_upper: "NEEDLE",
+            ac: &ac,
+            is_exact: false,
+            stop_flag: Default::default(),
+            max_per_file: 10_000,
+        };
+        let mut buffer = String::from("old value that must not leak into the next cell");
+        let mut bits = 0x1234_5678_9abc_def0_u64;
+        for _ in 0..4096 {
+            bits ^= bits << 13;
+            bits ^= bits >> 7;
+            bits ^= bits << 17;
+            let cell = Data::Float(f64::from_bits(bits));
+            let expected = cell_to_string(&cell);
+            assert_eq!(
+                search_cell_text(&cell, "Sheet", 0, 0, &ctx, &mut buffer).as_deref(),
+                expected.as_deref(),
+                "float bits: {bits:016x}"
+            );
+        }
+        for value in [
+            0.0,
+            -0.0,
+            5e-324,
+            -5e-324,
+            1e-5,
+            1e20,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            let cell = Data::Float(value);
+            assert_eq!(
+                search_cell_text(&cell, "Sheet", 0, 0, &ctx, &mut buffer).as_deref(),
+                cell_to_string(&cell).as_deref()
+            );
+        }
+    }
+
+    #[test]
+    fn ascii_exact_path_keeps_unicode_query_folding() {
+        for (value, query, expected) in [
+            ("SS", "ß", true),
+            ("S", "ſ", true),
+            ("I", "ı", true),
+            ("I", "İ", false),
+            ("K", "K", true),
+            (" \tNeedle\r\n", "needle", true),
+            ("needles", "needle", false),
+            ("é", "e\u{301}", true),
+        ] {
+            assert_cell_match(Data::String(value.to_owned()), query, true, expected);
         }
     }
 }

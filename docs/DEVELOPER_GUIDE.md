@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.27 (StringFinder v6.1.2 기준)
+- **문서 버전:** 1.28 (StringFinder v6.1.2 안정 버전 기준)
 - **최종 수정일:** 2026-10-21
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 6.1.2** · Updated: **2026-10-21**
+> Documentation baseline: **StringFinder 6.1.2 (stable)** · Updated: **2026-10-21**
 
 ## 문서별 역할과 읽는 순서
 
@@ -275,6 +275,8 @@ XML 단일 파일 결과도 같은 정규화 계층을 사용합니다. `_visibl
 | 현재 성능 기준과 과거 측정 분리 | 작업본 결과와 배포 버전·현재 기준의 혼동 방지 | 문서 안내·성능 기준·성능 개선 기록 |
 
 ### 5.1 Excel 실제 셀 읽기 설계
+
+6.1.2는 일반 Excel 셀 비교에서 문자열을 차용하고 정수·소수·날짜/기간의 변환 버퍼를 재사용하며, ASCII 정확 일치의 중간 대소문자 문자열을 제거합니다. 값 표현·Unicode 검색어 정책·시트별 실패 및 결과 한도는 유지합니다. 비ASCII 셀은 기존 NFC 정규화를 수행하고, 누락 방지 검색의 Python 전달용 문자열 보관과 구분합니다. 세부 계약은 [구현 정책 1.4절](IMPLEMENTATION_POLICY.md#14-엑셀-파싱-라이브러리-패닉-격리), 측정과 보류한 NFC 후보는 [성능 개선 기록](PERFORMANCE_HISTORY.md)을 참조합니다.
 
 Rust `SheetReader`는 XLSX/XLSM에 실제 셀 벡터, XLS/XLSB에 기존 `Range`를 사용합니다. 순서대로 유일한 좌표는 정렬을 생략하고 나머지는 안정 정렬·중복 제거로 행·열순과 마지막 비어 있지 않은 값의 계약을 보존합니다. 시트 전체 파싱 후 검색하므로 첫 매치나 상세 상한이 손상 시트 검증을 생략하지 않습니다.
 

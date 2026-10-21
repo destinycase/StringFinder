@@ -1659,3 +1659,303 @@
 | 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set H: Sparse Stress | 0.059s | 0.059s | 0.0000 | 145.9 MB | 1 | 0 |  |
 | 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set I: No-Newline | 0.047s | 0.047s | 0.0000 | 100.9 MB | 1 | 0 |  |
 | 2026-10-21 20:52:27 | v6.1.1-excel-alloc-confirm-baseline-r15 | Set J: Excel Mixed | 0.034s | 0.034s | 0.0000 | 51.3 MB | 2 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set A: Small/Many | 0.772s | 0.037s | 0.0325 | 53.1 MB | 100 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set B: Mixed/Large | 0.056s | 0.056s | 0.0000 | 118.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set C: Binary Mixed | 0.127s | 0.038s | 0.0000 | 48.3 MB | 50 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set D: Boolean Early | 0.026s | 0.026s | 0.0000 | 47.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set E: ASCII Fast | 0.088s | 0.088s | 0.0000 | 150.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set F: Monster JSON | 0.040s | 0.040s | 0.0000 | 69.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set G: Deep XML | 0.046s | 0.046s | 0.0000 | 88.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set H: Sparse Stress | 0.070s | 0.070s | 0.0000 | 133.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set I: No-Newline | 0.056s | 0.055s | 0.0000 | 93.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:21 | v6.1.2-excel-next-final-r1 | Set J: Excel Mixed | 0.042s | 0.042s | 0.0000 | 48.5 MB | 2 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set A: Small/Many | 0.840s | 0.042s | 0.0313 | 54.1 MB | 100 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set B: Mixed/Large | 0.064s | 0.063s | 0.0000 | 129.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set C: Binary Mixed | 0.124s | 0.034s | 0.0000 | 49.6 MB | 50 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set D: Boolean Early | 0.025s | 0.024s | 0.0000 | 48.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set E: ASCII Fast | 0.097s | 0.096s | 0.0000 | 151.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set F: Monster JSON | 0.042s | 0.041s | 0.0000 | 67.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set G: Deep XML | 0.052s | 0.051s | 0.0000 | 95.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set H: Sparse Stress | 0.082s | 0.081s | 0.0000 | 139.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set I: No-Newline | 0.054s | 0.054s | 0.0000 | 95.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:22 | v6.1.2-excel-next-baseline-r1 | Set J: Excel Mixed | 0.041s | 0.041s | 0.0000 | 50.1 MB | 2 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set A: Small/Many | 0.867s | 0.040s | 0.0315 | 54.5 MB | 100 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set B: Mixed/Large | 0.053s | 0.052s | 0.0000 | 128.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set C: Binary Mixed | 0.122s | 0.029s | 0.0000 | 49.8 MB | 50 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set D: Boolean Early | 0.027s | 0.024s | 0.0000 | 49.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set E: ASCII Fast | 0.092s | 0.091s | 0.0000 | 151.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set F: Monster JSON | 0.042s | 0.041s | 0.0000 | 64.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set G: Deep XML | 0.062s | 0.062s | 0.0000 | 88.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set H: Sparse Stress | 0.086s | 0.085s | 0.0000 | 128.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set I: No-Newline | 0.077s | 0.077s | 0.0000 | 99.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:24 | v6.1.2-excel-next-baseline-r2 | Set J: Excel Mixed | 0.041s | 0.040s | 0.0000 | 50.5 MB | 2 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set A: Small/Many | 0.853s | 0.036s | 0.0304 | 54.3 MB | 100 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set B: Mixed/Large | 0.066s | 0.066s | 0.0000 | 140.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set C: Binary Mixed | 0.128s | 0.035s | 0.0000 | 49.9 MB | 50 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set D: Boolean Early | 0.033s | 0.032s | 0.0000 | 49.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set E: ASCII Fast | 0.103s | 0.102s | 0.0000 | 151.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set F: Monster JSON | 0.044s | 0.043s | 0.0000 | 67.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set G: Deep XML | 0.052s | 0.051s | 0.0000 | 95.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set H: Sparse Stress | 0.071s | 0.070s | 0.0000 | 127.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set I: No-Newline | 0.057s | 0.057s | 0.0000 | 99.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:25 | v6.1.2-excel-next-final-r2 | Set J: Excel Mixed | 0.044s | 0.043s | 0.0000 | 49.7 MB | 2 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set A: Small/Many | 0.861s | 0.038s | 0.0306 | 54.6 MB | 100 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set B: Mixed/Large | 0.063s | 0.063s | 0.0000 | 138.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set C: Binary Mixed | 0.134s | 0.034s | 0.0000 | 50.0 MB | 50 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set D: Boolean Early | 0.029s | 0.029s | 0.0000 | 49.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set E: ASCII Fast | 0.105s | 0.104s | 0.0000 | 152.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set F: Monster JSON | 0.047s | 0.046s | 0.0000 | 69.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set G: Deep XML | 0.056s | 0.056s | 0.0000 | 85.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set H: Sparse Stress | 0.087s | 0.086s | 0.0000 | 133.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set I: No-Newline | 0.065s | 0.064s | 0.0000 | 99.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:26 | v6.1.2-excel-next-final-r3 | Set J: Excel Mixed | 0.048s | 0.048s | 0.0000 | 50.5 MB | 2 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set A: Small/Many | 0.921s | 0.047s | 0.0280 | 54.6 MB | 100 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set B: Mixed/Large | 0.069s | 0.069s | 0.0000 | 114.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set C: Binary Mixed | 0.131s | 0.034s | 0.0000 | 50.0 MB | 50 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set D: Boolean Early | 0.027s | 0.027s | 0.0000 | 49.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set E: ASCII Fast | 0.096s | 0.096s | 0.0000 | 152.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set F: Monster JSON | 0.040s | 0.039s | 0.0000 | 72.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set G: Deep XML | 0.050s | 0.050s | 0.0000 | 94.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set H: Sparse Stress | 0.070s | 0.069s | 0.0000 | 131.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set I: No-Newline | 0.068s | 0.068s | 0.0000 | 100.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:28 | v6.1.2-excel-next-baseline-r3 | Set J: Excel Mixed | 0.048s | 0.048s | 0.0000 | 50.3 MB | 2 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set A: Small/Many | 0.913s | 0.043s | 0.0277 | 55.1 MB | 100 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set B: Mixed/Large | 0.051s | 0.051s | 0.0000 | 132.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set C: Binary Mixed | 0.122s | 0.030s | 0.0000 | 50.6 MB | 50 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set D: Boolean Early | 0.025s | 0.025s | 0.0000 | 49.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set E: ASCII Fast | 0.087s | 0.087s | 0.0000 | 152.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set F: Monster JSON | 0.038s | 0.038s | 0.0000 | 73.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set G: Deep XML | 0.046s | 0.045s | 0.0000 | 83.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set H: Sparse Stress | 0.065s | 0.065s | 0.0000 | 137.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set I: No-Newline | 0.051s | 0.051s | 0.0000 | 100.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:29 | v6.1.2-excel-next-baseline-r4 | Set J: Excel Mixed | 0.037s | 0.037s | 0.0000 | 51.3 MB | 2 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set A: Small/Many | 0.885s | 0.037s | 0.0314 | 54.8 MB | 100 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set B: Mixed/Large | 0.053s | 0.052s | 0.0000 | 125.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set C: Binary Mixed | 0.123s | 0.037s | 0.0000 | 50.1 MB | 50 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set D: Boolean Early | 0.024s | 0.024s | 0.0000 | 49.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set E: ASCII Fast | 0.087s | 0.087s | 0.0000 | 152.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set F: Monster JSON | 0.038s | 0.038s | 0.0000 | 70.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set G: Deep XML | 0.045s | 0.045s | 0.0000 | 75.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set H: Sparse Stress | 0.064s | 0.063s | 0.0000 | 137.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set I: No-Newline | 0.050s | 0.050s | 0.0000 | 99.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:31 | v6.1.2-excel-next-final-r4 | Set J: Excel Mixed | 0.039s | 0.039s | 0.0000 | 51.0 MB | 2 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set A: Small/Many | 0.847s | 0.036s | 0.0311 | 55.1 MB | 100 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set B: Mixed/Large | 0.063s | 0.063s | 0.0000 | 113.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set C: Binary Mixed | 0.129s | 0.036s | 0.0000 | 50.7 MB | 50 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set D: Boolean Early | 0.025s | 0.024s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set E: ASCII Fast | 0.088s | 0.087s | 0.0000 | 153.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set F: Monster JSON | 0.039s | 0.039s | 0.0000 | 70.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set G: Deep XML | 0.046s | 0.045s | 0.0000 | 89.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set H: Sparse Stress | 0.063s | 0.063s | 0.0000 | 140.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set I: No-Newline | 0.061s | 0.060s | 0.0000 | 100.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:32 | v6.1.2-excel-next-final-r5 | Set J: Excel Mixed | 0.040s | 0.039s | 0.0000 | 51.3 MB | 2 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set A: Small/Many | 0.854s | 0.042s | 0.0301 | 55.0 MB | 100 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set B: Mixed/Large | 0.053s | 0.052s | 0.0000 | 131.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set C: Binary Mixed | 0.130s | 0.035s | 0.0000 | 50.4 MB | 50 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set D: Boolean Early | 0.029s | 0.029s | 0.0000 | 49.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set E: ASCII Fast | 0.094s | 0.094s | 0.0000 | 152.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set F: Monster JSON | 0.040s | 0.039s | 0.0000 | 72.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set G: Deep XML | 0.045s | 0.045s | 0.0000 | 83.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set H: Sparse Stress | 0.064s | 0.064s | 0.0000 | 138.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set I: No-Newline | 0.050s | 0.050s | 0.0000 | 100.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:34 | v6.1.2-excel-next-baseline-r5 | Set J: Excel Mixed | 0.037s | 0.036s | 0.0000 | 51.3 MB | 2 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set A: Small/Many | 0.881s | 0.045s | 0.0312 | 55.1 MB | 100 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set B: Mixed/Large | 0.054s | 0.053s | 0.0000 | 119.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set C: Binary Mixed | 0.123s | 0.031s | 0.0000 | 50.7 MB | 50 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set D: Boolean Early | 0.025s | 0.024s | 0.0000 | 50.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set E: ASCII Fast | 0.087s | 0.086s | 0.0000 | 152.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set F: Monster JSON | 0.038s | 0.038s | 0.0000 | 73.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set G: Deep XML | 0.046s | 0.046s | 0.0000 | 81.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set H: Sparse Stress | 0.064s | 0.064s | 0.0000 | 136.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set I: No-Newline | 0.058s | 0.057s | 0.0000 | 92.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:35 | v6.1.2-excel-next-baseline-r6 | Set J: Excel Mixed | 0.046s | 0.045s | 0.0000 | 51.4 MB | 2 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set A: Small/Many | 0.855s | 0.043s | 0.0309 | 55.0 MB | 100 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set B: Mixed/Large | 0.062s | 0.061s | 0.0000 | 123.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set C: Binary Mixed | 0.126s | 0.032s | 0.0000 | 50.6 MB | 50 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set D: Boolean Early | 0.024s | 0.023s | 0.0000 | 50.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set E: ASCII Fast | 0.088s | 0.088s | 0.0000 | 152.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set F: Monster JSON | 0.041s | 0.040s | 0.0000 | 66.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set G: Deep XML | 0.049s | 0.048s | 0.0000 | 91.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set H: Sparse Stress | 0.070s | 0.069s | 0.0000 | 136.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set I: No-Newline | 0.053s | 0.052s | 0.0000 | 100.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:37 | v6.1.2-excel-next-final-r6 | Set J: Excel Mixed | 0.039s | 0.038s | 0.0000 | 51.2 MB | 2 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set A: Small/Many | 0.875s | 0.042s | 0.0310 | 55.2 MB | 100 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set B: Mixed/Large | 0.052s | 0.052s | 0.0000 | 131.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set C: Binary Mixed | 0.121s | 0.032s | 0.0000 | 50.6 MB | 50 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set D: Boolean Early | 0.025s | 0.025s | 0.0000 | 50.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set E: ASCII Fast | 0.101s | 0.100s | 0.0000 | 152.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set F: Monster JSON | 0.046s | 0.045s | 0.0000 | 78.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set G: Deep XML | 0.054s | 0.054s | 0.0000 | 83.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set H: Sparse Stress | 0.073s | 0.072s | 0.0000 | 132.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set I: No-Newline | 0.058s | 0.057s | 0.0000 | 97.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:38 | v6.1.2-excel-next-final-r7 | Set J: Excel Mixed | 0.043s | 0.043s | 0.0000 | 51.4 MB | 2 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set A: Small/Many | 0.876s | 0.041s | 0.0301 | 56.5 MB | 100 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set B: Mixed/Large | 0.053s | 0.052s | 0.0000 | 128.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set C: Binary Mixed | 0.123s | 0.040s | 0.0000 | 50.8 MB | 50 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set D: Boolean Early | 0.024s | 0.023s | 0.0000 | 50.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set E: ASCII Fast | 0.087s | 0.087s | 0.0000 | 152.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set F: Monster JSON | 0.039s | 0.039s | 0.0000 | 71.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set G: Deep XML | 0.045s | 0.044s | 0.0000 | 77.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set H: Sparse Stress | 0.067s | 0.067s | 0.0000 | 126.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set I: No-Newline | 0.049s | 0.049s | 0.0000 | 100.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:39 | v6.1.2-excel-next-baseline-r7 | Set J: Excel Mixed | 0.036s | 0.035s | 0.0000 | 51.5 MB | 2 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set A: Small/Many | 0.882s | 0.041s | 0.0311 | 57.0 MB | 100 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set B: Mixed/Large | 0.065s | 0.064s | 0.0000 | 127.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set C: Binary Mixed | 0.123s | 0.031s | 0.0000 | 50.7 MB | 50 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set D: Boolean Early | 0.026s | 0.026s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set E: ASCII Fast | 0.088s | 0.087s | 0.0000 | 153.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set F: Monster JSON | 0.044s | 0.043s | 0.0000 | 66.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set G: Deep XML | 0.047s | 0.047s | 0.0000 | 97.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set H: Sparse Stress | 0.071s | 0.070s | 0.0000 | 127.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set I: No-Newline | 0.051s | 0.050s | 0.0000 | 100.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:41 | v6.1.2-excel-next-baseline-r8 | Set J: Excel Mixed | 0.038s | 0.038s | 0.0000 | 51.7 MB | 2 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set A: Small/Many | 0.833s | 0.041s | 0.0312 | 56.9 MB | 100 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set B: Mixed/Large | 0.055s | 0.054s | 0.0000 | 126.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set C: Binary Mixed | 0.122s | 0.035s | 0.0000 | 50.8 MB | 50 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set D: Boolean Early | 0.030s | 0.030s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set E: ASCII Fast | 0.089s | 0.088s | 0.0000 | 153.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set F: Monster JSON | 0.040s | 0.040s | 0.0000 | 69.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set G: Deep XML | 0.044s | 0.044s | 0.0000 | 83.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set H: Sparse Stress | 0.067s | 0.066s | 0.0000 | 133.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set I: No-Newline | 0.048s | 0.048s | 0.0000 | 100.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:42 | v6.1.2-excel-next-final-r8 | Set J: Excel Mixed | 0.035s | 0.035s | 0.0000 | 51.3 MB | 2 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set A: Small/Many | 0.862s | 0.038s | 0.0313 | 56.9 MB | 100 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set B: Mixed/Large | 0.063s | 0.063s | 0.0000 | 113.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set C: Binary Mixed | 0.128s | 0.039s | 0.0000 | 50.6 MB | 50 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set D: Boolean Early | 0.024s | 0.024s | 0.0000 | 50.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set E: ASCII Fast | 0.098s | 0.098s | 0.0000 | 152.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set F: Monster JSON | 0.043s | 0.042s | 0.0000 | 63.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set G: Deep XML | 0.045s | 0.044s | 0.0000 | 83.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set H: Sparse Stress | 0.063s | 0.062s | 0.0000 | 136.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set I: No-Newline | 0.049s | 0.049s | 0.0000 | 100.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:44 | v6.1.2-excel-next-final-r9 | Set J: Excel Mixed | 0.036s | 0.035s | 0.0000 | 51.8 MB | 2 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set A: Small/Many | 0.857s | 0.042s | 0.0309 | 57.1 MB | 100 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set B: Mixed/Large | 0.059s | 0.059s | 0.0000 | 111.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set C: Binary Mixed | 0.122s | 0.034s | 0.0000 | 51.4 MB | 50 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set D: Boolean Early | 0.025s | 0.025s | 0.0000 | 50.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set E: ASCII Fast | 0.089s | 0.088s | 0.0000 | 153.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set F: Monster JSON | 0.045s | 0.044s | 0.0000 | 71.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set G: Deep XML | 0.051s | 0.050s | 0.0000 | 95.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set H: Sparse Stress | 0.069s | 0.068s | 0.0000 | 127.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set I: No-Newline | 0.062s | 0.061s | 0.0000 | 100.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:45 | v6.1.2-excel-next-baseline-r9 | Set J: Excel Mixed | 0.038s | 0.038s | 0.0000 | 51.8 MB | 2 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set A: Small/Many | 0.834s | 0.042s | 0.0286 | 57.7 MB | 100 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set B: Mixed/Large | 0.060s | 0.060s | 0.0000 | 119.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set C: Binary Mixed | 0.127s | 0.035s | 0.0000 | 51.4 MB | 50 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set D: Boolean Early | 0.027s | 0.026s | 0.0000 | 51.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set E: ASCII Fast | 0.092s | 0.091s | 0.0000 | 153.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set F: Monster JSON | 0.038s | 0.037s | 0.0000 | 75.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set G: Deep XML | 0.045s | 0.044s | 0.0000 | 78.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set H: Sparse Stress | 0.068s | 0.066s | 0.0000 | 139.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set I: No-Newline | 0.060s | 0.060s | 0.0000 | 101.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:47 | v6.1.2-excel-next-baseline-r10 | Set J: Excel Mixed | 0.038s | 0.038s | 0.0000 | 52.3 MB | 2 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set A: Small/Many | 0.883s | 0.040s | 0.0308 | 57.3 MB | 100 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set B: Mixed/Large | 0.057s | 0.056s | 0.0000 | 129.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set C: Binary Mixed | 0.126s | 0.033s | 0.0000 | 51.2 MB | 50 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set D: Boolean Early | 0.026s | 0.025s | 0.0000 | 50.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set E: ASCII Fast | 0.087s | 0.086s | 0.0000 | 153.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set F: Monster JSON | 0.039s | 0.039s | 0.0000 | 70.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set G: Deep XML | 0.051s | 0.050s | 0.0000 | 88.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set H: Sparse Stress | 0.068s | 0.068s | 0.0000 | 124.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set I: No-Newline | 0.050s | 0.050s | 0.0000 | 100.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:48 | v6.1.2-excel-next-final-r10 | Set J: Excel Mixed | 0.037s | 0.037s | 0.0000 | 51.9 MB | 2 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set A: Small/Many | 0.868s | 0.036s | 0.0315 | 55.6 MB | 100 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set B: Mixed/Large | 0.054s | 0.054s | 0.0000 | 125.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set C: Binary Mixed | 0.129s | 0.037s | 0.0000 | 51.2 MB | 50 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set D: Boolean Early | 0.024s | 0.024s | 0.0000 | 50.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set E: ASCII Fast | 0.091s | 0.090s | 0.0000 | 153.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set F: Monster JSON | 0.044s | 0.044s | 0.0000 | 78.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set G: Deep XML | 0.045s | 0.044s | 0.0000 | 88.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set H: Sparse Stress | 0.063s | 0.063s | 0.0000 | 141.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set I: No-Newline | 0.050s | 0.049s | 0.0000 | 101.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:49 | v6.1.2-excel-next-final-r11 | Set J: Excel Mixed | 0.040s | 0.040s | 0.0000 | 52.0 MB | 2 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set A: Small/Many | 0.861s | 0.033s | 0.0310 | 57.1 MB | 100 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set B: Mixed/Large | 0.056s | 0.056s | 0.0000 | 119.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set C: Binary Mixed | 0.128s | 0.030s | 0.0000 | 51.1 MB | 50 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set D: Boolean Early | 0.025s | 0.024s | 0.0000 | 50.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set E: ASCII Fast | 0.100s | 0.100s | 0.0000 | 153.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set F: Monster JSON | 0.040s | 0.039s | 0.0000 | 68.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set G: Deep XML | 0.046s | 0.045s | 0.0000 | 90.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set H: Sparse Stress | 0.075s | 0.074s | 0.0000 | 145.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set I: No-Newline | 0.051s | 0.050s | 0.0000 | 101.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:51 | v6.1.2-excel-next-baseline-r11 | Set J: Excel Mixed | 0.034s | 0.033s | 0.0000 | 52.1 MB | 2 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set A: Small/Many | 0.834s | 0.042s | 0.0312 | 57.3 MB | 100 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set B: Mixed/Large | 0.065s | 0.064s | 0.0000 | 110.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set C: Binary Mixed | 0.134s | 0.037s | 0.0000 | 52.4 MB | 50 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set D: Boolean Early | 0.029s | 0.028s | 0.0000 | 52.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set E: ASCII Fast | 0.105s | 0.104s | 0.0000 | 154.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set F: Monster JSON | 0.043s | 0.043s | 0.0000 | 66.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set G: Deep XML | 0.052s | 0.052s | 0.0000 | 94.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set H: Sparse Stress | 0.074s | 0.073s | 0.0000 | 133.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set I: No-Newline | 0.066s | 0.066s | 0.0000 | 102.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:52 | v6.1.2-excel-next-baseline-r12 | Set J: Excel Mixed | 0.046s | 0.045s | 0.0000 | 53.1 MB | 2 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set A: Small/Many | 0.781s | 0.035s | 0.0324 | 57.2 MB | 100 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set B: Mixed/Large | 0.053s | 0.052s | 0.0000 | 132.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set C: Binary Mixed | 0.121s | 0.037s | 0.0000 | 51.2 MB | 50 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set D: Boolean Early | 0.031s | 0.031s | 0.0000 | 50.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set E: ASCII Fast | 0.085s | 0.084s | 0.0000 | 153.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set F: Monster JSON | 0.037s | 0.037s | 0.0000 | 73.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set G: Deep XML | 0.051s | 0.051s | 0.0000 | 91.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set H: Sparse Stress | 0.066s | 0.066s | 0.0000 | 133.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set I: No-Newline | 0.051s | 0.051s | 0.0000 | 100.9 MB | 1 | 0 |  |
+| 2026-10-21 21:46:54 | v6.1.2-excel-next-final-r12 | Set J: Excel Mixed | 0.035s | 0.035s | 0.0000 | 52.2 MB | 2 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set A: Small/Many | 0.836s | 0.042s | 0.0316 | 57.3 MB | 100 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set B: Mixed/Large | 0.055s | 0.054s | 0.0000 | 137.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set C: Binary Mixed | 0.119s | 0.032s | 0.0000 | 51.9 MB | 50 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set D: Boolean Early | 0.025s | 0.025s | 0.0000 | 51.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set E: ASCII Fast | 0.082s | 0.082s | 0.0000 | 153.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set F: Monster JSON | 0.042s | 0.041s | 0.0000 | 71.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set G: Deep XML | 0.044s | 0.044s | 0.0000 | 83.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set H: Sparse Stress | 0.068s | 0.067s | 0.0000 | 130.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set I: No-Newline | 0.051s | 0.051s | 0.0000 | 101.1 MB | 1 | 0 |  |
+| 2026-10-21 21:46:55 | v6.1.2-excel-next-final-r13 | Set J: Excel Mixed | 0.039s | 0.039s | 0.0000 | 52.1 MB | 2 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set A: Small/Many | 0.880s | 0.033s | 0.0316 | 57.2 MB | 100 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set B: Mixed/Large | 0.057s | 0.057s | 0.0000 | 129.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set C: Binary Mixed | 0.124s | 0.031s | 0.0000 | 51.3 MB | 50 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set D: Boolean Early | 0.033s | 0.032s | 0.0000 | 51.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set E: ASCII Fast | 0.101s | 0.101s | 0.0000 | 153.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set F: Monster JSON | 0.040s | 0.039s | 0.0000 | 70.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set G: Deep XML | 0.047s | 0.047s | 0.0000 | 98.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set H: Sparse Stress | 0.068s | 0.067s | 0.0000 | 136.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set I: No-Newline | 0.054s | 0.053s | 0.0000 | 101.3 MB | 1 | 0 |  |
+| 2026-10-21 21:46:56 | v6.1.2-excel-next-baseline-r13 | Set J: Excel Mixed | 0.037s | 0.037s | 0.0000 | 52.4 MB | 2 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set A: Small/Many | 0.887s | 0.040s | 0.0292 | 57.5 MB | 100 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set B: Mixed/Large | 0.066s | 0.065s | 0.0000 | 134.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set C: Binary Mixed | 0.127s | 0.034s | 0.0000 | 51.3 MB | 50 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set D: Boolean Early | 0.032s | 0.032s | 0.0000 | 51.0 MB | 1 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set E: ASCII Fast | 0.097s | 0.096s | 0.0000 | 153.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set F: Monster JSON | 0.039s | 0.039s | 0.0000 | 73.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set G: Deep XML | 0.057s | 0.057s | 0.0000 | 84.5 MB | 1 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set H: Sparse Stress | 0.073s | 0.073s | 0.0000 | 146.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set I: No-Newline | 0.056s | 0.055s | 0.0000 | 100.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:58 | v6.1.2-excel-next-baseline-r14 | Set J: Excel Mixed | 0.035s | 0.034s | 0.0000 | 52.4 MB | 2 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set A: Small/Many | 0.946s | 0.033s | 0.0297 | 57.3 MB | 100 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set B: Mixed/Large | 0.060s | 0.060s | 0.0000 | 115.7 MB | 1 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set C: Binary Mixed | 0.128s | 0.034s | 0.0000 | 51.5 MB | 50 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set D: Boolean Early | 0.025s | 0.025s | 0.0000 | 51.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set E: ASCII Fast | 0.089s | 0.088s | 0.0000 | 153.8 MB | 1 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set F: Monster JSON | 0.038s | 0.038s | 0.0000 | 71.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set G: Deep XML | 0.048s | 0.048s | 0.0000 | 100.6 MB | 1 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set H: Sparse Stress | 0.073s | 0.072s | 0.0000 | 137.2 MB | 1 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set I: No-Newline | 0.064s | 0.064s | 0.0000 | 101.4 MB | 1 | 0 |  |
+| 2026-10-21 21:46:59 | v6.1.2-excel-next-final-r14 | Set J: Excel Mixed | 0.046s | 0.046s | 0.0000 | 52.5 MB | 2 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set A: Small/Many | 0.893s | 0.050s | 0.0279 | 57.9 MB | 100 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set B: Mixed/Large | 0.055s | 0.054s | 0.0000 | 131.0 MB | 1 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set C: Binary Mixed | 0.124s | 0.034s | 0.0000 | 51.6 MB | 50 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set D: Boolean Early | 0.029s | 0.028s | 0.0000 | 51.3 MB | 1 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set E: ASCII Fast | 0.086s | 0.086s | 0.0000 | 153.9 MB | 1 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set F: Monster JSON | 0.040s | 0.040s | 0.0000 | 71.2 MB | 1 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set G: Deep XML | 0.045s | 0.045s | 0.0000 | 89.0 MB | 1 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set H: Sparse Stress | 0.064s | 0.064s | 0.0000 | 140.9 MB | 1 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set I: No-Newline | 0.050s | 0.049s | 0.0000 | 101.6 MB | 1 | 0 |  |
+| 2026-10-21 21:47:01 | v6.1.2-excel-next-final-r15 | Set J: Excel Mixed | 0.034s | 0.033s | 0.0000 | 52.3 MB | 2 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set A: Small/Many | 0.762s | 0.032s | 0.0330 | 57.8 MB | 100 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set B: Mixed/Large | 0.050s | 0.049s | 0.0000 | 135.3 MB | 1 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set C: Binary Mixed | 0.122s | 0.035s | 0.0000 | 51.3 MB | 50 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set D: Boolean Early | 0.027s | 0.027s | 0.0000 | 51.0 MB | 1 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set E: ASCII Fast | 0.093s | 0.092s | 0.0000 | 153.6 MB | 1 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set F: Monster JSON | 0.038s | 0.038s | 0.0000 | 70.5 MB | 1 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set G: Deep XML | 0.046s | 0.046s | 0.0000 | 92.4 MB | 1 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set H: Sparse Stress | 0.066s | 0.066s | 0.0000 | 135.7 MB | 1 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set I: No-Newline | 0.053s | 0.052s | 0.0000 | 101.2 MB | 1 | 0 |  |
+| 2026-10-21 21:47:02 | v6.1.2-excel-next-baseline-r15 | Set J: Excel Mixed | 0.036s | 0.036s | 0.0000 | 52.5 MB | 2 | 0 |  |
