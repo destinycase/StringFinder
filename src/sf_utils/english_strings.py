@@ -5,10 +5,10 @@ ENGLISH_STRINGS = {
     "FOLDER_FILTER_USAGE": "Add folder → check folders to search\nCheck: use · ×: remove from list only",
     "FOLDER_FILTER_EMPTY": "Add or check a folder to search.",
     "FOLDER_FILTER_SELECTED": "{} folders selected · includes subfolders",
-    "EXTENSION_FILTER_USAGE": "Enter txt → Add → check extensions to search\nCheck: use · ×: remove from list only",
+    "EXTENSION_FILTER_USAGE": "Enter txt or xlsx,xlsm → Add\nCheck: use · ×: remove from list only",
     "EXTENSION_FILTER_ALL": "No extension filter · includes files without extensions",
     "EXTENSION_FILTER_SELECTED": "Search only {} checked extensions",
-    "EXTENSION_FILTER_AUTOMATIC": "Document search active · search only {}\nThe extension list is not applied.",
+    "EXTENSION_FILTER_AUTOMATIC": "Selected mode: search only {}\nThe extension list is not applied.",
     "FILENAME_FILTER_USAGE": "Enter report → Add → names containing report\nCheck: use · ×: remove from list only",
     "FILENAME_FILTER_ALL": "No filename filter",
     "FILENAME_FILTER_SELECTED": "Names containing any of {} checked conditions",
@@ -153,7 +153,35 @@ ENGLISH_STRINGS = {
     "SEARCH_PROFILE_LABEL": "Search mode",
     "SEARCH_PROFILE_NORMAL": "Normal search",
     "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
-    "SPECIAL_SEARCH_LABEL": "Document format search",
+    "SPECIAL_SEARCH_LABEL": "Mode",
+    "SEARCH_HELP_BUTTON": "Help",
+    "SEARCH_HELP_TITLE": "Search help",
+    "EXTENSION_FILTER_INVALID_GROUP": "Enter extensions without empty comma-separated entries, e.g. xlsx,xlsm,xls,xlsb.",
+    "SEARCH_HELP_TEXT": (
+        "<h2>Start a search</h2><p>1. Add and check folders. 2. Enter search text. "
+        "3. Click Search. Subfolders are included.</p>"
+        "<h3>Choose files</h3><p><b>Extension filter:</b> enter txt, then Add. "
+        "Use xlsx,xlsm,xls,xlsb to add a group as one entry. With no checked extensions, "
+        "files without extensions are included too; other exclusions still apply.</p>"
+        "<p><b>Filename filter:</b> add report to find names containing report. "
+        "Any checked term may match; no checked terms means no filename restriction. "
+        "Wildcards are not supported in either filter.</p>"
+        "<p>Uncheck an entry to stop using it for this search. <b>× removes it from the list only</b>, "
+        "not from disk. At least one folder must be checked.</p>"
+        "<h3>Search method and mode</h3><p><b>Normal search:</b> recommended for everyday use. "
+        "<b>Miss-prevention search:</b> try a narrow scope if text known to exist is not found. It can be very slow.</p>"
+        "<p><b>Existence only:</b> stops collecting more locations after a match in each file. "
+        "Turn it off for all locations and context.</p>"
+        "<p><b>Mode Off:</b> uses your extension filter. <b>JSON/XML:</b> searches values, "
+        "not field, tag or attribute names. <b>Excel:</b> searches cell values and separates "
+        "sheet, cell and value columns. These modes select only their file format and temporarily "
+        "ignore saved extension entries. Folder and filename conditions still apply.</p>"
+        "<p><b>Contains:</b> finds search text within a value. <b>Exact match:</b> compares the whole "
+        "value after trimming surrounding whitespace; it does not mean case-sensitive matching. "
+        "Excel files are read as cells even with Mode Off. Saved formula results, not formulas, are searched.</p>"
+        "<h3>Unexpected results</h3><p>Check folders, filters and mode first. Review skipped-file "
+        "and result-limit notices. No results does not necessarily mean all files were searched completely.</p>"
+    ),
     "SPECIAL_SEARCH_OFF": "Off",
     "SPECIAL_SEARCH_ITEMS": [
         "Off",
@@ -165,7 +193,7 @@ ENGLISH_STRINGS = {
         "Excel (exact)",
     ],
     "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use miss-prevention search for complex Unicode variants)",
-    "EXT_EDIT_PLACEHOLDER": "Extension (e.g. txt; no wildcards)",
+    "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm (no wildcards)",
     "EXTENSION_FILTER_WILDCARD_NOT_ALLOWED": "Extension filters do not support wildcard or pattern characters (*, ?, [, ], \\). Enter only an extension, such as json or .json.",
     "FILENAME_LIST_PLACEHOLDER": "Part of filename (e.g. npc; no wildcards)",
     "FILENAME_FILTER_WILDCARD_NOT_ALLOWED": "Filename filters do not support wildcard or pattern characters (*, ?, [, ], \\).",

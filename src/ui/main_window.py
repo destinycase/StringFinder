@@ -8,12 +8,15 @@ from PySide6.QtCore import QByteArray, Qt, QThread, QTimer
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
     QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
     QStatusBar,
+    QTextBrowser,
     QToolButton,
     QTabWidget,
     QVBoxLayout,
@@ -156,6 +159,11 @@ class MainWindow(QMainWindow):
         self.status_timer_label = QLabel()
         self.status_timer_label.setStyleSheet("padding-right: 10px;")
         sb.addPermanentWidget(self.status_timer_label)
+        self.help_button = QToolButton()
+        self.help_button.setObjectName("statusHelpButton")
+        self.help_button.setText(AppStrings.SEARCH_HELP_BUTTON)
+        self.help_button.clicked.connect(self._show_search_help)
+        sb.addPermanentWidget(self.help_button)
         self.log_button = QToolButton()
         self.log_button.setObjectName("statusLogButton")
         self.log_button.setText(AppStrings.TAB_LOGS)
@@ -166,6 +174,7 @@ class MainWindow(QMainWindow):
             "QToolButton:pressed { background-color: #2f3337; }"
         )
         self.log_button.clicked.connect(self._show_active_tab_logs)
+        self.help_button.setStyleSheet(self.log_button.styleSheet())
         sb.addPermanentWidget(self.log_button)
         self.settings_button = QToolButton()
         self.settings_button.setObjectName("statusSettingsButton")
@@ -186,6 +195,27 @@ class MainWindow(QMainWindow):
 
         self.tab_widget.currentChanged.connect(self._sync_status_bar_with_active_tab)
         self._load_all_tabs()
+
+    def _show_search_help(self):
+        """Keep local search guidance available without blocking a running search."""
+        dialog = getattr(self, "_search_help_dialog", None)
+        if dialog is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle(AppStrings.SEARCH_HELP_TITLE)
+            dialog.resize(680, 560)
+            layout = QVBoxLayout(dialog)
+            text = QTextBrowser()
+            text.setObjectName("searchHelpText")
+            text.setHtml(AppStrings.SEARCH_HELP_TEXT)
+            layout.addWidget(text)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            buttons.button(QDialogButtonBox.StandardButton.Close).setText(AppStrings.BTN_CLOSE)
+            buttons.rejected.connect(dialog.close)
+            layout.addWidget(buttons)
+            self._search_help_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def add_new_tab(self, name=None, state=None):
         """새로운 검색 세션(탭)을 추가하고 필요한 시그널을 연결합니다."""

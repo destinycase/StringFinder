@@ -72,7 +72,8 @@ def test_special_mode_targets_and_saved_extensions_are_preserved(qtbot, language
     assert panel.get_selected_extensions() == expected
     assert not panel.ext_list.isEnabled()
     for extension in expected:
-        assert f".{extension}" in panel.status_label.text()
+        assert f".{extension.lstrip('.')}" in panel.status_label.text()
+    assert ".." not in panel.status_label.text()
     saved = panel.get_state()
     restored = ExtensionFilterPanel()
     qtbot.addWidget(restored)

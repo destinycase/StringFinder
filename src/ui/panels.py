@@ -210,6 +210,7 @@ class SearchOptionsPanel(QWidget):
     def _init_ui(self):
         layout = QVBoxLayout(self)
         input_layout = QHBoxLayout()
+        self.input_layout = input_layout
         self.complex_search_warning = QLabel("⚠")
         self.complex_search_warning.setObjectName("complexSearchWarning")
         self.complex_search_warning.setAccessibleName(AppStrings.COMPLEX_SEARCH_TOOLTIP)
@@ -282,7 +283,7 @@ class SearchOptionsPanel(QWidget):
     def set_document_search_controls(self, controls):
         """Place document interpretation next to search settings, not file filters."""
         self._document_controls = controls
-        self.document_options_layout.insertWidget(0, controls)
+        self.input_layout.insertWidget(self.input_layout.indexOf(self.search_btn), controls)
 
     def _update_query_length_notice(self, text: str):
         # Do not use QLineEdit.maxLength: it silently truncates pasted input.
@@ -554,7 +555,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
 
     def _refresh_status(self):
         if self.get_special_mode() != AppStrings.SPECIAL_SEARCH_OFF:
-            targets = ", ".join(f".{ext}" for ext in self.get_selected_extensions())
+            targets = ", ".join(f".{ext.lstrip('.')}" for ext in self.get_selected_extensions())
             self.status_label.setText(AppStrings.EXTENSION_FILTER_AUTOMATIC.format(targets))
         else:
             count = len(self.get_selected_extensions())
@@ -595,13 +596,13 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.special_combo.setCurrentIndex(target_index)
 
     def _show_rejected_extension_input(self):
+        self.extension_input_notice.setText(AppStrings.EXTENSION_FILTER_WILDCARD_NOT_ALLOWED)
         self.extension_input_notice.show()
 
     def _on_add_clicked(self):
-        ext = self.ext_edit.text().strip().lower().replace(".", "")
+        ext = self.ext_edit.text().strip()
         if ext:
             if not self.add_extension(ext):
-                self._show_rejected_extension_input()
                 return
             self.ext_edit.clear()
             self.extension_input_notice.hide()
@@ -612,6 +613,12 @@ class ExtensionFilterPanel(DenseFilterPanel):
         if any(char in ext for char in "*?[]\\"):
             self._show_rejected_extension_input()
             return False
+        extensions = list(dict.fromkeys(part.strip().lower().lstrip(".") for part in ext.split(",")))
+        if not all(extensions):
+            self.extension_input_notice.setText(AppStrings.EXTENSION_FILTER_INVALID_GROUP)
+            self.extension_input_notice.show()
+            return False
+        ext = ",".join(extensions)
         for i in range(self.ext_list.count()):
             widget = self.ext_list.itemWidget(self.ext_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.text() == ext:
@@ -646,7 +653,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
             for i in range(self.ext_list.count()):
                 widget = self.ext_list.itemWidget(self.ext_list.item(i))
                 if isinstance(widget, FilterItemWidget) and widget.isChecked():
-                    exts.append(widget.text())
+                    exts.extend(part.strip().lstrip(".").lower() for part in widget.text().split(",") if part.strip())
         else:
             # 선택된 특수 검색 모드에 따라 처리 대상을 결정합니다.
             if Constants.MODE_XML in special_mode:
@@ -657,7 +664,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
                 return list(Constants.EXT_EXCEL)
             else:
                 return [special_mode.lower()]
-        return exts
+        return list(dict.fromkeys(exts))
 
     def get_special_mode(self) -> str:
         return self.special_combo.currentText()
