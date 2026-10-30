@@ -18,12 +18,14 @@ target/
 
 # Distribution / packaging
 build/
+/dist/*.zip
 *.egg-info/
 coverage.xml
 .coverage
 htmlcov/
 
 # Local data
+/AGENTS.md
 data/
 /samples/
 /diagnostic/

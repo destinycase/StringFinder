@@ -2,6 +2,16 @@
 
 
 ENGLISH_STRINGS = {
+    "FOLDER_FILTER_USAGE": "Add folder → check folders to search\nCheck: use · ×: remove from list only",
+    "FOLDER_FILTER_EMPTY": "Add or check a folder to search.",
+    "FOLDER_FILTER_SELECTED": "{} folders selected · includes subfolders",
+    "EXTENSION_FILTER_USAGE": "Enter txt → Add → check extensions to search\nCheck: use · ×: remove from list only",
+    "EXTENSION_FILTER_ALL": "No extension filter · includes files without extensions",
+    "EXTENSION_FILTER_SELECTED": "Search only {} checked extensions",
+    "EXTENSION_FILTER_AUTOMATIC": "Document search active · search only {}\nThe extension list is not applied.",
+    "FILENAME_FILTER_USAGE": "Enter report → Add → names containing report\nCheck: use · ×: remove from list only",
+    "FILENAME_FILTER_ALL": "No filename filter",
+    "FILENAME_FILTER_SELECTED": "Names containing any of {} checked conditions",
     "ADVANCED_INCLUDE_JUNCTIONS": "Windows linked folders (junctions)",
     "JUNCTION_EXCLUDE": "Exclude",
     "JUNCTION_INCLUDE": "Include",
@@ -143,7 +153,7 @@ ENGLISH_STRINGS = {
     "SEARCH_PROFILE_LABEL": "Search mode",
     "SEARCH_PROFILE_NORMAL": "Normal search",
     "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
-    "SPECIAL_SEARCH_LABEL": "Special search",
+    "SPECIAL_SEARCH_LABEL": "Document format search",
     "SPECIAL_SEARCH_OFF": "Off",
     "SPECIAL_SEARCH_ITEMS": [
         "Off",

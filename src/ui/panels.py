@@ -115,6 +115,10 @@ class FilterListWidget(QListWidget):
         self._action_column.setBackgroundRole(QPalette.ColorRole.Base)
         self.setViewportMargins(0, 0, self.ACTION_WIDTH, 0)
         self.viewport().installEventFilter(self)
+        self.empty_hint = QLabel(self.viewport())
+        self.empty_hint.setWordWrap(True)
+        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
     def setItemWidget(self, item, widget):
         super().setItemWidget(item, widget)
@@ -139,6 +143,8 @@ class FilterListWidget(QListWidget):
         if not hasattr(self, "_action_column"):
             return
         viewport = self.viewport().geometry()
+        self.empty_hint.setGeometry(self.viewport().rect().adjusted(4, 0, -4, 0))
+        self.empty_hint.setVisible(self.count() == 0)
         self._action_column.setGeometry(viewport.right() + 1, viewport.top(), self.ACTION_WIDTH, viewport.height())
         for item, button in self._actions:
             rect = self.visualItemRect(item)
@@ -186,6 +192,7 @@ class FilterListWidget(QListWidget):
             button.deleteLater()
         self._actions.clear()
         super().clear()
+        self._position_actions()
 
 
 class SearchOptionsPanel(QWidget):
@@ -197,6 +204,7 @@ class SearchOptionsPanel(QWidget):
     def __init__(self, parent=None, config_manager=None):
         super().__init__(parent)
         self.config_manager = config_manager
+        self._document_controls = None
         self._init_ui()
 
     def _init_ui(self):
@@ -254,6 +262,7 @@ class SearchOptionsPanel(QWidget):
         self.stop_btn.setVisible(False)
         input_layout.addWidget(self.stop_btn)
         options_layout = QHBoxLayout()
+        self.document_options_layout = options_layout
         self.complex_search_check = QCheckBox(AppStrings.SEARCH_MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
         self.exclude_hidden_check = QCheckBox(AppStrings.EXCLUDE_HIDDEN_LABEL)
         self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
@@ -269,6 +278,11 @@ class SearchOptionsPanel(QWidget):
         self.boolean_search_check.setVisible(True)
         self.exclude_hidden_check.setVisible(False)
         layout.addLayout(options_layout)
+
+    def set_document_search_controls(self, controls):
+        """Place document interpretation next to search settings, not file filters."""
+        self._document_controls = controls
+        self.document_options_layout.insertWidget(0, controls)
 
     def _update_query_length_notice(self, text: str):
         # Do not use QLineEdit.maxLength: it silently truncates pasted input.
@@ -289,6 +303,8 @@ class SearchOptionsPanel(QWidget):
         self.complex_search_check.setEnabled(not searching)
         self.exclude_hidden_check.setEnabled(not searching)
         self.boolean_search_check.setEnabled(not searching)
+        if self._document_controls is not None:
+            self._document_controls.setEnabled(not searching)
         self.search_btn.setEnabled(True)
         self.search_btn.setText(AppStrings.SEARCH_BTN)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)
@@ -373,6 +389,8 @@ class FolderFilterPanel(DenseFilterPanel):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         self.folder_list = FilterListWidget()
+        self.usage_label = self.folder_list.empty_hint
+        self.usage_label.setText(AppStrings.FOLDER_FILTER_USAGE)
         # 폴더 목록의 가독성을 위해 적절한 최소 크기를 보장합니다.
         self.folder_list.setMinimumHeight(50)
         main_layout.addWidget(self.folder_list, 1)  # 1: Stretch 부여
@@ -390,6 +408,17 @@ class FolderFilterPanel(DenseFilterPanel):
         btn_layout.addWidget(sel_all_btn)
         btn_layout.addWidget(desel_all_btn)
         main_layout.addLayout(btn_layout)
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        main_layout.addWidget(self.status_label)
+        self.filter_changed.connect(self._refresh_status)
+        self._refresh_status()
+
+    def _refresh_status(self):
+        count = len(self.get_selected_folders())
+        self.status_label.setText(
+            AppStrings.FOLDER_FILTER_SELECTED.format(count) if count else AppStrings.FOLDER_FILTER_EMPTY
+        )
 
     def _on_add_clicked(self):
         folder = QFileDialog.getExistingDirectory(self, AppStrings.SELECT_FOLDER_TITLE)
@@ -441,6 +470,7 @@ class FolderFilterPanel(DenseFilterPanel):
         elif isinstance(data, dict):
             for f, checked in data.items():
                 self.add_folder(f, checked=checked)
+        self._refresh_status()
 
     def get_state(self) -> dict:
         folder_states = {}
@@ -467,15 +497,20 @@ class ExtensionFilterPanel(DenseFilterPanel):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         special_layout = QHBoxLayout()
+        self.special_controls = QWidget()
+        self.special_controls.setLayout(special_layout)
+        special_layout.setContentsMargins(0, 0, 0, 0)
         special_label = QLabel(AppStrings.SPECIAL_SEARCH_LABEL)
         self.special_combo = QComboBox()
         self.special_combo.addItems(AppStrings.SPECIAL_SEARCH_ITEMS)
         self.special_combo.currentTextChanged.connect(self._on_special_changed)
         special_layout.addWidget(special_label)
         special_layout.addWidget(self.special_combo, 1)
-        main_layout.addLayout(special_layout)
+        main_layout.addWidget(self.special_controls)
 
         self.ext_list = FilterListWidget()
+        self.usage_label = self.ext_list.empty_hint
+        self.usage_label.setText(AppStrings.EXTENSION_FILTER_USAGE)
         self.ext_list.setMinimumHeight(50)
         main_layout.addWidget(self.ext_list, 1)  # 확장자 목록이 가용한 영역을 최대한 활용하도록 설정합니다.
 
@@ -507,6 +542,25 @@ class ExtensionFilterPanel(DenseFilterPanel):
         toggle_layout.addWidget(self.sel_all_btn)
         toggle_layout.addWidget(self.desel_all_btn)
         main_layout.addLayout(toggle_layout)
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        main_layout.addWidget(self.status_label)
+        self.filter_changed.connect(self._refresh_status)
+        self._refresh_status()
+
+    def take_special_controls(self):
+        self.layout().removeWidget(self.special_controls)
+        return self.special_controls
+
+    def _refresh_status(self):
+        if self.get_special_mode() != AppStrings.SPECIAL_SEARCH_OFF:
+            targets = ", ".join(f".{ext}" for ext in self.get_selected_extensions())
+            self.status_label.setText(AppStrings.EXTENSION_FILTER_AUTOMATIC.format(targets))
+        else:
+            count = len(self.get_selected_extensions())
+            self.status_label.setText(
+                AppStrings.EXTENSION_FILTER_SELECTED.format(count) if count else AppStrings.EXTENSION_FILTER_ALL
+            )
 
     def _on_special_changed(self, text):
         is_off = text == AppStrings.SPECIAL_SEARCH_OFF
@@ -515,7 +569,10 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.add_btn.setEnabled(is_off)
         self.sel_all_btn.setEnabled(is_off)
         self.desel_all_btn.setEnabled(is_off)
+        self.usage_label.setEnabled(is_off)
+        self._refresh_status()
         self.special_mode_changed.emit(text)
+        self.filter_changed.emit()
 
     def _set_special_mode(self, value):
         """Restore current and legacy localized special-mode labels safely."""
@@ -623,6 +680,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
         elif isinstance(data, list):
             for ext in data:
                 self.add_extension(ext, checked=True)
+        self._refresh_status()
 
     def get_state(self) -> dict:
         ext_states = {}
@@ -661,6 +719,8 @@ class FilenameFilterPanel(DenseFilterPanel):
         self.filename_combo.setEditable(True)
         self.filename_combo.setVisible(False)
         self.filename_list = FilterListWidget()
+        self.usage_label = self.filename_list.empty_hint
+        self.usage_label.setText(AppStrings.FILENAME_FILTER_USAGE)
         self.filename_list.setMinimumHeight(50)
         main_layout.addWidget(self.filename_list, 1)
 
@@ -694,6 +754,17 @@ class FilenameFilterPanel(DenseFilterPanel):
         toggle_layout.addWidget(sel_all)
         toggle_layout.addWidget(desel_all)
         main_layout.addLayout(toggle_layout)
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        main_layout.addWidget(self.status_label)
+        self.filter_changed.connect(self._refresh_status)
+        self._refresh_status()
+
+    def _refresh_status(self):
+        count = len(self.get_selected_filenames())
+        self.status_label.setText(
+            AppStrings.FILENAME_FILTER_SELECTED.format(count) if count else AppStrings.FILENAME_FILTER_ALL
+        )
 
     def _show_rejected_filename_input(self):
         # Inline feedback avoids modal warnings for each rejected keystroke.
@@ -773,6 +844,7 @@ class FilenameFilterPanel(DenseFilterPanel):
         elif isinstance(target_data, dict):
             for fn, checked in target_data.items():
                 self.add_filename(fn, checked=checked)
+        self._refresh_status()
 
     def get_state(self) -> dict:
         filename_states = {}

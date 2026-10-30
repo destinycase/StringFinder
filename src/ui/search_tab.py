@@ -113,10 +113,11 @@ class SearchTab(QMainWindow):
         self.folder_dock.setWidget(self.folder_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.folder_dock)
         self.folder_panel.filter_changed.connect(self._sync_filters_to_config)
-        # 확장자/특수모드 도크
+        # File selection stays separate from document interpretation controls.
         self.ext_dock = QDockWidget(AppStrings.DOCK_EXT_TITLE, self)
         self.ext_dock.setObjectName(Constants.OBJ_NAME_EXT_DOCK)
         self.ext_panel = ExtensionFilterPanel()
+        self.search_panel.set_document_search_controls(self.ext_panel.take_special_controls())
         self.ext_dock.setWidget(self.ext_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.ext_dock)
         self.ext_panel.filter_changed.connect(self._sync_filters_to_config)

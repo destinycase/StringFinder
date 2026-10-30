@@ -161,7 +161,17 @@ class AppStrings:
     SEARCH_PROFILE_LABEL = "검색 방식"
     SEARCH_PROFILE_NORMAL = "일반 검색"
     SEARCH_PROFILE_PRECISE = "누락 방지 검색(매우 느림)"
-    SPECIAL_SEARCH_LABEL = "특수 검색"
+    SPECIAL_SEARCH_LABEL = "문서 형식별 검색"
+    FOLDER_FILTER_USAGE = "폴더 추가 → 체크한 폴더 검색\n체크: 적용 · ×: 목록에서만 제거"
+    FOLDER_FILTER_EMPTY = "검색할 폴더를 추가하거나 체크하세요."
+    FOLDER_FILTER_SELECTED = "폴더 {}개 선택 · 하위 폴더 포함"
+    EXTENSION_FILTER_USAGE = "txt 입력 → 추가 → 체크한 확장자 검색\n체크: 적용 · ×: 목록에서만 제거"
+    EXTENSION_FILTER_ALL = "확장자 제한 없음 · 확장자 없는 파일도 포함"
+    EXTENSION_FILTER_SELECTED = "체크한 확장자 {}종만 검색"
+    EXTENSION_FILTER_AUTOMATIC = "문서 형식별 검색 중 · {}만 검색\n확장자 목록은 적용하지 않습니다."
+    FILENAME_FILTER_USAGE = "report 입력 → 추가 → 이름에 report가 포함된 파일\n체크: 적용 · ×: 목록에서만 제거"
+    FILENAME_FILTER_ALL = "파일명 제한 없음"
+    FILENAME_FILTER_SELECTED = "체크한 파일명 조건 {}개 중 하나라도 포함"
     SPECIAL_SEARCH_OFF = "끄기"
     SPECIAL_SEARCH_ITEMS = [
         "끄기",
