@@ -1,11 +1,9 @@
-from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QAbstractTextDocumentLayout,
     QColor,
     QCursor,
-    QPainter,
     QPalette,
-    QPen,
     QTextDocument,
 )
 from PySide6.QtWidgets import (
@@ -15,7 +13,6 @@ from PySide6.QtWidgets import (
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
-    QWidget,
 )
 
 from sf_utils.app_strings import AppStrings
@@ -183,59 +180,3 @@ class HistoryComboBox(QComboBox):
         line_edit = self.lineEdit()
         if line_edit:
             line_edit.setText(text)
-
-
-
-
-
-class LoadingSpinner(QWidget):
-    """
-    작업 중임을 나타내는 회전하는 원형 스피너 위젯입니다.
-    선형 진행바와 달리 무한히 루프되는 애니메이션을 제공하여 '검색 중' 상태를 시각화합니다.
-    """
-
-    def __init__(self, parent=None, size=20, color=None):
-        super().__init__(parent)
-        self.setFixedSize(size, size)
-        self._angle = 0
-        self._timer = QTimer(self)
-        self._timer.setInterval(30)  # 약 33fps
-        self._timer.timeout.connect(self._rotate)
-        self._color = color
-
-    def start(self):
-        """애니메이션을 시작하고 위젯을 표시합니다."""
-        self.show()
-        if not self._timer.isActive():
-            self._timer.start()
-
-    def stop(self):
-        """애니메이션을 중지하고 위젯을 숨깁니다."""
-        self._timer.stop()
-        self.hide()
-
-    def _rotate(self):
-        self._angle = (self._angle + 10) % 360
-        self.update()
-
-    def paintEvent(self, event):
-        """스피너를 그립니다."""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        rect = self.rect().adjusted(2, 2, -2, -2)
-        pen = QPen()
-        pen.setWidth(2)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-
-        # 시스템 테마에 정의된 강조 색상(Highlight)을 기본값으로 사용합니다.
-        color = self._color
-        if color is None:
-            color = self.palette().color(QPalette.ColorRole.Highlight)
-
-        # 부드러운 회전 효과를 위해 일정 각도의 원호를 그립니다.
-        pen.setColor(color)
-        painter.setPen(pen)
-
-        # 약 270도 길이의 원호를 그려 스피너 형태를 구현합니다.
-        painter.drawArc(rect, self._angle * 16, 270 * 16)

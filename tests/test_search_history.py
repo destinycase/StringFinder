@@ -66,7 +66,6 @@ def test_valid_search_records_only_after_dispatch(qtbot, mock_config_manager, tm
     assert items(tab.search_panel.search_combo) == ["searched query"]
     assert tab.search_panel.search_combo.currentText() == "  searched query  "
     assert mock_config_manager.get_filename_history() == []
-    tab._liveliness_timer.stop()
 
 
 @pytest.mark.parametrize("query", ["", "x" * 1001, "no folders"])
@@ -92,7 +91,6 @@ def test_dispatch_failure_is_not_recorded(qtbot, mock_config_manager, tmp_path):
         pool.return_value.start.side_effect = RuntimeError("dispatch failed")
         tab.start_search()
     assert not mock_config_manager.get_history()
-    tab._liveliness_timer.stop()
 
 
 def test_popup_refreshes_shared_history_without_losing_input(qtbot, mock_config_manager):

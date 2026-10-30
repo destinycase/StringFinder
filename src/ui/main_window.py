@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QStatusBar,
+    QSizePolicy,
     QTextBrowser,
     QToolButton,
     QTabWidget,
@@ -31,7 +32,6 @@ from sf_utils.resource_helper import get_resource_path
 from ui.search_tab import SearchTab
 from ui.settings_dialog import SettingsDialog
 from ui.styles import UIStyles
-from ui.widgets import LoadingSpinner
 
 
 class MainWindow(QMainWindow):
@@ -156,9 +156,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         sb = QStatusBar()
         self.setStatusBar(sb)
-        self.status_timer_label = QLabel()
-        self.status_timer_label.setStyleSheet("padding-right: 10px;")
-        sb.addPermanentWidget(self.status_timer_label)
+        self.filter_status_label = QLabel()
+        self.filter_status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        sb.addWidget(self.filter_status_label, 1)
         self.help_button = QToolButton()
         self.help_button.setObjectName("statusHelpButton")
         self.help_button.setText(AppStrings.SEARCH_HELP_BUTTON)
@@ -189,10 +189,6 @@ class MainWindow(QMainWindow):
         self.settings_button.clicked.connect(self._show_settings)
         sb.addPermanentWidget(self.settings_button)
 
-        # 검색 중임을 나타내는 회전하는 스피너 위젯을 추가합니다.
-        self.status_spinner = LoadingSpinner(self, size=18)
-        sb.addPermanentWidget(self.status_spinner)
-
         self.tab_widget.currentChanged.connect(self._sync_status_bar_with_active_tab)
         self._load_all_tabs()
 
@@ -220,8 +216,8 @@ class MainWindow(QMainWindow):
     def add_new_tab(self, name=None, state=None):
         """새로운 검색 세션(탭)을 추가하고 필요한 시그널을 연결합니다."""
         new_tab = SearchTab(self.config_manager)
-        new_tab.status_message_requested.connect(self.statusBar().showMessage)
-        new_tab.liveliness_updated.connect(lambda r, s: self._on_tab_liveliness_updated(new_tab, r, s))
+        new_tab.filter_status_changed.connect(lambda: self._sync_status_bar_with_active_tab(self.tab_widget.currentIndex()))
+        new_tab.status_message_requested.connect(self._show_search_notice)
         new_tab.search_finished_with_data.connect(lambda: self._on_search_finished_in_tab(new_tab))
         new_tab.search_status_changed.connect(
             lambda locked, tab=new_tab: self._on_tab_search_status_changed(tab, locked)
@@ -340,7 +336,7 @@ class MainWindow(QMainWindow):
             state = tab.get_state()
             state["title"] = name
             if not self.config_manager.save_session(name, state):
-                self.statusBar().showMessage(AppStrings.ERROR_SESSION_SAVE.format(name), 3000)
+                self._show_search_notice(AppStrings.ERROR_SESSION_SAVE.format(name), 3000)
                 return False
             return True
         return False
@@ -352,39 +348,29 @@ class MainWindow(QMainWindow):
             tabs.append(self.tab_widget.tabText(i))
         self.config_manager.set_tab_order(tabs)
 
-    def _on_tab_liveliness_updated(self, tab, is_running, sec):
-        """탭의 라이브니스 상태가 변경되면 현재 활성화된 탭일 경우 상태 표시줄을 갱신합니다."""
-        if self.tab_widget.currentWidget() == tab:
-            self._update_status_bar_widgets(is_running, sec)
-
     def _sync_status_bar_with_active_tab(self, index):
-        """탭 전환 시 상태 표시줄 인디케이터를 활성화된 탭의 상태와 동기화합니다."""
+        """Only the active tab's file-selection conditions belong in the status bar."""
         tab = self.tab_widget.widget(index)
-        if isinstance(tab, SearchTab):
-            is_running = (
-                tab.search_state != Constants.SearchState.IDLE and tab.search_state != Constants.SearchState.STOPPING
-            )
-            self._update_status_bar_widgets(is_running, tab._liveliness_seconds)
-        else:
-            self._update_status_bar_widgets(False, 0)
+        self.statusBar().clearMessage()
+        self.filter_status_label.setText(tab.get_filter_status_text() if isinstance(tab, SearchTab) else "")
+
+    def _show_search_notice(self, text, _duration):
+        dialog = getattr(self, "_notice_dialog", None)
+        if dialog is None:
+            dialog = QMessageBox(QMessageBox.Icon.Warning, AppStrings.ERROR_TITLE, "",
+                                 QMessageBox.StandardButton.Close, self)
+            dialog.setWindowModality(Qt.WindowModality.NonModal)
+            dialog.setTextFormat(Qt.TextFormat.PlainText)
+            dialog.button(QMessageBox.StandardButton.Close).setText(AppStrings.BTN_CLOSE)
+            self._notice_dialog = dialog
+        dialog.setText(text)
+        dialog.show()
 
     def _show_active_tab_logs(self):
         """Open the active tab's logs in a separate window."""
         tab = self.tab_widget.currentWidget()
         if isinstance(tab, SearchTab):
             tab.show_log_window()
-
-    def _update_status_bar_widgets(self, is_running, sec):
-        """상태 표시줄의 진행바와 타이머 위젯의 상태를 실제 업데이트합니다."""
-        if is_running:
-            self.status_spinner.start()
-            min_part = sec // 60
-            sec_part = sec % 60
-            self.status_timer_label.setText(AppStrings.STATUS_ELAPSED_TIME.format(min_part, sec_part))
-            self.status_timer_label.show()
-        else:
-            self.status_spinner.stop()
-            self.status_timer_label.hide()
 
     def _load_all_tabs(self):
         """프로그램 시작 시 저장된 모든 탭을 정해진 순서로 불러옵니다."""

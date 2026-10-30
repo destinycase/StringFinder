@@ -107,7 +107,7 @@ def test_startup_isolates_restore_failure_and_preserves_session_files(
     assert window.tab_widget.tabText(0) != bad_name
     assert len(failed_tabs) == 1
     assert window.tab_widget.indexOf(failed_tabs[0]) == -1
-    assert not failed_tabs[0]._liveliness_timer.isActive()
+    assert failed_tabs[0].worker is None
     log.assert_called_once()
     assert "injected restoration failure" in log.call_args.args[0]
     assert manager.get_tab_order() == [bad_name]

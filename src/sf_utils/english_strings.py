@@ -4,7 +4,7 @@
 ENGLISH_STRINGS = {
     "FOLDER_FILTER_USAGE": "Add folder → check folders to search\nCheck: use · ×: remove from list only",
     "FOLDER_FILTER_EMPTY": "Add or check a folder to search.",
-    "FOLDER_FILTER_SELECTED": "{} folders selected · includes subfolders",
+    "FOLDER_FILTER_SELECTED": "Selected folders: {} · includes subfolders",
     "EXTENSION_FILTER_USAGE": "Enter txt or xlsx,xlsm → Add\nCheck: use · ×: remove from list only",
     "EXTENSION_FILTER_ALL": "No extension filter · includes files without extensions",
     "EXTENSION_FILTER_SELECTED": "Search only {} checked extensions",
@@ -29,7 +29,6 @@ ENGLISH_STRINGS = {
     "ERROR_DETAIL_FORMAT": "Error details:\n{}",
     "ERROR_RUST_API_VERSION": "API version mismatch: required={}, actual={}",
     "ERROR_UNCLOSED_QUOTE": "An unmatched quotation mark was found.",
-    "STATUS_ELAPSED_TIME": "Elapsed: {:02d}:{:02d}",
     "MSG_SEARCH_SINGLE_CHAR_WARN": "The search term is very short and may take a long time. Continue?",
     "MSG_ALREADY_RUNNING": "The application is already running.",
     "MSG_SEARCH_BLOCKED_BY_OTHER_TAB": "A search is running in another tab. Try again after it finishes.",
@@ -154,20 +153,26 @@ ENGLISH_STRINGS = {
     "SEARCH_PROFILE_NORMAL": "Normal search",
     "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
     "SPECIAL_SEARCH_LABEL": "Mode",
+    "DOCK_FILTER_TITLE": "Filters",
+    "FILTER_EXTENSION_TAB": "Extensions ({})",
+    "FILTER_FILENAME_TAB": "Filenames ({})",
     "SEARCH_HELP_BUTTON": "Help",
     "SEARCH_HELP_TITLE": "Search help",
     "EXTENSION_FILTER_INVALID_GROUP": "Enter extensions without empty comma-separated entries, e.g. xlsx,xlsm,xls,xlsb.",
     "SEARCH_HELP_TEXT": (
         "<h2>Start a search</h2><p>1. Add and check folders. 2. Enter search text. "
         "3. Click Search. Subfolders are included.</p>"
-        "<h3>Choose files</h3><p><b>Extension filter:</b> enter txt, then Add. "
+        "<h3>Choose files</h3><p><b>Filters → Extensions:</b> enter txt, then Add. "
         "Use xlsx,xlsm,xls,xlsb to add a group as one entry. With no checked extensions, "
         "files without extensions are included too; other exclusions still apply.</p>"
-        "<p><b>Filename filter:</b> add report to find names containing report. "
+        "<p><b>Filters → Filenames:</b> add report to find names containing report. "
         "Any checked term may match; no checked terms means no filename restriction. "
         "Wildcards are not supported in either filter.</p>"
         "<p>Uncheck an entry to stop using it for this search. <b>× removes it from the list only</b>, "
         "not from disk. At least one folder must be checked.</p>"
+        "<p>Filter tab titles show checked counts. Grouped extensions are counted individually, "
+        "without duplicates. Applied conditions appear in the status bar; search progress, time "
+        "and results appear in the search summary.</p>"
         "<h3>Search method and mode</h3><p><b>Normal search:</b> recommended for everyday use. "
         "<b>Miss-prevention search:</b> try a narrow scope if text known to exist is not found. It can be very slow.</p>"
         "<p><b>Existence only:</b> stops collecting more locations after a match in each file. "

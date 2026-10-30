@@ -409,9 +409,9 @@ class FolderFilterPanel(DenseFilterPanel):
         btn_layout.addWidget(sel_all_btn)
         btn_layout.addWidget(desel_all_btn)
         main_layout.addLayout(btn_layout)
-        self.status_label = QLabel()
+        self.status_label = QLabel(self)
         self.status_label.setWordWrap(True)
-        main_layout.addWidget(self.status_label)
+        self.status_label.hide()
         self.filter_changed.connect(self._refresh_status)
         self._refresh_status()
 
@@ -543,9 +543,9 @@ class ExtensionFilterPanel(DenseFilterPanel):
         toggle_layout.addWidget(self.sel_all_btn)
         toggle_layout.addWidget(self.desel_all_btn)
         main_layout.addLayout(toggle_layout)
-        self.status_label = QLabel()
+        self.status_label = QLabel(self)
         self.status_label.setWordWrap(True)
-        main_layout.addWidget(self.status_label)
+        self.status_label.hide()
         self.filter_changed.connect(self._refresh_status)
         self._refresh_status()
 
@@ -647,13 +647,9 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.filter_changed.emit()
 
     def get_selected_extensions(self) -> List[str]:
-        exts = []
         special_mode = self.special_combo.currentText()
         if special_mode == AppStrings.SPECIAL_SEARCH_OFF:
-            for i in range(self.ext_list.count()):
-                widget = self.ext_list.itemWidget(self.ext_list.item(i))
-                if isinstance(widget, FilterItemWidget) and widget.isChecked():
-                    exts.extend(part.strip().lstrip(".").lower() for part in widget.text().split(",") if part.strip())
+            return self.get_checked_extensions()
         else:
             # 선택된 특수 검색 모드에 따라 처리 대상을 결정합니다.
             if Constants.MODE_XML in special_mode:
@@ -664,7 +660,13 @@ class ExtensionFilterPanel(DenseFilterPanel):
                 return list(Constants.EXT_EXCEL)
             else:
                 return [special_mode.lower()]
-        return list(dict.fromkeys(exts))
+    def get_checked_extensions(self) -> List[str]:
+        extensions = []
+        for index in range(self.ext_list.count()):
+            widget = self.ext_list.itemWidget(self.ext_list.item(index))
+            if isinstance(widget, FilterItemWidget) and widget.isChecked():
+                extensions.extend(part.strip().lstrip(".").lower() for part in widget.text().split(",") if part.strip())
+        return list(dict.fromkeys(extensions))
 
     def get_special_mode(self) -> str:
         return self.special_combo.currentText()
@@ -761,9 +763,9 @@ class FilenameFilterPanel(DenseFilterPanel):
         toggle_layout.addWidget(sel_all)
         toggle_layout.addWidget(desel_all)
         main_layout.addLayout(toggle_layout)
-        self.status_label = QLabel()
+        self.status_label = QLabel(self)
         self.status_label.setWordWrap(True)
-        main_layout.addWidget(self.status_label)
+        self.status_label.hide()
         self.filter_changed.connect(self._refresh_status)
         self._refresh_status()
 

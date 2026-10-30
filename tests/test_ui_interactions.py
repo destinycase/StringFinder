@@ -89,23 +89,23 @@ def test_add_extension_updates_list(search_tab_fixture, qtbot):
 def test_ui_disabled_during_search(qtbot, search_tab_fixture):
     """test_ui_disabled_during_search 함수."""
     assert search_tab_fixture.search_panel.search_combo.isEnabled()
-    assert search_tab_fixture.filename_dock.widget().isEnabled()
+    assert search_tab_fixture.filename_panel.isEnabled()
     assert search_tab_fixture.folder_dock.widget().isEnabled()
-    assert search_tab_fixture.ext_dock.widget().isEnabled()
+    assert search_tab_fixture.ext_panel.isEnabled()
 
     search_tab_fixture._set_inputs_enabled(False)
 
     assert not search_tab_fixture.search_panel.search_combo.isEnabled()
-    assert not search_tab_fixture.filename_dock.widget().isEnabled()
+    assert not search_tab_fixture.filename_panel.isEnabled()
     assert not search_tab_fixture.folder_dock.widget().isEnabled()
-    assert not search_tab_fixture.ext_dock.widget().isEnabled()
+    assert not search_tab_fixture.ext_panel.isEnabled()
 
     search_tab_fixture._set_inputs_enabled(True)
 
     assert search_tab_fixture.search_panel.search_combo.isEnabled()
-    assert search_tab_fixture.filename_dock.widget().isEnabled()
+    assert search_tab_fixture.filename_panel.isEnabled()
     assert search_tab_fixture.folder_dock.widget().isEnabled()
-    assert search_tab_fixture.ext_dock.widget().isEnabled()
+    assert search_tab_fixture.ext_panel.isEnabled()
 
 
 def test_ui_disabled_special_mode_restoration(qtbot, search_tab_fixture):
@@ -113,10 +113,10 @@ def test_ui_disabled_special_mode_restoration(qtbot, search_tab_fixture):
     search_tab_fixture.ext_panel.special_combo.setCurrentIndex(3)
 
     search_tab_fixture._set_inputs_enabled(False)
-    assert not search_tab_fixture.ext_dock.widget().isEnabled()
+    assert not search_tab_fixture.ext_panel.isEnabled()
 
     search_tab_fixture._set_inputs_enabled(True)
-    assert search_tab_fixture.ext_dock.widget().isEnabled()
+    assert search_tab_fixture.ext_panel.isEnabled()
 
     assert not search_tab_fixture.ext_panel.ext_list.isEnabled()
     assert not search_tab_fixture.ext_panel.ext_edit.isEnabled()
