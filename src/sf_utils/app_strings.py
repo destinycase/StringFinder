@@ -23,7 +23,7 @@ class AppStrings:
     # =========================================================================
     # [2] UI 요소 (Buttons, Menus, Labels)
     # =========================================================================
-    SEARCH_LABEL = "문자열 검색"
+    SEARCH_LABEL = "검색할 문자열"
     ADD_TAB_MENU = "새 탭 추가"
     ADD_FOLDER_BTN = "폴더 추가"
     ADD_EXT_BTN = "추가"
@@ -160,9 +160,8 @@ class AppStrings:
     SEARCH_PROFILE_PRECISE = "누락 방지 검색(매우 느림)"
     FILENAME_FILTER_INVALID_GROUP = "쉼표 사이에 파일명 조건을 입력하세요."
     SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
-    SPECIAL_SEARCH_LABEL = "값만 검색"
-    SEARCH_SETTINGS_SELECTION = "{} / {}"
-    SEARCH_VALUE_DISABLED_SELECTION = "값만 검색: 사용 안함"
+    SPECIAL_SEARCH_LABEL = "특수 검색"
+    SEARCH_SETTINGS_SELECTION = "검색 모드: {} / 특수 검색 : {}"
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
     FILTER_FILENAME_TAB = "파일명({})"
@@ -181,11 +180,11 @@ class AppStrings:
         "원본 파일이나 폴더를 삭제하지 않습니다. 검색할 폴더는 하나 이상 체크해야 합니다.</p>"
         "<p>필터 탭 이름 옆에는 체크한 수량이 표시됩니다. 쉼표로 묶은 확장자도 개별 수량으로 세며 "
         "중복은 한 번만 셉니다. 현재 적용 조건은 하단 상태 표시줄, 검색 진행·시간·결과는 검색 요약에서 확인하세요.</p>"
-        "<h3>검색 설정 메뉴</h3><p>검색어 왼쪽 버튼을 눌러 <b>검색 모드</b>와 <b>값만 검색</b>에서 "
+        "<h3>검색 설정 메뉴</h3><p>검색할 문자열 입력 칸 오른쪽 버튼을 눌러 <b>검색 모드</b>와 <b>특수 검색</b>에서 "
         "각각 하나를 선택하세요. 선택한 두 값은 메뉴를 닫아도 버튼에 표시됩니다.</p>"
         "<p><b>일반 검색:</b> 평소에 권장합니다. "
         "<b>누락 방지 검색:</b> 파일에 글자가 있는데 찾지 못했을 때 좁은 범위에서 시도하세요. 매우 느릴 수 있습니다.</p>"
-        "<p><b>값만 검색 → 사용 안함:</b> 왼쪽 확장자 조건을 사용합니다. 검색 전체를 끄는 설정이 아닙니다. "
+        "<p><b>특수 검색 → 사용 안함:</b> 왼쪽 확장자 조건을 사용합니다. 검색 전체를 끄는 설정이 아닙니다. "
         "<b>JSON/XML:</b> 항목·태그·속성 이름을 제외하고 값을 검색합니다. "
         "<b>Excel:</b> 셀 값을 검색하고 시트·셀·값을 나누어 표시합니다. "
         "JSON/XML/Excel 모드를 선택하면 해당 형식만 검색하며, 보관된 확장자 목록은 적용하지 않습니다. "
@@ -216,6 +215,16 @@ class AppStrings:
         "JSON (정확히 일치)",
         "Excel (부분 일치)",
         "Excel (정확히 일치)",
+    ]
+    # Stable engine/session values above; independently editable menu labels below.
+    SPECIAL_SEARCH_MENU_ITEMS = [
+        SPECIAL_SEARCH_OFF,
+        "XML 값 만 검색 (부분 일치)",
+        "XML 값 만 검색 (정확히 일치)",
+        "JSON 값 만 검색 (부분 일치)",
+        "JSON 값 만 검색 (정확히 일치)",
+        "EXCEL 값 만 검색 (부분 일치)",
+        "EXCEL 값 만 검색 (정확히 일치)",
     ]
     # =========================================================================
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)

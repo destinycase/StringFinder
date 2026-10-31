@@ -30,10 +30,12 @@ def test_defaults_and_menu_order(qtbot, language):
     assert panel.profile_actions[0].isChecked()
     assert panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_OFF].isChecked()
     assert [action.text() for action in panel.value_menu.actions()] == [
-        AppStrings.SPECIAL_SEARCH_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6)
+        AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6)
     ]
-    assert AppStrings.SEARCH_PROFILE_NORMAL in panel.search_settings_button.text()
-    assert AppStrings.SEARCH_VALUE_DISABLED_SELECTION in panel.search_settings_button.text()
+    assert panel.search_settings_button.text() == (
+        "검색 모드: 일반 검색 / 특수 검색 : 사용 안함" if language == "ko"
+        else "Search mode: Normal search / Special search: Off"
+    )
     assert not hasattr(panel, "search_profile_combo")
 
 
@@ -52,8 +54,9 @@ def test_each_group_has_exactly_one_selection(qtbot, language, precise, value_in
     assert panel.is_complex_search() is precise
     assert panel.get_state()[C.PAYLOAD_SPECIAL_MODE] == mode
     profile = AppStrings.SEARCH_PROFILE_PRECISE if precise else AppStrings.SEARCH_PROFILE_NORMAL
-    assert profile in panel.search_settings_button.text()
-    assert (mode if value_index else AppStrings.SEARCH_VALUE_DISABLED_SELECTION) in panel.search_settings_button.text()
+    assert panel.search_settings_button.text() == AppStrings.SEARCH_SETTINGS_SELECTION.format(
+        profile, AppStrings.SPECIAL_SEARCH_MENU_ITEMS[value_index]
+    )
     assert (not panel.search_settings_button.icon().isNull()) is precise
 
 
@@ -125,6 +128,56 @@ def test_only_precise_menu_item_shows_guidance(qtbot, language, monkeypatch):
     assert shown == [AppStrings.COMPLEX_SEARCH_TOOLTIP]
     assert hidden
     menu.close()
+
+
+def test_requested_labels_and_input_order(qtbot, language):
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    row = panel.input_layout
+    assert row.itemAt(0).widget().text() == ("검색할 문자열" if language == "ko" else "Text to search")
+    assert row.indexOf(panel.search_combo) < row.indexOf(panel.search_settings_button) < row.indexOf(panel.search_btn)
+    if language == "ko":
+        assert panel.value_menu.title() == "특수 검색"
+        assert [action.text() for action in panel.value_menu.actions()] == [
+            "사용 안함", "JSON 값 만 검색 (부분 일치)", "JSON 값 만 검색 (정확히 일치)",
+            "XML 값 만 검색 (부분 일치)", "XML 값 만 검색 (정확히 일치)",
+            "EXCEL 값 만 검색 (부분 일치)", "EXCEL 값 만 검색 (정확히 일치)",
+        ]
+
+
+def test_menu_warning_is_colored_without_replacing_selection(qtbot, language):
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    panel.profile_actions[1].trigger()
+    menu = panel.profile_menu
+    menu.popup(QPoint(50, 50))
+    QApplication.processEvents()
+    image = menu.grab().toImage()
+    yellow = [image.pixelColor(x, y) for y in range(image.height()) for x in range(image.width())
+              if (color := image.pixelColor(x, y)).red() > 170 and color.green() > 120 and color.blue() < 100]
+    assert len(yellow) > 5
+    assert panel.profile_actions[1].isChecked()
+    assert sum(action.isChecked() for action in panel.profile_actions) == 1
+    assert panel.profile_actions[1].icon().isNull()  # Theme-owned check column remains available.
+    menu.close()
+
+
+@pytest.mark.parametrize("width", [600, 720, 1280])
+def test_long_selection_keeps_query_and_buttons_inside_panel(qtbot, language, width):
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    panel.profile_actions[1].trigger()
+    panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[6]].trigger()
+    panel.resize(width, 220)
+    panel.show()
+    qtbot.wait(30)
+    for widget in (panel.search_label, panel.search_combo, panel.search_settings_button, panel.search_btn):
+        assert widget.geometry().right() < panel.width()
+        assert widget.geometry().left() >= 0
+    assert panel.search_combo.width() >= 100
+    if panel._toolbar_mode == 1:
+        assert abs(panel.search_combo.geometry().center().y()
+                   - panel.search_settings_button.geometry().center().y()) <= 1
 
 
 def test_native_submenus_work_with_keyboard(qtbot, language):

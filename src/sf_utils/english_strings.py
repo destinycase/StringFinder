@@ -31,7 +31,7 @@ ENGLISH_STRINGS = {
     "MSG_SEARCH_SINGLE_CHAR_WARN": "The search term is very short and may take a long time. Continue?",
     "MSG_ALREADY_RUNNING": "The application is already running.",
     "MSG_SEARCH_BLOCKED_BY_OTHER_TAB": "A search is running in another tab. Try again after it finishes.",
-    "SEARCH_LABEL": "Search text",
+    "SEARCH_LABEL": "Text to search",
     "ADD_TAB_MENU": "Add new tab",
     "ADD_FOLDER_BTN": "Add folder",
     "ADD_EXT_BTN": "Add",
@@ -151,8 +151,8 @@ ENGLISH_STRINGS = {
     "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
     "FILENAME_FILTER_INVALID_GROUP": "Enter a filename term between each comma.",
     "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
-    "SPECIAL_SEARCH_LABEL": "Values only",
-    "SEARCH_VALUE_DISABLED_SELECTION": "Values only: Off",
+    "SPECIAL_SEARCH_LABEL": "Special search",
+    "SEARCH_SETTINGS_SELECTION": "Search mode: {} / Special search: {}",
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
     "FILTER_FILENAME_TAB": "Filenames ({})",
@@ -173,17 +173,17 @@ ENGLISH_STRINGS = {
         "<p>Filter tab titles show checked counts. Grouped extensions are counted individually, "
         "without duplicates. Applied conditions appear in the status bar; search progress, time "
         "and results appear in the search summary.</p>"
-        "<h3>Search settings menu</h3><p>Click the button to the left of the query and select one item each "
-        "under <b>Search mode</b> and <b>Values only</b>. Both selections stay visible on the button.</p>"
+        "<h3>Search settings menu</h3><p>Click the button to the right of the query and select one item each "
+        "under <b>Search mode</b> and <b>Special search</b>. Both selections stay visible on the button.</p>"
         "<p><b>Normal search:</b> recommended for everyday use. "
         "<b>Miss-prevention search:</b> try a narrow scope if text known to exist is not found. It can be very slow.</p>"
-        "<p><b>Values only → Off:</b> uses your extension filter; it does not turn off searching. <b>JSON/XML:</b> searches values, "
+        "<p><b>Special search → Off:</b> uses your extension filter; it does not turn off searching. <b>JSON/XML:</b> searches values, "
         "not field, tag or attribute names. <b>Excel:</b> searches cell values and separates "
         "sheet, cell and value columns. These modes select only their file format and temporarily "
         "ignore saved extension entries. Folder and filename conditions still apply.</p>"
         "<p><b>Contains:</b> finds search text within a value. <b>Exact match:</b> compares the whole "
         "value after trimming surrounding whitespace; it does not mean case-sensitive matching. "
-        "Excel files are read as cells even with Values only set to Off. Saved formula results, not formulas, are searched.</p>"
+        "Excel files are read as cells even with Special search set to Off. Saved formula results, not formulas, are searched.</p>"
         "<h3>Unexpected results</h3><p>Check folders, filters and mode first. Review skipped-file "
         "and result-limit notices. No results does not necessarily mean all files were searched completely.</p>"
     ),
@@ -196,6 +196,15 @@ ENGLISH_STRINGS = {
         "JSON (exact)",
         "Excel (contains)",
         "Excel (exact)",
+    ],
+    "SPECIAL_SEARCH_MENU_ITEMS": [
+        "Off",
+        "XML values only (contains)",
+        "XML values only (exact)",
+        "JSON values only (contains)",
+        "JSON values only (exact)",
+        "EXCEL values only (contains)",
+        "EXCEL values only (exact)",
     ],
     "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use miss-prevention search for complex Unicode variants)",
     "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm (no wildcards)",

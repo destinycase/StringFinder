@@ -1,11 +1,12 @@
 from typing import Any, Dict, List, Union
 
-from PySide6.QtCore import QEvent, QRegularExpression, QSignalBlocker, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QPalette, QRegularExpressionValidator
+from PySide6.QtCore import QEvent, QRect, QRegularExpression, QSignalBlocker, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QPainter, QPalette, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QStyle,
+    QSizePolicy,
     QToolButton,
     QToolTip,
     QVBoxLayout,
@@ -221,6 +223,24 @@ def normalize_special_search_mode(value: Any) -> str:
 class SearchProfileMenu(QMenu):
     """Only the miss-prevention choice has explanatory hover guidance."""
 
+    def sizeHint(self):
+        # Reserve a trailing icon column without using Qt's checkmark column.
+        return super().sizeHint() + QSize(24, 0)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        try:
+            for action in self.actions():
+                if action.data() is True and action.isVisible():
+                    row = self.actionGeometry(action)
+                    icon_rect = QRect(self.width() - 24, row.center().y() - 8, 16, 16)
+                    icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+                    icon.paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter,
+                               QIcon.Mode.Normal if action.isEnabled() else QIcon.Mode.Disabled)
+        finally:
+            painter.end()
+
     def event(self, event):
         if event.type() == QEvent.Type.ToolTip:
             action = self.actionAt(event.pos())
@@ -245,11 +265,12 @@ class SearchOptionsPanel(QWidget):
         self._use_complex_search = False
         self._special_mode = AppStrings.SPECIAL_SEARCH_OFF
         self._exclude_hidden = True
+        self._toolbar_mode = None
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        input_layout = QHBoxLayout()
+        input_layout = QGridLayout()
         self.input_layout = input_layout
         self.search_settings_button = QPushButton()
         self.search_settings_menu = QMenu(self.search_settings_button)
@@ -263,15 +284,10 @@ class SearchOptionsPanel(QWidget):
             (AppStrings.SEARCH_PROFILE_NORMAL, False),
             (AppStrings.SEARCH_PROFILE_PRECISE, True),
         ):
-            action = QAction(f"⚠ {label_text}" if precise else label_text, self)
+            action = QAction(label_text, self)
             action.setCheckable(True)
             action.setData(precise)
             if precise:
-                # Keep the menu's check column free; an action icon can replace
-                # the selected checkmark in Qt themes. Use a symbol-font fallback.
-                font = action.font()
-                font.setFamilies([*font.families(), "Segoe UI Symbol"])
-                action.setFont(font)
                 action.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
             self.profile_action_group.addAction(action)
             self.profile_menu.addAction(action)
@@ -284,7 +300,8 @@ class SearchOptionsPanel(QWidget):
         # Preserve stored mode labels while presenting JSON before XML.
         for index in (0, 3, 4, 1, 2, 5, 6):
             label_text = AppStrings.SPECIAL_SEARCH_ITEMS[index]
-            action = QAction(label_text, self)
+            # Presentation changes must not change saved modes or engine inputs.
+            action = QAction(AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index], self)
             action.setCheckable(True)
             action.setData(label_text)
             self.value_action_group.addAction(action)
@@ -293,18 +310,20 @@ class SearchOptionsPanel(QWidget):
         self.value_action_group.triggered.connect(self._on_special_action_triggered)
         self.search_settings_button.setMenu(self.search_settings_menu)
         self._refresh_search_settings()
-        input_layout.addWidget(self.search_settings_button)
-        label = QLabel(AppStrings.SEARCH_LABEL)
+        self.search_label = QLabel(AppStrings.SEARCH_LABEL)
         self.search_combo = SearchInputComboBox(
             history_provider=self.config_manager.get_history if self.config_manager is not None else None
         )
         self.search_combo.setEditable(True)
+        self.search_combo.setMinimumWidth(100)
+        self.search_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.search_combo.setPlaceholderText(AppStrings.SEARCH_EDIT_PLACEHOLDER)
         le = self.search_combo.lineEdit()
         if le:
             le.returnPressed.connect(self.search_started.emit)
-        input_layout.addWidget(label)
-        input_layout.addWidget(self.search_combo, 1)
+        input_layout.addWidget(self.search_label, 0, 0)
+        input_layout.addWidget(self.search_combo, 0, 1)
+        input_layout.addWidget(self.search_settings_button, 0, 2)
         layout.addLayout(input_layout)
         self.query_length_notice = QLabel()
         self.query_length_notice.setObjectName("queryLengthNotice")
@@ -316,12 +335,41 @@ class SearchOptionsPanel(QWidget):
         self.search_btn = QPushButton(AppStrings.SEARCH_BTN)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)
         self.search_btn.clicked.connect(self.search_started.emit)
-        input_layout.addWidget(self.search_btn)
+        input_layout.addWidget(self.search_btn, 0, 3)
         self.stop_btn = QPushButton(AppStrings.SEARCH_BTN_STOP)
         self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_ACTIVE)  # 사용자가 쉽게 인지할 수 있도록 중지 버튼에 강조 색상을 적용합니다.
         self.stop_btn.clicked.connect(self.stop_requested.emit)
         self.stop_btn.setVisible(False)
-        input_layout.addWidget(self.stop_btn)
+        input_layout.addWidget(self.stop_btn, 0, 3)
+        self._layout_search_controls()
+
+    def _layout_search_controls(self):
+        if not hasattr(self, "stop_btn"):
+            return
+        margins = self.layout().contentsMargins()
+        available = self.width() - margins.left() - margins.right()
+        spacing = max(0, self.input_layout.horizontalSpacing())
+        action_width = max(self.search_btn.sizeHint().width(), self.stop_btn.sizeHint().width())
+        settings_width = self.search_settings_button.sizeHint().width()
+        full_width = self.search_label.sizeHint().width() + 140 + settings_width + action_width + 3 * spacing
+        mode = 1 if available >= full_width else 2 if available >= settings_width + action_width + spacing else 3
+        if mode == self._toolbar_mode:
+            return
+        self._toolbar_mode = mode
+        for widget in (self.search_label, self.search_combo, self.search_settings_button, self.search_btn, self.stop_btn):
+            self.input_layout.removeWidget(widget)
+        self.input_layout.addWidget(self.search_label, 0, 0)
+        self.input_layout.addWidget(self.search_combo, 0, 1, 1, 1 if mode == 1 else 3)
+        self.input_layout.addWidget(self.search_settings_button, 0 if mode == 1 else 1,
+                                    2 if mode == 1 else 0, 1, 1 if mode == 1 else 3 if mode == 2 else 4)
+        action_row = 0 if mode == 1 else 1 if mode == 2 else 2
+        self.input_layout.addWidget(self.search_btn, action_row, 3)
+        self.input_layout.addWidget(self.stop_btn, action_row, 3)
+        self.input_layout.setColumnStretch(1, 1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._layout_search_controls()
 
     def _refresh_search_settings(self):
         for action in self.profile_actions:
@@ -333,13 +381,12 @@ class SearchOptionsPanel(QWidget):
             self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
             if self._use_complex_search else QIcon()
         )
-        value = self._special_mode
-        if value == AppStrings.SPECIAL_SEARCH_OFF:
-            value = AppStrings.SEARCH_VALUE_DISABLED_SELECTION
+        value = AppStrings.SPECIAL_SEARCH_MENU_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
         text = AppStrings.SEARCH_SETTINGS_SELECTION.format(profile, value)
         self.search_settings_button.setText(text)
         self.search_settings_button.setAccessibleName(text)
         self.search_settings_button.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP if self._use_complex_search else "")
+        self._layout_search_controls()
 
     def set_complex_search(self, precise: bool):
         self._use_complex_search = precise is True
@@ -381,6 +428,7 @@ class SearchOptionsPanel(QWidget):
         self.stop_btn.setEnabled(True)
         self.stop_btn.setText(AppStrings.SEARCH_BTN_STOP)
         self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_ACTIVE)
+        self._layout_search_controls()
 
     def set_stopping_state(self):
         """검색 중단 중임을 나타내도록 버튼 상태와 텍스트를 변경합니다."""
@@ -390,6 +438,7 @@ class SearchOptionsPanel(QWidget):
         self.search_btn.setEnabled(False)
         self.search_btn.setText(AppStrings.SEARCH_BTN_STOPPING)
         self.search_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_WAIT)
+        self._layout_search_controls()
 
     def get_search_text(self) -> str:
         return self.search_combo.currentText().strip()
