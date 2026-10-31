@@ -40,7 +40,7 @@ def test_single_filter_dock_and_distinct_extension_count(window):
     assert tab.filter_tabs.tabText(1) == AppStrings.FILTER_FILENAME_TAB.format(0)
     tab.filename_panel.toggle_all(True)
     assert tab.filter_tabs.tabText(1) == AppStrings.FILTER_FILENAME_TAB.format(1)
-    tab.ext_panel.special_combo.setCurrentIndex(3)
+    tab.ext_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
     assert tab.ext_panel.get_selected_extensions() == [C.EXT_JSON]
     assert tab.filter_tabs.tabText(0) == AppStrings.FILTER_EXTENSION_TAB.format(4)
     assert ".." not in window.filter_status_label.text()
@@ -82,7 +82,7 @@ def test_restoration_lock_and_layout_fallback(window):
     assert window.filter_status_label.text() == restored.get_filter_status_text()
     restored._set_inputs_enabled(False)
     assert not restored.filter_tabs.isEnabled()
-    assert not restored.ext_panel.special_combo.isEnabled()
+    assert not restored.search_panel.search_settings_button.isEnabled()
     restored._set_inputs_enabled(True)
     restored.reset_layout()
     assert not restored.filter_dock.isHidden()

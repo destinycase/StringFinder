@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
 
 from core import search_engine as engine
 from core.worker import SearchWorker
@@ -92,7 +91,7 @@ def test_status_conditions_and_warning_icon(qtbot, mock_config_manager, language
         AppStrings.EXTENSION_FILTER_SELECTED.format(2, "xls, xlsm"),
         AppStrings.FILENAME_FILTER_SELECTED.format(2, "report, invoice"),
     ])
-    tab.ext_panel.special_combo.setCurrentIndex(3)
+    tab.ext_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
     assert AppStrings.EXTENSION_FILTER_SELECTED.format(1, "json") in window.filter_status_label.text()
     assert window.help_button.isVisible() and window.settings_button.isVisible()
     window.close()
@@ -104,8 +103,8 @@ def test_retired_feature_has_no_live_ui_or_api(qtbot, language):
     assert not hasattr(panel, "boolean_search_check")
     assert not hasattr(panel, "is_existence_only")
     assert "existence_only" not in panel.get_state()
-    assert panel.search_profile_combo.count() == 2
-    assert panel.search_profile_combo.itemData(1, Qt.ItemDataRole.ToolTipRole)
+    assert len(panel.profile_menu.actions()) == 2
+    assert panel.profile_actions[1].toolTip() == AppStrings.COMPLEX_SEARCH_TOOLTIP
     assert "existence_only" not in inspect.signature(engine.search_in_file).parameters
     assert not hasattr(engine, "find_files_with_keyword_fast")
     assert not hasattr(engine.sf_engine, "find_files_with_keyword")

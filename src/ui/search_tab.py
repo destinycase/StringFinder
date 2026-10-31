@@ -110,7 +110,8 @@ class SearchTab(QMainWindow):
         self.filter_dock.setObjectName("filtersDockV2")
         self.filter_tabs = QTabWidget()
         self.ext_panel = ExtensionFilterPanel()
-        self.search_panel.set_document_search_controls(self.ext_panel.take_special_controls())
+        self.search_panel.special_mode_changed.connect(self.ext_panel.set_special_mode)
+        self.ext_panel.special_mode_changed.connect(self.search_panel.set_special_mode)
         self.filter_tabs.addTab(self.ext_panel, "")
         self.ext_panel.filter_changed.connect(self._sync_filters_to_config)
         # 파일명 필터 도크
@@ -199,6 +200,7 @@ class SearchTab(QMainWindow):
         self._refresh_filter_ui()
 
     def _refresh_filter_ui(self):
+        self.search_panel.set_special_mode(self.ext_panel.get_special_mode())
         self.filter_tabs.setTabText(0, AppStrings.FILTER_EXTENSION_TAB.format(len(self.ext_panel.get_checked_extensions())))
         self.filter_tabs.setTabText(1, AppStrings.FILTER_FILENAME_TAB.format(len(self.filename_panel.get_selected_filenames())))
         self.filter_status_changed.emit()

@@ -59,7 +59,7 @@ def test_result_context_survives_input_changes_and_json_roundtrip(
     original.result_view_panel.set_results([[1, "data.txt", "", "data.txt", [detail]]])
     original.result_view_panel.set_filename_filters(["original"])
     original.search_panel.search_combo.setEditText("different draft")
-    original.ext_panel._set_special_mode(C.MODE_EXCEL if mode == C.MODE_NORMAL else C.MODE_NORMAL)
+    original.ext_panel.set_special_mode(C.MODE_EXCEL if mode == C.MODE_NORMAL else C.MODE_NORMAL)
     saved = json.loads(json.dumps(original.get_state()))
     restored = SearchTab(mock_config_manager)
     qtbot.addWidget(restored)
@@ -107,7 +107,7 @@ def test_exact_result_policy_is_preserved(qtbot, mock_config_manager):
     source.result_view_panel.set_search_context("needle", f"JSON ({C.MODE_EXACT})")
     saved = source.get_state()
     assert saved["results_search_context"]["exact"] is True
-    source.ext_panel._set_special_mode(C.MODE_NORMAL)
+    source.ext_panel.set_special_mode(C.MODE_NORMAL)
     source.load_state(saved)
     assert C.MODE_EXACT in source.result_view_panel.search_mode
 

@@ -40,7 +40,7 @@ def _set_checked_extensions(tab, enabled_exts):
     panel = tab.ext_panel
     targets = {_normalize_ext(ext) for ext in enabled_exts}
 
-    panel.special_combo.setCurrentText(AppStrings.SPECIAL_SEARCH_OFF)
+    panel.set_special_mode(AppStrings.SPECIAL_SEARCH_OFF)
     panel.toggle_all(False)
 
     for ext in targets:
@@ -144,7 +144,7 @@ class TestSystemE2E:
         (target_dir / "data.json").write_text('{"user": "admin", "id": 123}', encoding="utf-8")
 
         search_tab.folder_panel.add_folder(str(target_dir))
-        search_tab.ext_panel.special_combo.setCurrentText("JSON (부분 일치)")
+        search_tab.ext_panel.set_special_mode("JSON (부분 일치)")
         search_tab.search_panel.search_combo.setEditText("admin")
 
         _run_search_and_wait(qtbot, search_tab)

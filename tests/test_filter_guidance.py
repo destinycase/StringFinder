@@ -65,7 +65,7 @@ def test_special_mode_targets_and_saved_extensions_are_preserved(qtbot, language
     qtbot.addWidget(panel)
     panel.add_extension("txt")
     panel.add_extension("log", checked=False)
-    panel.special_combo.setCurrentIndex(index)
+    panel.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[index])
     expected = [Constants.EXT_XML] if index <= 2 else (
         [Constants.EXT_JSON] if index <= 4 else list(Constants.EXT_EXCEL)
     )
@@ -81,7 +81,7 @@ def test_special_mode_targets_and_saved_extensions_are_preserved(qtbot, language
         restored.load_state(saved)
     assert restored.get_selected_extensions() == expected
     assert restored.status_label.text() == panel.status_label.text()
-    restored.special_combo.setCurrentIndex(0)
+    restored.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[0])
     assert restored.get_selected_extensions() == ["txt"]
     assert restored.ext_list.isEnabled()
     assert restored.get_state()[Constants.CONFIG_KEY_EXTENSIONS] == {"txt": True, "log": False}
@@ -90,11 +90,11 @@ def test_special_mode_targets_and_saved_extensions_are_preserved(qtbot, language
 def test_document_selector_is_in_search_settings_and_locked(qtbot, mock_config_manager, language):
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
-    controls = tab.ext_panel.special_controls
+    controls = tab.search_panel.search_settings_button
     assert tab.search_panel.isAncestorOf(controls)
     assert not tab.ext_panel.isAncestorOf(controls)
     tab.search_panel.set_searching(True)
-    assert not tab.ext_panel.special_combo.isEnabled()
+    assert not tab.search_panel.search_settings_button.isEnabled()
     tab.search_panel.set_searching(False)
-    assert tab.ext_panel.special_combo.isEnabled()
+    assert tab.search_panel.search_settings_button.isEnabled()
     tab.close()

@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Union
 
 from PySide6.QtCore import QEvent, QRegularExpression, QSignalBlocker, Qt, QTimer, Signal
-from PySide6.QtGui import QPalette, QRegularExpressionValidator
+from PySide6.QtGui import QAction, QActionGroup, QIcon, QPalette, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -12,8 +12,11 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QMenu,
     QPushButton,
+    QStyle,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -195,45 +198,102 @@ class FilterListWidget(QListWidget):
         self._position_actions()
 
 
+def normalize_special_search_mode(value: Any) -> str:
+    """Keep saved mode labels independent of menu order and UI language."""
+    if not isinstance(value, str):
+        return AppStrings.SPECIAL_SEARCH_OFF
+    value = value.strip()
+    if value in AppStrings.SPECIAL_SEARCH_ITEMS:
+        return value
+    normalized = value.casefold()
+    exact = "정확" in value or "exact" in normalized
+    if "xml" in normalized:
+        index = 2 if exact else 1
+    elif "json" in normalized:
+        index = 4 if exact else 3
+    elif "excel" in normalized:
+        index = 6 if exact else 5
+    else:
+        index = 0
+    return AppStrings.SPECIAL_SEARCH_ITEMS[index]
+
+
+class SearchProfileMenu(QMenu):
+    """Only the miss-prevention choice has explanatory hover guidance."""
+
+    def event(self, event):
+        if event.type() == QEvent.Type.ToolTip:
+            action = self.actionAt(event.pos())
+            if action is not None and action.data() is True:
+                QToolTip.showText(event.globalPos(), AppStrings.COMPLEX_SEARCH_TOOLTIP, self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(event)
+
+
 class SearchOptionsPanel(QWidget):
     search_started = Signal()
     stop_requested = Signal()
     history_deleted = Signal(str, str)  # 유형, 텍스트
     history_cleared = Signal(str)  # 유형
+    special_mode_changed = Signal(str)
 
     def __init__(self, parent=None, config_manager=None):
         super().__init__(parent)
         self.config_manager = config_manager
-        self._document_controls = None
+        self._use_complex_search = False
+        self._special_mode = AppStrings.SPECIAL_SEARCH_OFF
+        self._exclude_hidden = True
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         input_layout = QHBoxLayout()
         self.input_layout = input_layout
-        self.complex_search_warning = QLabel("⚠")
-        self.complex_search_warning.setObjectName("complexSearchWarning")
-        self.complex_search_warning.setAccessibleName(AppStrings.COMPLEX_SEARCH_TOOLTIP)
-        self.complex_search_warning.setCursor(Qt.CursorShape.WhatsThisCursor)
-        self.complex_search_warning.setStyleSheet("color: #e0a020; font-weight: bold;")
-        self.search_profile_combo = QComboBox()
-        for label_text, data in (
+        self.search_settings_button = QPushButton()
+        self.search_settings_menu = QMenu(self.search_settings_button)
+        self.profile_menu = SearchProfileMenu(AppStrings.SEARCH_PROFILE_LABEL, self.search_settings_menu)
+        self.profile_menu.aboutToHide.connect(QToolTip.hideText)
+        self.search_settings_menu.addMenu(self.profile_menu)
+        self.profile_action_group = QActionGroup(self)
+        self.profile_action_group.setExclusive(True)
+        self.profile_actions = []
+        for label_text, precise in (
             (AppStrings.SEARCH_PROFILE_NORMAL, False),
             (AppStrings.SEARCH_PROFILE_PRECISE, True),
         ):
-            display_text = f"⚠ {label_text}" if data else label_text
-            self.search_profile_combo.addItem(display_text, data)
-        # Keep the guidance available after the former precise-search checkbox
-        # was replaced by a profile selector.  Item-level tooltips work for
-        # both the popup list and the currently selected value.
-        self.search_profile_combo.setAccessibleName(AppStrings.SEARCH_PROFILE_LABEL)
-        for index in (1,):
-            self.search_profile_combo.setItemData(
-                index, AppStrings.COMPLEX_SEARCH_TOOLTIP, Qt.ItemDataRole.ToolTipRole
-            )
-        self.search_profile_combo.setMinimumWidth(190)
-        input_layout.addWidget(self.search_profile_combo)
-        input_layout.addWidget(self.complex_search_warning)
+            action = QAction(f"⚠ {label_text}" if precise else label_text, self)
+            action.setCheckable(True)
+            action.setData(precise)
+            if precise:
+                # Keep the menu's check column free; an action icon can replace
+                # the selected checkmark in Qt themes. Use a symbol-font fallback.
+                font = action.font()
+                font.setFamilies([*font.families(), "Segoe UI Symbol"])
+                action.setFont(font)
+                action.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
+            self.profile_action_group.addAction(action)
+            self.profile_menu.addAction(action)
+            self.profile_actions.append(action)
+        self.profile_action_group.triggered.connect(lambda action: self.set_complex_search(action.data()))
+        self.value_menu = self.search_settings_menu.addMenu(AppStrings.SPECIAL_SEARCH_LABEL)
+        self.value_action_group = QActionGroup(self)
+        self.value_action_group.setExclusive(True)
+        self.special_mode_actions = {}
+        # Preserve stored mode labels while presenting JSON before XML.
+        for index in (0, 3, 4, 1, 2, 5, 6):
+            label_text = AppStrings.SPECIAL_SEARCH_ITEMS[index]
+            action = QAction(label_text, self)
+            action.setCheckable(True)
+            action.setData(label_text)
+            self.value_action_group.addAction(action)
+            self.value_menu.addAction(action)
+            self.special_mode_actions[label_text] = action
+        self.value_action_group.triggered.connect(self._on_special_action_triggered)
+        self.search_settings_button.setMenu(self.search_settings_menu)
+        self._refresh_search_settings()
+        input_layout.addWidget(self.search_settings_button)
         label = QLabel(AppStrings.SEARCH_LABEL)
         self.search_combo = SearchInputComboBox(
             history_provider=self.config_manager.get_history if self.config_manager is not None else None
@@ -262,24 +322,36 @@ class SearchOptionsPanel(QWidget):
         self.stop_btn.clicked.connect(self.stop_requested.emit)
         self.stop_btn.setVisible(False)
         input_layout.addWidget(self.stop_btn)
-        options_layout = QHBoxLayout()
-        self.document_options_layout = options_layout
-        self.complex_search_check = QCheckBox(AppStrings.SEARCH_MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
-        self.exclude_hidden_check = QCheckBox(AppStrings.EXCLUDE_HIDDEN_LABEL)
-        self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
-        options_layout.addWidget(self.complex_search_check)
-        options_layout.addWidget(self.complex_search_warning)
-        options_layout.addWidget(self.exclude_hidden_check)
-        options_layout.addStretch()
-        self.complex_search_check.setVisible(False)
-        self.complex_search_warning.setVisible(False)
-        self.exclude_hidden_check.setVisible(False)
-        layout.addLayout(options_layout)
 
-    def set_document_search_controls(self, controls):
-        """Place document interpretation next to search settings, not file filters."""
-        self._document_controls = controls
-        self.input_layout.insertWidget(self.input_layout.indexOf(self.search_btn), controls)
+    def _refresh_search_settings(self):
+        for action in self.profile_actions:
+            action.setChecked(action.data() is self._use_complex_search)
+        for label, action in self.special_mode_actions.items():
+            action.setChecked(label == self._special_mode)
+        profile = AppStrings.SEARCH_PROFILE_PRECISE if self._use_complex_search else AppStrings.SEARCH_PROFILE_NORMAL
+        self.search_settings_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+            if self._use_complex_search else QIcon()
+        )
+        value = self._special_mode
+        if value == AppStrings.SPECIAL_SEARCH_OFF:
+            value = AppStrings.SEARCH_VALUE_DISABLED_SELECTION
+        text = AppStrings.SEARCH_SETTINGS_SELECTION.format(profile, value)
+        self.search_settings_button.setText(text)
+        self.search_settings_button.setAccessibleName(text)
+        self.search_settings_button.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP if self._use_complex_search else "")
+
+    def set_complex_search(self, precise: bool):
+        self._use_complex_search = precise is True
+        self._refresh_search_settings()
+
+    def set_special_mode(self, mode: str):
+        self._special_mode = normalize_special_search_mode(mode)
+        self._refresh_search_settings()
+
+    def _on_special_action_triggered(self, action):
+        self.set_special_mode(action.data())
+        self.special_mode_changed.emit(self._special_mode)
 
     def _update_query_length_notice(self, text: str):
         # Do not use QLineEdit.maxLength: it silently truncates pasted input.
@@ -296,11 +368,13 @@ class SearchOptionsPanel(QWidget):
         self.search_btn.setVisible(not searching)
         self.stop_btn.setVisible(searching)
         self.search_combo.setEnabled(not searching)
-        self.search_profile_combo.setEnabled(not searching)
-        self.complex_search_check.setEnabled(not searching)
-        self.exclude_hidden_check.setEnabled(not searching)
-        if self._document_controls is not None:
-            self._document_controls.setEnabled(not searching)
+        self.search_settings_button.setEnabled(not searching)
+        self.profile_action_group.setEnabled(not searching)
+        self.value_action_group.setEnabled(not searching)
+        if searching:
+            self.search_settings_menu.close()
+            self.profile_menu.close()
+            self.value_menu.close()
         self.search_btn.setEnabled(True)
         self.search_btn.setText(AppStrings.SEARCH_BTN)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)
@@ -321,17 +395,18 @@ class SearchOptionsPanel(QWidget):
         return self.search_combo.currentText().strip()
 
     def is_complex_search(self) -> bool:
-        return bool(self.search_profile_combo.currentData())
+        return self._use_complex_search
 
     def is_exclude_hidden(self) -> bool:
         if self.config_manager is not None:
             return bool(self.config_manager.get(Constants.CONFIG_KEY_EXCLUDE_HIDDEN, True))
-        return self.exclude_hidden_check.isChecked()
+        return self._exclude_hidden
 
     def get_state(self) -> dict:
         return {
             Constants.STATE_KEY_SEARCH: self.search_combo.currentText(),
             Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.is_complex_search(),
+            Constants.PAYLOAD_SPECIAL_MODE: self._special_mode,
             Constants.PAYLOAD_EXCLUDE_HIDDEN: self.is_exclude_hidden(),
         }
 
@@ -340,11 +415,11 @@ class SearchOptionsPanel(QWidget):
         search_text = state.get(Constants.STATE_KEY_SEARCH, "")
         self.search_combo.set_current_text(search_text if isinstance(search_text, str) else "")
         # Invalid JSON types must not enable a different search policy through truthiness.
-        self.search_profile_combo.setCurrentIndex(
-            1 if state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH) is True else 0
-        )
+        self.set_complex_search(state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH) is True)
+        if Constants.PAYLOAD_SPECIAL_MODE in state:
+            self.set_special_mode(state[Constants.PAYLOAD_SPECIAL_MODE])
         exclude_hidden = state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True)
-        self.exclude_hidden_check.setChecked(exclude_hidden if isinstance(exclude_hidden, bool) else True)
+        self._exclude_hidden = exclude_hidden if isinstance(exclude_hidden, bool) else True
 
 
 class DenseFilterPanel(QWidget):
@@ -482,23 +557,12 @@ class ExtensionFilterPanel(DenseFilterPanel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._special_mode = AppStrings.SPECIAL_SEARCH_OFF
         self._init_ui()
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
-        special_layout = QHBoxLayout()
-        self.special_controls = QWidget()
-        self.special_controls.setLayout(special_layout)
-        special_layout.setContentsMargins(0, 0, 0, 0)
-        special_label = QLabel(AppStrings.SPECIAL_SEARCH_LABEL)
-        self.special_combo = QComboBox()
-        self.special_combo.addItems(AppStrings.SPECIAL_SEARCH_ITEMS)
-        self.special_combo.currentTextChanged.connect(self._on_special_changed)
-        special_layout.addWidget(special_label)
-        special_layout.addWidget(self.special_combo, 1)
-        main_layout.addWidget(self.special_controls)
-
         self.ext_list = FilterListWidget()
         self.usage_label = self.ext_list.empty_hint
         self.usage_label.setText(AppStrings.EXTENSION_FILTER_USAGE)
@@ -539,10 +603,6 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.filter_changed.connect(self._refresh_status)
         self._refresh_status()
 
-    def take_special_controls(self):
-        self.layout().removeWidget(self.special_controls)
-        return self.special_controls
-
     def _refresh_status(self):
         selected = self.get_selected_extensions()
         self.status_label.setText(
@@ -562,25 +622,11 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.special_mode_changed.emit(text)
         self.filter_changed.emit()
 
-    def _set_special_mode(self, value):
-        """Restore current and legacy localized special-mode labels safely."""
-        value_text = str(value or "").strip()
-        direct_index = self.special_combo.findText(value_text)
-        if direct_index >= 0:
-            self.special_combo.setCurrentIndex(direct_index)
-            return
-
-        normalized = value_text.casefold()
-        is_exact = "정확" in value_text or "exact" in normalized
-        if "xml" in normalized:
-            target_index = 2 if is_exact else 1
-        elif "json" in normalized:
-            target_index = 4 if is_exact else 3
-        elif "excel" in normalized:
-            target_index = 6 if is_exact else 5
-        else:
-            target_index = 0
-        self.special_combo.setCurrentIndex(target_index)
+    def set_special_mode(self, value):
+        mode = normalize_special_search_mode(value)
+        if mode != self._special_mode:
+            self._special_mode = mode
+            self._on_special_changed(mode)
 
     def _show_rejected_extension_input(self):
         self.extension_input_notice.setText(AppStrings.EXTENSION_FILTER_WILDCARD_NOT_ALLOWED)
@@ -634,7 +680,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.filter_changed.emit()
 
     def get_selected_extensions(self) -> List[str]:
-        special_mode = self.special_combo.currentText()
+        special_mode = self._special_mode
         if special_mode == AppStrings.SPECIAL_SEARCH_OFF:
             return self.get_checked_extensions()
         else:
@@ -656,14 +702,14 @@ class ExtensionFilterPanel(DenseFilterPanel):
         return list(dict.fromkeys(extensions))
 
     def get_special_mode(self) -> str:
-        return self.special_combo.currentText()
+        return self._special_mode
 
     def restore_state(self, data: Union[List[str], Dict[str, Any]]):
         self.ext_list.clear()
         self.extension_input_notice.hide()
         if isinstance(data, dict):
             if Constants.PAYLOAD_SPECIAL_MODE in data:
-                self._set_special_mode(data[Constants.PAYLOAD_SPECIAL_MODE])
+                self.set_special_mode(data[Constants.PAYLOAD_SPECIAL_MODE])
             exts = data.get(Constants.CONFIG_KEY_EXTENSIONS, {})
             if Constants.CONFIG_KEY_EXTENSIONS not in data and Constants.PAYLOAD_SPECIAL_MODE not in data:
                 exts = data
@@ -686,16 +732,16 @@ class ExtensionFilterPanel(DenseFilterPanel):
             if isinstance(widget, FilterItemWidget):
                 ext_states[widget.text()] = widget.checkbox.isChecked()
         return {
-            Constants.PAYLOAD_SPECIAL_MODE: self.special_combo.currentText(),
+            Constants.PAYLOAD_SPECIAL_MODE: self._special_mode,
             Constants.CONFIG_KEY_EXTENSIONS: ext_states,
         }
 
     def load_state(self, state: dict):
         if Constants.CONFIG_KEY_EXTENSIONS in state:
-            self._set_special_mode(state.get(Constants.PAYLOAD_SPECIAL_MODE, AppStrings.SPECIAL_SEARCH_OFF))
+            self.set_special_mode(state.get(Constants.PAYLOAD_SPECIAL_MODE, AppStrings.SPECIAL_SEARCH_OFF))
             self.restore_state(state)
         elif Constants.PAYLOAD_SPECIAL_MODE in state:
-            self._set_special_mode(state[Constants.PAYLOAD_SPECIAL_MODE])
+            self.set_special_mode(state[Constants.PAYLOAD_SPECIAL_MODE])
 
 
 class FilenameFilterPanel(DenseFilterPanel):

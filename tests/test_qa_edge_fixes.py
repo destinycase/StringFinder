@@ -15,7 +15,7 @@ class TestQAEdgeFixesVerification:
         qtbot.addWidget(panel)
 
         # 누락 방지 검색 경로
-        panel.search_profile_combo.setCurrentIndex(1)
+        panel.set_complex_search(True)
         state = panel.get_state()
         assert state[Constants.PAYLOAD_USE_COMPLEX_SEARCH] is True
 

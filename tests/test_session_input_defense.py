@@ -33,6 +33,7 @@ def test_valid_search_settings_roundtrip(qtbot, value):
         C.STATE_KEY_SEARCH: "  needle 한글  ",
         C.PAYLOAD_USE_COMPLEX_SEARCH: value,
         C.PAYLOAD_EXCLUDE_HIDDEN: value,
+        C.PAYLOAD_SPECIAL_MODE: AppStrings.SPECIAL_SEARCH_OFF,
     }
     panel.load_state(state)
     assert panel.get_state() == state

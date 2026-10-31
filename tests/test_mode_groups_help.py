@@ -27,7 +27,7 @@ def test_mode_order(qtbot, mock_config_manager, language):
     qtbot.addWidget(tab)
     panel = tab.search_panel
     row = panel.input_layout
-    assert row.indexOf(tab.ext_panel.special_controls) < row.indexOf(panel.search_btn)
+    assert row.indexOf(tab.search_panel.search_settings_button) < row.indexOf(panel.search_btn)
     tab.resize(1280, 640)
     tab.show()
     qtbot.waitUntil(tab.isVisible)
@@ -49,9 +49,9 @@ def test_extension_group_round_trip_and_mode_switch(qtbot, language):
     qtbot.addWidget(restored)
     restored.load_state(saved)
     assert restored.get_selected_extensions() == ["xlsx", "txt"]
-    restored.special_combo.setCurrentIndex(3)
+    restored.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
     assert restored.get_selected_extensions() == [C.EXT_JSON]
-    restored.special_combo.setCurrentIndex(0)
+    restored.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[0])
     assert restored.get_state() == saved
     restored.toggle_all(False)
     assert restored.get_selected_extensions() == []

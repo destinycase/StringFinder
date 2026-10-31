@@ -146,7 +146,6 @@ class AppStrings:
     # =========================================================================
     # [3] 도움말 및 툴팁 (Tooltips & Guidance)
     # =========================================================================
-    COMPLEX_SEARCH_LABEL = " (느림)"
     COMPLEX_SEARCH_TOOLTIP = (
         "다음 경우에 누락 방지 검색을 사용하세요.\n\n"
         "• macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
@@ -156,12 +155,14 @@ class AppStrings:
     )
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_BINARY_LABEL = "바이너리 파일 제외"
-    SEARCH_PROFILE_LABEL = "검색 방식"
+    SEARCH_PROFILE_LABEL = "검색 모드"
     SEARCH_PROFILE_NORMAL = "일반 검색"
     SEARCH_PROFILE_PRECISE = "누락 방지 검색(매우 느림)"
     FILENAME_FILTER_INVALID_GROUP = "쉼표 사이에 파일명 조건을 입력하세요."
     SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
-    SPECIAL_SEARCH_LABEL = '특수 검색'
+    SPECIAL_SEARCH_LABEL = "값만 검색"
+    SEARCH_SETTINGS_SELECTION = "{} / {}"
+    SEARCH_VALUE_DISABLED_SELECTION = "값만 검색: 사용 안함"
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
     FILTER_FILENAME_TAB = "파일명({})"
@@ -180,16 +181,18 @@ class AppStrings:
         "원본 파일이나 폴더를 삭제하지 않습니다. 검색할 폴더는 하나 이상 체크해야 합니다.</p>"
         "<p>필터 탭 이름 옆에는 체크한 수량이 표시됩니다. 쉼표로 묶은 확장자도 개별 수량으로 세며 "
         "중복은 한 번만 셉니다. 현재 적용 조건은 하단 상태 표시줄, 검색 진행·시간·결과는 검색 요약에서 확인하세요.</p>"
-        "<h3>검색 방식과 특수 검색</h3><p><b>일반 검색:</b> 평소에 권장합니다. "
+        "<h3>검색 설정 메뉴</h3><p>검색어 왼쪽 버튼을 눌러 <b>검색 모드</b>와 <b>값만 검색</b>에서 "
+        "각각 하나를 선택하세요. 선택한 두 값은 메뉴를 닫아도 버튼에 표시됩니다.</p>"
+        "<p><b>일반 검색:</b> 평소에 권장합니다. "
         "<b>누락 방지 검색:</b> 파일에 글자가 있는데 찾지 못했을 때 좁은 범위에서 시도하세요. 매우 느릴 수 있습니다.</p>"
-        "<p><b>특수 검색 기본:</b> 왼쪽 확장자 조건을 사용합니다. "
+        "<p><b>값만 검색 → 사용 안함:</b> 왼쪽 확장자 조건을 사용합니다. 검색 전체를 끄는 설정이 아닙니다. "
         "<b>JSON/XML:</b> 항목·태그·속성 이름을 제외하고 값을 검색합니다. "
         "<b>Excel:</b> 셀 값을 검색하고 시트·셀·값을 나누어 표시합니다. "
         "JSON/XML/Excel 모드를 선택하면 해당 형식만 검색하며, 보관된 확장자 목록은 적용하지 않습니다. "
         "폴더·파일명 조건은 계속 적용됩니다.</p>"
         "<p><b>부분 일치:</b> 값 안에 검색어가 포함되면 찾습니다. "
         "<b>정확히 일치:</b> 앞뒤 공백을 제외한 값 전체가 같아야 하며 대소문자 구분 기능은 아닙니다. "
-        "Excel은 기본에서도 셀 값을 읽으며, 수식 자체가 아닌 저장된 계산 결과를 검색합니다.</p>"
+        "Excel은 사용 안함에서도 셀 값을 읽으며, 수식 자체가 아닌 저장된 계산 결과를 검색합니다.</p>"
         "<h3>결과가 예상과 다를 때</h3><p>폴더 체크, 필터, 모드를 먼저 확인하세요. "
         "건너뛴 파일이나 결과 수량 제한 안내가 있으면 내용을 확인하세요. "
         "결과가 없어도 모든 파일을 끝까지 정상 검색했다는 뜻은 아닙니다.</p>"
@@ -204,7 +207,7 @@ class AppStrings:
     FILENAME_FILTER_USAGE = "report 또는 report,invoice 입력 → 추가\n체크: 적용 · ×: 목록에서만 제거"
     FILENAME_FILTER_ALL = '파일명 제한 없음'
     FILENAME_FILTER_SELECTED = '파일명 필터 {}개 선택 - {}'
-    SPECIAL_SEARCH_OFF = '기본'
+    SPECIAL_SEARCH_OFF = "사용 안함"
     SPECIAL_SEARCH_ITEMS = [
         SPECIAL_SEARCH_OFF,
         "XML (부분 일치)",

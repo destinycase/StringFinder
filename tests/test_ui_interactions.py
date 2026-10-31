@@ -26,6 +26,7 @@ from PySide6.QtCore import Qt
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from ui.search_tab import SearchTab
+from sf_utils.app_strings import AppStrings
 
 
 @pytest.fixture
@@ -110,7 +111,7 @@ def test_ui_disabled_during_search(qtbot, search_tab_fixture):
 
 def test_ui_disabled_special_mode_restoration(qtbot, search_tab_fixture):
     """특수 모드에서 확장자 필터가 비활성 상태로 유지되는지 테스트합니다."""
-    search_tab_fixture.ext_panel.special_combo.setCurrentIndex(3)
+    search_tab_fixture.ext_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
 
     search_tab_fixture._set_inputs_enabled(False)
     assert not search_tab_fixture.ext_panel.isEnabled()
@@ -179,7 +180,7 @@ def test_excel_location_in_normal_mode(qtbot, search_tab_fixture):
     excel_path = "D:/test/data.xlsx"
     matches = [(0, "Sheet1", "A1", "Match 1"), (0, "Sheet1", "B5", "Match 2")]
 
-    search_tab_fixture.ext_panel.special_combo.setCurrentText(AppStrings.SPECIAL_SEARCH_OFF)
+    search_tab_fixture.ext_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_OFF)
 
     search_tab_fixture.result_view_panel.match_model.set_matches(
         excel_path, matches, search_text="Match", search_mode=AppStrings.SPECIAL_SEARCH_OFF

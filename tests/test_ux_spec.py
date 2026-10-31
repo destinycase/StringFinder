@@ -3,7 +3,6 @@
 from unittest.mock import patch
 
 import pytest
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from sf_utils.constants import Constants
@@ -166,8 +165,8 @@ def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture
     assert search_panel.search_combo.toolTip() == ""
     assert search_panel.search_btn.toolTip() == ""
     assert search_panel.stop_btn.toolTip() == ""
-    assert search_panel.complex_search_check.toolTip() == ""
-    assert search_panel.search_profile_combo.itemData(1, Qt.ItemDataRole.ToolTipRole) == AppStrings.COMPLEX_SEARCH_TOOLTIP
+    assert search_panel.search_settings_button.toolTip() == ""
+    assert search_panel.profile_actions[1].toolTip() == AppStrings.COMPLEX_SEARCH_TOOLTIP
     assert result_panel.result_view.toolTip() == ""
     assert result_panel.match_view.toolTip() == ""
     assert result_panel.context_preview.toolTip() == ""
@@ -177,21 +176,22 @@ def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture
 def test_search_options_use_user_facing_label_and_requested_order(search_tab_fixture):
     search_panel = search_tab_fixture.search_panel
 
-    assert search_panel.exclude_hidden_check.text() == "숨김 파일/폴더 제외"
-    assert search_panel.exclude_hidden_check.text() == AppStrings.EXCLUDE_HIDDEN_LABEL
+    assert not hasattr(search_panel, "exclude_hidden_check")
 
     # Search profile, text input, and action button share the first row.
     input_layout = search_panel.layout().itemAt(0).layout()
-    assert search_panel.search_profile_combo in [input_layout.itemAt(i).widget() for i in range(input_layout.count())]
+    assert search_panel.search_settings_button in [input_layout.itemAt(i).widget() for i in range(input_layout.count())]
 
 
-def test_search_profile_items_expose_precise_guidance_tooltips():
+def test_search_profile_items_expose_precise_guidance_tooltips(qtbot):
     """누락 방지 검색 프로필 항목은 선택 목록에서 사용 안내를 제공한다."""
-    from pathlib import Path
-
-    source_root = Path(__file__).resolve().parents[1] / "src" / "ui"
-    ui_source = "\n".join(path.read_text(encoding="utf-8") for path in source_root.glob("*.py"))
-    assert "ItemDataRole.ToolTipRole" in ui_source
+    from ui.panels import SearchOptionsPanel
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    panel.profile_actions[1].trigger()
+    assert panel.search_settings_button.toolTip() == AppStrings.COMPLEX_SEARCH_TOOLTIP
+    panel.profile_actions[0].trigger()
+    assert panel.search_settings_button.toolTip() == ""
 
 
 def test_skipped_count_signal_is_updated(search_tab_fixture):
