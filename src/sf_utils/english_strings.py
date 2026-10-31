@@ -2,13 +2,13 @@
 
 
 ENGLISH_STRINGS = {
-    "FOLDER_FILTER_USAGE": "Add folder → check folders to search\nCheck: use · ×: remove from list only",
+    "FOLDER_FILTER_USAGE": "Select folders to search.\nTheir subfolders are included.",
     "FOLDER_FILTER_EMPTY": 'Select a folder',
     "FOLDER_FILTER_SELECTED": '{} folders selected',
-    "EXTENSION_FILTER_USAGE": "Enter txt or xlsx,xlsm → Add\nCheck: use · ×: remove from list only",
+    "EXTENSION_FILTER_USAGE": "Specify extensions to narrow the search.\nGroup multiple extensions in one entry using commas.",
     "EXTENSION_FILTER_ALL": 'All extensions',
     "EXTENSION_FILTER_SELECTED": '{} extensions selected - {}',
-    "FILENAME_FILTER_USAGE": "Enter report → Add → names containing report\nCheck: use · ×: remove from list only",
+    "FILENAME_FILTER_USAGE": "Specify part of a filename to narrow the search.\nGroup multiple terms in one entry using commas.",
     "FILENAME_FILTER_ALL": 'No filename restriction',
     "FILENAME_FILTER_SELECTED": '{} filename filters selected - {}',
     "ADVANCED_INCLUDE_JUNCTIONS": "Windows linked folders (junctions)",
@@ -65,7 +65,7 @@ ENGLISH_STRINGS = {
     "INFO_LOGS_DELETED": "The logs have been deleted.",
     "HISTORY_CLEAR_ALL": "--- Clear history ---",
     "DOCK_SEARCH_TITLE": "Search settings",
-    "DOCK_FOLDER_TITLE": "Folders (including subfolders)",
+    "DOCK_FOLDER_TITLE": "Search folders",
     "DOCK_EXT_TITLE": "Extension filter",
     "DOCK_FILENAME_TITLE": "Filename filter",
     "DOCK_RESULT_TITLE": "Search results",
@@ -166,32 +166,42 @@ ENGLISH_STRINGS = {
     "SEARCH_HELP_TITLE": "Search help",
     "EXTENSION_FILTER_INVALID_GROUP": "Enter extensions without empty comma-separated entries, e.g. xlsx,xlsm,xls,xlsb.",
     "SEARCH_HELP_TEXT": (
-        "<h2>Start a search</h2><p>1. Add and check folders. 2. Enter search text. "
-        "3. Click Search. Subfolders are included.</p>"
-        "<h3>Choose files</h3><p><b>Filters → Extensions:</b> enter txt, then Add. "
-        "Use xlsx,xlsm,xls,xlsb to add a group as one entry. With no checked extensions, "
-        "files without extensions are included too; other exclusions still apply.</p>"
-        "<p><b>Filters → Filenames:</b> add report to find names containing report. "
-        "Use report,invoice to group terms. Any checked term may match; no checked terms means no filename restriction. "
-        "Wildcards are not supported in either filter.</p>"
-        "<p>Uncheck an entry to stop using it for this search. <b>× removes it from the list only</b>, "
-        "not from disk. At least one folder must be checked.</p>"
-        "<p>Filter tab titles show checked counts. Grouped extensions are counted individually, "
-        "without duplicates. Applied conditions appear in the status bar; search progress, time "
-        "and results appear in the search summary.</p>"
-        "<h3>Search settings menu</h3><p>Click the button to the right of the query and select one item each "
-        "under <b>Search mode</b> and <b>Special search</b>. Both selections appear beside the button. Open the menu for full names and checkmarks.</p>"
-        "<p><b>Normal search:</b> recommended for everyday use. "
-        "<b>Miss-prevention search:</b> try a narrow scope if text known to exist is not found. It can be very slow.</p>"
-        "<p><b>Special search → Off:</b> uses your extension filter; it does not turn off searching. <b>JSON/XML:</b> searches values, "
-        "not field, tag or attribute names. <b>Excel:</b> searches cell values and separates "
-        "sheet, cell and value columns. These modes select only their file format and temporarily "
-        "ignore saved extension entries. Folder and filename conditions still apply.</p>"
-        "<p><b>Contains:</b> finds search text within a value. <b>Exact match:</b> compares the whole "
-        "value after trimming surrounding whitespace; it does not mean case-sensitive matching. "
-        "Excel files are read as cells even with Special search set to Off. Saved formula results, not formulas, are searched.</p>"
-        "<h3>Unexpected results</h3><p>Check folders, filters and mode first. Review skipped-file "
-        "and result-limit notices. No results does not necessarily mean all files were searched completely.</p>"
+        '<h2>Start a search</h2>'
+        '<p>1. Add and check folders. 2. Enter search text. 3. Click Search. Subfolders are included.</p>'
+        '<p>- Select at least one folder. Each selected folder and its subfolders are searched.</p>'
+        '<br><h3>Narrow the search</h3>'
+        '<p><b>Filters → Extensions</b></p>'
+        '<p>- Enter an extension such as txt, then click Add. Group extensions in one entry using commas, e.g. xlsx,xlsm,xls,xlsb.</p>'
+        '<p>- With no checked extensions, files without extensions are included too; other exclusions still apply.</p>'
+        '<p>- Extension filters do not support wildcards.</p>'
+        '<p><b>Filters → Filenames</b></p>'
+        '<p>- Add report to find files whose names contain report. Group terms using commas, e.g. report,invoice.</p>'
+        '<p>- Any checked term may match. With no checked terms, filenames are unrestricted.</p>'
+        '<p>- Filename filters do not support wildcards.</p>'
+        '<br><h3>Search settings</h3>'
+        '<p>- Click the button to the right of the search input to choose <b>Search mode</b> and <b>Special search</b>.</p>'
+        '<h4>Search mode</h4><p><b>Normal search</b></p>'
+        '<p>Searches ordinary English and Korean text. (Default)</p>'
+        '<p><b>Miss-prevention search</b></p>'
+        '<p>- Try a narrow scope when text known to exist is not found. This is very slow. Use it for the cases below.</p>'
+        '<p>- Decomposed Korean characters (NFD), such as text in files created on macOS</p>'
+        '<p>- Special case mappings and diacritics in other languages, such as German ß ↔ ss</p>'
+        '<p>- Nonstandard or partially damaged text encodings</p>'
+        '<h4>Special search</h4><p><b>Off</b></p>'
+        '<p>- Uses your extension filter. This does not turn off searching. (Default)</p>'
+        '<p><b>JSON/XML</b></p>'
+        '<p>- Searches values, excluding field, tag and attribute names.</p>'
+        '<p>- JSON/XML modes search only their format and ignore saved extension entries. Folder and filename conditions still apply.</p>'
+        '<p><b>Excel</b></p>'
+        '<p>- Searches cell values and separates sheet, cell and value columns.</p>'
+        '<p>- Excel modes search only their format and ignore saved extension entries. Folder and filename conditions still apply.</p>'
+        '<p><b>Contains</b></p><p>- Finds the search text within a value.</p>'
+        '<p><b>Exact match</b></p><p>- The entire value must match after trimming surrounding whitespace.</p>'
+        '<br><h3>Unexpected results</h3>'
+        '<p>- Check folders, filters and mode first.</p>'
+        '<p>- Review any skipped-file or result-limit notices.</p>'
+        '<p>- No results does not necessarily mean all files were searched completely.</p>'
+        '<p>- StringFinder searches are case-insensitive.</p>'
     ),
     "SPECIAL_SEARCH_OFF": "Off",
     "SPECIAL_SEARCH_ITEMS": [
@@ -213,9 +223,9 @@ ENGLISH_STRINGS = {
         "EXCEL values only (exact)",
     ],
     "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use miss-prevention search for complex Unicode variants)",
-    "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm (no wildcards)",
-    "EXTENSION_FILTER_WILDCARD_NOT_ALLOWED": "Extension filters do not support wildcard or pattern characters (*, ?, [, ], \\). Enter only an extension, such as json or .json.",
-    "FILENAME_LIST_PLACEHOLDER": 'Filename terms (e.g. report,invoice)',
+    "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm",
+    "EXTENSION_FILTER_WILDCARD_NOT_ALLOWED": "Extension filters do not support wildcard or pattern characters (*, ?, [, ], \\).",
+    "FILENAME_LIST_PLACEHOLDER": 'e.g. report or report,invoice',
     "FILENAME_FILTER_WILDCARD_NOT_ALLOWED": "Filename filters do not support wildcard or pattern characters (*, ?, [, ], \\).",
     "RESULT_FILTER_FILE_PLACEHOLDER": "Filter files...",
     "RESULT_COMPACT_ROWS": "Compact lists",

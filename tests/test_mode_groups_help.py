@@ -105,6 +105,12 @@ def test_help_button_order_localized_content_and_reuse(qtbot, mock_config_manage
     assert AppStrings.SPECIAL_SEARCH_LABEL in text
     assert window.help_button.geometry().left() < window.log_button.geometry().left()
     assert window.log_button.geometry().left() < window.settings_button.geometry().left()
+    bar = window.statusBar()
+    for button in (window.help_button, window.log_button, window.settings_button):
+        top = button.mapTo(bar, button.rect().topLeft()).y()
+        bottom = bar.height() - top - button.height()
+        assert top >= 3 and bottom >= 3
+        assert abs(top - bottom) <= 2
     window._set_ui_locked(True)
     assert window.help_button.isEnabled()
     dialog.close()

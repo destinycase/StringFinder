@@ -122,7 +122,7 @@ class FilterListWidget(QListWidget):
         self.viewport().installEventFilter(self)
         self.empty_hint = QLabel(self.viewport())
         self.empty_hint.setWordWrap(True)
-        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.empty_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
     def setItemWidget(self, item, widget):

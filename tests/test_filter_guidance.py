@@ -1,7 +1,7 @@
 """Filter guidance must describe the existing search contract, not change it."""
 
 import pytest
-from PySide6.QtCore import QSignalBlocker
+from PySide6.QtCore import QSignalBlocker, Qt
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -55,7 +55,7 @@ def test_empty_guidance_and_restore_are_current(qtbot, language, panel_class):
         panel.restore_state(empty)
     assert selected() == []
     assert panel.status_label.text() == empty_text
-    assert "×" in panel.usage_label.text()
+    assert panel.usage_label.alignment() == (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     qtbot.waitUntil(panel.usage_label.isVisible)
 
 

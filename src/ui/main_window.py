@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QMainWindow,
@@ -156,6 +157,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.tab_widget)
         self.setCentralWidget(central_widget)
         sb = QStatusBar()
+        # Qt reserves a small top inset; balance it below the controls as well.
+        sb.setContentsMargins(0, 0, 0, 3)
         self.setStatusBar(sb)
         self.filter_status_warning = QLabel()
         self.filter_status_warning.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(16, 16))
@@ -168,7 +171,6 @@ class MainWindow(QMainWindow):
         self.help_button.setObjectName("statusHelpButton")
         self.help_button.setText(AppStrings.SEARCH_HELP_BUTTON)
         self.help_button.clicked.connect(self._show_search_help)
-        sb.addPermanentWidget(self.help_button)
         self.log_button = QToolButton()
         self.log_button.setObjectName("statusLogButton")
         self.log_button.setText(AppStrings.TAB_LOGS)
@@ -180,7 +182,6 @@ class MainWindow(QMainWindow):
         )
         self.log_button.clicked.connect(self._show_active_tab_logs)
         self.help_button.setStyleSheet(self.log_button.styleSheet())
-        sb.addPermanentWidget(self.log_button)
         self.settings_button = QToolButton()
         self.settings_button.setObjectName("statusSettingsButton")
         self.settings_button.setText(AppStrings.SETTINGS_TITLE)
@@ -192,7 +193,13 @@ class MainWindow(QMainWindow):
             "QToolButton:pressed { background-color: #2f3337; }"
         )
         self.settings_button.clicked.connect(self._show_settings)
-        sb.addPermanentWidget(self.settings_button)
+        self.status_actions = QWidget()
+        actions_layout = QHBoxLayout(self.status_actions)
+        actions_layout.setContentsMargins(0, 2, 0, 2)
+        actions_layout.setSpacing(6)
+        for button in (self.help_button, self.log_button, self.settings_button):
+            actions_layout.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
+        sb.addPermanentWidget(self.status_actions)
 
         self.tab_widget.currentChanged.connect(self._sync_status_bar_with_active_tab)
         self._load_all_tabs()
