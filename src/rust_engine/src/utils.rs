@@ -229,7 +229,7 @@ mod reliability_tests {
     }
 }
 
-pub fn parse_search_mode(mode_bits: Option<u32>) -> (bool, bool, bool, bool, bool, bool) {
+pub fn parse_search_mode(mode_bits: Option<u32>) -> (bool, bool, bool, bool, bool) {
     let bits = mode_bits.unwrap_or(crate::types::MODE_NORMAL);
     (
         (bits & crate::types::MODE_JSON) != 0,
@@ -237,7 +237,6 @@ pub fn parse_search_mode(mode_bits: Option<u32>) -> (bool, bool, bool, bool, boo
         (bits & crate::types::MODE_EXACT) != 0,
         (bits & crate::types::MODE_EXCEL) != 0,
         (bits & crate::types::MODE_EXCLUDE_BINARY) != 0,
-        (bits & crate::types::MODE_EXISTENCE_ONLY) != 0,
     )
 }
 
@@ -408,30 +407,26 @@ mod tests {
 
     #[test]
     fn parse_search_mode_none_defaults_to_all_false() {
-        let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
-            parse_search_mode(None);
+        let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(None);
 
         assert!(!is_json);
         assert!(!is_xml);
         assert!(!is_exact);
         assert!(!is_excel);
         assert!(!exclude_binary);
-        assert!(!existence_only);
     }
 
     #[test]
     fn parse_search_mode_mixed_flags_are_decoded_correctly() {
         let bits =
             crate::types::MODE_JSON | crate::types::MODE_EXACT | crate::types::MODE_EXCLUDE_BINARY;
-        let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
-            parse_search_mode(Some(bits));
+        let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(Some(bits));
 
         assert!(is_json);
         assert!(!is_xml);
         assert!(is_exact);
         assert!(!is_excel);
         assert!(exclude_binary);
-        assert!(!existence_only);
     }
 
     #[test]

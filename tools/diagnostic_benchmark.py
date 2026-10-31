@@ -37,17 +37,13 @@ DEFAULT_MAX_SECONDS = 7200
 RESOURCE_SAMPLE_INTERVAL_SECONDS = 30
 MAX_RESOURCE_SAMPLES_PER_SCENARIO = 600
 SCENARIOS = (
-    ("normal_no_match", False, False, False),
-    ("normal_existence", False, True, False),
-    ("miss_prevention_no_match", True, False, False),
-    ("miss_prevention_existence", True, True, False),
+    ("normal_no_match", False),
+    ("miss_prevention_no_match", True),
 )
 
 SCENARIO_LABELS = {
     "normal_no_match": "Normal search - no match",
-    "normal_existence": "Normal search - existence only",
     "miss_prevention_no_match": "Miss-prevention search - no match",
-    "miss_prevention_existence": "Miss-prevention search - existence only",
 }
 
 LATENCY_BUCKETS = (0.001, 0.005, 0.025, 0.1, 1.0, 10.0)
@@ -298,14 +294,6 @@ def _finalize_metrics(metrics: dict[str, dict[str, object]]) -> dict[str, dict[s
     return finalized
 
 
-
-
-
-
-
-
-
-
 def run(
     root: Path,
     repeats: int = 5,
@@ -374,7 +362,7 @@ def run(
     stop_status: str | None = None
     budget_limited = False
 
-    for scenario_index, (name, precise, existence_only, _unused) in enumerate(SCENARIOS):
+    for scenario_index, (name, precise) in enumerate(SCENARIOS):
         scenario_started = time.perf_counter()
         scenario_deadline = (
             None
@@ -446,7 +434,6 @@ def run(
                             diagnostic_query,
                             file_size=file_size,
                             use_complex_search=precise,
-                            existence_only=existence_only,
                             exclude_binary=bool(search_policy["exclude_binary"]),
                         )
                     if isinstance(result, tuple) and result and result[0] == Constants.STATUS_SKIPPED:
@@ -659,7 +646,6 @@ def run(
             "display_name": SCENARIO_LABELS[name],
             "search_mode": "miss_prevention" if precise else "normal",
             "engine_route": "Python compatibility/search path" if precise else "Rust fast-search path (Excel uses its specialized parser)",
-            "existence_only": existence_only,
             "status": scenario_status,
             "time_budget_seconds": round(
                 max(0.0, scenario_deadline - scenario_started), 3
@@ -730,7 +716,7 @@ def run(
     wall_seconds = time.perf_counter() - wall_started
     benchmark_seconds = time.perf_counter() - benchmark_started
     return {
-        "diagnostic_version": 5,
+        "diagnostic_version": 6,
         "app_version": get_app_version(),
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "status": overall_status,
@@ -806,8 +792,6 @@ def _format_bytes(byte_count: int | None) -> str:
         if value >= divisor:
             return f"{value / divisor:,.2f} {unit}"
     return f"{value:,} bytes"
-
-
 
 
 def _markdown(report: dict[str, object]) -> str:

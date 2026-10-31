@@ -18,13 +18,10 @@ class TestQAEdgeFixesVerification:
         panel.search_profile_combo.setCurrentIndex(1)
         state = panel.get_state()
         assert state[Constants.PAYLOAD_USE_COMPLEX_SEARCH] is True
-        assert state[Constants.PAYLOAD_EXISTENCE_ONLY] is False
 
         # 존재만 확인은 검색 방식과 독립적인 체크 박스로 선택합니다.
-        panel.boolean_search_check.setChecked(True)
         state_both = panel.get_state()
         assert state_both[Constants.PAYLOAD_USE_COMPLEX_SEARCH] is True
-        assert state_both[Constants.PAYLOAD_EXISTENCE_ONLY] is True
 
     def test_excel_complex_search_uppercase_exact_match(self, tmp_path):
         """엑셀 Python 폴백 검색 시 대문자 검색어의 exact_match 탐지 보장 검증"""

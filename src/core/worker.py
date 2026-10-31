@@ -222,7 +222,6 @@ class SearchWorker(QRunnable):
             logger.debug(AppStrings.LOG_WKR_EXCEL_SCAN)
         self.is_running = threading.Event()
         self.is_running.set()
-        self.existence_only = params.get(Constants.PAYLOAD_EXISTENCE_ONLY, False)
         self.config_manager: ConfigManager = ConfigManager()
         # Freeze search-affecting advanced settings for this search. Changes made
         # in Settings are picked up when the next SearchWorker is created.
@@ -500,7 +499,7 @@ class SearchWorker(QRunnable):
                     skipped_batch.append((path, partial_reason))
                     if hasattr(self, "all_skipped"):
                         self.all_skipped.append((path, partial_reason))
-                match_tuples, marker_binary_count, sheet_skips = _normalize_rust_matches(matches, self.special_mode, existence_only=self.existence_only)
+                match_tuples, marker_binary_count, sheet_skips = _normalize_rust_matches(matches, self.special_mode)
                 # 시트 스킵 정보를 별도 목록에 수집 (파일 스킵과 구분)
                 if sheet_skips and hasattr(self, "skipped_sheets_list"):
                     for sheet_name, detail in sheet_skips:
@@ -555,8 +554,7 @@ class SearchWorker(QRunnable):
                         stop_event=self.stop_event,
                         progress_callback=progress_callback,
                         results_callback=results_callback,
-                        existence_only=self.existence_only,
-                    )
+                        )
             else:
                 logger.info(AppStrings.LOG_WKR_RUST_ACT.format(len(self.search_paths)))
                 from core.search_engine import use_search_settings_snapshot
@@ -573,8 +571,7 @@ class SearchWorker(QRunnable):
                         stop_event=self.stop_event,
                         progress_callback=progress_callback,
                         results_callback=results_callback,
-                        existence_only=self.existence_only,
-                    )
+                        )
         except Exception as e:
             error_msg = AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format("SearchWorker.Batch", e)
             logger.error(error_msg, exc_info=True)
@@ -698,7 +695,6 @@ class SearchWorker(QRunnable):
                 self.stop_event,
                 force_python,
                 exclude_binary=self.exclude_binary,
-                existence_only=self.existence_only,
                 search_settings_snapshot=self.search_settings_snapshot,
             )
             future_to_batch[future] = batch

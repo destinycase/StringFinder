@@ -42,13 +42,12 @@ def test_literal_filename_candidates_agree(tmp_path, literal):
 
 
 @pytest.mark.parametrize("precise", [False, True])
-@pytest.mark.parametrize("existence", [False, True])
 @pytest.mark.parametrize("prefix_size", [65536, 2 * 1024 * 1024])
-def test_korean_after_ascii_prefix(tmp_path, precise, existence, prefix_size):
+def test_korean_after_ascii_prefix(tmp_path, precise, prefix_size):
     path = tmp_path / "korean.txt"
     path.write_bytes(b"a" * prefix_size + "\nneedle 가나다\n".encode("cp949"))
     result = se.search_in_file(str(path), "가나다", use_complex_search=precise,
-                               existence_only=existence)
+                               )
     assert result and result[0] == str(path) and result[1] == 1
 
 
@@ -83,14 +82,13 @@ def test_structured_korean_after_ascii_prefix(tmp_path, mode, suffix, content, p
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "cp949"])
-@pytest.mark.parametrize("existence", [False, True])
-def test_json_mmap_uses_full_decode_fallback(tmp_path, encoding, existence):
+def test_json_mmap_uses_full_decode_fallback(tmp_path, encoding):
     path = tmp_path / "mapped.json"
     content = '{"padding":"' + 'a' * (2 * 1024 * 1024) + '","v":"가나다"}'
     path.write_bytes(content.encode(encoding))
     with se.use_search_settings_snapshot({C.CONFIG_KEY_JSON_MMAP_THRESHOLD: 1}):
         result = se.search_in_file(str(path), "가나다", special_mode=C.MODE_JSON,
-                                   use_complex_search=True, existence_only=existence)
+                                   use_complex_search=True)
     assert result and result[0] == str(path) and result[1] == 1
 
 
@@ -102,9 +100,6 @@ def test_repeated_occurrences_have_same_count(tmp_path, encoding, newline):
     for precise in [False, True]:
         result = se.search_in_file(str(path), "needle", use_complex_search=precise)
         assert result and result[0] == str(path) and result[1] == 3
-        existence = se.search_in_file(str(path), "needle", use_complex_search=precise,
-                                     existence_only=True)
-        assert existence and existence[1] == 1
 
 
 @pytest.mark.parametrize("number", ["1.0", "-0.0", "1e20", "1e-5", "1e-4", "1e15", "1e16", "1.2345678901234567", "0.84551240822557006", "1.234567890123456789"])

@@ -36,22 +36,21 @@ def book(tmp_path):
     return path
 
 
-def assert_precise_equals_legacy(monkeypatch, path, query, exact=False, existence=False):
+def assert_precise_equals_legacy(monkeypatch, path, query, exact=False):
     new = se.search_in_excel_special(str(path), query, exact_match=exact,
-                                    use_complex_search=True, existence_only=existence)
+                                    use_complex_search=True)
     with monkeypatch.context() as patch:
         patch.setattr(se, 'HAS_RUST_ENGINE', False)
         old = se.search_in_excel_special(str(path), query, exact_match=exact,
-                                        use_complex_search=True, existence_only=existence)
+                                        use_complex_search=True)
     assert new == old
     return new
 
 
 @pytest.mark.parametrize('query', ['needle', 'strasse', 'é', 'missing', ' '])
 @pytest.mark.parametrize('exact', [False, True])
-@pytest.mark.parametrize('existence', [False, True])
-def test_precise_sparse_matches_legacy(book, monkeypatch, query, exact, existence):
-    assert_precise_equals_legacy(monkeypatch, book, query, exact, existence)
+def test_precise_sparse_matches_legacy(book, monkeypatch, query, exact):
+    assert_precise_equals_legacy(monkeypatch, book, query, exact)
 
 
 @pytest.mark.parametrize('value', [False, 0, 1e-5, '#DIV/0!', datetime(1904, 1, 1),
@@ -78,14 +77,12 @@ def test_typed_decoding_preserved(tmp_path, monkeypatch, value, epoch1904):
                                   '2026-10-04T12:34:56+09:00',
                                   '2026-10-04T12:34:56.123456-05:30'])
 @pytest.mark.parametrize('exact', [False, True])
-@pytest.mark.parametrize('existence', [False, True])
-def test_precise_timezone_iso_keeps_source_literal(book, monkeypatch, value, exact, existence):
+def test_precise_timezone_iso_keeps_source_literal(book, monkeypatch, value, exact):
     replace_sheet(book, f'''<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
     <sheetData><row r="1"><c r="A1" t="d"><v>{value}</v></c></row></sheetData></worksheet>'''.encode())
-    result = assert_precise_equals_legacy(monkeypatch, book, value, exact, existence)
+    result = assert_precise_equals_legacy(monkeypatch, book, value, exact)
     assert result and result[1] == 1
-    if not existence:
-        assert result[2][0][3] == value
+    assert result[2][0][3] == value
     # The normal engine's existing ISO policy is intentionally unchanged.
     normal_query = value.replace('T', ' ')
     native = se.search_in_excel_special(str(book), normal_query, exact_match=True)
@@ -111,11 +108,9 @@ def test_precise_serial_time_rounding_preserves_legacy(tmp_path, monkeypatch, se
     if epoch1904 and 0 <= serial < 1 and style == 'yyyy-mm-dd':
         query = '1904-01-01' if query == '00:00:00' else '1904-01-01 ' + query
     for exact in (False, True):
-        for existence in (False, True):
-            result = assert_precise_equals_legacy(monkeypatch, path, query, exact, existence)
-            assert result and result[1] == 1
-            if not existence:
-                assert result[2][0][3] == query
+        result = assert_precise_equals_legacy(monkeypatch, path, query, exact)
+        assert result and result[1] == 1
+        assert result[2][0][3] == query
 
 
 @pytest.mark.parametrize('value', [
@@ -126,17 +121,15 @@ def test_precise_serial_time_rounding_preserves_legacy(tmp_path, monkeypatch, se
     '10000-01-01T00:00:00',
 ])
 @pytest.mark.parametrize('exact', [False, True])
-@pytest.mark.parametrize('existence', [False, True])
-def test_precise_iso_parse_and_microsecond_contract(book, monkeypatch, value, exact, existence):
+def test_precise_iso_parse_and_microsecond_contract(book, monkeypatch, value, exact):
     replace_sheet(book, f'''<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
     <sheetData><row r="1"><c r="A1" t="d"><v>{value}</v></c></row></sheetData></worksheet>'''.encode())
     from python_calamine import CalamineWorkbook
     old = CalamineWorkbook.from_path(str(book)).get_sheet_by_index(0)
     query = se._excel_cell_text(list(old.iter_rows())[0][0])
-    result = assert_precise_equals_legacy(monkeypatch, book, query, exact, existence)
+    result = assert_precise_equals_legacy(monkeypatch, book, query, exact)
     assert result and result[1] == 1
-    if not existence:
-        assert result[2][0][3] == query
+    assert result[2][0][3] == query
 
 
 @pytest.mark.parametrize('epoch1904', [False, True])
@@ -169,9 +162,8 @@ def test_precise_1904_millisecond_rounding_search(tmp_path, monkeypatch):
     wb.save(path)
     query = '2086-07-03 19:36:01.342000'
     for exact in (False, True):
-        for existence in (False, True):
-            result = assert_precise_equals_legacy(monkeypatch, path, query, exact, existence)
-            assert result and result[1] == 1
+        result = assert_precise_equals_legacy(monkeypatch, path, query, exact)
+        assert result and result[1] == 1
 
 
 def test_duplicate_out_of_order_cells_last_value_wins(book, monkeypatch):
@@ -228,13 +220,11 @@ from core import search_engine as se
 from sf_utils.constants import Constants as C
 with se.use_search_settings_snapshot({C.CONFIG_KEY_MAX_PER_FILE_MATCHES: 10000}):
     for precise in (False, True):
-        for existence in (False, True):
-            for text, coordinate in [('needle first','A1'), ('needle last','ALL100000')]:
-                result = se.search_in_excel_special(sys.argv[2], text, use_complex_search=precise, existence_only=existence)
-                assert result and result[1] == 1, result
-                if not existence:
-                    assert result[2][0][2] == coordinate, result
-            assert se.search_in_excel_special(sys.argv[2], 'missing', use_complex_search=precise, existence_only=existence) is None
+        for text, coordinate in [('needle first','A1'), ('needle last','ALL100000')]:
+            result = se.search_in_excel_special(sys.argv[2], text, use_complex_search=precise)
+            assert result and result[1] == 1, result
+            assert result[2][0][2] == coordinate, result
+        assert se.search_in_excel_special(sys.argv[2], 'missing', use_complex_search=precise) is None
 print('BOUNDED_SEARCH_PASS')
 '''
     root = Path(__file__).resolve().parents[1]

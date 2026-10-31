@@ -38,7 +38,6 @@ def test_rust_limits_use_the_search_snapshot(monkeypatch) -> None:
     snapshot = {
         Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 321,
         Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 1234,
-        Constants.CONFIG_KEY_MAX_CHECK_CELLS: 2345,
         Constants.CONFIG_KEY_MAX_JSON_DEPTH: 3456,
     }
 
@@ -50,7 +49,7 @@ def test_rust_limits_use_the_search_snapshot(monkeypatch) -> None:
     with search_engine.use_search_settings_snapshot(snapshot):
         limits = search_engine._get_rust_search_limits()
 
-    assert limits == (1234, 2345, 3456, 321 * 1024 * 1024)
+    assert limits == (1234, 3456, 321 * 1024 * 1024)
 
 
 def test_search_worker_keeps_settings_captured_at_start(monkeypatch) -> None:

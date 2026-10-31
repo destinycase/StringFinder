@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QStatusBar,
+    QStyle,
     QSizePolicy,
     QTextBrowser,
     QToolButton,
@@ -156,6 +157,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         sb = QStatusBar()
         self.setStatusBar(sb)
+        self.filter_status_warning = QLabel()
+        self.filter_status_warning.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(16, 16))
+        self.filter_status_warning.setAccessibleName(AppStrings.FOLDER_FILTER_EMPTY)
+        sb.addWidget(self.filter_status_warning)
         self.filter_status_label = QLabel()
         self.filter_status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         sb.addWidget(self.filter_status_label, 1)
@@ -353,6 +358,7 @@ class MainWindow(QMainWindow):
         tab = self.tab_widget.widget(index)
         self.statusBar().clearMessage()
         self.filter_status_label.setText(tab.get_filter_status_text() if isinstance(tab, SearchTab) else "")
+        self.filter_status_warning.setVisible(isinstance(tab, SearchTab) and not tab.folder_panel.get_selected_folders())
 
     def _show_search_notice(self, text, _duration):
         dialog = getattr(self, "_notice_dialog", None)

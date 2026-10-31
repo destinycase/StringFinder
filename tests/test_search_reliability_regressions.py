@@ -17,25 +17,23 @@ def search_policy():
 
 
 @pytest.mark.parametrize("content,query", [(' {"v":"NEEDLE"}', "needle"), ('{"v":"\\u006e\\u0065\\u0065\\u0064\\u006c\\u0065"}', "needle"), ('{"v":"ß"}', "ss"), ('null', "null")])
-@pytest.mark.parametrize("existence", [False, True])
-def test_precise_json_existence_matches_decoded_values(tmp_path, content, query, existence):
+def test_precise_json_existence_matches_decoded_values(tmp_path, content, query):
     path = tmp_path / "sample.json"
     path.write_text(content, encoding="utf-8")
-    result = se.search_in_json_special(str(path), query, use_complex_search=True, existence_only=existence)
+    result = se.search_in_json_special(str(path), query, use_complex_search=True)
     assert result and result[0] == str(path) and result[1] == 1
 
 
 @pytest.mark.parametrize("precise", [False, True])
-@pytest.mark.parametrize("existence", [False, True])
 @pytest.mark.parametrize("allow", [False, True])
-def test_duplicate_json_keys_policy(tmp_path, precise, existence, allow):
+def test_duplicate_json_keys_policy(tmp_path, precise, allow):
     path = tmp_path / "duplicate.json"
     path.write_text('{"v":"needle","\\u0076":"needle"}', encoding="utf-8")
     with se.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
-        result = se.search_in_json_special(str(path), "needle", use_complex_search=precise, existence_only=existence)
+        result = se.search_in_json_special(str(path), "needle", use_complex_search=precise)
     assert result
     if allow:
-        assert result[0] == str(path) and result[1] == (1 if existence else 2)
+        assert result[0] == str(path) and result[1] == 2
     else:
         assert result[0] == Constants.STATUS_SKIPPED
         assert AppStrings.JSON_DETAIL_DUPLICATE_KEYS in result[1]
@@ -71,7 +69,6 @@ def test_short_no_bom_utf16_is_text_in_all_paths(tmp_path, encoding, query):
     path.write_bytes(query.encode(encoding))
     for precise in (False, True):
         assert se.search_in_file(str(path), query, use_complex_search=precise, exclude_binary=True)
-    assert se.find_files_with_keyword_fast([str(tmp_path)], query, ["txt"], exclude_binary=True)
 
 
 def test_scanner_reports_inaccessible_and_missing_roots(tmp_path):
@@ -85,20 +82,18 @@ def test_scanner_reports_inaccessible_and_missing_roots(tmp_path):
 
 def test_long_line_detail_includes_match_after_whitespace_and_casefold():
     for prefix in [" " * 5000, "ß" * 5000, "가" * 5000]:
-        rows, count, _, _ = se._search_text_stream([prefix + "needle" + "x" * 5000], "needle", exact_match=False, existence_only=False, stop_event=None, max_per_file=10)
+        rows, count, _ = se._search_text_stream([prefix + "needle" + "x" * 5000], "needle", exact_match=False, stop_event=None, max_per_file=10)
         assert count == 1 and "needle" in rows[0][1]
 
 
 @pytest.mark.parametrize("fragment", ["nee<![CDATA[dle]]>", "nee<!--comment-->dle", "nee<?test abc?>dle"])
-@pytest.mark.parametrize("existence", [False, True])
-def test_native_xml_matches_adjacent_character_data(tmp_path, fragment, existence):
+def test_native_xml_matches_adjacent_character_data(tmp_path, fragment):
     path = tmp_path / "split.xml"
     path.write_text(f"<root>{fragment}</root>", encoding="utf-8")
-    bits = Constants.RUST_MODE_XML | (Constants.RUST_MODE_EXISTENCE_ONLY if existence else 0)
+    bits = Constants.RUST_MODE_XML | 0
     results = se.sf_engine.search_file(str(path), "needle", bits)
     assert results
-    if not existence:
-        assert results[0].offset is None
+    assert results[0].offset is None
 
 
 def test_native_utf8_sampling_boundary(tmp_path):
@@ -161,12 +156,11 @@ def test_native_git_exclude_is_not_a_search_filter(tmp_path):
     assert len(result[Constants.PAYLOAD_RESULTS]) == 1
 
 
-@pytest.mark.parametrize("existence", [False, True])
 @pytest.mark.parametrize("allow", [False, True])
-def test_duplicate_policy_in_native_directory(tmp_path, existence, allow):
+def test_duplicate_policy_in_native_directory(tmp_path, allow):
     (tmp_path / "data.json").write_text('{"v":"needle","v":"other"}')
     with se.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
-        result = se.search_directory_fast([str(tmp_path)], "needle", ["json"], special_mode=Constants.MODE_JSON, existence_only=existence)
+        result = se.search_directory_fast([str(tmp_path)], "needle", ["json"], special_mode=Constants.MODE_JSON)
     assert bool(result[Constants.PAYLOAD_RESULTS]) is allow
     assert bool(result[Constants.PAYLOAD_SKIPPED]) is not allow
 
@@ -174,9 +168,8 @@ def test_duplicate_policy_in_native_directory(tmp_path, existence, allow):
 def test_duplicate_check_validates_after_limits_and_hits(tmp_path):
     path = tmp_path / "after-hit.json"
     path.write_text('{"v":"needle","child":{"x":1,"x":2}}')
-    for existence in (False, True):
-        with pytest.raises(RuntimeError, match="duplicate JSON object key"):
-            se.sf_engine.search_file(str(path), "needle", Constants.RUST_MODE_JSON | (Constants.RUST_MODE_EXISTENCE_ONLY if existence else 0), max_per_file=1, max_json_depth=1)
+    with pytest.raises(RuntimeError, match="duplicate JSON object key"):
+        se.sf_engine.search_file(str(path), "needle", Constants.RUST_MODE_JSON | 0, max_per_file=1, max_json_depth=1)
 
 
 def test_model_does_not_silently_drop_files_at_100000(qtbot):
@@ -224,15 +217,12 @@ def test_duplicate_setting_invalid_type_uses_default(mock_config_manager, value)
 
 
 @pytest.mark.parametrize("allow", [False, True])
-@pytest.mark.parametrize("entrypoint", ["search_files_list", "find_filenames"])
+@pytest.mark.parametrize("entrypoint", ["search_files_list"])
 def test_duplicate_policy_other_native_entrypoints(tmp_path, allow, entrypoint):
     path = tmp_path / "duplicate.json"
     path.write_text('{"v":"needle","v":"other"}')
     bits = Constants.RUST_MODE_JSON | (Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS if allow else 0)
-    if entrypoint == "search_files_list":
-        found, skipped = se.sf_engine.search_files_list(file_list=[str(path)], search_string="needle", mode_bits=bits)
-    else:
-        found, skipped = se.sf_engine.find_files_with_keyword(paths=[str(tmp_path)], keyword="needle", extensions=["json"], mode_bits=bits)
+    found, skipped = se.sf_engine.search_files_list(file_list=[str(path)], search_string="needle", mode_bits=bits)
     assert bool(found) is allow and bool(skipped) is not allow
 
 
@@ -366,7 +356,7 @@ def test_json_policy_benchmark_checks_both_policies(tmp_path):
     from tools.benchmark_json_policy import measure
     path = tmp_path / "benchmark.json"
     path.write_text('{"v":"needle"}', encoding="utf-8")
-    result = measure(se.sf_engine, ("small-sparse", path, "needle", False), 2)
+    result = measure(se.sf_engine, ("small-sparse", path, "needle"), 2)
     assert len(result["deny_samples_s"]) == len(result["allow_samples_s"]) == 2
     assert result["deny_median_s"] > 0 and result["allow_median_s"] > 0
     assert len(result["fingerprint"]) == 64
@@ -378,6 +368,6 @@ def test_json_policy_benchmark_interleaves_engines(tmp_path, backend):
     path = tmp_path / "comparison.json"
     path.write_text('{"v":"needle"}', encoding="utf-8")
     result = compare({"baseline": se.sf_engine, "current": se.sf_engine},
-                     ("small-sparse", path, "needle", False), 2, backend)
+                     ("small-sparse", path, "needle"), 2, backend)
     assert [row["engine"] for row in result["engines"]] == ["baseline", "current"]
     assert all(len(row["deny_samples_s"]) == len(row["allow_samples_s"]) == 2 for row in result["engines"])

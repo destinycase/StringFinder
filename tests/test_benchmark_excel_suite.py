@@ -18,7 +18,7 @@ def fixtures(tmp_path_factory):
 
 
 @pytest.mark.parametrize("kind", range(4))
-@pytest.mark.parametrize("case_index", range(16))
+@pytest.mark.parametrize("case_index", range(8))
 def test_native_and_precise_fixture_contract(fixtures, kind, case_index):
     from core.search_engine import HAS_RUST_ENGINE
 
@@ -52,14 +52,14 @@ def test_sparse_extent_and_formula_cache_are_real(fixtures):
     ("book.xlsx", 1, [(0, "Data", "A1", "wrong value")]),
     ("book.xlsx", 1, [(0, "Data", "A1", bench.FIRST), (-2, "error", "", "")])])
 def test_validation_rejects_missing_wrong_or_partial_results(result):
-    case = bench.ExcelCase("first", bench.FIRST, False, frozenset({"A1"}))
+    case = bench.ExcelCase("first", bench.FIRST, frozenset({"A1"}))
     with pytest.raises(RuntimeError):
         bench.validate_result(result, case)
 
 
 def test_measure_excludes_warmup_and_validates_each_repeat(monkeypatch):
     calls = []
-    case = bench.ExcelCase("absent", "missing", False, frozenset())
+    case = bench.ExcelCase("absent", "missing", frozenset())
     monkeypatch.setattr(bench, "_run", lambda *args: calls.append(args))
     result = bench.measure(Path("unused.xlsx"), case, 3)
     assert len(calls) == 4

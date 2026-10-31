@@ -76,7 +76,7 @@ def test_windows_walk_error_codes_are_localized(code, resource):
     assert getattr(AppStrings, resource) in format_skip_reason(f"ERR_WALK|folder (os error {code})")
 
 
-@pytest.mark.parametrize("operation", ["search_dir", "find_files_with_keyword"])
+@pytest.mark.parametrize("operation", ["search_dir"])
 def test_native_traversal_failures_preserve_missing_root_paths(operation, tmp_path):
     from core import search_engine
 

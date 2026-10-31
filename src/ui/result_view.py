@@ -316,7 +316,6 @@ class ResultView(QWidget):
         self.config_manager = config_manager
         self.search_text = ""
         self.search_mode = Constants.MODE_NORMAL
-        self.existence_only = False
         self._skipped_files = []
         self._skipped_file_count = 0
         self.selected_file_path = ""
@@ -1181,12 +1180,7 @@ class ResultView(QWidget):
         has_results = self.result_model.rowCount() > 0
         self.empty_label.setVisible(not has_results)
         self.result_splitter.setVisible(has_results)
-        
-        # 결과 존재 여부만 확인하는 모드에서는 상세 목록을 숨겨 화면을 효율적으로 사용합니다.
-        if self.existence_only:
-            self.match_area_widget.setVisible(False)
-        else:
-            self.match_area_widget.setVisible(has_results)
+        self.match_area_widget.setVisible(has_results)
 
         for i in range(self.result_filter_layout.count()):
             item = self.result_filter_layout.itemAt(i)
@@ -1215,9 +1209,8 @@ class ResultView(QWidget):
     def set_filename_filters(self, filters):
         self.result_model.set_filename_filters(filters)
 
-    def set_search_context(self, search_text, search_mode, existence_only=False):
+    def set_search_context(self, search_text, search_mode):
         self.search_text = search_text
-        self.existence_only = existence_only
         # 특수 검색 비활성화 시 모드 값을 기본값으로 변환합니다.
         if search_mode == AppStrings.SPECIAL_SEARCH_OFF:
             self.search_mode = Constants.MODE_NORMAL
@@ -1231,31 +1224,6 @@ class ResultView(QWidget):
         """세션 로드 등 대량의 결과를 한꺼번에 설정할 때 사용합니다."""
         self.clear()
         if results:
-            # Session data may contain an existence-only message localized in a
-            # previous language. Regenerate only this engine-created field;
-            # ordinary user/file content remains untouched.
-            if self.existence_only:
-                localized_results = []
-                for row in results:
-                    if not isinstance(row, (list, tuple)) or len(row) < 5:
-                        localized_results.append(row)
-                        continue
-                    matches = row[4]
-                    if not isinstance(matches, (list, tuple)):
-                        localized_results.append(row)
-                        continue
-                    localized_matches = []
-                    for match in matches:
-                        if isinstance(match, (list, tuple)) and len(match) >= 2:
-                            normalized_match = list(match)
-                            normalized_match[1] = AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT
-                            localized_matches.append(normalized_match)
-                        else:
-                            localized_matches.append(match)
-                    normalized_row = list(row)
-                    normalized_row[4] = localized_matches
-                    localized_results.append(normalized_row)
-                results = localized_results
             self.result_model.add_results(results)
             self.update_ui_visibility()
             QTimer.singleShot(0, self._select_first_row_safely)
@@ -1547,9 +1515,7 @@ class ResultView(QWidget):
         # 모드별 헤더 설정
         mode = self.search_mode or Constants.MODE_NORMAL
         mode_upper = str(mode).upper()
-        if getattr(self, "existence_only", False):
-            headers = [AppStrings.HEADER_FILE, AppStrings.HEADER_CONTENT]
-        elif Constants.MODE_EXCEL.upper() in mode_upper:
+        if Constants.MODE_EXCEL.upper() in mode_upper:
             headers = [
                 AppStrings.HEADER_FILE,
                 AppStrings.HEADER_EXCEL_SHEET,
@@ -1584,10 +1550,7 @@ class ResultView(QWidget):
             # 시트 2 데이터 추가
             for m in matches:
                 row = [full_path]
-                # m의 구조는 models.py의 MatchDetailModel.set_matches 로직과 계약됨
-                if getattr(self, "existence_only", False):
-                    row.append("" if len(m) < 2 or m[1] is None else str(m[1]))
-                elif Constants.MODE_EXCEL.upper() in mode_upper:
+                if Constants.MODE_EXCEL.upper() in mode_upper:
                     # [Line, Sheet, Cell, Val, ...]
                     row.extend([str(m[1]), str(m[2]), str(m[3])])
                 elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
@@ -1655,8 +1618,6 @@ class ResultView(QWidget):
             return ()
         values = [self._export_value(value) for value in item]
         mode = str(self.search_mode or "").upper()
-        if getattr(self, "existence_only", False):
-            return tuple(values[:2])
         if Constants.MODE_EXCEL.upper() in mode:
             return tuple(values[:4])
         if Constants.MODE_JSON.upper() in mode or Constants.MODE_XML.upper() in mode:

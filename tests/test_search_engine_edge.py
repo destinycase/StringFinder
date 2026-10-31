@@ -15,7 +15,7 @@
 
 import os
 
-from core.search_engine import _fast_existence_check, detect_encoding_quickly, search_in_file
+from core.search_engine import _quick_text_probe, detect_encoding_quickly, search_in_file
 
 
 def test_search_extremely_long_line(tmp_path):
@@ -54,7 +54,7 @@ def test_existence_check_detects_match_across_chunk_boundary(tmp_path):
     test_file = tmp_path / "chunk_boundary.txt"
     test_file.write_text("a" * 65534 + "needle", encoding="utf-8")
 
-    assert _fast_existence_check(str(test_file), "needle", encoding="utf-8") is True
+    assert _quick_text_probe(str(test_file), "needle", encoding="utf-8") is True
 
 
 def test_large_file_mixed_case_integrity(tmp_path):

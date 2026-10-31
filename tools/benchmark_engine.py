@@ -29,7 +29,6 @@ class BenchmarkCase:
     path: Path
     query: str
     special_mode: str | None = None
-    existence_only: bool = False
     expect_match: bool = True
     with_stop_event: bool = False
 
@@ -49,7 +48,6 @@ def _measure(
     special_mode: str | None = None,
     repeats: int = 3,
     *,
-    existence_only: bool = False,
     expect_match: bool = True,
     with_stop_event: bool = False,
 ) -> tuple[float, float | None, int]:
@@ -61,7 +59,6 @@ def _measure(
             query,
             special_mode=special_mode,
             use_complex_search=False,
-            existence_only=existence_only,
             stop_event=stop_event,
         )
 
@@ -111,13 +108,6 @@ def _write_cases(root: Path) -> list[BenchmarkCase]:
         BenchmarkCase("json-streaming-repeated", json_path, "present", Constants.MODE_JSON),
         BenchmarkCase("json-streaming-sparse", json_path, "119999", Constants.MODE_JSON),
         BenchmarkCase(
-            "json-streaming-existence",
-            json_path,
-            "present",
-            Constants.MODE_JSON,
-            existence_only=True,
-        ),
-        BenchmarkCase(
             "json-no-match-fallback",
             json_path,
             "absent_keyword",
@@ -137,7 +127,6 @@ def main() -> None:
                 case.path,
                 case.query,
                 case.special_mode,
-                existence_only=case.existence_only,
                 expect_match=case.expect_match,
                 with_stop_event=case.with_stop_event,
             )

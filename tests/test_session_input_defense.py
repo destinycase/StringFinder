@@ -25,20 +25,6 @@ def test_invalid_query_recovers_without_discarding_results(qtbot, mock_config_ma
     assert tab.result_view_panel.result_model.get_all_results()[0][4] == details
 
 
-@pytest.mark.parametrize("value", [None, 1, "false", "true", {}, [], [True]])
-def test_invalid_boolean_fields_use_defaults(qtbot, value):
-    panel = SearchOptionsPanel()
-    qtbot.addWidget(panel)
-    panel.load_state({
-        C.PAYLOAD_USE_COMPLEX_SEARCH: value,
-        C.PAYLOAD_EXISTENCE_ONLY: value,
-        C.PAYLOAD_EXCLUDE_HIDDEN: value,
-    })
-    assert not panel.is_complex_search()
-    assert not panel.is_existence_only()
-    assert panel.exclude_hidden_check.isChecked()
-
-
 @pytest.mark.parametrize("value", [False, True])
 def test_valid_search_settings_roundtrip(qtbot, value):
     panel = SearchOptionsPanel()
@@ -46,7 +32,6 @@ def test_valid_search_settings_roundtrip(qtbot, value):
     state = {
         C.STATE_KEY_SEARCH: "  needle 한글  ",
         C.PAYLOAD_USE_COMPLEX_SEARCH: value,
-        C.PAYLOAD_EXISTENCE_ONLY: value,
         C.PAYLOAD_EXCLUDE_HIDDEN: value,
     }
     panel.load_state(state)

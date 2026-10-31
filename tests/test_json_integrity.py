@@ -29,7 +29,7 @@ def test_json_key_only_match_integrity(tmp_path):
     file_path.write_text(json.dumps(content), encoding="utf-8")
     
     # existence_only=True일 때도 Key만 매칭되면 None이어야 함
-    result = search_in_json_special(str(file_path), "needle", existence_only=True)
+    result = search_in_json_special(str(file_path), "needle")
     assert result is None, "Should not match JSON key"
 
 
@@ -38,7 +38,7 @@ def test_malformed_json_integrity(tmp_path):
     file_path = tmp_path / "broken.json"
     file_path.write_text('{"a": "needle", ', encoding="utf-8") # 콤마로 끝나고 닫히지 않음
     
-    result = search_in_json_special(str(file_path), "needle", existence_only=True)
+    result = search_in_json_special(str(file_path), "needle")
     assert result is not None
     assert result[0] == Constants.STATUS_SKIPPED, "Malformed JSON should be marked as SKIPPED"
 
@@ -49,11 +49,11 @@ def test_exact_match_integrity(tmp_path):
     file_path.write_text(json.dumps(content), encoding="utf-8")
     
     # exact_match=True, search="foo" -> foobar는 매치되면 안 됨
-    result = search_in_json_special(str(file_path), "foo", exact_match=True, existence_only=True)
+    result = search_in_json_special(str(file_path), "foo", exact_match=True)
     assert result is None, "Exact match should not trigger on partial overlap"
     
     # exact_match=True, search="foobar" -> 성공해야 함
-    result = search_in_json_special(str(file_path), "foobar", exact_match=True, existence_only=True)
+    result = search_in_json_special(str(file_path), "foobar", exact_match=True)
     assert result is not None
     assert result[1] == 1
 
@@ -65,7 +65,7 @@ def test_malformed_large_json_existence_only_integrity(tmp_path):
     file_path.write_text(content, encoding="utf-8")
     
     # existence_only=True일 때 필터는 False(미매치)를 반환하겠지만, loads에서 SKIPPED가 터져야 함
-    result = search_in_json_special(str(file_path), "needle", existence_only=True)
+    result = search_in_json_special(str(file_path), "needle")
     assert isinstance(result, tuple) and len(result) == 2
     assert result[0] == Constants.STATUS_SKIPPED
     assert AppStrings.ERROR_JSON_PARSE.split(":", 1)[0] in str(result[1])

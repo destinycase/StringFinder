@@ -218,10 +218,10 @@ class SearchOptionsPanel(QWidget):
         self.complex_search_warning.setStyleSheet("color: #e0a020; font-weight: bold;")
         self.search_profile_combo = QComboBox()
         for label_text, data in (
-            (AppStrings.SEARCH_PROFILE_NORMAL, (False, False)),
-            (AppStrings.SEARCH_PROFILE_PRECISE, (True, False)),
+            (AppStrings.SEARCH_PROFILE_NORMAL, False),
+            (AppStrings.SEARCH_PROFILE_PRECISE, True),
         ):
-            display_text = f"⚠ {label_text}" if data[0] else label_text
+            display_text = f"⚠ {label_text}" if data else label_text
             self.search_profile_combo.addItem(display_text, data)
         # Keep the guidance available after the former precise-search checkbox
         # was replaced by a profile selector.  Item-level tooltips work for
@@ -267,16 +267,12 @@ class SearchOptionsPanel(QWidget):
         self.complex_search_check = QCheckBox(AppStrings.SEARCH_MODE_COMPLEX + AppStrings.COMPLEX_SEARCH_LABEL)
         self.exclude_hidden_check = QCheckBox(AppStrings.EXCLUDE_HIDDEN_LABEL)
         self.exclude_hidden_check.setChecked(True)  # 기본적으로 켜둠 (성능 권장)
-        self.boolean_search_check = QCheckBox(AppStrings.BOOLEAN_SEARCH_LABEL)
-        self.boolean_search_check.setChecked(False)  # 기본적으로 검색 결과 요약 확인 모드는 해제 상태로 시작합니다.
         options_layout.addWidget(self.complex_search_check)
         options_layout.addWidget(self.complex_search_warning)
-        input_layout.insertWidget(input_layout.count() - 2, self.boolean_search_check)
         options_layout.addWidget(self.exclude_hidden_check)
         options_layout.addStretch()
         self.complex_search_check.setVisible(False)
         self.complex_search_warning.setVisible(False)
-        self.boolean_search_check.setVisible(True)
         self.exclude_hidden_check.setVisible(False)
         layout.addLayout(options_layout)
 
@@ -303,7 +299,6 @@ class SearchOptionsPanel(QWidget):
         self.search_profile_combo.setEnabled(not searching)
         self.complex_search_check.setEnabled(not searching)
         self.exclude_hidden_check.setEnabled(not searching)
-        self.boolean_search_check.setEnabled(not searching)
         if self._document_controls is not None:
             self._document_controls.setEnabled(not searching)
         self.search_btn.setEnabled(True)
@@ -326,22 +321,18 @@ class SearchOptionsPanel(QWidget):
         return self.search_combo.currentText().strip()
 
     def is_complex_search(self) -> bool:
-        return bool(self.search_profile_combo.currentData()[0])
+        return bool(self.search_profile_combo.currentData())
 
     def is_exclude_hidden(self) -> bool:
         if self.config_manager is not None:
             return bool(self.config_manager.get(Constants.CONFIG_KEY_EXCLUDE_HIDDEN, True))
         return self.exclude_hidden_check.isChecked()
 
-    def is_existence_only(self) -> bool:
-        return self.boolean_search_check.isChecked()
-
     def get_state(self) -> dict:
         return {
             Constants.STATE_KEY_SEARCH: self.search_combo.currentText(),
             Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.is_complex_search(),
             Constants.PAYLOAD_EXCLUDE_HIDDEN: self.is_exclude_hidden(),
-            Constants.PAYLOAD_EXISTENCE_ONLY: self.is_existence_only(),
         }
 
     def load_state(self, state: dict):
@@ -352,7 +343,6 @@ class SearchOptionsPanel(QWidget):
         self.search_profile_combo.setCurrentIndex(
             1 if state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH) is True else 0
         )
-        self.boolean_search_check.setChecked(state.get(Constants.PAYLOAD_EXISTENCE_ONLY) is True)
         exclude_hidden = state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True)
         self.exclude_hidden_check.setChecked(exclude_hidden if isinstance(exclude_hidden, bool) else True)
 
@@ -554,14 +544,11 @@ class ExtensionFilterPanel(DenseFilterPanel):
         return self.special_controls
 
     def _refresh_status(self):
-        if self.get_special_mode() != AppStrings.SPECIAL_SEARCH_OFF:
-            targets = ", ".join(f".{ext.lstrip('.')}" for ext in self.get_selected_extensions())
-            self.status_label.setText(AppStrings.EXTENSION_FILTER_AUTOMATIC.format(targets))
-        else:
-            count = len(self.get_selected_extensions())
-            self.status_label.setText(
-                AppStrings.EXTENSION_FILTER_SELECTED.format(count) if count else AppStrings.EXTENSION_FILTER_ALL
-            )
+        selected = self.get_selected_extensions()
+        self.status_label.setText(
+            AppStrings.EXTENSION_FILTER_SELECTED.format(len(selected), ", ".join(ext.lstrip(".") for ext in selected))
+            if selected else AppStrings.EXTENSION_FILTER_ALL
+        )
 
     def _on_special_changed(self, text):
         is_off = text == AppStrings.SPECIAL_SEARCH_OFF
@@ -770,24 +757,22 @@ class FilenameFilterPanel(DenseFilterPanel):
         self._refresh_status()
 
     def _refresh_status(self):
-        count = len(self.get_selected_filenames())
+        selected = self.get_selected_filenames()
         self.status_label.setText(
-            AppStrings.FILENAME_FILTER_SELECTED.format(count) if count else AppStrings.FILENAME_FILTER_ALL
+            AppStrings.FILENAME_FILTER_SELECTED.format(len(selected), ", ".join(selected))
+            if selected else AppStrings.FILENAME_FILTER_ALL
         )
 
     def _show_rejected_filename_input(self):
         # Inline feedback avoids modal warnings for each rejected keystroke.
+        self.filename_input_notice.setText(AppStrings.FILENAME_FILTER_WILDCARD_NOT_ALLOWED)
         self.filename_input_notice.show()
 
     def _on_add_clicked(self):
         fn = self.add_edit.text().strip()
         if fn:
             if not self.add_filename(fn):
-                QMessageBox.warning(
-                    self,
-                    AppStrings.ERROR_TITLE,
-                    AppStrings.FILENAME_FILTER_WILDCARD_NOT_ALLOWED,
-                )
+                QMessageBox.warning(self, AppStrings.ERROR_TITLE, self.filename_input_notice.text())
                 return
             self.add_edit.clear()
             self.filename_input_notice.hide()
@@ -796,7 +781,14 @@ class FilenameFilterPanel(DenseFilterPanel):
         if not isinstance(fn, str) or not fn.strip() or not isinstance(checked, bool):
             return False
         if any(char in fn for char in "*?[]\\"):
+            self._show_rejected_filename_input()
             return False
+        terms = list(dict.fromkeys(part.strip() for part in fn.split(",")))
+        if not all(terms):
+            self.filename_input_notice.setText(AppStrings.FILENAME_FILTER_INVALID_GROUP)
+            self.filename_input_notice.show()
+            return False
+        fn = ",".join(terms)
         for i in range(self.filename_list.count()):
             widget = self.filename_list.itemWidget(self.filename_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.text() == fn:
@@ -832,8 +824,12 @@ class FilenameFilterPanel(DenseFilterPanel):
         for i in range(self.filename_list.count()):
             widget = self.filename_list.itemWidget(self.filename_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.isChecked():
-                filenames.append(widget.text())
-        return filenames
+                filenames.extend(part.strip() for part in widget.text().split(",") if part.strip())
+        # Search is case-insensitive; overlapping checked groups form a union.
+        unique = {}
+        for value in filenames:
+            unique.setdefault(value.casefold(), value)
+        return list(unique.values())
 
     def restore_state(self, data: Union[List[str], Dict[str, Any]]):
         self.filename_list.clear()

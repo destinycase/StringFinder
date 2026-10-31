@@ -171,12 +171,6 @@ impl<R: std::io::Read + std::io::Seek> SheetReader<R> for Xlsb<R> {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ExcelCheckOutcome {
-    pub found: bool,
-    pub sheet_error: Option<String>,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExcelFileError {
     Open(String),
@@ -265,49 +259,6 @@ where
     results
 }
 
-// M3: 존재 확인 전용 통합 헬퍼
-fn check_wb<R, WB>(wb: &mut WB, ctx: &ExcelCtx<'_>) -> ExcelCheckOutcome
-where
-    R: std::io::Read + std::io::Seek,
-    WB: SheetReader<R>,
-{
-    // Search all cells until the first hit or cancellation; there is no cell cap.
-    let mut first_sheet_error = None;
-    let mut cell_buffer = String::with_capacity(64);
-
-    for sheet_name in wb.sheet_names() {
-        if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            return ExcelCheckOutcome::default();
-        }
-        if let Ok(Ok(range)) =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| wb.read_cells(&sheet_name)))
-        {
-            for (row_idx, col_idx, cell) in range.cells() {
-                if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                    return ExcelCheckOutcome::default();
-                }
-                if search_cell_text(cell, &sheet_name, row_idx, col_idx, ctx, &mut cell_buffer)
-                    .is_some_and(|value| cell_matches_val(&value, ctx))
-                {
-                    return ExcelCheckOutcome {
-                        found: true,
-                        sheet_error: first_sheet_error,
-                    };
-                }
-            }
-            if let Some(Err(error)) = ctx.date_cells.borrow().get(&sheet_name) {
-                first_sheet_error = Some(format!("{sheet_name}|{error}"));
-            }
-        } else if first_sheet_error.is_none() {
-            first_sheet_error = Some(sheet_name);
-        }
-    }
-    ExcelCheckOutcome {
-        found: false,
-        sheet_error: first_sheet_error,
-    }
-}
-
 /// 공개 검색 함수
 pub fn search_excel_file(
     path: &Path,
@@ -356,56 +307,6 @@ pub fn search_excel_file(
         "xlsx" | "xlsm" => run!(calamine::open_workbook::<Xlsx<_>, _>(path), &ext),
         "xlsb" => run!(calamine::open_workbook::<Xlsb<_>, _>(path), &ext),
         "xls" => run!(calamine::open_workbook::<Xls<_>, _>(path), &ext),
-        _ => Err(ExcelFileError::Open(ext)),
-    }
-}
-
-/// 공개 존재 확인 함수
-pub fn check_excel_file(
-    path: &Path,
-    pattern: &str,
-    ac: &aho_corasick::AhoCorasick,
-    is_exact: bool,
-    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Result<ExcelCheckOutcome, ExcelFileError> {
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let pat_nfc: String = pattern.chars().nfc().collect();
-    let pat_upper = pat_nfc.to_lowercase().to_uppercase();
-    let ctx = ExcelCtx {
-        path,
-        date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
-        pat_upper: &pat_upper,
-        ac,
-        is_exact,
-        stop_flag: stop_flag.clone(),
-        max_per_file: 5000,
-    };
-
-    macro_rules! chk {
-        ($open:expr, $label:expr) => {{
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match $open {
-                Ok(mut wb) => Ok(check_wb(&mut wb, &ctx)),
-                Err(error) => Err(ExcelFileError::Open(format!("{}|{:?}", $label, error))),
-            }));
-            match result {
-                Ok(outcome) => outcome,
-                Err(error) => Err(ExcelFileError::Panic(format!(
-                    "{}|{}",
-                    $label,
-                    panic_to_string(error)
-                ))),
-            }
-        }};
-    }
-
-    match ext.as_str() {
-        "xlsx" | "xlsm" => chk!(calamine::open_workbook::<Xlsx<_>, _>(path), &ext),
-        "xlsb" => chk!(calamine::open_workbook::<Xlsb<_>, _>(path), &ext),
-        "xls" => chk!(calamine::open_workbook::<Xls<_>, _>(path), &ext),
         _ => Err(ExcelFileError::Open(ext)),
     }
 }

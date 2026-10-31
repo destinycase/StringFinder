@@ -26,7 +26,6 @@ from sf_utils.file_helper import is_potentially_executable_file, open_in_externa
 from core.worker import SearchWorker
 from core.search_query import validate_search_query
 from sf_utils.app_strings import AppStrings
-from sf_utils.localization import get_korean_strings
 from sf_utils.constants import Constants
 from sf_utils.logger import logger, normalize_log_level
 from ui.panels import ExtensionFilterPanel, FilenameFilterPanel, FolderFilterPanel, SearchOptionsPanel
@@ -64,10 +63,6 @@ class SearchTab(QMainWindow):
         self.total_match_limit_count = 0
         self._search_failed = False
         self._search_finalized = False
-        # The mode that produced the currently displayed results. This is kept
-        # separately from the editable search controls so changing an option
-        # before saving a session cannot reinterpret old result content.
-        self.result_existence_only = False
         self.skipped_files_list: List[Tuple[str, str]] = []
         self.scanned_count = 0
         self.results_buffer = []
@@ -444,14 +439,11 @@ class SearchTab(QMainWindow):
             Constants.PAYLOAD_RESULTS: self.result_view_panel.result_model.get_all_results()
             if self.result_view_panel.result_model
             else [],
-            "results_existence_only": self.result_existence_only,
-            # Input controls may have changed since these results were made.
             "results_search_context": {
                 "search_text": self.result_view_panel.search_text,
                 "search_mode": self._result_mode_code(self.result_view_panel.search_mode),
                 "exact": any(marker in str(self.result_view_panel.search_mode).casefold()
                              for marker in ("정확", "exact")),
-                "existence_only": self.result_existence_only,
                 "filename_filters": list(self.result_view_panel.result_model.filename_filters),
             },
             Constants.PAYLOAD_SUMMARY: {
@@ -541,43 +533,22 @@ class SearchTab(QMainWindow):
         if isinstance(result_context, dict) and isinstance(result_context.get("filename_filters"), list):
             filename_filters = [value for value in result_context["filename_filters"] if isinstance(value, str)]
 
-        has_result_mode = isinstance(state.get("results_existence_only"), bool)
-        existence_only = state.get("results_existence_only", False) if has_result_mode else False
-        if isinstance(result_context, dict) and isinstance(result_context.get("existence_only"), bool):
-            existence_only = result_context["existence_only"]
-            has_result_mode = True
-        results = self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
-        if not has_result_mode:
-            # Legacy sessions have no mode metadata. Only reinterpret rows when
-            # every stored detail is an unmistakable generated marker; real
-            # search content must always be preserved.
-            markers = {
-                AppStrings.BOOLEAN_SEARCH_MATCH_CONTENT,
-                get_korean_strings().get("BOOLEAN_SEARCH_MATCH_CONTENT"),
-                "[Matching item exists in file]",
-                "[파일 내 일치하는 항목 존재]",
-            }
-            legacy_matches = [
-                match[1]
-                for row in results
-                if isinstance(row, (list, tuple)) and len(row) >= 5
-                for match in (row[4] if isinstance(row[4], (list, tuple)) else [])
-                if isinstance(match, (list, tuple)) and len(match) >= 2 and isinstance(match[1], str)
-            ]
-            existence_only = bool(legacy_matches) and all(value in markers for value in legacy_matches)
-        self.result_existence_only = existence_only
-        self.result_view_panel.set_search_context(
-            search_text, search_mode, existence_only=existence_only
+        # Retired existence-only snapshots do not contain full result details.
+        # Preserve inputs, but require a fresh search rather than inventing data.
+        retired_results = state.get("results_existence_only") is True or (
+            isinstance(result_context, dict) and result_context.get("existence_only") is True
         )
+        results = [] if retired_results else self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
+        self.result_view_panel.set_search_context(search_text, search_mode)
         self.result_view_panel.set_filename_filters(filename_filters)
         self.total_matches = 0
         self.total_files = 0
         self.result_view_panel.clear()  # 기존 결과와 스킵 안내를 먼저 초기화합니다.
         self.skipped_files_list = normalize_skipped_files(
-            state.get(Constants.PAYLOAD_SKIPPED, []),
+            [] if retired_results else state.get(Constants.PAYLOAD_SKIPPED, []),
             strict_session=True,
         )
-        summary = state.get(Constants.PAYLOAD_SUMMARY, {})
+        summary = {} if retired_results else state.get(Constants.PAYLOAD_SUMMARY, {})
         if not isinstance(summary, dict):
             summary = {}
         try:
@@ -607,6 +578,8 @@ class SearchTab(QMainWindow):
                 skip_count=self.skipped_count,
                 state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED,
             )
+        if retired_results:
+            self.result_view_panel.empty_label.setText(AppStrings.SESSION_RESEARCH_REQUIRED)
         # 로그 복원
         logs = state.get(Constants.PAYLOAD_LOGS, "")
         if logs:
@@ -717,9 +690,7 @@ class SearchTab(QMainWindow):
             self.result_view_panel.show_empty_message(
                 AppStrings.RESULT_SEARCHING_MSG.format(search_text), emphasized=True
             )
-            existence_only = self.search_panel.is_existence_only()
-            self.result_existence_only = existence_only
-            self.result_view_panel.set_search_context(search_text, special_mode, existence_only=existence_only)
+            self.result_view_panel.set_search_context(search_text, special_mode)
 
             # [Optimization] Unified Scan & Search
             # SearchWorker will handle directory scanning and searching simultaneously.
@@ -732,7 +703,7 @@ class SearchTab(QMainWindow):
                 Constants.PAYLOAD_EXCLUDE_HIDDEN: exclude_hidden,
                 Constants.PAYLOAD_EXCLUDE_BINARY: exclude_binary,
                 Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.search_panel.is_complex_search(),
-                Constants.PAYLOAD_EXISTENCE_ONLY: self.search_panel.is_existence_only(),
+
             }
             self._setup_search_worker(params)
             self.scan_start_time = time.time()

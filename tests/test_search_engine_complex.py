@@ -98,11 +98,10 @@ def test_text_stream_stops_reading_after_the_truncation_marker():
             consumed += 1
             yield "needle\n"
 
-    matches, count, existence_found, stopped = _search_text_stream(
+    matches, count, stopped = _search_text_stream(
         matching_lines(),
         "needle",
         exact_match=False,
-        existence_only=False,
         stop_event=None,
         max_per_file=2,
     )
@@ -111,5 +110,4 @@ def test_text_stream_stops_reading_after_the_truncation_marker():
     assert count == 3
     assert len(matches) == 3
     assert matches[-1][0] == -1
-    assert existence_found is False
     assert stopped is False

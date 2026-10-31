@@ -60,7 +60,6 @@ def test_result_context_survives_input_changes_and_json_roundtrip(
     original.result_view_panel.set_filename_filters(["original"])
     original.search_panel.search_combo.setEditText("different draft")
     original.ext_panel._set_special_mode(C.MODE_EXCEL if mode == C.MODE_NORMAL else C.MODE_NORMAL)
-    original.search_panel.boolean_search_check.setChecked(True)
     saved = json.loads(json.dumps(original.get_state()))
     restored = SearchTab(mock_config_manager)
     qtbot.addWidget(restored)
@@ -68,7 +67,6 @@ def test_result_context_survives_input_changes_and_json_roundtrip(
     assert restored.search_panel.get_search_text() == "different draft"
     assert restored.result_view_panel.search_text == "needle"
     assert restored.result_view_panel.search_mode == mode
-    assert not restored.result_view_panel.existence_only
     assert restored.result_view_panel.result_model.filename_filters == ["original"]
     assert restored.result_view_panel.result_model.get_all_results()[0][4][0][-1] == "needle actual content"
     restored.result_view_panel._export_to_excel(str(tmp_path / "result.xlsx"))

@@ -1,7 +1,7 @@
 import os
 import json
 import unittest
-from core.search_engine import _fast_existence_check, search_in_json_special
+from core.search_engine import _quick_text_probe, search_in_json_special
 
 class TestPrefilterIntegrity(unittest.TestCase):
     def setUp(self):
@@ -23,10 +23,10 @@ class TestPrefilterIntegrity(unittest.TestCase):
             with open(self.test_file, "wb") as f:
                 f.write(json.dumps(data, ensure_ascii=False).encode("utf-16-le"))
                 
-            is_hit = _fast_existence_check(self.test_file, target_str)
+            is_hit = _quick_text_probe(self.test_file, target_str)
             self.assertTrue(is_hit, "UTF-16LE 대용량 파일에서 pre-filter 매치 실패")
             
-            res = search_in_json_special(self.test_file, target_str, existence_only=True)
+            res = search_in_json_special(self.test_file, target_str)
             self.assertIsNotNone(res, "UTF-16LE 검색 결과 누락")
         finally:
             if os.path.exists(self.test_file):
@@ -42,7 +42,7 @@ class TestPrefilterIntegrity(unittest.TestCase):
                 f.write(corrupted_data)
             
             # JSON 경로 테스트
-            res = search_in_json_special(f_path, "any", existence_only=True)
+            res = search_in_json_special(f_path, "any")
                 
             self.assertIsInstance(res, tuple, f"{f_path}에서 결과가 Tuple(SKIPPED)이 아님")
             if isinstance(res, tuple) and len(res) == 2:
@@ -57,7 +57,7 @@ class TestPrefilterIntegrity(unittest.TestCase):
         with open(self.test_json, "w", encoding="utf-8") as f:
             f.write(malformed_data)
         
-        res = search_in_json_special(self.test_json, "any", existence_only=True)
+        res = search_in_json_special(self.test_json, "any")
         
         self.assertIsInstance(res, tuple)
         if isinstance(res, tuple) and len(res) == 2:
@@ -75,7 +75,7 @@ class TestPrefilterIntegrity(unittest.TestCase):
         with open(self.test_json, "w", encoding="utf-8") as f:
             json.dump(data, f)
             
-        is_hit = _fast_existence_check(self.test_json, target_str)
+        is_hit = _quick_text_probe(self.test_json, target_str)
         self.assertFalse(is_hit, "매치가 없는데 pre-filter가 True를 반환함 (최적화 실패)")
 
     def test_utf16_bom_prefilter_hit(self):
@@ -90,10 +90,10 @@ class TestPrefilterIntegrity(unittest.TestCase):
                 # encode("utf-16") -> BOM 포함됨
                 f.write(json.dumps(data).encode("utf-16"))
                 
-            is_hit = _fast_existence_check(self.test_file, target_str)
+            is_hit = _quick_text_probe(self.test_file, target_str)
             self.assertTrue(is_hit, "UTF-16 BOM 파일 중간의 매치를 찾지 못함 (v4.63.13 결함)")
             
-            res = search_in_json_special(self.test_file, target_str, existence_only=True)
+            res = search_in_json_special(self.test_file, target_str)
             self.assertIsNotNone(res, "UTF-16 BOM existence_only 결과 누락")
         finally:
             if os.path.exists(self.test_file):

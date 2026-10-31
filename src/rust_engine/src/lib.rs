@@ -20,22 +20,19 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
-use crate::excel_search::{check_excel_file, search_excel_file, ExcelFileError};
-use crate::json_search::{
-    check_json_file_with_policy, search_json_file_with_policy, JSON_DEPTH_LIMIT_MARKER_PREFIX,
-};
+use crate::excel_search::{search_excel_file, ExcelFileError};
+use crate::json_search::search_json_file_with_policy;
 use crate::types::{RawMatch, SearchMatch, SearchOptions};
 use crate::utils::{
     build_glob_set, decode_structured_bytes, detect_encoding, generate_search_patterns, is_binary,
     match_filename_glob, parse_search_mode,
 };
-use crate::xml_search::{check_xml_file, search_xml_file, XmlSearchError};
+use crate::xml_search::{search_xml_file, XmlSearchError};
 
 // 내부 타입 에일리어스 및 에러 마커 정의
 type RawFileMatches = Vec<(String, Vec<RawMatch>)>;
 type FileMatches = Vec<(String, Vec<SearchMatch>)>;
 type SkippedEntries = Vec<(String, String)>;
-type KeywordFileHits = Vec<(String, u64)>;
 
 const REASON_ERR_MMAP: &str = "ERR_MMAP";
 const REASON_ERR_OPEN: &str = "ERR_OPEN";
@@ -50,7 +47,6 @@ const REASON_ERR_XML_UNSUPPORTED_DTD: &str = "ERR_XML_UNSUPPORTED_DTD";
 const REASON_ERR_EXCEL_PROCESS: &str = "ERR_EXCEL_PROCESS";
 const REASON_ERR_EXCEL_PANIC: &str = "ERR_EXCEL_PANIC";
 const REASON_ERR_RESOURCE_BUDGET: &str = "ERR_RESOURCE_BUDGET";
-const REASON_INFO_JSON_DEPTH_LIMIT: &str = "INFO_JSON_DEPTH_LIMIT";
 
 // Fallback for direct engine API calls that omit the setting. Application
 // search paths pass the user's configured value and do not use this fallback.
@@ -490,7 +486,7 @@ fn claim_walk_entry(
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=10000, max_check_cells=500000, max_json_depth=20000, max_json_size=1073741824, options=None))]
+#[pyo3(signature = (path, pattern, mode_bits=None, stop_event=None, max_per_file=10000,  max_json_depth=20000, max_json_size=1073741824, options=None))]
 #[allow(clippy::too_many_arguments)]
 fn search_file(
     py: Python,
@@ -499,7 +495,7 @@ fn search_file(
     mut mode_bits: Option<u32>,
     mut stop_event: Option<pyo3::PyObject>,
     mut max_per_file: usize,
-    mut max_check_cells: u64,
+
     mut max_json_depth: usize,
     mut max_json_size: u64,
     options: Option<Py<SearchOptions>>,
@@ -520,9 +516,7 @@ fn search_file(
         if config.max_per_file.is_some() {
             max_per_file = config.max_per_file.unwrap_or(max_per_file);
         }
-        if config.max_check_cells.is_some() {
-            max_check_cells = config.max_check_cells.unwrap_or(max_check_cells);
-        }
+
         if config.max_json_depth.is_some() {
             max_json_depth = config.max_json_depth.unwrap_or(max_json_depth);
         }
@@ -530,12 +524,10 @@ fn search_file(
             max_json_size = config.max_json_size.unwrap_or(max_json_size);
         }
     }
-    // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
-    let _ = max_check_cells;
+
     let _ = include_junctions; // No traversal in the single-file entry point.
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
-    let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
-        parse_search_mode(mode_bits);
+    let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
     let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
     let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
@@ -593,7 +585,7 @@ fn search_file(
                 & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
                 != 0,
             exclude_binary,
-            existence_only,
+
             stop_flag,
             max_per_file,
             max_json_depth,
@@ -627,7 +619,7 @@ fn do_search_with_mmap(
     pat_upper: &str,
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
-    existence_only: bool,
+
     stop_flag: &Arc<AtomicBool>,
     max_per_file: usize,
 ) -> Vec<RawMatch> {
@@ -657,9 +649,6 @@ fn do_search_with_mmap(
                 if is_match {
                     let content = extract_line_content_bytes(mmap, last_start, nl_pos, None, None);
                     results.push((line_number, content, None, None));
-                    if existence_only {
-                        return results;
-                    }
                 }
                 last_start = nl_pos + 1;
                 line_number += 1;
@@ -717,9 +706,6 @@ fn do_search_with_mmap(
                 (Some(m_start), Some(mat.len()))
             };
             results.push((current_line, content, offset, length));
-            if existence_only {
-                return results;
-            }
         }
     } else {
         // Non-UTF8 일반 텍스트는 파일 전체를 String으로 복사하지 않고 청크 단위로 디코딩합니다.
@@ -729,7 +715,6 @@ fn do_search_with_mmap(
             pat_upper,
             ac,
             is_exact,
-            existence_only,
             stop_flag,
             max_per_file,
             &mut results,
@@ -776,29 +761,12 @@ fn decoded_line_matches(
     }
 }
 
-fn detect_text_search_encoding(
-    data: &[u8],
-    pattern: &str,
-    ac: &aho_corasick::AhoCorasick,
-    is_exact: bool,
-    existence_only: bool,
-) -> &'static Encoding {
-    // A hit entirely inside an ASCII prefix is valid in both UTF-8 and CP949.
-    // Do not fault in the rest of a huge file merely to confirm this one hit.
-    // NUL excludes UTF-16 and binary prefixes from this shortcut.
+fn detect_text_search_encoding(data: &[u8], pattern: &str, is_exact: bool) -> &'static Encoding {
     let prefix = &data[..data.len().min(65536)];
-    if existence_only
-        && !is_exact
-        && prefix.is_ascii()
-        && !prefix.contains(&0)
-        && ac.find(prefix).is_some()
-    {
-        return UTF_8;
-    }
     // Literal ASCII matches are byte-compatible with CP949. Keep the existing
     // sampled fast path; invalid decoded result snippets trigger a full recheck.
     // Exact/Unicode searches cannot use that proof and validate the full input.
-    if !existence_only && !is_exact && pattern.is_ascii() {
+    if !is_exact && pattern.is_ascii() {
         let mut end = prefix.len();
         while end < data.len() && end < prefix.len() + 3 && data[end] & 0xc0 == 0x80 {
             end += 1;
@@ -821,19 +789,16 @@ fn collect_decoded_line(
     pat_upper: &str,
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
-    existence_only: bool,
+
     max_per_file: usize,
     results: &mut Vec<RawMatch>,
 ) -> bool {
-    if is_exact || existence_only {
+    if is_exact {
         if decoded_line_matches(line, pat_upper, ac, is_exact) {
-            let content = if existence_only {
-                "MATCH".to_string()
-            } else {
-                extract_line_content_bytes(line.as_bytes(), 0, line.len(), None, None)
-            };
+            let content =
+                { extract_line_content_bytes(line.as_bytes(), 0, line.len(), None, None) };
             results.push((line_number, content, None, None));
-            return existence_only || results.len() > max_per_file;
+            return results.len() > max_per_file;
         }
     } else {
         for hit in ac.find_iter(line) {
@@ -861,7 +826,7 @@ fn search_non_utf8_chunks(
     pat_upper: &str,
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
-    existence_only: bool,
+
     stop_flag: &Arc<AtomicBool>,
     max_per_file: usize,
     results: &mut Vec<RawMatch>,
@@ -909,7 +874,6 @@ fn search_non_utf8_chunks(
                 pat_upper,
                 ac,
                 is_exact,
-                existence_only,
                 max_per_file,
                 results,
             ) {
@@ -938,7 +902,6 @@ fn search_non_utf8_chunks(
             pat_upper,
             ac,
             is_exact,
-            existence_only,
             max_per_file,
             results,
         );
@@ -958,7 +921,7 @@ struct InternalSearchParams<'a> {
     is_excel: bool,
     exclude_hidden: bool,
     exclude_binary: bool,
-    existence_only: bool,
+
     stop_flag: Arc<AtomicBool>,
     max_per_file: usize,
     max_json_depth: usize,
@@ -979,7 +942,6 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         is_excel,
         exclude_hidden,
         exclude_binary,
-        existence_only,
         stop_flag,
         max_per_file,
         max_json_depth,
@@ -1017,28 +979,6 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                     return None;
                 }
             }
-        }
-        if existence_only {
-            let outcome = match check_excel_file(path, pattern, ac, is_exact, stop_flag) {
-                Ok(outcome) => outcome,
-                Err(error) => return Some(Err(encode_excel_skip_reason(error))),
-            };
-            if outcome.found {
-                let mut matches = vec![(1, "MATCH".to_string(), None, None)];
-                if let Some(error) = outcome.sheet_error {
-                    matches.push((0, format!("__SF_EXCEL_SHEET_ERR__|{error}"), None, None));
-                }
-                return Some(Ok(matches));
-            }
-            if let Some(sheet_name) = outcome.sheet_error {
-                return Some(Ok(vec![(
-                    0,
-                    format!("__SF_EXCEL_SHEET_ERR__|{sheet_name}"),
-                    None,
-                    None,
-                )]));
-            }
-            return None;
         }
         let r_raw = match search_excel_file(path, pattern, ac, is_exact, stop_flag, max_per_file) {
             Ok(matches) => matches,
@@ -1099,7 +1039,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     } else if structured_document {
         detect_encoding(mmap_c)
     } else {
-        detect_text_search_encoding(mmap_c, pattern, ac, is_exact, existence_only)
+        detect_text_search_encoding(mmap_c, pattern, is_exact)
     };
     let decoded = if structured_document {
         match decode_structured_bytes(mmap_c, enc) {
@@ -1114,33 +1054,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     let final_mmap = decoded.as_ref().map(|s| s.as_bytes()).unwrap_or(mmap_c);
 
     let res: Result<Vec<RawMatch>, String> = if is_json && ext_l == ".json" {
-        if existence_only {
-            check_json_file_with_policy(
-                final_mmap,
-                pattern,
-                ac,
-                is_exact,
-                stop_flag.clone(),
-                max_json_depth,
-                allow_duplicate_json_keys,
-            )
-            .map(|outcome| {
-                let mut matches = Vec::new();
-                if outcome.found {
-                    matches.push((1, "MATCH".to_string(), None, None));
-                }
-                if outcome.depth_limit_reached {
-                    matches.push((
-                        0,
-                        format!("{}{}", JSON_DEPTH_LIMIT_MARKER_PREFIX, max_json_depth),
-                        None,
-                        None,
-                    ));
-                }
-                matches
-            })
-            .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
-        } else {
+        {
             search_json_file_with_policy(
                 final_mmap,
                 pattern,
@@ -1154,17 +1068,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
         }
     } else if is_xml && (ext_l == ".xml" || ext_l == ".sf_xml") {
-        if existence_only {
-            check_xml_file(final_mmap, pattern, ac, is_exact, stop_flag.clone())
-                .map(|found| {
-                    if found {
-                        vec![(1, "MATCH".to_string(), None, None)]
-                    } else {
-                        Vec::new()
-                    }
-                })
-                .map_err(encode_xml_skip_reason)
-        } else {
+        {
             search_xml_file(
                 final_mmap,
                 pattern,
@@ -1183,18 +1087,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             return None;
         }
         Ok(if bin {
-            if existence_only {
-                if ac.find(mmap_c).is_some() {
-                    vec![(
-                        0,
-                        format!("{}{}", MATCH_META_BINARY_PREFIX, 1),
-                        None,
-                        Some(1),
-                    )]
-                } else {
-                    Vec::new()
-                }
-            } else {
+            {
                 let c = ac.find_iter(mmap_c).count();
                 if c > 0 {
                     vec![(
@@ -1224,11 +1117,10 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 pat_upper,
                 ac,
                 is_exact,
-                existence_only,
                 &stop_flag,
                 max_per_file,
             );
-            if enc == UTF_8 && !existence_only && matches.iter().any(|m| m.1.contains('\u{fffd}')) {
+            if enc == UTF_8 && matches.iter().any(|m| m.1.contains('\u{fffd}')) {
                 let verified_encoding = encoding.unwrap_or_else(|| detect_encoding(mmap_c));
                 if verified_encoding != UTF_8 {
                     matches = do_search_with_mmap(
@@ -1237,7 +1129,6 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                         pat_upper,
                         ac,
                         is_exact,
-                        false,
                         &stop_flag,
                         max_per_file,
                     );
@@ -1268,7 +1159,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
 }
 
 #[pyfunction]
-#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, options=None, **_kwargs))]
+#[pyo3(signature = (root_paths, pattern, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None,  max_json_depth=None, max_json_size=None, options=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 pub fn search_dir(
     py: Python,
@@ -1284,7 +1175,7 @@ pub fn search_dir(
     mut batch_size: Option<usize>,
     mut _flush_ms: Option<u64>,
     mut max_per_file: Option<usize>,
-    mut max_check_cells: Option<u64>,
+
     mut max_json_depth: Option<usize>,
     mut max_json_size: Option<u64>,
     options: Option<Py<SearchOptions>>,
@@ -1332,9 +1223,7 @@ pub fn search_dir(
         if config.max_per_file.is_some() {
             max_per_file = config.max_per_file;
         }
-        if config.max_check_cells.is_some() {
-            max_check_cells = config.max_check_cells;
-        }
+
         if config.max_json_depth.is_some() {
             max_json_depth = config.max_json_depth;
         }
@@ -1343,11 +1232,9 @@ pub fn search_dir(
         }
         structured_memory_budget = config.structured_memory_budget;
     }
-    // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
-    let _ = max_check_cells;
+
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
-    let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
-        parse_search_mode(mode_bits);
+    let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
     let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
     let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
     let ac = Arc::new(
@@ -1615,7 +1502,7 @@ pub fn search_dir(
                             is_excel,
                             exclude_hidden,
                             exclude_binary,
-                            existence_only,
+
                             stop_flag: stop_ref.clone(),
                             max_per_file: max_per_file.unwrap_or(10_000),
                             max_json_depth: max_json_depth.unwrap_or(20_000),
@@ -1679,7 +1566,7 @@ pub fn search_dir(
 }
 
 #[pyfunction]
-#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None, max_check_cells=None, max_json_depth=None, max_json_size=None, options=None, **_kwargs))]
+#[pyo3(signature = (file_list, search_string, mode_bits=None, exclude_hidden=false, stop_event=None, progress_callback=None, results_callback=None, batch_size=None, _flush_ms=None, max_per_file=None,  max_json_depth=None, max_json_size=None, options=None, **_kwargs))]
 #[allow(clippy::too_many_arguments)]
 fn search_files_list(
     py: Python<'_>,
@@ -1693,7 +1580,7 @@ fn search_files_list(
     mut batch_size: Option<usize>,
     mut _flush_ms: Option<u64>,
     mut max_per_file: Option<usize>,
-    mut max_check_cells: Option<u64>,
+
     mut max_json_depth: Option<usize>,
     mut max_json_size: Option<u64>,
     options: Option<Py<SearchOptions>>,
@@ -1735,9 +1622,7 @@ fn search_files_list(
         if config.max_per_file.is_some() {
             max_per_file = config.max_per_file;
         }
-        if config.max_check_cells.is_some() {
-            max_check_cells = config.max_check_cells;
-        }
+
         if config.max_json_depth.is_some() {
             max_json_depth = config.max_json_depth;
         }
@@ -1746,9 +1631,8 @@ fn search_files_list(
         }
         structured_memory_budget = config.structured_memory_budget;
     }
-    // Kept in the Python API for compatibility; existence checks no longer truncate by cell count.
     let _ = include_junctions; // Candidate list was already selected by the caller.
-    let _ = max_check_cells;
+
     let stop_flag = Arc::new(AtomicBool::new(false));
     let structured_limiter = structured_memory_budget
         .filter(|budget| *budget > 0)
@@ -1864,8 +1748,7 @@ fn search_files_list(
     py.allow_threads(|| {
         let norm_pattern = crate::utils::normalize_unicode(&search_string);
         let pat_upper = norm_pattern.to_lowercase().to_uppercase();
-        let (is_json, is_xml, is_exact, is_excel, exclude_binary, existence_only) =
-            parse_search_mode(mode_bits);
+        let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
         let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
         let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
 
@@ -1953,7 +1836,7 @@ fn search_files_list(
                 is_excel,
                 exclude_hidden,
                 exclude_binary,
-                existence_only,
+
                 stop_flag: stop_flag.clone(),
                 max_per_file: max_per_file.unwrap_or(10_000),
                 max_json_depth: max_json_depth.unwrap_or(20_000),
@@ -2009,519 +1892,6 @@ fn search_files_list(
     })
 }
 
-#[pyfunction]
-#[pyo3(signature = (paths, keyword, extensions=None, mode_bits=None, filename_filter=None, exclude_hidden=false, stop_event=None, results_callback=None, max_json_depth=20000, max_json_size=1073741824, options=None))]
-#[allow(clippy::too_many_arguments)]
-/// When `results_callback` is provided, matching `(path, size)` entries are
-/// delivered in callback batches and are intentionally omitted from the
-/// synchronous result list. This prevents retaining every smart-scan hit
-/// twice; skipped entries remain in the returned second tuple element.
-fn find_files_with_keyword(
-    py: Python<'_>,
-    paths: Vec<String>,
-    keyword: String,
-    mut extensions: Option<Vec<String>>,
-    mut mode_bits: Option<u32>,
-    mut filename_filter: Option<Vec<String>>,
-    mut exclude_hidden: bool,
-    mut stop_event: Option<PyObject>,
-    mut results_callback: Option<PyObject>,
-    mut max_json_depth: usize,
-    mut max_json_size: u64,
-    options: Option<Py<SearchOptions>>,
-) -> Result<(KeywordFileHits, SkippedEntries), PyErr> {
-    validate_query_length(&keyword)?;
-    let mut structured_memory_budget = None;
-    let mut encoding = None;
-    let mut include_junctions = false;
-    if let Some(config) = options.as_ref() {
-        let config = config.bind(py).borrow();
-        encoding = crate::utils::requested_encoding(config.encoding.as_deref());
-        include_junctions = config.include_junctions;
-        if config.extensions.is_some() {
-            extensions = config.extensions.clone();
-        }
-        if config.mode_bits.is_some() {
-            mode_bits = config.mode_bits;
-        }
-        if config.filename_filter.is_some() {
-            filename_filter = config.filename_filter.clone();
-        }
-        exclude_hidden = config.exclude_hidden;
-        if config.stop_event.is_some() {
-            stop_event = config.stop_event.as_ref().map(|event| event.clone_ref(py));
-        }
-        if config.results_callback.is_some() {
-            results_callback = config
-                .results_callback
-                .as_ref()
-                .map(|callback| callback.clone_ref(py));
-        }
-        if config.max_json_depth.is_some() {
-            max_json_depth = config.max_json_depth.unwrap_or(max_json_depth);
-        }
-        if config.max_json_size.is_some() {
-            max_json_size = config.max_json_size.unwrap_or(max_json_size);
-        }
-        structured_memory_budget = config.structured_memory_budget;
-    }
-    let (is_json, is_xml, is_exact, _is_excel, exclude_binary, _existence_only) =
-        parse_search_mode(mode_bits);
-    let norm_keyword = crate::utils::normalize_unicode(&keyword);
-    let patterns = generate_search_patterns(&norm_keyword, is_xml, is_json);
-    let ac_shared = Arc::new(
-        AhoCorasickBuilder::new()
-            .ascii_case_insensitive(true)
-            .match_kind(MatchKind::LeftmostFirst)
-            .build(&patterns)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?,
-    );
-
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let structured_limiter = structured_memory_budget
-        .filter(|budget| *budget > 0)
-        .map(|budget| Arc::new(StructuredMemoryLimiter::new(budget)));
-    let is_done = Arc::new(AtomicBool::new(false));
-    let callback_state = Arc::new(CallbackState::new());
-    let stop_flag_mon = stop_flag.clone();
-    let is_done_mon = is_done.clone();
-    let stop_evt_mon = stop_event.as_ref().map(|obj| obj.clone_ref(py));
-    let (monitor_done_tx, monitor_done_rx) = std::sync::mpsc::channel::<()>();
-
-    let monitor_handle = if stop_event.is_some() {
-        Some(std::thread::spawn(move || {
-            while !is_done_mon.load(Ordering::Relaxed) && !stop_flag_mon.load(Ordering::Relaxed) {
-                let is_stopped = Python::with_gil(|py| {
-                    if let Some(obj) = &stop_evt_mon {
-                        if let Ok(res) = obj.bind(py).call_method0("is_set") {
-                            if let Ok(true) = res.extract::<bool>() {
-                                return true;
-                            }
-                        }
-                    }
-                    false
-                });
-                if is_stopped {
-                    stop_flag_mon.store(true, Ordering::SeqCst);
-                    break;
-                }
-                match monitor_done_rx
-                    .recv_timeout(std::time::Duration::from_millis(MONITOR_INTERVAL_MS))
-                {
-                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                }
-            }
-        }))
-    } else {
-        None
-    };
-
-    // Retain both the sender and join handle until all walker threads finish.
-    let results_dispatcher = results_callback.as_ref().map(|cb| {
-        let batch_size_limit = 100usize;
-        let queue_capacity = batch_size_limit.saturating_mul(4).max(1);
-        let (tx, rx) = crossbeam_channel::bounded::<(String, u64)>(queue_capacity);
-        let cb_clone = cb.clone_ref(py);
-        let done_dispatcher = is_done.clone();
-        let callback_state_dispatcher = callback_state.clone();
-        let stop_flag_dispatcher = stop_flag.clone();
-
-        let handle = std::thread::spawn(move || {
-            let mut batch = Vec::new();
-            loop {
-                if batch.is_empty() {
-                    match rx.recv_timeout(std::time::Duration::from_millis(20)) {
-                        Ok(res) => batch.push(res),
-                        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                            if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() {
-                                break;
-                            }
-                            continue;
-                        }
-                        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
-                    }
-                }
-                while batch.len() < batch_size_limit {
-                    match rx.try_recv() {
-                        Ok(res) => batch.push(res),
-                        Err(_) => break,
-                    }
-                }
-                if !batch.is_empty() {
-                    Python::with_gil(|py| {
-                        if !callback_state_dispatcher.failed.load(Ordering::Relaxed) {
-                            if let Err(error) =
-                                cb_clone.bind(py).call1((std::mem::take(&mut batch),))
-                            {
-                                callback_state_dispatcher.record_error(
-                                    &stop_flag_dispatcher,
-                                    "results",
-                                    error,
-                                );
-                            }
-                        } else {
-                            batch.clear();
-                        }
-                    });
-                }
-                if done_dispatcher.load(Ordering::Relaxed) && rx.is_empty() {
-                    break;
-                }
-            }
-        });
-        (tx, handle)
-    });
-
-    py.allow_threads(|| {
-        let results = Arc::new(Mutex::new(Vec::new()));
-        let skipped = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
-        let exts = extensions.map(|v| {
-            v.iter()
-                .map(|s| s.trim_start_matches('.').to_lowercase())
-                .collect::<HashSet<String>>()
-        });
-        let glob_set = build_glob_set(&filename_filter.unwrap_or_default());
-
-        let mut roots = paths.into_iter();
-        if let Some(first_root) = roots.next() {
-            // 모든 루트를 하나의 ignore 병렬 워커에 등록합니다. 루트마다 별도
-            // 워커 풀을 만들면 바깥 Rayon 풀과 중첩되어 스레드가 과도하게 늘어납니다.
-            let mut builder =
-                search_walk_builder(Path::new(&first_root), exclude_hidden, include_junctions);
-            for root in roots {
-                builder.add(root);
-            }
-            builder
-                .hidden(exclude_hidden)
-                .ignore(false)
-                .git_ignore(false)
-                .git_exclude(false)
-                .git_global(false);
-            let walker = builder.build_parallel();
-            let visited_paths = Arc::new(Mutex::new(std::collections::HashSet::new()));
-            let res_ref = Arc::clone(&results);
-            let skipped_ref = Arc::clone(&skipped);
-            let ac_ref = Arc::clone(&ac_shared);
-            let stop_ref = Arc::clone(&stop_flag);
-            let kw_orig = norm_keyword.clone();
-            let ext_s = exts.clone();
-            let glob_s = glob_set.clone();
-            let limiter_ref = structured_limiter.clone();
-            // Clone the bounded-channel sender for this walker root.
-            let tx_kw = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
-
-            walker.run(move || {
-                let visited = Arc::clone(&visited_paths);
-                let res_inner = Arc::clone(&res_ref);
-                let skipped_inner = Arc::clone(&skipped_ref);
-                let ac_inner = Arc::clone(&ac_ref);
-                let stop_inner = Arc::clone(&stop_ref);
-                let kw_inner = kw_orig.clone();
-                let exts_inner = ext_s.clone();
-                let glob_inner = glob_s.clone();
-                let tx_inner = tx_kw.clone();
-                let limiter_inner = limiter_ref.clone();
-
-                Box::new(move |entry| {
-                    if stop_inner.load(Ordering::Relaxed) {
-                        return ignore::WalkState::Quit;
-                    }
-                    let entry = match entry {
-                        Ok(e) => e,
-                        Err(error) => {
-                            skipped_inner
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                .extend(walk_error_entries(&error));
-                            return ignore::WalkState::Continue;
-                        }
-                    };
-                    let Some(file_type) = entry.file_type() else {
-                        return ignore::WalkState::Continue;
-                    };
-                    if (include_junctions || file_type.is_dir() || file_type.is_symlink())
-                        && !claim_walk_entry(entry.path(), include_junctions, &visited)
-                    {
-                        return ignore::WalkState::Skip;
-                    }
-                    if file_type.is_dir() && has_recycle_bin_component(entry.path()) {
-                        return ignore::WalkState::Skip;
-                    }
-                    if !file_type.is_file() {
-                        return ignore::WalkState::Continue;
-                    }
-
-                    let path = entry.path();
-                    if let Some(ref valid) = exts_inner {
-                        let ext_str = path
-                            .extension()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        if !valid.contains(&ext_str) {
-                            return ignore::WalkState::Continue;
-                        }
-                    }
-                    if !match_filename_glob(
-                        path.file_name().and_then(|s| s.to_str()).unwrap_or(""),
-                        &glob_inner,
-                    ) {
-                        return ignore::WalkState::Continue;
-                    }
-                    if should_exclude_recycle_path(path) {
-                        return ignore::WalkState::Continue;
-                    }
-
-                    {
-                        let file = match File::open(path) {
-                            Ok(file) => file,
-                            Err(error) => {
-                                skipped_inner
-                                    .lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                    .push((
-                                        path.to_string_lossy().to_string(),
-                                        encode_skip_reason(REASON_ERR_OPEN, error),
-                                    ));
-                                return ignore::WalkState::Continue;
-                            }
-                        };
-                        let meta = match file.metadata() {
-                            Ok(m) => m,
-                            Err(error) => {
-                                skipped_inner
-                                    .lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                                    .push((
-                                        path.to_string_lossy().to_string(),
-                                        encode_skip_reason(REASON_ERR_METADATA, error),
-                                    ));
-                                return ignore::WalkState::Continue;
-                            }
-                        };
-                        let f_size = meta.len();
-                        if f_size == 0 {
-                            return ignore::WalkState::Continue;
-                        }
-                        let file_size_limit = max_json_size;
-                        if f_size > file_size_limit {
-                            let f_path = path.to_string_lossy().to_string();
-                            let mut g = skipped_inner
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            g.push((
-                                f_path,
-                                encode_skip_reason(
-                                    REASON_ERR_TOO_LARGE,
-                                    format!("{} bytes", f_size),
-                                ),
-                            ));
-                            return ignore::WalkState::Continue;
-                        }
-
-                        let is_json_file = is_json
-                            && path
-                                .extension()
-                                .is_some_and(|e| e.eq_ignore_ascii_case("json"));
-                        let is_xml_file = is_xml
-                            && path.extension().is_some_and(|e| {
-                                e.eq_ignore_ascii_case("xml") || e.eq_ignore_ascii_case("sf_xml")
-                            });
-                        let _memory_permit = match acquire_structured_permit(
-                            &limiter_inner,
-                            path,
-                            is_json_file,
-                            is_xml_file,
-                            false,
-                            &stop_inner,
-                        ) {
-                            Ok(permit) => permit,
-                            Err(StructuredPermitError::Cancelled) => {
-                                return ignore::WalkState::Quit
-                            }
-                            Err(StructuredPermitError::InsufficientBudget(estimate)) => {
-                                let f_path = path.to_string_lossy().to_string();
-                                let mut entries = skipped_inner
-                                    .lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                                entries.push((
-                                    f_path,
-                                    encode_skip_reason(REASON_ERR_RESOURCE_BUDGET, estimate),
-                                ));
-                                return ignore::WalkState::Continue;
-                            }
-                        };
-
-                        let f_path = path.to_string_lossy().to_string();
-                        let snapshot = match load_file_snapshot(file, f_size, meta.modified().ok())
-                        {
-                            Ok(snapshot) => snapshot,
-                            Err(error) => {
-                                let mut g = skipped_inner
-                                    .lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                                g.push((f_path, encode_skip_reason(REASON_ERR_MMAP, error)));
-                                return ignore::WalkState::Continue;
-                            }
-                        };
-                        let bytes = snapshot.as_slice();
-                        if encoding.is_some_and(|selected| {
-                            !crate::utils::selected_encoding_valid(bytes, selected)
-                        }) {
-                            skipped_inner
-                                .lock()
-                                .unwrap_or_else(|p| p.into_inner())
-                                .push((
-                                    f_path,
-                                    encode_skip_reason(
-                                        REASON_ERR_ENCODING,
-                                        "Invalid bytes for selected encoding",
-                                    ),
-                                ));
-                            return ignore::WalkState::Continue;
-                        }
-                        let match_result: Result<(bool, bool), String> = if is_json_file {
-                            let encoding = encoding.unwrap_or_else(|| detect_encoding(bytes));
-                            let decoded = match decode_structured_bytes(bytes, encoding) {
-                                Ok(decoded) => decoded,
-                                Err(error) => {
-                                    skipped_inner
-                                        .lock()
-                                        .unwrap_or_else(|p| p.into_inner())
-                                        .push((f_path, error));
-                                    return ignore::WalkState::Continue;
-                                }
-                            };
-                            let searchable = decoded
-                                .as_ref()
-                                .map(|value| value.as_bytes())
-                                .unwrap_or(bytes);
-                            check_json_file_with_policy(
-                                searchable,
-                                &kw_inner,
-                                &ac_inner,
-                                is_exact,
-                                stop_inner.clone(),
-                                max_json_depth,
-                                mode_bits.unwrap_or(0) & types::MODE_ALLOW_DUPLICATE_JSON_KEYS != 0,
-                            )
-                            .map(|outcome| (outcome.found, outcome.depth_limit_reached))
-                            .map_err(|error| encode_skip_reason(REASON_ERR_JSON_PARSE, error))
-                        } else if is_xml_file {
-                            let encoding = encoding.unwrap_or_else(|| detect_encoding(bytes));
-                            let decoded = match decode_structured_bytes(bytes, encoding) {
-                                Ok(decoded) => decoded,
-                                Err(error) => {
-                                    skipped_inner
-                                        .lock()
-                                        .unwrap_or_else(|p| p.into_inner())
-                                        .push((f_path, error));
-                                    return ignore::WalkState::Continue;
-                                }
-                            };
-                            let searchable = decoded
-                                .as_ref()
-                                .map(|value| value.as_bytes())
-                                .unwrap_or(bytes);
-                            check_xml_file(
-                                searchable,
-                                &kw_inner,
-                                &ac_inner,
-                                is_exact,
-                                stop_inner.clone(),
-                            )
-                            .map(|found| (found, false))
-                            .map_err(encode_xml_skip_reason)
-                        } else {
-                            let encoding = encoding.unwrap_or_else(|| {
-                                detect_text_search_encoding(
-                                    bytes, &kw_inner, &ac_inner, is_exact, true,
-                                )
-                            });
-                            if exclude_binary && encoding == UTF_8 && is_binary(bytes) {
-                                Ok((false, false))
-                            } else if encoding == UTF_8 && !is_exact {
-                                Ok((ac_inner.find(bytes).is_some(), false))
-                            } else {
-                                let upper = kw_inner.to_lowercase().to_uppercase();
-                                let matches = do_search_with_mmap(
-                                    bytes,
-                                    encoding,
-                                    &upper,
-                                    &ac_inner,
-                                    is_exact,
-                                    true,
-                                    &stop_inner,
-                                    1,
-                                );
-                                Ok((!matches.is_empty(), false))
-                            }
-                        };
-
-                        let (is_match, depth_limit_reached) = match match_result {
-                            Ok(outcome) => outcome,
-                            Err(error) => {
-                                let mut g = skipped_inner
-                                    .lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                                g.push((f_path, error));
-                                return ignore::WalkState::Continue;
-                            }
-                        };
-
-                        if depth_limit_reached {
-                            let mut g = skipped_inner
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            g.push((
-                                f_path.clone(),
-                                encode_skip_reason(REASON_INFO_JSON_DEPTH_LIMIT, max_json_depth),
-                            ));
-                        }
-
-                        if is_match {
-                            let f_path = path.to_string_lossy().to_string();
-                            // Stream through the callback queue when configured.
-                            if let Some(tx) = &tx_inner {
-                                let _ = tx.send((f_path, f_size));
-                            } else {
-                                let mut g = res_inner
-                                    .lock()
-                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                                g.push((f_path, f_size));
-                            }
-                        }
-                    }
-                    ignore::WalkState::Continue
-                })
-            });
-        }
-
-        // N1: is_done을 먼저 설정하여 dispatcher가 종료 루프에 진입할 수 있도록 합니다.
-        is_done.store(true, Ordering::SeqCst);
-        let _ = monitor_done_tx.send(());
-        if let Some((_, handle)) = results_dispatcher {
-            let _ = handle.join();
-        }
-        if let Some(handle) = monitor_handle {
-            let _ = handle.join();
-        }
-        let final_res = results
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        let final_skipped = skipped
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        if let Some(error) = callback_state.error_message() {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error));
-        }
-        Ok((final_res, final_skipped))
-    })
-}
-
 // Kept in sync with Constants.MAX_SEARCH_QUERY_LENGTH by contract tests.
 const MAX_SEARCH_QUERY_LENGTH: usize = 1000;
 
@@ -2550,8 +1920,7 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_file, m)?)?;
     m.add_function(wrap_pyfunction!(search_dir, m)?)?;
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;
-    m.add_function(wrap_pyfunction!(find_files_with_keyword, m)?)?;
-    m.add("API_VERSION", 7)?;
+    m.add("API_VERSION", 8)?;
     m.add("MAX_SEARCH_QUERY_LENGTH", MAX_SEARCH_QUERY_LENGTH)?;
     // Cargo.toml version 필드를 빌드 시점에 자동으로 읽어 Python 측에 노출합니다.
     m.add("ENGINE_VERSION", env!("CARGO_PKG_VERSION"))?;
@@ -2762,63 +2131,31 @@ mod tests {
                     "NEEDLE",
                     &ac,
                     exact,
-                    false,
                     &Arc::new(AtomicBool::new(false)),
                     5000,
                     &mut actual,
                 );
                 assert_eq!(actual, expected, "encoding={encoding:?}, exact={exact}");
-                let mut existence = Vec::new();
-                search_non_utf8_chunks(
-                    &bytes,
-                    encoding,
-                    "NEEDLE",
-                    &ac,
-                    exact,
-                    true,
-                    &Arc::new(AtomicBool::new(false)),
-                    5000,
-                    &mut existence,
-                );
-                assert_eq!(
-                    existence,
-                    vec![(expected[0].0, "MATCH".to_string(), None, None)]
-                );
             }
         }
     }
 
     #[test]
-    fn existence_encoding_shortcut_requires_a_proven_ascii_hit() {
-        let ac = build_test_ac("needle");
+    fn text_encoding_detection_preserves_full_search_policy() {
         let mut bytes = b"needle\n".to_vec();
         bytes.resize(65536, b'a');
         bytes.extend_from_slice(&encoding_rs::EUC_KR.encode("한글").0);
+        assert_eq!(detect_text_search_encoding(&bytes, "needle", false), UTF_8);
         assert_eq!(
-            detect_text_search_encoding(&bytes, "needle", &ac, false, true),
-            UTF_8
-        );
-        assert_eq!(
-            detect_text_search_encoding(&bytes, "needle", &ac, false, false),
-            UTF_8
-        );
-        assert_eq!(
-            detect_text_search_encoding(&bytes, "needle", &ac, true, false),
+            detect_text_search_encoding(&bytes, "needle", true),
             encoding_rs::EUC_KR
         );
         assert_eq!(
-            detect_text_search_encoding(&bytes, "한글", &build_test_ac("한글"), false, false),
-            encoding_rs::EUC_KR
-        );
-        assert_eq!(
-            detect_text_search_encoding(&bytes, "absent", &build_test_ac("absent"), false, true),
+            detect_text_search_encoding(&bytes, "한글", false),
             encoding_rs::EUC_KR
         );
         let utf16: Vec<u8> = "needle".encode_utf16().flat_map(u16::to_le_bytes).collect();
-        assert_eq!(
-            detect_text_search_encoding(&utf16, "n", &build_test_ac("n"), false, true),
-            UTF_16LE
-        );
+        assert_eq!(detect_text_search_encoding(&utf16, "n", false), UTF_16LE);
     }
 
     #[test]
@@ -2847,7 +2184,6 @@ mod tests {
                     "NEEDLE",
                     &ac,
                     false,
-                    false,
                     &Arc::new(AtomicBool::new(false)),
                     limit,
                     &mut results,
@@ -2874,7 +2210,6 @@ mod tests {
             "NEEDLE",
             &ac,
             false,
-            false,
             &Arc::new(AtomicBool::new(true)),
             5000,
             &mut actual,
@@ -2891,22 +2226,12 @@ mod tests {
     }
 
     #[test]
-    fn do_search_with_mmap_stops_immediately_when_existence_only_is_true() {
-        let ac = build_test_ac("hello");
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let data = b"hello\nhello\nhello\n";
-        let matches = do_search_with_mmap(data, UTF_8, "hello", &ac, false, true, &stop_flag, 5000);
-        assert_eq!(matches.len(), 1);
-    }
-
-    #[test]
     fn long_line_preview_includes_match_region() {
         let ac = build_test_ac("needle");
         let stop_flag = Arc::new(AtomicBool::new(false));
         let mut data = vec![b'A'; 12_000];
         data[8_000..8_006].copy_from_slice(b"needle");
-        let matches =
-            do_search_with_mmap(&data, UTF_8, "needle", &ac, false, false, &stop_flag, 5000);
+        let matches = do_search_with_mmap(&data, UTF_8, "needle", &ac, false, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.contains("needle"));
     }
@@ -2934,7 +2259,11 @@ mod tests {
             (3, "three".to_string(), None, None),
             (
                 0,
-                format!("{}{}", JSON_DEPTH_LIMIT_MARKER_PREFIX, 20),
+                format!(
+                    "{}{}",
+                    crate::json_search::JSON_DEPTH_LIMIT_MARKER_PREFIX,
+                    20
+                ),
                 None,
                 None,
             ),
@@ -3020,8 +2349,7 @@ mod tests {
         let ac = build_test_ac("needle");
         let stop_flag = Arc::new(AtomicBool::new(false));
         let data = b"prefix\nneedle\r";
-        let matches =
-            do_search_with_mmap(data, UTF_8, "NEEDLE", &ac, true, false, &stop_flag, 5000);
+        let matches = do_search_with_mmap(data, UTF_8, "NEEDLE", &ac, true, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, 2);
     }
@@ -3039,9 +2367,7 @@ mod tests {
 
         let ac = build_test_ac("needle");
         let stop_flag = Arc::new(AtomicBool::new(false));
-        let matches = do_search_with_mmap(
-            &data, encoding, "NEEDLE", &ac, false, false, &stop_flag, 5000,
-        );
+        let matches = do_search_with_mmap(&data, encoding, "NEEDLE", &ac, false, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.contains("needle"));
     }

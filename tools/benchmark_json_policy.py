@@ -41,12 +41,11 @@ def create_cases(root: Path):
         wide.write_text(json.dumps({f"key{i}": "needle" if i == 19_999 else "payload"
                                    for i in range(20_000)}), encoding="utf-8")
     return [
-        ("small-repeated", small, "present", False),
-        ("small-sparse", small, "119999", False),
-        ("small-existence", small, "present", True),
-        ("small-no-match", small, "__absent_keyword__", False),
-        ("escaped-keys", escaped, "present", False),
-        ("wide-object", wide, "needle", False),
+        ("small-repeated", small, "present"),
+        ("small-sparse", small, "119999"),
+        ("small-no-match", small, "__absent_keyword__"),
+        ("escaped-keys", escaped, "present"),
+        ("wide-object", wide, "needle"),
     ]
 
 
@@ -56,17 +55,15 @@ def fingerprint(matches, backend="native"):
 
 
 def run_search(engine, case, allow, backend):
-    _, path, query, existence = case
+    _, path, query = case
     if backend != "native":
         from core import search_engine
         search_engine.sf_engine = engine
 
         with search_engine.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
             return search_engine.search_in_json_special(str(path), query,
-                existence_only=existence, use_complex_search=backend == "precise")
+                use_complex_search=backend == "precise")
     bits = Constants.RUST_MODE_JSON
-    if existence:
-        bits |= Constants.RUST_MODE_EXISTENCE_ONLY
     if allow:
         bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS
     return engine.search_file(str(path), query, bits, max_per_file=10_000,
@@ -77,14 +74,14 @@ def validate_warm(name, warm, backend):
     count = len(warm) if backend == "native" else (warm[1] if warm else 0)
     if name == "small-no-match":
         assert not warm, (name, "unexpected hit")
-    elif name in ("small-sparse", "small-existence", "wide-object"):
+    elif name in ("small-sparse", "wide-object"):
         assert count == 1, (name, "missing or extra result")
     else:
         assert count >= 10_000, (name, "missing results")
 
 
 def measure(engine, case, repeats, backend="native"):
-    name, path, _, _ = case
+    name, path, _ = case
     samples = {False: [], True: []}
     fingerprints = {}
 
@@ -108,7 +105,7 @@ def measure(engine, case, repeats, backend="native"):
 
 
 def compare(engines, case, repeats, backend):
-    name, path, _, _ = case
+    name, path, _ = case
     order = [(label, allow) for label in engines for allow in (False, True)]
     samples = {key: [] for key in order}
     signatures = set()

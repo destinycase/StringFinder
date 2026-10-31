@@ -156,11 +156,12 @@ class AppStrings:
     )
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_BINARY_LABEL = "바이너리 파일 제외"
-    BOOLEAN_SEARCH_LABEL = "존재 여부만 확인"
     SEARCH_PROFILE_LABEL = "검색 방식"
     SEARCH_PROFILE_NORMAL = "일반 검색"
     SEARCH_PROFILE_PRECISE = "누락 방지 검색(매우 느림)"
-    SPECIAL_SEARCH_LABEL = "모드"
+    FILENAME_FILTER_INVALID_GROUP = "쉼표 사이에 파일명 조건을 입력하세요."
+    SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
+    SPECIAL_SEARCH_LABEL = '특수 검색'
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
     FILTER_FILENAME_TAB = "파일명({})"
@@ -173,42 +174,39 @@ class AppStrings:
         "xlsx,xlsm,xls,xlsb처럼 쉼표로 묶어 한 항목에 추가할 수도 있습니다. "
         "체크한 확장자가 없으면 확장자 없는 파일도 포함하며, 다른 제외 설정은 그대로 적용됩니다.</p>"
         "<p><b>필터 → 파일명:</b> report를 추가하면 이름에 report가 포함된 파일을 검색합니다. "
-        "여러 항목은 그중 하나라도 포함되면 대상이며, 체크한 항목이 없으면 파일명을 제한하지 않습니다. "
+        "report,invoice처럼 쉼표로 묶어 추가할 수도 있습니다. 여러 조건은 그중 하나라도 포함되면 대상이며, 체크한 항목이 없으면 파일명을 제한하지 않습니다. "
         "확장자·파일명에는 와일드카드를 사용할 수 없습니다.</p>"
         "<p>체크 해제는 이번 검색에서 사용하지 않는 것이고, <b>×는 목록에서만 제거</b>합니다. "
         "원본 파일이나 폴더를 삭제하지 않습니다. 검색할 폴더는 하나 이상 체크해야 합니다.</p>"
         "<p>필터 탭 이름 옆에는 체크한 수량이 표시됩니다. 쉼표로 묶은 확장자도 개별 수량으로 세며 "
         "중복은 한 번만 셉니다. 현재 적용 조건은 하단 상태 표시줄, 검색 진행·시간·결과는 검색 요약에서 확인하세요.</p>"
-        "<h3>검색 방식과 모드</h3><p><b>일반 검색:</b> 평소에 권장합니다. "
+        "<h3>검색 방식과 특수 검색</h3><p><b>일반 검색:</b> 평소에 권장합니다. "
         "<b>누락 방지 검색:</b> 파일에 글자가 있는데 찾지 못했을 때 좁은 범위에서 시도하세요. 매우 느릴 수 있습니다.</p>"
-        "<p><b>존재만 확인:</b> 각 파일에서 한 건을 찾으면 추가 위치 수집을 멈춥니다. "
-        "모든 위치나 문맥이 필요하면 해제하세요.</p>"
-        "<p><b>모드 끄기:</b> 왼쪽 확장자 조건을 사용합니다. "
+        "<p><b>특수 검색 기본:</b> 왼쪽 확장자 조건을 사용합니다. "
         "<b>JSON/XML:</b> 항목·태그·속성 이름을 제외하고 값을 검색합니다. "
         "<b>Excel:</b> 셀 값을 검색하고 시트·셀·값을 나누어 표시합니다. "
         "JSON/XML/Excel 모드를 선택하면 해당 형식만 검색하며, 보관된 확장자 목록은 적용하지 않습니다. "
         "폴더·파일명 조건은 계속 적용됩니다.</p>"
         "<p><b>부분 일치:</b> 값 안에 검색어가 포함되면 찾습니다. "
         "<b>정확히 일치:</b> 앞뒤 공백을 제외한 값 전체가 같아야 하며 대소문자 구분 기능은 아닙니다. "
-        "Excel은 모드를 꺼도 셀 값을 읽으며, 수식 자체가 아닌 저장된 계산 결과를 검색합니다.</p>"
+        "Excel은 기본에서도 셀 값을 읽으며, 수식 자체가 아닌 저장된 계산 결과를 검색합니다.</p>"
         "<h3>결과가 예상과 다를 때</h3><p>폴더 체크, 필터, 모드를 먼저 확인하세요. "
         "건너뛴 파일이나 결과 수량 제한 안내가 있으면 내용을 확인하세요. "
         "결과가 없어도 모든 파일을 끝까지 정상 검색했다는 뜻은 아닙니다.</p>"
     )
     EXTENSION_FILTER_INVALID_GROUP = "쉼표 사이에 빈 항목 없이 입력하세요. 예: xlsx,xlsm,xls,xlsb"
     FOLDER_FILTER_USAGE = "폴더 추가 → 체크한 폴더 검색\n체크: 적용 · ×: 목록에서만 제거"
-    FOLDER_FILTER_EMPTY = "검색할 폴더를 추가하거나 체크하세요."
-    FOLDER_FILTER_SELECTED = "폴더 {}개 선택 · 하위 폴더 포함"
+    FOLDER_FILTER_EMPTY = '폴더 선택 필요'
+    FOLDER_FILTER_SELECTED = '폴더 {}개 선택'
     EXTENSION_FILTER_USAGE = "txt 또는 xlsx,xlsm 입력 → 추가\n체크: 적용 · ×: 목록에서만 제거"
-    EXTENSION_FILTER_ALL = "확장자 제한 없음 · 확장자 없는 파일도 포함"
-    EXTENSION_FILTER_SELECTED = "체크한 확장자 {}종만 검색"
-    EXTENSION_FILTER_AUTOMATIC = "선택한 모드로 {}만 검색\n확장자 목록은 적용하지 않습니다."
-    FILENAME_FILTER_USAGE = "report 입력 → 추가 → 이름에 report가 포함된 파일\n체크: 적용 · ×: 목록에서만 제거"
-    FILENAME_FILTER_ALL = "파일명 제한 없음"
-    FILENAME_FILTER_SELECTED = "체크한 파일명 조건 {}개 중 하나라도 포함"
-    SPECIAL_SEARCH_OFF = "끄기"
+    EXTENSION_FILTER_ALL = '확장자 제한 없음'
+    EXTENSION_FILTER_SELECTED = '확장자 {}개 선택 - {}'
+    FILENAME_FILTER_USAGE = "report 또는 report,invoice 입력 → 추가\n체크: 적용 · ×: 목록에서만 제거"
+    FILENAME_FILTER_ALL = '파일명 제한 없음'
+    FILENAME_FILTER_SELECTED = '파일명 필터 {}개 선택 - {}'
+    SPECIAL_SEARCH_OFF = '기본'
     SPECIAL_SEARCH_ITEMS = [
-        "끄기",
+        SPECIAL_SEARCH_OFF,
         "XML (부분 일치)",
         "XML (정확히 일치)",
         "JSON (부분 일치)",
@@ -224,7 +222,7 @@ class AppStrings:
     )
     EXT_EDIT_PLACEHOLDER = "예: txt 또는 xlsx,xlsm (와일드카드 불가)"
     EXTENSION_FILTER_WILDCARD_NOT_ALLOWED = "확장자 필터에는 와일드카드·패턴 문자(*, ?, [, ], \\)를 사용할 수 없습니다. json 또는 .json처럼 확장자만 입력하세요."
-    FILENAME_LIST_PLACEHOLDER = "파일명 일부 (예: npc, 와일드카드 사용 불가)"
+    FILENAME_LIST_PLACEHOLDER = '파일명 조건 (예: report,invoice)'
     FILENAME_FILTER_WILDCARD_NOT_ALLOWED = "파일명 필터에는 와일드카드·패턴 문자(*, ?, [, ], \\)를 사용할 수 없습니다."
     RESULT_FILTER_FILE_PLACEHOLDER = "파일 필터..."
     RESULT_COMPACT_ROWS = "목록 조밀하게"
@@ -372,7 +370,6 @@ class AppStrings:
     # 기존 검색 모드명 (안전성 확보를 위해 확인)
     SEARCH_MODE_EXACT = "정확히 일치"
     SEARCH_MODE_COMPLEX = "누락 방지 검색"
-    BOOLEAN_SEARCH_MATCH_CONTENT = "[파일 내 검색 결과 존재]"
     # =========================================================================
     # [7] 내보내기 (Export)
     # =========================================================================
@@ -507,7 +504,6 @@ class AppStrings:
     LOG_SCH_SKIP_SIMPLE = "  └─ '{}'"
     LOG_SCH_ALL_FILES_GUIDE = "[안내] 전체 파일 스캔 모드."
     LOG_SCH_FILENAME_FILTER_GUIDE = "[안내] 파일명 필터 적용 완료: '{}'"
-    LOG_SCH_SMART_SCAN_SKIPPED = "[스캔] 스마트 스캔 우회: '{}' (사유: {})"
     LOG_SCH_ALL_DONE = "=== [검색] 모든 작업이 종료되었습니다. (합계: {:.3f}초) ==="
     LOG_SCH_FAILED_PARTIAL = "[검색 오류 · 결과 불완전] 확보한 결과: {}개 파일, {}건 / 건너뛴 파일: {}개"
     LOG_WKR_STARTED = "[엔진] 병렬 검색 데이터 처리 시작 ('{}' | 필터: {} | {})"
@@ -544,11 +540,7 @@ class AppStrings:
     LOG_SYS_RUST_HASH = "[시스템] Rust 엔진 무결성 체크(SHA-256): {}"
     LOG_SCH_RUST_PERF_STATS = "[성능] Rust 원시 통계: Count={}, Call={:.4f}s, Norm={:.4f}s"
     LOG_SCH_ENGINE_ISOLATION_BAIL = "[엔진] 고립 정책에 의한 작업 차단 (사유: {}): {}"
-    LOG_SCH_RUST_SMART_SCAN_FATAL = "[오류] 스마트 스캔 중 치명적 예외 발생: {}"
     LOG_SCH_BINARY_COUNT_PARSE_FAIL = "[엔진] 바이너리 검색 결과 수 분석 실패 (길이 {}): {}"
-    LOG_SCH_EXISTENCE_DECODE_FAIL = "[엔진] 조기 존재 여부 확인 중 디코딩 실패: {}"
-    LOG_SCH_EXISTENCE_JSON_FALLBACK = "[엔진] JSON 존재 확인 실패: 누락 방지 검색으로 폴백합니다. ('{}'): {}"
-    LOG_SCH_EXISTENCE_UNEXPECTED = "[엔진] 일치 여부 확인 중 예기치 못한 오류 ('{}'): {}"
     LOG_SYS_RUST_NO_FALLBACK = "[시스템] Rust 엔진 로딩 실패 (Python 폴백 정책 미적용 환경)."
     # =========================================================================
     # [12] 에러 메시지 (Error Messages) - 형식: [오류] 메시지
@@ -623,7 +615,6 @@ class AppStrings:
     LOG_SCH_BINARY_CHECK_ERROR = "[오류] 바이너리 무결성 점검 오류: {}"
     LOG_SCH_RUST_DIR_FATAL = "[오류] Rust 디렉토리 검색 중 치명적 예외 ('{}'): {}"
     LOG_SCH_RUST_FILELIST_FATAL = "[오류] Rust 파일 목록 생성 중 치명적 예외 ('{}'): {}"
-    LOG_SCH_RUST_SMART_SCAN_ERROR = "[오류] Rust 스마트 스캔 엔진 오류 ('{}'): {}"
     LOG_SRCH_RUST_MEM_GUARD_WARN = "[안내] Rust 엔진 메모리 보호 가드 작동: {}"
     LOG_SCH_ERROR_FILE = "[오류] 개별 파일 처리 실패 ('{}'): {}"
     LOG_SCH_RUST_EXCEL_FAIL = "[오류] Rust 기반 Excel 검색 실패 ('{}'): {}"
@@ -658,7 +649,6 @@ class AppStrings:
     SKIP_REASON_RESOURCE_BUDGET = "[안내] 파일 메모리 예산 부족: {}"
     SKIP_REASON_FILE_MATCH_LIMIT = "[안내] 파일당 최대 검색 결과 수({}건)에 도달하여 이후 결과를 생략했습니다."
     SKIP_REASON_JSON_DEPTH_LIMIT = "[안내] JSON 최대 깊이({})를 초과한 하위 영역을 검색하지 않았습니다."
-    SKIP_REASON_EXCEL_CELL_LIMIT = "[안내] Excel 존재 확인 최대 검사 셀 수({}개)에 도달하여 이후 셀을 검사하지 않았습니다."
     SKIP_REASON_PANIC = "[오류] 하위 엔진 패닉 발생: {}"
     SKIP_REASON_CRITICAL = "[오류] 치명적인 예외 감지: {}"
     SKIP_REASON_BATCH = "[오류] 파일 처리 작업 단위 실패: {}"

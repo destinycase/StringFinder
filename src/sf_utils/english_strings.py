@@ -3,15 +3,14 @@
 
 ENGLISH_STRINGS = {
     "FOLDER_FILTER_USAGE": "Add folder → check folders to search\nCheck: use · ×: remove from list only",
-    "FOLDER_FILTER_EMPTY": "Add or check a folder to search.",
-    "FOLDER_FILTER_SELECTED": "Selected folders: {} · includes subfolders",
+    "FOLDER_FILTER_EMPTY": 'Select a folder',
+    "FOLDER_FILTER_SELECTED": '{} folders selected',
     "EXTENSION_FILTER_USAGE": "Enter txt or xlsx,xlsm → Add\nCheck: use · ×: remove from list only",
-    "EXTENSION_FILTER_ALL": "No extension filter · includes files without extensions",
-    "EXTENSION_FILTER_SELECTED": "Search only {} checked extensions",
-    "EXTENSION_FILTER_AUTOMATIC": "Selected mode: search only {}\nThe extension list is not applied.",
+    "EXTENSION_FILTER_ALL": 'All extensions',
+    "EXTENSION_FILTER_SELECTED": '{} extensions selected - {}',
     "FILENAME_FILTER_USAGE": "Enter report → Add → names containing report\nCheck: use · ×: remove from list only",
-    "FILENAME_FILTER_ALL": "No filename filter",
-    "FILENAME_FILTER_SELECTED": "Names containing any of {} checked conditions",
+    "FILENAME_FILTER_ALL": 'No filename restriction',
+    "FILENAME_FILTER_SELECTED": '{} filename filters selected - {}',
     "ADVANCED_INCLUDE_JUNCTIONS": "Windows linked folders (junctions)",
     "JUNCTION_EXCLUDE": "Exclude",
     "JUNCTION_INCLUDE": "Include",
@@ -148,11 +147,12 @@ ENGLISH_STRINGS = {
     ),
     "EXCLUDE_HIDDEN_LABEL": "Exclude hidden files/folders",
     "EXCLUDE_BINARY_LABEL": "Exclude binary files",
-    "BOOLEAN_SEARCH_LABEL": "Existence only (fast)",
     "SEARCH_PROFILE_LABEL": "Search mode",
     "SEARCH_PROFILE_NORMAL": "Normal search",
     "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
-    "SPECIAL_SEARCH_LABEL": "Mode",
+    "FILENAME_FILTER_INVALID_GROUP": "Enter a filename term between each comma.",
+    "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
+    "SPECIAL_SEARCH_LABEL": 'Special search',
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
     "FILTER_FILENAME_TAB": "Filenames ({})",
@@ -166,7 +166,7 @@ ENGLISH_STRINGS = {
         "Use xlsx,xlsm,xls,xlsb to add a group as one entry. With no checked extensions, "
         "files without extensions are included too; other exclusions still apply.</p>"
         "<p><b>Filters → Filenames:</b> add report to find names containing report. "
-        "Any checked term may match; no checked terms means no filename restriction. "
+        "Use report,invoice to group terms. Any checked term may match; no checked terms means no filename restriction. "
         "Wildcards are not supported in either filter.</p>"
         "<p>Uncheck an entry to stop using it for this search. <b>× removes it from the list only</b>, "
         "not from disk. At least one folder must be checked.</p>"
@@ -175,21 +175,19 @@ ENGLISH_STRINGS = {
         "and results appear in the search summary.</p>"
         "<h3>Search method and mode</h3><p><b>Normal search:</b> recommended for everyday use. "
         "<b>Miss-prevention search:</b> try a narrow scope if text known to exist is not found. It can be very slow.</p>"
-        "<p><b>Existence only:</b> stops collecting more locations after a match in each file. "
-        "Turn it off for all locations and context.</p>"
-        "<p><b>Mode Off:</b> uses your extension filter. <b>JSON/XML:</b> searches values, "
+        "<p><b>Special search Default:</b> uses your extension filter. <b>JSON/XML:</b> searches values, "
         "not field, tag or attribute names. <b>Excel:</b> searches cell values and separates "
         "sheet, cell and value columns. These modes select only their file format and temporarily "
         "ignore saved extension entries. Folder and filename conditions still apply.</p>"
         "<p><b>Contains:</b> finds search text within a value. <b>Exact match:</b> compares the whole "
         "value after trimming surrounding whitespace; it does not mean case-sensitive matching. "
-        "Excel files are read as cells even with Mode Off. Saved formula results, not formulas, are searched.</p>"
+        "Excel files are read as cells even with Special search Default. Saved formula results, not formulas, are searched.</p>"
         "<h3>Unexpected results</h3><p>Check folders, filters and mode first. Review skipped-file "
         "and result-limit notices. No results does not necessarily mean all files were searched completely.</p>"
     ),
-    "SPECIAL_SEARCH_OFF": "Off",
+    "SPECIAL_SEARCH_OFF": 'Default',
     "SPECIAL_SEARCH_ITEMS": [
-        "Off",
+        "Default",
         "XML (contains)",
         "XML (exact)",
         "JSON (contains)",
@@ -200,7 +198,7 @@ ENGLISH_STRINGS = {
     "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use miss-prevention search for complex Unicode variants)",
     "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm (no wildcards)",
     "EXTENSION_FILTER_WILDCARD_NOT_ALLOWED": "Extension filters do not support wildcard or pattern characters (*, ?, [, ], \\). Enter only an extension, such as json or .json.",
-    "FILENAME_LIST_PLACEHOLDER": "Part of filename (e.g. npc; no wildcards)",
+    "FILENAME_LIST_PLACEHOLDER": 'Filename terms (e.g. report,invoice)',
     "FILENAME_FILTER_WILDCARD_NOT_ALLOWED": "Filename filters do not support wildcard or pattern characters (*, ?, [, ], \\).",
     "RESULT_FILTER_FILE_PLACEHOLDER": "Filter files...",
     "RESULT_COMPACT_ROWS": "Compact lists",
@@ -341,7 +339,6 @@ ENGLISH_STRINGS = {
     "SKIP_EMPTY_FILE": "[Skipped] Empty file",
     "SEARCH_MODE_EXACT": "exact",
     "SEARCH_MODE_COMPLEX": "Miss-prevention search",
-    "BOOLEAN_SEARCH_MATCH_CONTENT": "[Matching item exists in file]",
     "RESULT_EXPORT_TITLE": "Export results",
     "RESULT_EXPORT_FILTER": "Excel files (*.xlsx);;Text files (*.txt)",
     "RESULT_EXPORT_ALL": "Export all",
@@ -464,7 +461,6 @@ ENGLISH_STRINGS = {
     "LOG_SCH_SKIP_REASON": "  └─ '{}' (reason: {})",
     "LOG_SCH_ALL_FILES_GUIDE": "[Info] Scanning all files.",
     "LOG_SCH_FILENAME_FILTER_GUIDE": "[Info] Filename filter applied: '{}'",
-    "LOG_SCH_SMART_SCAN_SKIPPED": "[Scan] Smart scan bypassed: '{}' (reason: {})",
     "LOG_SCH_ALL_DONE": "=== [Search] All tasks finished. (total: {:.3f}s) ===",
     "LOG_SCH_FAILED_PARTIAL": "[Search error · incomplete results] Retained: {} files, {} matches / skipped: {} files",
     "LOG_WKR_STARTED": "[Engine] Starting parallel search processing ('{}' | filter: {} | {})",
@@ -498,11 +494,7 @@ ENGLISH_STRINGS = {
     "LOG_SYS_RUST_HASH": "[System] Rust engine integrity check (SHA-256): {}",
     "LOG_SCH_RUST_PERF_STATS": "[Performance] Raw Rust statistics: Count={}, Call={:.4f}s, Norm={:.4f}s",
     "LOG_SCH_ENGINE_ISOLATION_BAIL": "[Engine] Task blocked by isolation policy (reason: {}): {}",
-    "LOG_SCH_RUST_SMART_SCAN_FATAL": "[Error] A fatal exception occurred during smart scan: {}",
     "LOG_SCH_BINARY_COUNT_PARSE_FAIL": "[Engine] Failed to parse binary match count (length {}): {}",
-    "LOG_SCH_EXISTENCE_DECODE_FAIL": "[Engine] Failed to decode during early existence check: {}",
-    "LOG_SCH_EXISTENCE_JSON_FALLBACK": "[Engine] JSON existence check failed; using deep search for ('{}'): {}",
-    "LOG_SCH_EXISTENCE_UNEXPECTED": "[Engine] Unexpected error during existence check ('{}'): {}",
     "LOG_SYS_RUST_NO_FALLBACK": "[System] Failed to load the Rust engine (Python fallback is disabled by policy).",
     "ERROR_TITLE": "Error",
     "ERROR_UNKNOWN": "Unknown system error.",
@@ -574,7 +566,6 @@ ENGLISH_STRINGS = {
     "LOG_SCH_BINARY_CHECK_ERROR": "[Error] Binary integrity check failed: {}",
     "LOG_SCH_RUST_DIR_FATAL": "[Error] Fatal exception during Rust directory search ('{}'): {}",
     "LOG_SCH_RUST_FILELIST_FATAL": "[Error] Fatal exception while building the Rust file list ('{}'): {}",
-    "LOG_SCH_RUST_SMART_SCAN_ERROR": "[Error] Rust smart-scan engine error ('{}'): {}",
     "LOG_SRCH_RUST_MEM_GUARD_WARN": "[Info] Rust engine memory guard activated: {}",
     "LOG_SCH_ERROR_FILE": "[Error] Failed to process file ('{}'): {}",
     "LOG_SCH_RUST_EXCEL_FAIL": "[Error] Rust Excel search failed ('{}'): {}",
@@ -606,7 +597,6 @@ ENGLISH_STRINGS = {
     "SKIP_REASON_RESOURCE_BUDGET": "[Info] Insufficient file memory budget: {}",
     "SKIP_REASON_FILE_MATCH_LIMIT": "[Info] The per-file match limit ({}) was reached; later results were omitted.",
     "SKIP_REASON_JSON_DEPTH_LIMIT": "[Info] Nested content beyond the maximum JSON depth ({}) was not searched.",
-    "SKIP_REASON_EXCEL_CELL_LIMIT": "[Info] The Excel existence-check cell limit ({}) was reached; later cells were not checked.",
     "SKIP_REASON_PANIC": "[Error] A lower-level engine panic occurred: {}",
     "SKIP_REASON_CRITICAL": "[Error] A critical exception was detected: {}",
     "SKIP_REASON_BATCH": "[Error] A file-processing batch failed: {}",

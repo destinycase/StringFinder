@@ -21,17 +21,17 @@ def search_policy():
         yield
 
 
-def native(path, query, mode, existence=False, entry="directory"):
+def native(path, query, mode, entry="directory"):
     if not se.HAS_RUST_ENGINE:
         pytest.skip("native engine unavailable")
     if entry == "directory":
-        return se.search_directory_fast([str(path)], query, [], special_mode=mode, existence_only=existence)
-    return se.search_files_list_fast([str(path)], query, special_mode=mode, existence_only=existence)
+        return se.search_directory_fast([str(path)], query, [], special_mode=mode)
+    return se.search_files_list_fast([str(path)], query, special_mode=mode)
 
 
-def precise(path, query, mode, existence=False):
+def precise(path, query, mode):
     return se.search_in_file(str(path), query, special_mode=mode,
-                             use_complex_search=True, existence_only=existence)
+                             use_complex_search=True)
 
 
 @pytest.mark.parametrize("digits", [4301, 5000, 20000])
@@ -49,7 +49,7 @@ def test_json_large_integer_preserves_source_and_global_limit(tmp_path, digits, 
         result = native(p, query, C.MODE_JSON)
         assert result["results"][0][1] == 1 and not result["skipped"]
         assert precise(p, query, C.MODE_JSON)[1] == 1
-    assert precise(p, "999999", C.MODE_JSON, True)[1] == 1
+    assert precise(p, "999999", C.MODE_JSON)[1] == 1
 
 
 def test_iterative_json_large_integer_and_invalid_number():
@@ -65,32 +65,30 @@ def test_iterative_json_large_integer_and_invalid_number():
 
 @pytest.mark.parametrize("mode", [C.MODE_JSON, C.MODE_XML])
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be", "utf-8"])
-@pytest.mark.parametrize("existence", [False, True])
 @pytest.mark.parametrize("entry", ["directory", "files", "single"])
-def test_damaged_structured_encoding_skips_whole_document(tmp_path, mode, encoding, existence, entry):
+def test_damaged_structured_encoding_skips_whole_document(tmp_path, mode, encoding, entry):
     extension, content = ("json", '{"v":"needle\ud800"}') if mode == C.MODE_JSON else ("xml", '<root>needle\ud800</root>')
     bom = {"utf-16-le": b"\xff\xfe", "utf-16-be": b"\xfe\xff", "utf-8": b"\xef\xbb\xbf"}[encoding]
     p = tmp_path / ("damaged." + extension)
     p.write_bytes(bom + content.encode(encoding, errors="surrogatepass"))
     if entry == "single":
-        assert se.search_in_file(str(p), "needle", special_mode=mode, existence_only=existence) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
+        assert se.search_in_file(str(p), "needle", special_mode=mode) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
     else:
-        result = native(p, "needle", mode, existence, entry)
+        result = native(p, "needle", mode, entry)
         assert result["results"] == []
         assert result["skipped"][0][1] == AppStrings.ERROR_DOCUMENT_ENCODING
-    assert precise(p, "needle", mode, existence) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
+    assert precise(p, "needle", mode) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
 
 
 @pytest.mark.parametrize("space", ["\n", "\r\n", "\r", "\t"])
-@pytest.mark.parametrize("existence", [False, True])
-def test_xml_literal_attribute_whitespace(tmp_path, space, existence):
+def test_xml_literal_attribute_whitespace(tmp_path, space):
     p = tmp_path / "attribute.xml"
     p.write_bytes(('<root v="needle' + space + 'value"/>').encode())
-    assert native(p, "needle value", C.MODE_XML, existence)["results"][0][1] == 1
-    assert precise(p, "needle value", C.MODE_XML, existence)[1] == 1
+    assert native(p, "needle value", C.MODE_XML)["results"][0][1] == 1
+    assert precise(p, "needle value", C.MODE_XML)[1] == 1
     p.write_text('<root v="needle&#xA;value"/>', encoding="utf-8")
-    assert not native(p, "needle value", C.MODE_XML, existence)["results"]
-    assert precise(p, "needle value", C.MODE_XML, existence) is None
+    assert not native(p, "needle value", C.MODE_XML)["results"]
+    assert precise(p, "needle value", C.MODE_XML) is None
 
 
 def broken_workbook(path, broken_count=1, broken_first=False):
@@ -118,14 +116,13 @@ def broken_workbook(path, broken_count=1, broken_first=False):
 
 @pytest.mark.parametrize("entry", ["directory", "files"])
 @pytest.mark.parametrize("query", ["needle", "1904-01-01", "not found"])
-@pytest.mark.parametrize("existence", [False, True])
-def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, entry, query, existence):
+def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, entry, query):
     p = tmp_path / "partial.xlsx"
     broken_workbook(p, broken_first=True)
-    result = native(p, query, C.MODE_EXCEL, existence, entry=entry)
+    result = native(p, query, C.MODE_EXCEL, entry=entry)
     assert len(result["skipped"]) == 1
     assert "Broken0" in result["skipped"][0][1]
-    answer = precise(p, query, C.MODE_EXCEL, existence)
+    answer = precise(p, query, C.MODE_EXCEL)
     if query == "not found":
         assert not result["results"]
         assert answer[0] == C.STATUS_SKIPPED
@@ -136,17 +133,16 @@ def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, entry, query, ex
         assert "Good" not in result["skipped"][0][1]
 
 
-@pytest.mark.parametrize("existence", [False, True])
-def test_excel_errors_do_not_consume_cap_or_disappear_on_hit(tmp_path, existence):
+def test_excel_errors_do_not_consume_cap_or_disappear_on_hit(tmp_path):
     p = tmp_path / "many_errors.xlsx"
     broken_workbook(p, broken_count=11, broken_first=True)
-    result = native(p, "needle", C.MODE_EXCEL, existence)
+    result = native(p, "needle", C.MODE_EXCEL)
     assert result["results"][0][1] == 1
     assert len(result["skipped"]) == 1
-    answer = precise(p, "needle", C.MODE_EXCEL, existence)
+    answer = precise(p, "needle", C.MODE_EXCEL)
     assert answer[1] == 1
     assert se._extract_normalized_partial_skip_reason(answer[2])
-    direct = se.search_in_excel_special(str(p), "needle", existence_only=existence)
+    direct = se.search_in_excel_special(str(p), "needle")
     assert direct[1] == 1
     assert se._extract_normalized_partial_skip_reason(direct[2])
 
@@ -183,17 +179,6 @@ def test_deep_directory_scan_is_stack_safe(tmp_path):
             directory.rmdir()
 
 
-@pytest.mark.parametrize("mode", [C.MODE_JSON, C.MODE_XML])
-def test_keyword_prefilter_rejects_invalid_structured_bytes(tmp_path, mode):
-    p = tmp_path / ("bad.json" if mode == C.MODE_JSON else "bad.xml")
-    content = '{"v":"needle\ud800"}' if mode == C.MODE_JSON else '<root>needle\ud800</root>'
-    p.write_bytes(b"\xff\xfe" + content.encode("utf-16-le", errors="surrogatepass"))
-    found, skipped = se.find_files_with_keyword_fast([str(p)], "needle",
-        special_mode=mode, return_skipped=True)
-    assert not found
-    assert skipped[0][1] == AppStrings.ERROR_DOCUMENT_ENCODING
-
-
 @pytest.mark.parametrize("mode", [None, C.MODE_JSON, C.MODE_XML])
 def test_ordinary_text_keeps_replacement_policy(tmp_path, mode):
     p = tmp_path / "ordinary.txt"
@@ -226,14 +211,13 @@ def test_new_notices_localize_after_session_language_change():
         set_language(previous)
 
 
-@pytest.mark.parametrize("existence", [False, True])
-def test_worker_retains_excel_results_and_emits_partial_notice(tmp_path, existence, qtbot):
+def test_worker_retains_excel_results_and_emits_partial_notice(tmp_path, qtbot):
     from core.worker import SearchWorker
     p = tmp_path / "worker.xlsx"
     broken_workbook(p, broken_first=True)
     worker = SearchWorker({"search_paths": [str(tmp_path)], "search_string": "needle",
                            "extensions": ["xlsx"], "special_mode": C.MODE_EXCEL,
-                           "existence_only": existence})
+                           })
     received, skipped = [], []
     worker.signals.results_found.connect(lambda rows: received.extend(rows))
     worker.signals.skipped_found.connect(lambda rows: skipped.extend(rows))

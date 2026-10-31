@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from core.search_engine import (
     FileScanner,
-    find_files_with_keyword_fast,
     search_directory_fast,
     search_files_list_fast,
     search_in_file,
@@ -84,30 +83,8 @@ def test_rust_engine_exclude_hidden(hidden_test_env):
     assert len(results) == 2
 
 
-def test_rust_smart_scan_exclude_hidden(hidden_test_env):
-    """test_rust_smart_scan_exclude_hidden ?⑥닔."""
-    found = find_files_with_keyword_fast([str(hidden_test_env)], "find", extensions=["txt"], exclude_hidden=True)
-    if isinstance(found, tuple):
-        found_files = found[0]
-    else:
-        found_files = found
-
-    paths = [f[0] for f in found_files]
-    assert any("normal_dir" in p for p in paths)
-    assert not any("hidden_dir" in p for p in paths)
-    assert len(found_files) == 1
-
-    found = find_files_with_keyword_fast([str(hidden_test_env)], "find", extensions=["txt"], exclude_hidden=False)
-    if isinstance(found, tuple):
-        found_files = found[0]
-    else:
-        found_files = found
-    assert len(found_files) == 2
-
-
 def test_rust_files_list_exclude_hidden(hidden_test_env):
     """Validate exclude_hidden behavior for explicit file list scans."""
-    from core.search_engine import search_files_list_fast
 
     normal_dir = hidden_test_env / "normal_dir"
     hidden_dir = hidden_test_env / "hidden_dir"
@@ -325,11 +302,4 @@ def test_recycle_bin_is_always_excluded_from_every_search_entry_point(tmp_path):
     )
     assert [item[0] for item in listed_result["results"]] == [str(normal)]
 
-    found = find_files_with_keyword_fast(
-        [str(tmp_path)],
-        "needle",
-        extensions=["txt"],
-        exclude_hidden=False,
-    )
-    assert [item[0] for item in found] == [str(normal)]
     assert search_in_file(str(recycle), "needle", force_python=True) is None

@@ -78,28 +78,6 @@ def test_language_switch_changes_ui_and_skip_reason_resources():
     assert "Access denied" not in korean_reason
 
 
-def test_partial_search_reasons_follow_active_language():
-    set_language("ko")
-    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(25)
-    assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
-        "[안내] JSON 최대 깊이(40)를 초과한 하위 영역을 검색하지 않았습니다."
-    )
-    assert format_skip_reason("INFO_EXCEL_CELL_LIMIT|1200") == (
-        "[안내] Excel 존재 확인 최대 검사 셀 수(1200개)에 도달하여 이후 셀을 검사하지 않았습니다."
-    )
-
-    set_language("en")
-    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == (
-        "[Info] The per-file match limit (25) was reached; later results were omitted."
-    )
-    assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
-        "[Info] Nested content beyond the maximum JSON depth (40) was not searched."
-    )
-    assert format_skip_reason("INFO_EXCEL_CELL_LIMIT|1200") == (
-        "[Info] The Excel existence-check cell limit (1200) was reached; later cells were not checked."
-    )
-
-
 def test_json_size_limit_is_file_local_and_localized():
     set_language("ko")
     korean_new = format_skip_reason("ERR_JSON_SIZE_LIMIT|1048576 bytes")
@@ -260,28 +238,6 @@ def test_advanced_setting_spinbox_ranges_share_the_config_contract(qtbot, mock_c
         spec = Constants.ADVANCED_SETTING_SPECS[key]
         assert spinbox.minimum() == spec["minimum"]
         assert spinbox.maximum() == spec["maximum"]
-
-
-def test_combined_partial_reasons_are_relocalized_line_by_line():
-    set_language("ko")
-    saved_reason = "\n".join(
-        (
-            format_skip_reason("INFO_FILE_MATCH_LIMIT|25"),
-            format_skip_reason("INFO_JSON_DEPTH_LIMIT|40"),
-            format_skip_reason("INFO_EXCEL_CELL_LIMIT|1200"),
-        )
-    )
-
-    set_language("en")
-    localized = localize_skip_reason_for_display(saved_reason)
-
-    assert "per-file match limit" in localized
-    assert "maximum JSON depth" in localized
-    assert "Excel existence-check cell limit" in localized
-    assert "(25)" in localized
-    assert "(40)" in localized
-    assert "(1200)" in localized
-    assert not re.search(r"[가-힣]", localized)
 
 
 def test_parser_and_engine_skip_details_follow_active_language():
@@ -447,3 +403,38 @@ def test_general_settings_label_spacing_and_user_guide_button(
     assert opened_urls == [
         "https://github.com/destinycase/StringFinder/blob/main/docs/USER_GUIDE.md"
     ]
+
+
+def test_partial_search_reasons_follow_active_language():
+    set_language("ko")
+    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(25)
+    assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
+        "[안내] JSON 최대 깊이(40)를 초과한 하위 영역을 검색하지 않았습니다."
+    )
+
+    set_language("en")
+    assert format_skip_reason("INFO_FILE_MATCH_LIMIT|25") == (
+        "[Info] The per-file match limit (25) was reached; later results were omitted."
+    )
+    assert format_skip_reason("INFO_JSON_DEPTH_LIMIT|40") == (
+        "[Info] Nested content beyond the maximum JSON depth (40) was not searched."
+    )
+
+
+def test_combined_partial_reasons_are_relocalized_line_by_line():
+    set_language("ko")
+    saved_reason = "\n".join(
+        (
+            format_skip_reason("INFO_FILE_MATCH_LIMIT|25"),
+            format_skip_reason("INFO_JSON_DEPTH_LIMIT|40"),
+        )
+    )
+
+    set_language("en")
+    localized = localize_skip_reason_for_display(saved_reason)
+
+    assert "per-file match limit" in localized
+    assert "maximum JSON depth" in localized
+    assert "(25)" in localized
+    assert "(40)" in localized
+    assert not re.search(r"[가-힣]", localized)

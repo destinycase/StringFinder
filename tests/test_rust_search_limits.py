@@ -1,4 +1,3 @@
-import json
 
 import pytest
 
@@ -10,7 +9,6 @@ from sf_utils.constants import Constants
 def _configured_limits(monkeypatch):
     limits = {
         Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 17,
-        Constants.CONFIG_KEY_MAX_CHECK_CELLS: 23,
         Constants.CONFIG_KEY_MAX_JSON_DEPTH: 29,
         Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 31,
         Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE: 37,
@@ -43,7 +41,6 @@ def test_single_file_rust_search_receives_configured_limits(tmp_path, monkeypatc
     assert captured["kwargs"] == {
         "stop_event": None,
         "max_per_file": 17,
-        "max_check_cells": 23,
         "max_json_depth": 29,
         "max_json_size": 31 * 1024 * 1024,
     }
@@ -75,35 +72,13 @@ def test_batch_rust_searches_receive_the_same_configured_limits(monkeypatch):
     dir_args, dir_kwargs = captured["dir"]
     assert dir_args == ()
     assert dir_kwargs["max_per_file"] == 17
-    assert dir_kwargs["max_check_cells"] == 23
     assert dir_kwargs["max_json_depth"] == 29
     assert dir_kwargs["max_json_size"] == 31 * 1024 * 1024
     assert dir_kwargs["_flush_ms"] == Constants.RUST_RESULT_FLUSH_MS
     _list_args, list_kwargs = captured["list"]
     assert list_kwargs["max_per_file"] == 17
-    assert list_kwargs["max_check_cells"] == 23
     assert list_kwargs["max_json_depth"] == 29
     assert list_kwargs["max_json_size"] == 31 * 1024 * 1024
-
-
-def test_smart_scan_receives_json_limits(monkeypatch):
-    _configured_limits(monkeypatch)
-    captured = {}
-
-    class FakeEngine:
-        def find_files_with_keyword(self, *args, **kwargs):
-            captured["args"] = args
-            captured["kwargs"] = kwargs
-            return ([], [])
-
-    monkeypatch.setattr(search_engine, "sf_engine", FakeEngine())
-
-    assert search_engine.find_files_with_keyword_fast(["."], "needle", return_skipped=True) == ([], [])
-    assert captured["args"] == ()
-    assert captured["kwargs"]["paths"] == ["."]
-    assert captured["kwargs"]["keyword"] == "needle"
-    assert captured["kwargs"]["max_json_depth"] == 29
-    assert captured["kwargs"]["max_json_size"] == 31 * 1024 * 1024
 
 
 def test_rust_search_limits_fall_back_to_safe_defaults_for_invalid_values(monkeypatch):
@@ -112,15 +87,14 @@ def test_rust_search_limits_fall_back_to_safe_defaults_for_invalid_values(monkey
         "get_advanced_settings",
         lambda _self: {
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: "invalid",
-            Constants.CONFIG_KEY_MAX_CHECK_CELLS: 0,
             Constants.CONFIG_KEY_MAX_JSON_DEPTH: -5,
             Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 2048,
         },
     )
 
     limits = search_engine._get_rust_search_limits()
-    assert limits[:3] == (Constants.DEFAULT_MAX_PER_FILE_MATCHES, 1, 1)
-    assert limits[3] == Constants.SETTING_MAX_SEARCH_FILE_SIZE_MB * 1024 * 1024
+    assert limits[:2] == (Constants.DEFAULT_MAX_PER_FILE_MATCHES, 1)
+    assert limits[2] == Constants.SETTING_MAX_SEARCH_FILE_SIZE_MB * 1024 * 1024
 
 
 def test_common_file_size_limit_applies_to_python_text_search(tmp_path, monkeypatch):
@@ -181,7 +155,6 @@ def test_real_rust_json_size_limit_skips_only_large_file(tmp_path, monkeypatch):
             Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 1,
             Constants.CONFIG_KEY_MAX_JSON_DEPTH: 29,
             Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 17,
-            Constants.CONFIG_KEY_MAX_CHECK_CELLS: 23,
         },
     )
 
@@ -218,39 +191,6 @@ def test_real_rust_engine_exposes_structured_match_metadata(tmp_path):
     assert match.code is None
     assert match.detail is None
     assert (match[0], match[1]) == (1, "needle")
-
-
-def test_real_rust_engine_accepts_named_search_options(tmp_path):
-    if not search_engine.HAS_RUST_ENGINE:
-        pytest.skip("compiled Rust engine is unavailable")
-
-    file_path = tmp_path / "options.txt"
-    file_path.write_text("needle\nneedle\n", encoding="utf-8")
-    options = search_engine.sf_engine.SearchOptions(  # type: ignore
-        mode_bits=Constants.RUST_MODE_NORMAL,
-        extensions=["txt"],
-        max_per_file=1,
-        structured_memory_budget=256 * 1024 * 1024,
-    )
-    assert options.structured_memory_budget == 256 * 1024 * 1024
-
-    single = search_engine.sf_engine.search_file(str(file_path), "needle", options=options)  # type: ignore
-    assert len(single) == 2  # one visible result plus the truncation marker
-
-    listed, skipped = search_engine.sf_engine.search_files_list(
-        [str(file_path)], "needle", options=options  # type: ignore
-    )
-    assert listed and not skipped
-
-    walked, skipped = search_engine.sf_engine.search_dir(
-        [str(tmp_path)], "needle", options=options  # type: ignore
-    )
-    assert walked and not skipped
-
-    found, skipped = search_engine.sf_engine.find_files_with_keyword(
-        [str(tmp_path)], "needle", options=options  # type: ignore
-    )
-    assert found and not skipped
 
 
 def test_real_rust_shared_budget_skips_only_oversized_structured_file(tmp_path):
@@ -335,76 +275,6 @@ def test_rust_batch_callback_errors_are_returned(tmp_path):
         )
 
 
-def test_real_rust_smart_scan_finds_escaped_json_unicode(tmp_path):
-    if not search_engine.HAS_RUST_ENGINE:
-        pytest.skip("compiled Rust engine is unavailable")
-
-    matching_file = tmp_path / "matching.json"
-    partial_file = tmp_path / "partial.json"
-    matching_file.write_text(json.dumps({"value": "한국어"}, ensure_ascii=True), encoding="utf-8")
-    partial_file.write_text(json.dumps({"value": "한"}, ensure_ascii=True), encoding="utf-8")
-
-    found = search_engine.find_files_with_keyword_fast(
-        [str(tmp_path)],
-        "한국어",
-        extensions=["json"],
-        special_mode=Constants.MODE_JSON,
-    )
-
-    found_paths = {path for path, _size in found}
-    assert str(matching_file) in found_paths
-    assert str(partial_file) not in found_paths
-
-
-def test_real_rust_smart_scan_preserves_results_from_multiple_roots(tmp_path):
-    """단일 병렬 워커가 등록된 모든 검색 루트를 빠짐없이 순회하는지 검증합니다."""
-    if not search_engine.HAS_RUST_ENGINE:
-        pytest.skip("compiled Rust engine is unavailable")
-
-    root_a = tmp_path / "root_a"
-    root_b = tmp_path / "root_b"
-    root_a.mkdir()
-    root_b.mkdir()
-    match_a = root_a / "a.txt"
-    match_b = root_b / "b.txt"
-    non_match = root_b / "other.txt"
-    match_a.write_text("needle in first root", encoding="utf-8")
-    match_b.write_text("needle in second root", encoding="utf-8")
-    non_match.write_text("unrelated", encoding="utf-8")
-
-    found = search_engine.find_files_with_keyword_fast(
-        [str(root_a), str(root_b)],
-        "needle",
-        extensions=["txt"],
-    )
-
-    found_paths = {path for path, _size in found}
-    assert found_paths == {str(match_a), str(match_b)}
-
-
-def test_real_rust_smart_scan_callback_has_single_result_contract(tmp_path):
-    if not search_engine.HAS_RUST_ENGINE:
-        pytest.skip("compiled Rust engine is unavailable")
-
-    file_path = tmp_path / "callback.txt"
-    file_path.write_text("needle", encoding="utf-8")
-    batches = []
-
-    def collect(batch):
-        batches.extend(batch)
-
-    found, skipped = search_engine.sf_engine.find_files_with_keyword(  # type: ignore
-        [str(tmp_path)],
-        "needle",
-        mode_bits=Constants.RUST_MODE_NORMAL,
-        results_callback=collect,
-    )
-
-    assert found == []
-    assert skipped == []
-    assert (str(file_path), file_path.stat().st_size) in batches
-
-
 def test_rust_truncation_marker_is_normalized(monkeypatch):
     monkeypatch.setattr(
         search_engine.ConfigManager,
@@ -481,25 +351,6 @@ def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
     assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2) in reason
     assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in reason
     assert reason.count("\n") == 1
-
-
-def test_excel_cell_limit_marker_is_a_partial_file_notice(monkeypatch):
-    monkeypatch.setattr(
-        search_engine.ConfigManager,
-        "get_advanced_settings",
-        lambda _self: {Constants.CONFIG_KEY_MAX_CHECK_CELLS: 2},
-    )
-
-    raw_matches = [(0, "__SF_EXCEL_CELL_LIMIT__|2", None, None)]
-    reason = search_engine._extract_partial_skip_reason(raw_matches)
-    normalized, _, _ = search_engine._normalize_rust_matches(
-        raw_matches,
-        special_mode=Constants.MODE_EXCEL,
-        existence_only=True,
-    )
-
-    assert reason == search_engine.AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(2)
-    assert normalized == []
 
 
 def test_file_list_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
@@ -679,3 +530,31 @@ def test_real_excel_file_limit_is_reported_as_partial_file(tmp_path, monkeypatch
     assert response["skipped"] == [
         (str(file_path), search_engine.AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))
     ]
+
+
+def test_real_rust_engine_accepts_named_search_options(tmp_path):
+    if not search_engine.HAS_RUST_ENGINE:
+        pytest.skip("compiled Rust engine is unavailable")
+
+    file_path = tmp_path / "options.txt"
+    file_path.write_text("needle\nneedle\n", encoding="utf-8")
+    options = search_engine.sf_engine.SearchOptions(  # type: ignore
+        mode_bits=Constants.RUST_MODE_NORMAL,
+        extensions=["txt"],
+        max_per_file=1,
+        structured_memory_budget=256 * 1024 * 1024,
+    )
+    assert options.structured_memory_budget == 256 * 1024 * 1024
+
+    single = search_engine.sf_engine.search_file(str(file_path), "needle", options=options)  # type: ignore
+    assert len(single) == 2  # one visible result plus the truncation marker
+
+    listed, skipped = search_engine.sf_engine.search_files_list(
+        [str(file_path)], "needle", options=options  # type: ignore
+    )
+    assert listed and not skipped
+
+    walked, skipped = search_engine.sf_engine.search_dir(
+        [str(tmp_path)], "needle", options=options  # type: ignore
+    )
+    assert walked and not skipped

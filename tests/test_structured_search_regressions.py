@@ -4,7 +4,6 @@ import pytest
 
 from core import search_engine
 from core.search_engine import (
-    find_files_with_keyword_fast,
     format_skip_reason,
     search_directory_fast,
     search_files_list_fast,
@@ -40,8 +39,7 @@ def test_directory_search_reports_malformed_structured_files(
         "needle",
         extensions=[extension],
         special_mode=mode,
-        existence_only=True,
-    )
+        )
 
     assert result["results"] == []
     assert len(result["skipped"]) == 1
@@ -50,7 +48,7 @@ def test_directory_search_reports_malformed_structured_files(
 
 
 @requires_rust
-def test_file_list_and_smart_scan_report_malformed_json(tmp_path):
+def test_file_list_reports_malformed_json(tmp_path):
     file_path = tmp_path / "broken.json"
     file_path.write_text('{"value":"needle",', encoding="utf-8")
 
@@ -58,24 +56,11 @@ def test_file_list_and_smart_scan_report_malformed_json(tmp_path):
         [str(file_path)],
         "needle",
         special_mode=Constants.MODE_JSON,
-        existence_only=True,
-    )
-    found, smart_skipped = find_files_with_keyword_fast(
-        [str(tmp_path)],
-        "needle",
-        extensions=["json"],
-        special_mode=Constants.MODE_JSON,
-        existence_only=True,
-        return_skipped=True,
-    )
+        )
 
     assert list_result["results"] == []
     assert len(list_result["skipped"]) == 1
     assert "JSON" in list_result["skipped"][0][1]
-    assert found == []
-    assert len(smart_skipped) == 1
-    assert smart_skipped[0][0] == str(file_path)
-    assert "JSON" in smart_skipped[0][1]
 
 
 @requires_rust
@@ -83,7 +68,7 @@ def test_single_file_xml_search_rejects_match_before_parse_error(tmp_path):
     file_path = tmp_path / "broken.xml"
     file_path.write_text("<root><value>needle</root>", encoding="utf-8")
 
-    result = search_in_xml_special(str(file_path), "needle", existence_only=True)
+    result = search_in_xml_special(str(file_path), "needle")
 
     assert result is not None
     assert result[0] == Constants.STATUS_SKIPPED
@@ -127,7 +112,7 @@ def test_rust_xml_search_rejects_invalid_document_ordering(tmp_path, content):
     file_path = tmp_path / "invalid-order.xml"
     file_path.write_text(content, encoding="utf-8")
 
-    result = search_in_xml_special(str(file_path), "needle", existence_only=True)
+    result = search_in_xml_special(str(file_path), "needle")
 
     assert result is not None
     assert result[0] == Constants.STATUS_SKIPPED
@@ -148,8 +133,7 @@ def test_xml_dtd_is_explicitly_unsupported(tmp_path, use_complex_search):
         str(file_path),
         "ACME",
         use_complex_search=use_complex_search,
-        existence_only=True,
-    )
+        )
 
     assert result is not None
     assert result[0] == Constants.STATUS_SKIPPED
@@ -164,8 +148,7 @@ def test_python_xml_existence_search_validates_the_entire_document(tmp_path):
         str(file_path),
         "needle",
         use_complex_search=True,
-        existence_only=True,
-    )
+        )
 
     assert result is not None
     assert result[0] == Constants.STATUS_SKIPPED

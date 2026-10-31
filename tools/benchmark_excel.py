@@ -28,7 +28,6 @@ from sf_utils.constants import Constants  # noqa: E402
 class ExcelBenchmarkCase:
     name: str
     query: str
-    existence_only: bool
     expected_matches: int
 
 
@@ -45,14 +44,11 @@ def _create_dense_workbook(path: Path, rows: int, columns: int) -> None:
 
 def _run(path: Path, case: ExcelBenchmarkCase):
     mode_bits = Constants.RUST_MODE_NORMAL | Constants.RUST_MODE_EXCEL
-    if case.existence_only:
-        mode_bits |= Constants.RUST_MODE_EXISTENCE_ONLY
     return sf_engine.search_file(
         str(path),
         case.query,
         mode_bits,
         max_per_file=5_000,
-        max_check_cells=10_000_000,
     )
 
 
@@ -80,9 +76,8 @@ def main() -> None:
     args = parser.parse_args()
 
     cases = (
-        ExcelBenchmarkCase("excel-dense-no-match", "absent-keyword", False, 0),
-        ExcelBenchmarkCase("excel-dense-last-match", "needle-final-cell", False, 1),
-        ExcelBenchmarkCase("excel-dense-existence-last", "needle-final-cell", True, 1),
+        ExcelBenchmarkCase("excel-dense-no-match", "absent-keyword", 0),
+        ExcelBenchmarkCase("excel-dense-last-match", "needle-final-cell", 1),
     )
 
     with tempfile.TemporaryDirectory(prefix="stringfinder-excel-bench-") as temp_dir:

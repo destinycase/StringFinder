@@ -145,31 +145,7 @@ def test_rust_excel_sheet_error_marker_is_filtered(tmp_path):
     assert str(matches[0][2]) == "A1"
 
 
-def test_legacy_rust_excel_cell_limit_marker_is_still_localized(tmp_path):
-    target = tmp_path / "limited.xlsx"
-    with open(target, "wb") as f:
-        f.write(b"PK\x03\x04" + b"\x00" * 10)
-
-    with (
-        patch("core.search_engine.HAS_RUST_ENGINE", True),
-        patch(
-            "core.search_engine.sf_engine.search_file",
-            return_value=[(0, "__SF_EXCEL_CELL_LIMIT__|2", None, None)],
-        ),
-    ):
-        result = search_in_excel_special(
-            str(target),
-            "keyword",
-            existence_only=True,
-        )
-
-    assert result == (
-        Constants.STATUS_SKIPPED,
-        AppStrings.SKIP_REASON_EXCEL_CELL_LIMIT.format(2),
-    )
-
-
-def test_python_excel_existence_ignores_legacy_cell_limit(tmp_path, monkeypatch):
+def test_python_excel_returns_cell_details(tmp_path, monkeypatch):
     from openpyxl import Workbook
 
     target = tmp_path / "limited_python.xlsx"
@@ -179,16 +155,11 @@ def test_python_excel_existence_ignores_legacy_cell_limit(tmp_path, monkeypatch)
     workbook.save(target)
     workbook.close()
 
-    monkeypatch.setattr(
-        "core.search_engine.ConfigManager.get_advanced_settings",
-        lambda _self: {Constants.CONFIG_KEY_MAX_CHECK_CELLS: 2},
-    )
     result = search_in_excel_special(
         str(target),
         "needle",
         use_complex_search=True,
-        existence_only=True,
-    )
+        )
 
     assert isinstance(result, tuple) and len(result) == 3
     assert result[1] == 1
@@ -215,7 +186,7 @@ def test_python_excel_precise_search_keeps_single_cell_sheet(tmp_path):
     assert result[2][0][2] == "A1"
 
 
-def test_real_rust_excel_existence_finds_match_after_legacy_cell_limit(tmp_path, monkeypatch):
+def test_real_rust_excel_returns_all_cell_details(tmp_path, monkeypatch):
     from core import search_engine
     from openpyxl import Workbook
 
@@ -241,7 +212,6 @@ def test_real_rust_excel_existence_finds_match_after_legacy_cell_limit(tmp_path,
         "_get_rust_search_limits",
         lambda: (
             Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-            2,
             Constants.DEFAULT_MAX_JSON_DEPTH,
             Constants.DEFAULT_MAX_SEARCH_FILE_SIZE_MB * 1024 * 1024,
         ),
@@ -250,13 +220,11 @@ def test_real_rust_excel_existence_finds_match_after_legacy_cell_limit(tmp_path,
     after_legacy_limit = search_in_excel_special(
         str(limited_target),
         "needle",
-        existence_only=True,
-    )
+        )
     matched = search_in_excel_special(
         str(matched_target),
         "needle",
-        existence_only=True,
-    )
+        )
 
     assert isinstance(after_legacy_limit, tuple) and len(after_legacy_limit) == 3
     assert after_legacy_limit[1] == 1
@@ -271,10 +239,8 @@ def test_real_rust_excel_existence_finds_match_after_legacy_cell_limit(tmp_path,
         (".xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1broken workbook"),
     ],
 )
-@pytest.mark.parametrize("existence_only", [False, True])
 def test_real_rust_bulk_corrupted_excel_is_reported_as_skipped(
-    tmp_path, suffix, payload, existence_only
-):
+    tmp_path, suffix, payload):
     from core import search_engine
 
     if not search_engine.HAS_RUST_ENGINE:
@@ -287,8 +253,7 @@ def test_real_rust_bulk_corrupted_excel_is_reported_as_skipped(
         [str(target)],
         "needle",
         special_mode=Constants.MODE_EXCEL,
-        existence_only=existence_only,
-    )
+        )
 
     assert result["results"] == []
     assert len(result["skipped"]) == 1

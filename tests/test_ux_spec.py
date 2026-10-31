@@ -168,7 +168,6 @@ def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture
     assert search_panel.stop_btn.toolTip() == ""
     assert search_panel.complex_search_check.toolTip() == ""
     assert search_panel.search_profile_combo.itemData(1, Qt.ItemDataRole.ToolTipRole) == AppStrings.COMPLEX_SEARCH_TOOLTIP
-    assert search_panel.boolean_search_check.toolTip() == ""
     assert result_panel.result_view.toolTip() == ""
     assert result_panel.match_view.toolTip() == ""
     assert result_panel.context_preview.toolTip() == ""

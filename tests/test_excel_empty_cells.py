@@ -68,13 +68,11 @@ def test_cell_casefold_is_reused_without_changing_content(fake_sheet, monkeypatc
     ('가나다', 'F1', '가나다'), ('needle', 'G1', 'needle'),
 ])
 @pytest.mark.parametrize('exact', [False, True])
-@pytest.mark.parametrize('existence', [False, True])
-def test_nonempty_values_and_last_cell_remain_searchable(fake_sheet, query, cell, text, exact, existence):
+def test_nonempty_values_and_last_cell_remain_searchable(fake_sheet, query, cell, text, exact):
     result = se.search_in_excel_special('fake.xlsx', query, exact_match=exact,
-                                       use_complex_search=True, existence_only=existence)
+                                       use_complex_search=True)
     assert result and result[1] == 1
-    if not existence:
-        assert result[2] == [(0, 'Data', cell, text)]
+    assert result[2] == [(0, 'Data', cell, text)]
 
 
 @pytest.mark.parametrize('query', ['', ' ', '\t'])

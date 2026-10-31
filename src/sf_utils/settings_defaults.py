@@ -16,7 +16,6 @@ DEFAULTS = {
     "max_small_file_size": 10,
     "json_mmap_threshold": 5,
     "timeout_worker_hang": 600,
-    # Retained only as a legacy Rust API argument; existence checks no longer cap cells.
     "max_json_depth": 20_000,
     "excel_max_concurrency": 2,
     "excel_serialization_threshold_mb": 20,

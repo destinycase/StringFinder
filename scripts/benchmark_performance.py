@@ -75,8 +75,6 @@ def _create_set_j_excel_file(file_path: Path) -> None:
     wb.save(file_path)
 
 
-
-
 def _create_set_h_sparse_file(file_path: Path) -> None:
     """Create Set H within engine size limits."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +90,6 @@ def _create_set_h_sparse_file(file_path: Path) -> None:
         f.write(b"Start of Stress\n")
         f.seek(seek_pos)
         f.write(SET_H_KEYWORD_BYTES)
-
 
 
 def create_dataset():
@@ -149,8 +146,8 @@ def create_dataset():
     set_de = BENCHMARK_DATA_DIR / "set_de"
     set_de.mkdir()
 
-    # Set D: Boolean Early Exit (500MB, match at start)
-    with open(set_de / "boolean_early.txt", "wb") as f:
+    # Set D: Large Full Scan Exit (500MB, match at start)
+    with open(set_de / "large_full_scan.txt", "wb") as f:
         f.write(b"target_keyword_d\n")
         content_bytes = b"Regular noise line for padding.\n" * 1000
         target = 500 * 1024 * 1024
@@ -253,7 +250,6 @@ def run_benchmark(
     dataset_name: str,
     path: Path,
     keyword: str,
-    existence_only: bool = False,
     special_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run benchmark for one dataset."""
@@ -261,7 +257,7 @@ def run_benchmark(
     if not app:
         app = QApplication(sys.argv)
 
-    print(f"\n[Bench] Running benchmark for {dataset_name} (Existence_Only={existence_only})...")
+    print(f"\n[Bench] Running benchmark for {dataset_name} (Existence_Only={False})...")
 
     params = {
         Constants.PAYLOAD_SEARCH_PATHS: [str(path)],
@@ -269,7 +265,7 @@ def run_benchmark(
         Constants.PAYLOAD_EXTENSIONS: [],
         Constants.PAYLOAD_EXCLUDE_BINARY: False,
         Constants.PAYLOAD_EXCLUDE_HIDDEN: True,
-        Constants.PAYLOAD_EXISTENCE_ONLY: existence_only,
+
     }
     if special_mode:
         params[Constants.PAYLOAD_SPECIAL_MODE] = special_mode
@@ -558,7 +554,7 @@ def check_thresholds(results: List[Dict[str, Any]]) -> None:
         "Set A: Small/Many": {"total_time": 3.0, "latency": 1.5, "jitter": 0.2, "peak_rss": 200.0},
         "Set B: Mixed/Large": {"total_time": 1.5, "latency": 0.8, "jitter": 0.2, "peak_rss": 200.0},
         "Set C: Binary Mixed": {"total_time": 1.0, "latency": 0.8, "jitter": 0.2, "peak_rss": 150.0},
-        "Set D: Boolean Early": {"total_time": 1.5, "latency": 1.5, "jitter": 0.2, "peak_rss": 150.0},
+        "Set D: Large Full Scan": {"total_time": 1.5, "latency": 1.5, "jitter": 0.2, "peak_rss": 150.0},
         "Set E: ASCII Fast": {"total_time": 1.0, "latency": 0.8, "jitter": 0.2, "peak_rss": 200.0},
         "Set F: Monster JSON": {"total_time": 5.0, "latency": 2.0, "jitter": 0.3, "peak_rss": 600.0},
         "Set G: Deep XML": {"total_time": 3.0, "latency": 2.0, "jitter": 0.3, "peak_rss": 300.0},
@@ -570,7 +566,7 @@ def check_thresholds(results: List[Dict[str, Any]]) -> None:
         "Set A: Small/Many": 100,
         "Set B: Mixed/Large": 1,
         "Set C: Binary Mixed": 50,
-        "Set D: Boolean Early": 1,
+        "Set D: Large Full Scan": 1,
         "Set E: ASCII Fast": 1,
         "Set F: Monster JSON": 1,
         "Set G: Deep XML": 1,
@@ -637,11 +633,10 @@ if __name__ == "__main__":
         results.append(run_benchmark("Set C: Binary Mixed", BENCHMARK_DATA_DIR / "set_c", "target_keyword_c"))
         results.append(
             run_benchmark(
-                "Set D: Boolean Early",
-                BENCHMARK_DATA_DIR / "set_de" / "boolean_early.txt",
+                "Set D: Large Full Scan",
+                BENCHMARK_DATA_DIR / "set_de" / "large_full_scan.txt",
                 "target_keyword_d",
-                existence_only=True,
-            )
+                )
         )
         results.append(run_benchmark("Set E: ASCII Fast", BENCHMARK_DATA_DIR / "set_de" / "ascii_fast.txt", "target_keyword_e"))
         results.append(run_benchmark("Set F: Monster JSON", BENCHMARK_DATA_DIR / "set_stress" / "monster.json", "target_keyword_f"))

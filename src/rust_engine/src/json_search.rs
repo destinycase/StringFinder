@@ -7,11 +7,6 @@ use crate::types::RawMatch;
 
 pub const JSON_DEPTH_LIMIT_MARKER_PREFIX: &str = "__SF_JSON_DEPTH_LIMIT__|";
 
-pub struct JsonCheckResult {
-    pub found: bool,
-    pub depth_limit_reached: bool,
-}
-
 enum PathComponent<'data> {
     ObjectKey(Cow<'data, str>),
     ArrayIndex(usize),
@@ -124,9 +119,7 @@ struct JsonSearchState<'data> {
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
     max_json_depth: usize,
-    collect_results: bool,
-    found: bool,
-    valid: bool,
+
     depth_limit_reached: bool,
     allow_duplicate_keys: bool,
 }
@@ -148,7 +141,7 @@ impl<'data> JsonSearchState<'data> {
         stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
         max_per_file: usize,
         max_json_depth: usize,
-        collect_results: bool,
+
         allow_duplicate_keys: bool,
     ) -> Self {
         Self {
@@ -164,10 +157,8 @@ impl<'data> JsonSearchState<'data> {
             stop_flag,
             max_per_file,
             max_json_depth,
-            collect_results,
+
             allow_duplicate_keys,
-            found: false,
-            valid: true,
             depth_limit_reached: false,
         }
     }
@@ -185,15 +176,11 @@ impl<'data> JsonSearchState<'data> {
     }
 
     fn should_process_scalar(&self) -> bool {
-        if self.collect_results {
-            self.results.len() <= self.max_per_file
-        } else {
-            !self.found
-        }
+        self.results.len() <= self.max_per_file
     }
 
     fn should_track_locations(&self) -> bool {
-        self.collect_results && self.results.len() <= self.max_per_file && self.locations_reliable
+        self.results.len() <= self.max_per_file && self.locations_reliable
     }
 
     fn next_token(&mut self) -> Option<JsonTokenLocation> {
@@ -278,7 +265,6 @@ impl<'data> JsonSearchState<'data> {
         }
 
         // serde visitor와 같은 순서로 원본 토큰 커서를 한 번만 전진시킨다.
-        // 존재 확인 모드와 결과 상한 이후에는 위치가 필요하지 않으므로 생략한다.
         let token_location = self.next_token();
 
         let is_match = if self.is_exact {
@@ -291,10 +277,6 @@ impl<'data> JsonSearchState<'data> {
             self.ac.find(value).is_some()
         };
         if !is_match {
-            return;
-        }
-        self.found = true;
-        if !self.collect_results {
             return;
         }
 
@@ -344,7 +326,7 @@ impl<'de: 'data, 'state, 'data> DeserializeSeed<'de> for JsonSeed<'state, 'data>
         // every number. When the already-tracked source cursor proves this is
         // an ordinary number, use serde's allocation-free numeric entry point.
         // Large integers retain the arbitrary-precision path. Never speculate
-        // when positions are disabled (existence/depth/limit paths).
+        // when positions are disabled (depth/limit paths).
         let fast_number = if self.state.should_track_locations() {
             let mut start = self.state.scan_offset;
             while start < self.state.mmap.len()
@@ -578,7 +560,7 @@ fn parse_json_once<'data>(
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
     max_json_depth: usize,
-    collect_results: bool,
+
     stack_safe: bool,
     allow_duplicate_keys: bool,
 ) -> Result<JsonSearchState<'data>, String> {
@@ -596,7 +578,6 @@ fn parse_json_once<'data>(
         stop_flag,
         max_per_file,
         max_json_depth,
-        collect_results,
         allow_duplicate_keys,
     );
     let mut deserializer = Deserializer::from_slice(parse_mmap);
@@ -619,7 +600,6 @@ fn parse_json_once<'data>(
     }
     parse_result.map_err(|error| error.to_string())?;
     deserializer.end().map_err(|error| error.to_string())?;
-    state.valid = true;
     Ok(state)
 }
 
@@ -632,7 +612,7 @@ fn parse_json<'data>(
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
     max_json_depth: usize,
-    collect_results: bool,
+
     allow_duplicate_keys: bool,
 ) -> Result<JsonSearchState<'data>, String> {
     let first_attempt = parse_json_once(
@@ -643,7 +623,6 @@ fn parse_json<'data>(
         stop_flag.clone(),
         max_per_file,
         max_json_depth,
-        collect_results,
         false,
         allow_duplicate_keys,
     );
@@ -656,7 +635,6 @@ fn parse_json<'data>(
             stop_flag,
             max_per_file,
             max_json_depth,
-            collect_results,
             true,
             allow_duplicate_keys,
         ),
@@ -705,7 +683,6 @@ pub fn search_json_file_with_policy(
         stop_flag,
         max_per_file,
         max_json_depth,
-        true,
         allow_duplicate_keys,
     )?;
     if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -720,58 +697,6 @@ pub fn search_json_file_with_policy(
         ));
     }
     Ok(std::mem::take(&mut state.results))
-}
-
-#[cfg(test)]
-pub fn check_json_file(
-    mmap: &[u8],
-    pattern: &str,
-    ac: &aho_corasick::AhoCorasick,
-    is_exact: bool,
-    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    max_json_depth: usize,
-) -> Result<JsonCheckResult, String> {
-    check_json_file_with_policy(
-        mmap,
-        pattern,
-        ac,
-        is_exact,
-        stop_flag,
-        max_json_depth,
-        false,
-    )
-}
-
-pub fn check_json_file_with_policy(
-    mmap: &[u8],
-    pattern: &str,
-    ac: &aho_corasick::AhoCorasick,
-    is_exact: bool,
-    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    max_json_depth: usize,
-    allow_duplicate_keys: bool,
-) -> Result<JsonCheckResult, String> {
-    let state = parse_json(
-        mmap,
-        pattern,
-        ac,
-        is_exact,
-        stop_flag,
-        0,
-        max_json_depth,
-        false,
-        allow_duplicate_keys,
-    )?;
-    if state.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok(JsonCheckResult {
-            found: false,
-            depth_limit_reached: false,
-        });
-    }
-    Ok(JsonCheckResult {
-        found: state.valid && state.found,
-        depth_limit_reached: state.depth_limit_reached,
-    })
 }
 
 #[cfg(test)]
@@ -814,17 +739,12 @@ mod tests {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"{"v":"needle","\u0076":"needle"}"#;
         assert!(search_json_file(json, "needle", &ac, false, stop.clone(), 1, 20).is_err());
-        assert!(check_json_file(json, "needle", &ac, false, stop.clone(), 20).is_err());
+
         assert_eq!(
             search_json_file_with_policy(json, "needle", &ac, false, stop.clone(), 10, 20, true)
                 .unwrap()
                 .len(),
             2
-        );
-        assert!(
-            check_json_file_with_policy(json, "needle", &ac, false, stop, 20, true)
-                .unwrap()
-                .found
         );
     }
 
@@ -844,15 +764,6 @@ mod tests {
             search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 1).unwrap();
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].1, "__SF_JSON_DEPTH_LIMIT__|1");
-
-        let limited_check =
-            check_json_file(json, "needle", &ac, false, stop_flag.clone(), 1).unwrap();
-        assert!(!limited_check.found);
-        assert!(limited_check.depth_limit_reached);
-
-        let allowed_check = check_json_file(json, "needle", &ac, false, stop_flag, 2).unwrap();
-        assert!(allowed_check.found);
-        assert!(!allowed_check.depth_limit_reached);
     }
 
     #[test]
@@ -892,7 +803,6 @@ mod tests {
         assert!(
             search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 20_000).is_err()
         );
-        assert!(check_json_file(json, "needle", &ac, false, stop_flag, 20_000).is_err());
     }
 
     #[test]

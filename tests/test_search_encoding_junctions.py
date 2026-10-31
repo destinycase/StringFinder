@@ -18,22 +18,21 @@ def snapshot():
         yield
 
 
-def compare(path, query, mode=None, existence=False):
+def compare(path, query, mode=None):
     native = se.search_directory_fast([str(path)], query, [], special_mode=mode,
-                                     exclude_hidden=False, exclude_binary=True, existence_only=existence)
+                                     exclude_hidden=False, exclude_binary=True)
     precise = se.search_in_file(str(path), query, special_mode=mode,
-                               use_complex_search=True, existence_only=existence, exclude_binary=True)
+                               use_complex_search=True, exclude_binary=True)
     assert not native['skipped']
     assert precise is None or precise[0] != C.STATUS_SKIPPED
     return sum(r[1] for r in native['results']), precise[1] if precise else 0
 
 
 @pytest.mark.parametrize('encoding', ['utf-16-le', 'utf-16-be'])
-@pytest.mark.parametrize('existence', [False, True])
-def test_automatic_korean_utf16_prefix(tmp_path, encoding, existence):
+def test_automatic_korean_utf16_prefix(tmp_path, encoding):
     path = tmp_path / 'korean.txt'
     path.write_bytes(('가나다' * 30000 + '\nneedle\n').encode(encoding))
-    assert compare(path, 'needle', existence=existence) == (1, 1)
+    assert compare(path, 'needle') == (1, 1)
 
 
 def test_cp949_korean_is_not_mistaken_for_utf16(tmp_path):
@@ -46,24 +45,20 @@ def test_cp949_korean_is_not_mistaken_for_utf16(tmp_path):
 @pytest.mark.parametrize('encoding', ['utf-8', 'cp949', 'utf-16-le', 'utf-16-be'])
 @pytest.mark.parametrize('mode,suffix,content', [(None,'txt','needle 한글'),
     (C.MODE_JSON,'json','{"v":"needle 한글"}'), (C.MODE_XML,'xml','<root>needle 한글</root>')])
-@pytest.mark.parametrize('existence', [False, True])
-def test_explicit_encoding_all_paths(tmp_path, encoding, mode, suffix, content, existence):
+def test_explicit_encoding_all_paths(tmp_path, encoding, mode, suffix, content):
     path = tmp_path / ('data.' + suffix)
     path.write_bytes(content.encode(encoding))
     with se.use_search_settings_snapshot({C.CONFIG_KEY_SEARCH_ENCODING: encoding}):
-        assert compare(path, '한글', mode, existence) == (1, 1)
-        listed = se.search_files_list_fast([str(path)], '한글', special_mode=mode, existence_only=existence)
+        assert compare(path, '한글', mode) == (1, 1)
+        listed = se.search_files_list_fast([str(path)], '한글', special_mode=mode)
         assert len(listed['results']) == 1 and not listed['skipped']
-        found, skipped = se.find_files_with_keyword_fast([str(path)], '한글', special_mode=mode, return_skipped=True)
-        assert len(found) == 1 and not skipped
 
 
-@pytest.mark.parametrize('existence', [False, True])
 @pytest.mark.parametrize('number', ['18446744073709551617','-9223372036854775809','18446744073709551615','-9223372036854775808','-0', '9' * 512])
-def test_json_integer_boundaries(tmp_path, number, existence):
+def test_json_integer_boundaries(tmp_path, number):
     path = tmp_path / 'number.json'
     path.write_text('{"v":' + number + '}', encoding='utf-8')
-    assert compare(path, str(int(number)), C.MODE_JSON, existence) == (1, 1)
+    assert compare(path, str(int(number)), C.MODE_JSON) == (1, 1)
 
 
 @pytest.mark.parametrize('content', ['{"$serde_json::private::Number":"needle"}', '{"$serde_json::private::Numb\\u0065r":"needle"}'])
@@ -81,8 +76,7 @@ def test_private_number_key_is_real_object(tmp_path, content):
 def test_numeric_fast_path_keeps_container_cursor_aligned(tmp_path, content):
     path = tmp_path / 'mixed.json'
     path.write_text(content, encoding='utf-8')
-    for existence in (False, True):
-        assert compare(path, '18446744073709551617', C.MODE_JSON, existence) == (1, 1)
+    assert compare(path, '18446744073709551617', C.MODE_JSON) == (1, 1)
 
 
 def test_json_overflow_is_explicitly_skipped(tmp_path):
@@ -96,16 +90,15 @@ def test_json_overflow_is_explicitly_skipped(tmp_path):
 
 @pytest.mark.parametrize('value,query', [(date(1904,1,1),'1904-01-01'),
     (datetime(1904,1,1,12),'1904-01-01 12:00:00'), (time(12),'12:00:00')])
-@pytest.mark.parametrize('existence', [False, True])
-def test_excel_1904_dates_and_times(tmp_path, value, query, existence):
+def test_excel_1904_dates_and_times(tmp_path, value, query):
     path = tmp_path / 'dates.xlsx'
     wb = Workbook()
     wb.epoch = CALENDAR_MAC_1904
     wb.active['C4'] = value
     wb.save(path)
-    assert compare(path, query, C.MODE_EXCEL, existence) == (1, 1)
+    assert compare(path, query, C.MODE_EXCEL) == (1, 1)
     if isinstance(value, time):
-        assert compare(path, '1904-01-01', C.MODE_EXCEL, existence) == (0, 0)
+        assert compare(path, '1904-01-01', C.MODE_EXCEL) == (0, 0)
 
 
 @pytest.fixture
@@ -136,8 +129,6 @@ def test_junction_policy_cycle_and_duplicate(junction_tree, include):
         assert len(scanner.scan()) == int(include)
         normal = se.search_directory_fast([str(junction_tree)], 'needle', [], exclude_hidden=False)
         assert len(normal['results']) == int(include)
-        found = se.find_files_with_keyword_fast([str(junction_tree)], 'needle', exclude_hidden=False)
-        assert len(found) == int(include)
 
 
 @pytest.mark.parametrize('value', [None, 12, True, {}, [], 'unknown'])
@@ -186,5 +177,3 @@ def test_selected_encoding_does_not_filter_or_fallback(tmp_path):
         assert len(normal['results']) == 1 and len(normal['skipped']) == 1
         precise = se.search_in_file(str(bad), '한글', use_complex_search=True)
         assert precise[0] == C.STATUS_SKIPPED
-        found, skipped = se.find_files_with_keyword_fast([str(tmp_path)], '한글', return_skipped=True)
-        assert len(found) == 1 and len(skipped) == 1

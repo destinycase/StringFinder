@@ -48,7 +48,6 @@ class ExcelFixture:
 class ExcelCase:
     name: str
     query: str
-    existence_only: bool
     expected_cells: frozenset[str]
     precise: bool = False
 
@@ -125,29 +124,27 @@ def create_fixtures(directory: Path, rows: int, columns: int) -> list[ExcelFixtu
 def cases_for(fixture: ExcelFixture) -> list[ExcelCase]:
     cases = []
     for precise in (False, True):
-        for existence in (False, True):
-            for name, query, cells in (
-                ("first", fixture.first_query, [fixture.first_cell]),
-                ("last", fixture.last_query, [fixture.last_cell]),
-                ("both", fixture.both_query, [fixture.first_cell, fixture.last_cell]),
-                ("absent", "sf_excel_absent_6b18f043", []),
-            ):
-                profile = "precise" if precise else "normal"
-                mode = "existence" if existence else "full"
-                cases.append(ExcelCase(f"Excel {fixture.name}/{profile}/{mode}/{name}",
-                                       query, existence, frozenset(cells), precise))
+        for name, query, cells in (
+            ("first", fixture.first_query, [fixture.first_cell]),
+            ("last", fixture.last_query, [fixture.last_cell]),
+            ("both", fixture.both_query, [fixture.first_cell, fixture.last_cell]),
+            ("absent", "sf_excel_absent_6b18f043", []),
+        ):
+            profile = "precise" if precise else "normal"
+            mode = "full"
+            cases.append(ExcelCase(f"Excel {fixture.name}/{profile}/{mode}/{name}",
+                                   query, frozenset(cells), precise))
     return cases
 
 
 def _run(path: Path, case: ExcelCase):
     from core.search_engine import search_in_excel_special
 
-    return search_in_excel_special(str(path), case.query, use_complex_search=case.precise,
-                                   existence_only=case.existence_only)
+    return search_in_excel_special(str(path), case.query, use_complex_search=case.precise)
 
 
 def validate_result(result, case: ExcelCase) -> None:
-    expected_count = min(1, len(case.expected_cells)) if case.existence_only else len(case.expected_cells)
+    expected_count = len(case.expected_cells)
     if expected_count == 0:
         if result is not None:
             raise RuntimeError(f"{case.name}: expected no result, got {result!r}")
@@ -157,13 +154,12 @@ def validate_result(result, case: ExcelCase) -> None:
     matches = result[2]
     if len(matches) != expected_count or any(match[0] < 0 for match in matches):
         raise RuntimeError(f"{case.name}: skipped/partial/duplicate results: {matches!r}")
-    if not case.existence_only:
-        coordinates = [(match[1], match[2]) for match in matches]
-        expected = {("Data", cell) for cell in case.expected_cells}
-        if set(coordinates) != expected or len(coordinates) != len(expected):
-            raise RuntimeError(f"{case.name}: wrong coordinates {coordinates!r}")
-        if any(case.query.casefold() not in str(match[3]).casefold() for match in matches):
-            raise RuntimeError(f"{case.name}: wrong cell values {matches!r}")
+    coordinates = [(match[1], match[2]) for match in matches]
+    expected = {("Data", cell) for cell in case.expected_cells}
+    if set(coordinates) != expected or len(coordinates) != len(expected):
+        raise RuntimeError(f"{case.name}: wrong coordinates {coordinates!r}")
+    if any(case.query.casefold() not in str(match[3]).casefold() for match in matches):
+        raise RuntimeError(f"{case.name}: wrong cell values {matches!r}")
 
 
 def measure(path: Path, case: ExcelCase, repeats: int) -> dict:
@@ -200,7 +196,7 @@ def measure(path: Path, case: ExcelCase, repeats: int) -> dict:
             "median_seconds": statistics.median(samples),
             "min_seconds": min(samples), "max_seconds": max(samples),
             "rss_samples_mib": rss_samples, "peak_rss_mib": max(rss_samples),
-            "hits": min(1, len(case.expected_cells)) if case.existence_only else len(case.expected_cells)}
+            "hits": len(case.expected_cells)}
 
 
 def run_suite(directory: Path, rows: int, columns: int, repeats: int) -> dict:

@@ -117,21 +117,18 @@ def test_xml_attribute_locations_in_built_engine(tmp_path, encoding):
         assert match.offset == path.read_bytes().rindex(b"needle")
 
 
-@pytest.mark.parametrize("existence_only", [False, True])
-def test_malformed_xml_is_skipped_in_app_paths(tmp_path, monkeypatch, existence_only):
+def test_malformed_xml_is_skipped_in_app_paths(tmp_path, monkeypatch):
     from core import search_engine
     from sf_utils.constants import Constants
 
     path = tmp_path / "invalid.xml"
     path.write_text('<root><a>needle</a><b>needle</b><c x="needle" x="duplicate"/></root>', encoding="utf-8")
-    monkeypatch.setattr(search_engine, "_get_rust_search_limits", lambda: (1, 500000, 20000, 524288000))
+    monkeypatch.setattr(search_engine, "_get_rust_search_limits", lambda: (1, 20000, 524288000))
     result = search_engine.search_directory_fast(
-        [str(tmp_path)], "needle", ["xml"], special_mode=Constants.MODE_XML, existence_only=existence_only,
-    )
+        [str(tmp_path)], "needle", ["xml"], special_mode=Constants.MODE_XML)
     assert result["results"] == []
     assert len(result["skipped"]) == 1
     result = search_engine.search_files_list_fast(
-        [str(path)], "needle", special_mode=Constants.MODE_XML, existence_only=existence_only,
-    )
+        [str(path)], "needle", special_mode=Constants.MODE_XML)
     assert result["results"] == []
     assert len(result["skipped"]) == 1

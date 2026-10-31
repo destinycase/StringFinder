@@ -44,7 +44,7 @@ def _require_search_result(result: object) -> tuple[str, int, list[tuple[Any, ..
     return cast(tuple[str, int, list[tuple[Any, ...]]], result)
 
 
-@pytest.mark.parametrize("api_version", [None, 3, 5])
+@pytest.mark.parametrize("api_version", [None, 3, 5, 7])
 def test_engine_api_version_mismatch_fallback(monkeypatch, api_version):
     import core.search_engine as search_engine
 
@@ -55,7 +55,6 @@ def test_engine_api_version_mismatch_fallback(monkeypatch, api_version):
         search_file=lambda *args, **kwargs: [],
         search_dir=lambda *args, **kwargs: ([], []),
         search_files_list=lambda *args, **kwargs: ([], []),
-        find_files_with_keyword=lambda *args, **kwargs: ([], []),
     )
     if api_version is not None:
         fake_engine.API_VERSION = api_version
@@ -394,7 +393,6 @@ def test_mixed_encodings_and_corrupt_bytes(tmp_path):
     assert r1 is None or (isinstance(r1, tuple) and len(r1) in (2, 3))
     assert r2 is not None
     assert r3 is None or (isinstance(r3, tuple) and len(r3) in (2, 3))
-
 
 
 @pytest.mark.stress

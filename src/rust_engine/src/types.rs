@@ -8,7 +8,6 @@ pub const MODE_XML: u32 = 1 << 1;
 pub const MODE_EXACT: u32 = 1 << 3;
 pub const MODE_EXCEL: u32 = 1 << 4;
 pub const MODE_EXCLUDE_BINARY: u32 = 1 << 5;
-pub const MODE_EXISTENCE_ONLY: u32 = 1 << 6;
 pub const MODE_ALLOW_DUPLICATE_JSON_KEYS: u32 = 1 << 7;
 
 pub type RawMatch = (usize, String, Option<usize>, Option<usize>);
@@ -45,8 +44,7 @@ pub struct SearchOptions {
     pub flush_ms: Option<u64>,
     #[pyo3(get)]
     pub max_per_file: Option<usize>,
-    #[pyo3(get)]
-    pub max_check_cells: Option<u64>,
+
     #[pyo3(get)]
     pub max_json_depth: Option<usize>,
     #[pyo3(get)]
@@ -69,7 +67,7 @@ impl SearchOptions {
         batch_size=None,
         flush_ms=None,
         max_per_file=None,
-        max_check_cells=None,
+
         max_json_depth=None,
         max_json_size=None,
         structured_memory_budget=None,
@@ -88,7 +86,7 @@ impl SearchOptions {
         batch_size: Option<usize>,
         flush_ms: Option<u64>,
         max_per_file: Option<usize>,
-        max_check_cells: Option<u64>,
+
         max_json_depth: Option<usize>,
         max_json_size: Option<u64>,
         structured_memory_budget: Option<u64>,
@@ -108,7 +106,7 @@ impl SearchOptions {
             batch_size,
             flush_ms,
             max_per_file,
-            max_check_cells,
+
             max_json_depth,
             max_json_size,
             structured_memory_budget,
@@ -195,8 +193,6 @@ impl From<RawMatch> for SearchMatch {
             ("truncated", Some("TRUNCATED"), None)
         } else if let Some(detail) = content.strip_prefix("__SF_JSON_DEPTH_LIMIT__|") {
             ("partial", Some("JSON_DEPTH_LIMIT"), Some(detail))
-        } else if let Some(detail) = content.strip_prefix("__SF_EXCEL_CELL_LIMIT__|") {
-            ("partial", Some("EXCEL_CELL_LIMIT"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_BINARY_MATCH__|") {
             ("binary", Some("BINARY"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_LONG_LINE__|") {

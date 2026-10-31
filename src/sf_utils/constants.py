@@ -29,8 +29,6 @@ class Constants:
     DEFAULT_MAX_TOTAL_MATCHES = DEFAULTS["max_total_matches"]
     DEFAULT_MAX_PER_FILE_MATCHES = DEFAULTS["max_per_file_matches"]
     DEFAULT_TIMEOUT_WORKER_HANG = DEFAULTS["timeout_worker_hang"]
-    # Compatibility fallback used only to render old EXCEL_CELL_LIMIT diagnostics.
-    LEGACY_MAX_CHECK_CELLS = 500_000
     DEFAULT_MAX_JSON_DEPTH = DEFAULTS["max_json_depth"]
     SETTING_MAX_SEARCH_FILE_SIZE_MB = 1024
     DEFAULT_EXCEL_MAX_CONCURRENCY = DEFAULTS["excel_max_concurrency"]
@@ -69,7 +67,6 @@ class Constants:
     RUST_MODE_EXACT = 1 << 3
     RUST_MODE_EXCEL = 1 << 4
     RUST_MODE_EXCLUDE_BINARY = 1 << 5
-    RUST_MODE_EXISTENCE_ONLY = 1 << 6
     SYMBOL_CLOSE = "×"
     YIELD_SLEEP_TIME = 0.001
     HISTORY_ACTION_CLEAR = "action_clear"
@@ -89,7 +86,6 @@ class Constants:
     PAYLOAD_SKIPPED = "skipped"
     PAYLOAD_FILENAME_FILTER = "filename_filter"
     PAYLOAD_USE_COMPLEX_SEARCH = "use_complex_search"
-    PAYLOAD_EXISTENCE_ONLY = "existence_only"
     PAYLOAD_EXCLUDE_HIDDEN = "exclude_hidden"
     PAYLOAD_EXCLUDE_BINARY = "exclude_binary"
     CONFIG_KEY_VERSION = "config_version"
@@ -143,7 +139,6 @@ class Constants:
     CONFIG_KEY_MAX_SMALL_FILE_SIZE = "max_small_file_size"
     CONFIG_KEY_JSON_MMAP_THRESHOLD = "json_mmap_threshold"
     CONFIG_KEY_TIMEOUT_WORKER_HANG = "timeout_worker_hang"
-    CONFIG_KEY_MAX_CHECK_CELLS = "max_check_cells"  # Legacy config/API compatibility; no longer user-configurable.
     CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
     CONFIG_KEY_EXCEL_MAX_CONCURRENCY = "excel_max_concurrency"
     CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB = "excel_serialization_threshold_mb"

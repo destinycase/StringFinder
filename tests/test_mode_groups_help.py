@@ -27,14 +27,10 @@ def test_mode_order(qtbot, mock_config_manager, language):
     qtbot.addWidget(tab)
     panel = tab.search_panel
     row = panel.input_layout
-    assert row.indexOf(panel.boolean_search_check) < row.indexOf(tab.ext_panel.special_controls)
     assert row.indexOf(tab.ext_panel.special_controls) < row.indexOf(panel.search_btn)
     tab.resize(1280, 640)
     tab.show()
     qtbot.waitUntil(tab.isVisible)
-    assert panel.boolean_search_check.geometry().center().y() == pytest.approx(
-        tab.ext_panel.special_controls.geometry().center().y(), abs=2
-    )
     tab.close()
 
 
@@ -106,7 +102,7 @@ def test_help_button_order_localized_content_and_reuse(qtbot, mock_config_manage
     assert dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Close).text() == AppStrings.BTN_CLOSE
     text = dialog.findChild(QTextBrowser).toPlainText()
     assert "xlsx,xlsm,xls,xlsb" in text
-    assert ("모드" if language == "ko" else "Mode") in text
+    assert AppStrings.SPECIAL_SEARCH_LABEL in text
     assert window.help_button.geometry().left() < window.log_button.geometry().left()
     assert window.log_button.geometry().left() < window.settings_button.geometry().left()
     window._set_ui_locked(True)

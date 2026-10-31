@@ -73,7 +73,6 @@ def test_v2_migration_removes_unused_case_setting_and_normalizes_advanced_bounds
                     Constants.CONFIG_KEY_MAX_TOTAL_MATCHES: 1,
                     Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 1,
                     Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG: 1,
-                    Constants.CONFIG_KEY_MAX_CHECK_CELLS: 1,
                     Constants.CONFIG_KEY_MAX_JSON_DEPTH: 1,
                     "unknown_advanced_option": 123,
                 },
@@ -144,9 +143,6 @@ def test_splitter_states(temp_dir):
 
         states = cm.get_splitter_states()
         assert states[0] == "aabbcc"
-
-
-
 
 
 def test_history_bubble_up(temp_dir):

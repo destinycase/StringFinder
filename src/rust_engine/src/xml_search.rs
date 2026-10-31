@@ -458,118 +458,6 @@ fn process_xml_attributes(
     Ok(())
 }
 
-pub fn check_xml_file(
-    mmap: &[u8],
-    pattern: &str,
-    ac: &aho_corasick::AhoCorasick,
-    is_exact: bool,
-    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Result<bool, XmlSearchError> {
-    // UTF-8 BOM 스킵
-    let parse_mmap = if mmap.starts_with(b"\xef\xbb\xbf") {
-        &mmap[3..]
-    } else {
-        mmap
-    };
-
-    let mut reader = XmlReader::from_reader(parse_mmap);
-    reader.trim_text(false);
-    let pat_upper = pattern.to_lowercase().to_uppercase();
-    let mut document = XmlDocumentState::new();
-    let mut found = false;
-    let mut pending_text: Cow<'_, str> = Cow::Borrowed("");
-
-    loop {
-        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            break;
-        }
-        let start_pos = reader.buffer_position();
-        let event = reader.read_event();
-        if !matches!(
-            &event,
-            Ok(Event::Text(_) | Event::CData(_) | Event::Comment(_) | Event::PI(_))
-        ) {
-            if !pending_text.trim().is_empty() {
-                found |= if is_exact {
-                    pending_text.trim().to_lowercase().to_uppercase() == pat_upper
-                } else {
-                    ac.find(pending_text.as_ref()).is_some()
-                };
-            }
-            pending_text = Cow::Borrowed("");
-        }
-        match event {
-            Err(error) => return Err(XmlSearchError::parse(error)),
-            Ok(Event::Eof) => break,
-            Ok(Event::Start(e)) => {
-                document.on_start()?;
-                found |= check_xml_attributes(&e, &pat_upper, ac, is_exact)?;
-            }
-            Ok(Event::Empty(e)) => {
-                document.on_empty()?;
-                found |= check_xml_attributes(&e, &pat_upper, ac, is_exact)?;
-            }
-            Ok(Event::End(_)) => {
-                document.on_end()?;
-            }
-            Ok(Event::Text(e)) => {
-                let text = e.unescape().map_err(XmlSearchError::parse)?;
-                document.validate_text_outside_root(&text)?;
-                if pending_text.is_empty() {
-                    pending_text = text;
-                } else {
-                    pending_text.to_mut().push_str(&text);
-                }
-            }
-            Ok(Event::CData(e)) => {
-                let text = match e.into_inner() {
-                    Cow::Borrowed(raw) => String::from_utf8_lossy(raw),
-                    Cow::Owned(raw) => Cow::Owned(String::from_utf8_lossy(&raw).into_owned()),
-                };
-                document.validate_cdata()?;
-                if pending_text.is_empty() {
-                    pending_text = text;
-                } else {
-                    pending_text.to_mut().push_str(&text);
-                }
-            }
-            Ok(Event::Decl(_)) => document.on_declaration(start_pos)?,
-            Ok(Event::DocType(_)) => document.on_doctype()?,
-            _ => (),
-        }
-    }
-    if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok(false);
-    }
-    document.finish()?;
-    Ok(found)
-}
-
-fn check_xml_attributes(
-    e: &quick_xml::events::BytesStart,
-    pat_upper: &str,
-    ac: &aho_corasick::AhoCorasick,
-    is_exact: bool,
-) -> Result<bool, XmlSearchError> {
-    let mut found = false;
-    for attr in e.attributes() {
-        let attr = attr.map_err(XmlSearchError::parse)?;
-        let val = attribute_value(&attr)?;
-        if found {
-            continue;
-        }
-        let is_match = if is_exact {
-            val.trim().to_lowercase().to_uppercase() == pat_upper
-        } else {
-            ac.find(&val).is_some()
-        };
-        if is_match {
-            found = true;
-        }
-    }
-    Ok(found)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,7 +482,9 @@ mod tests {
                     .unwrap();
             assert_eq!(rows.len(), expected);
             assert_eq!(
-                check_xml_file(xml.as_bytes(), "needle value", &ac, false, stop).unwrap(),
+                !search_xml_file(xml.as_bytes(), "needle value", &ac, false, stop, 10)
+                    .unwrap()
+                    .is_empty(),
                 expected == 1
             );
             if expected == 1 {
@@ -612,7 +502,11 @@ mod tests {
                 search_xml_file(xml.as_bytes(), "needle", &ac, false, stop.clone(), 10).unwrap();
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].2, None);
-            assert!(check_xml_file(xml.as_bytes(), "needle", &ac, false, stop).unwrap());
+            assert!(
+                !search_xml_file(xml.as_bytes(), "needle", &ac, false, stop, 10)
+                    .unwrap()
+                    .is_empty()
+            );
         }
     }
 
@@ -632,7 +526,7 @@ mod tests {
                         .is_err()
                 );
             }
-            assert!(check_xml_file(xml.as_bytes(), "needle", &ac, false, stop).is_err());
+            assert!(search_xml_file(xml.as_bytes(), "needle", &ac, false, stop, 10).is_err());
         }
     }
 
@@ -692,16 +586,16 @@ mod tests {
         let xml = b"<root><value>needle</root>";
 
         assert!(search_xml_file(xml, "needle", &ac, false, stop_flag.clone(), 10).is_err());
-        assert!(check_xml_file(xml, "needle", &ac, false, stop_flag).is_err());
+        assert!(search_xml_file(xml, "needle", &ac, false, stop_flag, 10).is_err());
     }
 
     #[test]
-    fn xml_existence_check_validates_the_entire_document() {
+    fn xml_search_validates_the_entire_document() {
         let ac = test_ac("needle");
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let xml = b"<root><value>needle</value></root><extra/>";
 
-        assert!(check_xml_file(xml, "needle", &ac, false, stop_flag).is_err());
+        assert!(search_xml_file(xml, "needle", &ac, false, stop_flag, 10).is_err());
     }
 
     #[test]
@@ -714,7 +608,9 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, 2);
-        assert!(check_xml_file(xml, "needle", &ac, false, stop_flag).unwrap());
+        assert!(!search_xml_file(xml, "needle", &ac, false, stop_flag, 10)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -728,7 +624,7 @@ mod tests {
         for xml in malformed_documents {
             let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             assert!(matches!(
-                check_xml_file(xml, "needle", &ac, false, stop_flag),
+                search_xml_file(xml, "needle", &ac, false, stop_flag, 10),
                 Err(XmlSearchError::Parse(_))
             ));
         }
@@ -745,7 +641,7 @@ mod tests {
             Err(XmlSearchError::UnsupportedDtd(_))
         ));
         assert!(matches!(
-            check_xml_file(xml, "ACME", &ac, false, stop_flag),
+            search_xml_file(xml, "ACME", &ac, false, stop_flag, 10),
             Err(XmlSearchError::UnsupportedDtd(_))
         ));
     }
@@ -757,7 +653,7 @@ mod tests {
         let xml = b"<root>needle</root><!DOCTYPE root>";
 
         assert!(matches!(
-            check_xml_file(xml, "needle", &ac, false, stop_flag),
+            search_xml_file(xml, "needle", &ac, false, stop_flag, 10),
             Err(XmlSearchError::Parse(_))
         ));
     }
@@ -771,6 +667,8 @@ mod tests {
         let matches = search_xml_file(xml, "needle", &ac, false, stop_flag.clone(), 10).unwrap();
 
         assert_eq!(matches.len(), 1);
-        assert!(check_xml_file(xml, "needle", &ac, false, stop_flag).unwrap());
+        assert!(!search_xml_file(xml, "needle", &ac, false, stop_flag, 10)
+            .unwrap()
+            .is_empty());
     }
 }

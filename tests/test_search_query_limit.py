@@ -21,7 +21,7 @@ def test_character_count_boundary(character):
     assert str(error.value) == AppStrings.ERROR_SEARCH_QUERY_LENGTH.format(1000, 1001)
 
 
-@pytest.mark.parametrize("entry", ["file", "json", "xml", "excel", "batch", "directory", "files", "find"])
+@pytest.mark.parametrize("entry", ["file", "json", "xml", "excel", "batch", "directory", "files"])
 def test_python_entry_points_reject_before_any_io(entry):
     calls = {
         "file": lambda q: se.search_in_file("missing.txt", q),
@@ -31,7 +31,6 @@ def test_python_entry_points_reject_before_any_io(entry):
         "batch": lambda q: se.search_in_files_batch([], q),
         "directory": lambda q: se.search_directory_fast([], q),
         "files": lambda q: se.search_files_list_fast([], q),
-        "find": lambda q: se.find_files_with_keyword_fast([], q),
     }
     with patch.object(se.os.path, "getsize", side_effect=AssertionError("unexpected I/O")):
         with pytest.raises(ValueError, match="1,000"):
@@ -98,7 +97,7 @@ def test_localized_length_feedback(language, qtbot):
         set_language(previous)
 
 
-@pytest.mark.parametrize("entry", ["file", "directory", "files", "find"])
+@pytest.mark.parametrize("entry", ["file", "directory", "files"])
 def test_native_entry_points_enforce_same_limit(entry, tmp_path):
     if not se.HAS_RUST_ENGINE:
         pytest.skip("Rust engine unavailable")
@@ -107,7 +106,6 @@ def test_native_entry_points_enforce_same_limit(entry, tmp_path):
         "file": lambda q: se.sf_engine.search_file(str(tmp_path / "missing"), q),
         "directory": lambda q: se.sf_engine.search_dir([], q),
         "files": lambda q: se.sf_engine.search_files_list([], q),
-        "find": lambda q: se.sf_engine.find_files_with_keyword([], q),
     }
     with pytest.raises(ValueError, match="1000"):
         calls[entry]("😀" * 1001)
