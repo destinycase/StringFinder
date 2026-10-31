@@ -273,6 +273,7 @@ class SearchOptionsPanel(QWidget):
         input_layout = QGridLayout()
         self.input_layout = input_layout
         self.search_settings_button = QPushButton()
+        self.search_settings_button.setStyleSheet("QPushButton { text-align: left; padding-left: 8px; }")
         self.search_settings_menu = QMenu(self.search_settings_button)
         self.profile_menu = SearchProfileMenu(AppStrings.SEARCH_PROFILE_LABEL, self.search_settings_menu)
         self.profile_menu.aboutToHide.connect(QToolTip.hideText)
