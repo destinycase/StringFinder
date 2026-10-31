@@ -32,7 +32,10 @@ def test_defaults_and_menu_order(qtbot, language):
     assert [action.text() for action in panel.value_menu.actions()] == [
         AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6)
     ]
-    assert panel.search_settings_button.text() == AppStrings.SEARCH_SETTINGS_BUTTON
+    assert panel.search_settings_button.text() == AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(
+        AppStrings.SEARCH_PROFILE_NORMAL, AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[0]
+    )
+    assert not hasattr(panel, "search_settings_summary")
     assert panel.search_settings_button.menu() is None
     assert panel.search_settings_button.accessibleName() == (
         "검색 모드: 일반 검색 / 특수 검색 : 사용 안함" if language == "ko"
@@ -59,7 +62,7 @@ def test_each_group_has_exactly_one_selection(qtbot, language, precise, value_in
     assert panel.search_settings_button.accessibleName() == AppStrings.SEARCH_SETTINGS_SELECTION.format(
         profile, AppStrings.SPECIAL_SEARCH_MENU_ITEMS[value_index]
     )
-    assert panel.search_settings_summary.text() == AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(
+    assert panel.search_settings_button.text() == AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(
         AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if precise else profile,
         AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[value_index]
     )
@@ -140,8 +143,9 @@ def test_requested_labels_and_input_order(qtbot, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
     row = panel.input_layout
-    assert row.itemAt(0).widget().text() == ("검색할 문자열" if language == "ko" else "Text to search")
-    assert row.indexOf(panel.search_combo) < row.indexOf(panel.search_settings_button) < row.indexOf(panel.search_btn)
+    assert row.itemAt(0).widget() is panel.search_settings_button
+    assert panel.search_label.text() == ("검색할 문자열" if language == "ko" else "Text to search")
+    assert row.indexOf(panel.search_settings_button) < row.indexOf(panel.search_combo) < row.indexOf(panel.search_btn)
     if language == "ko":
         assert panel.value_menu.title() == "특수 검색"
         assert [action.text() for action in panel.value_menu.actions()] == [
@@ -177,8 +181,7 @@ def test_long_selection_keeps_query_and_buttons_inside_panel(qtbot, language, wi
     panel.resize(width, 220)
     panel.show()
     qtbot.wait(30)
-    for widget in (panel.search_label, panel.search_combo, panel.search_settings_button,
-                   panel.search_settings_summary, panel.search_btn):
+    for widget in (panel.search_label, panel.search_combo, panel.search_settings_button, panel.search_btn):
         assert widget.geometry().right() < panel.width()
         assert widget.geometry().left() >= 0
     assert panel.search_combo.width() >= 100
@@ -196,7 +199,11 @@ def test_settings_button_opens_menu_and_controls_stay_aligned(qtbot, language):
     initial_width = panel.search_settings_button.width()
     for precise in (True, False):
         panel.set_complex_search(precise)
-        assert panel.search_settings_button.width() == initial_width
+        for mode in AppStrings.SPECIAL_SEARCH_ITEMS:
+            panel.set_special_mode(mode)
+            assert panel.search_settings_button.width() == initial_width
+            assert panel.search_settings_button.fontMetrics().horizontalAdvance(
+                panel.search_settings_button.text()) <= initial_width - 40
         for searching in (True, False):
             panel.set_searching(searching)
             action = panel.stop_btn if searching else panel.search_btn

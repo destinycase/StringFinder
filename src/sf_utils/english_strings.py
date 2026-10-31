@@ -153,7 +153,6 @@ ENGLISH_STRINGS = {
     "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
     "SPECIAL_SEARCH_LABEL": "Special search",
     "SEARCH_SETTINGS_SELECTION": "Search mode: {} / Special search: {}",
-    "SEARCH_SETTINGS_BUTTON": "Search settings ...",
     "SEARCH_PROFILE_PRECISE_COMPACT": "Miss prevention",
     "SPECIAL_SEARCH_COMPACT_ITEMS": [
         "Special search off", "XML contains", "XML exact",
@@ -179,7 +178,7 @@ ENGLISH_STRINGS = {
         '<p>- Any checked term may match. With no checked terms, filenames are unrestricted.</p>'
         '<p>- Filename filters do not support wildcards.</p>'
         '<br><h3>Search settings</h3>'
-        '<p>- Click the button to the right of the search input to choose <b>Search mode</b> and <b>Special search</b>.</p>'
+        '<p>- Click the button to the left of the search input to choose <b>Search mode</b> and <b>Special search</b>.</p>'
         '<h4>Search mode</h4><p><b>Normal search</b></p>'
         '<p>Searches ordinary English and Korean text. (Default)</p>'
         '<p><b>Miss-prevention search</b></p>'

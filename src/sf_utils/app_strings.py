@@ -162,7 +162,6 @@ class AppStrings:
     SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
     SPECIAL_SEARCH_LABEL = "특수 검색"
     SEARCH_SETTINGS_SELECTION = "검색 모드: {} / 특수 검색 : {}"
-    SEARCH_SETTINGS_BUTTON = "검색 설정 ..."
     SEARCH_PROFILE_PRECISE_COMPACT = "누락 방지"
     SEARCH_SETTINGS_COMPACT_SELECTION = "{} · {}"
     SPECIAL_SEARCH_COMPACT_ITEMS = [
@@ -190,7 +189,7 @@ class AppStrings:
 		"<p>- 파일명 필터에는 와일드카드를 사용할 수 없습니다.</p>"
         "<br>"
         "<h3>검색 설정</h3>"
-		"<p>- 검색할 문자열 입력 칸 오른쪽 버튼을 눌러 <b>검색 모드</b>와 <b>특수 검색</b>를 선택할 수 있습니다.</p>"
+		"<p>- 검색할 문자열 입력 칸 왼쪽 버튼을 눌러 <b>검색 모드</b>와 <b>특수 검색</b>를 선택할 수 있습니다.</p>"
 		"<h4>검색 모드</h4>"
         "<p><b>일반 검색</b></p>"
 		"<p>일반적인 영어, 한글 검색을 합니다.(기본)</p>"
