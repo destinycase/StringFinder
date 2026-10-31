@@ -162,6 +162,13 @@ class AppStrings:
     SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
     SPECIAL_SEARCH_LABEL = "특수 검색"
     SEARCH_SETTINGS_SELECTION = "검색 모드: {} / 특수 검색 : {}"
+    SEARCH_SETTINGS_BUTTON = "검색 설정 ..."
+    SEARCH_PROFILE_PRECISE_COMPACT = "누락 방지"
+    SEARCH_SETTINGS_COMPACT_SELECTION = "{} · {}"
+    SPECIAL_SEARCH_COMPACT_ITEMS = [
+        "특수 검색 사용 안함", "XML 부분 일치", "XML 정확히 일치",
+        "JSON 부분 일치", "JSON 정확히 일치", "EXCEL 부분 일치", "EXCEL 정확히 일치",
+    ]
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
     FILTER_FILENAME_TAB = "파일명({})"
@@ -181,7 +188,7 @@ class AppStrings:
         "<p>필터 탭 이름 옆에는 체크한 수량이 표시됩니다. 쉼표로 묶은 확장자도 개별 수량으로 세며 "
         "중복은 한 번만 셉니다. 현재 적용 조건은 하단 상태 표시줄, 검색 진행·시간·결과는 검색 요약에서 확인하세요.</p>"
         "<h3>검색 설정 메뉴</h3><p>검색할 문자열 입력 칸 오른쪽 버튼을 눌러 <b>검색 모드</b>와 <b>특수 검색</b>에서 "
-        "각각 하나를 선택하세요. 선택한 두 값은 메뉴를 닫아도 버튼에 표시됩니다.</p>"
+        "각각 하나를 선택하세요. 선택한 두 값은 버튼 옆에 간결하게 표시됩니다. 전체 이름과 체크 상태는 메뉴에서 확인하세요.</p>"
         "<p><b>일반 검색:</b> 평소에 권장합니다. "
         "<b>누락 방지 검색:</b> 파일에 글자가 있는데 찾지 못했을 때 좁은 범위에서 시도하세요. 매우 느릴 수 있습니다.</p>"
         "<p><b>특수 검색 → 사용 안함:</b> 왼쪽 확장자 조건을 사용합니다. 검색 전체를 끄는 설정이 아닙니다. "

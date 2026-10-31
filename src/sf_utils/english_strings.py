@@ -153,6 +153,12 @@ ENGLISH_STRINGS = {
     "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
     "SPECIAL_SEARCH_LABEL": "Special search",
     "SEARCH_SETTINGS_SELECTION": "Search mode: {} / Special search: {}",
+    "SEARCH_SETTINGS_BUTTON": "Search settings ...",
+    "SEARCH_PROFILE_PRECISE_COMPACT": "Miss prevention",
+    "SPECIAL_SEARCH_COMPACT_ITEMS": [
+        "Special search off", "XML contains", "XML exact",
+        "JSON contains", "JSON exact", "EXCEL contains", "EXCEL exact",
+    ],
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
     "FILTER_FILENAME_TAB": "Filenames ({})",
@@ -174,7 +180,7 @@ ENGLISH_STRINGS = {
         "without duplicates. Applied conditions appear in the status bar; search progress, time "
         "and results appear in the search summary.</p>"
         "<h3>Search settings menu</h3><p>Click the button to the right of the query and select one item each "
-        "under <b>Search mode</b> and <b>Special search</b>. Both selections stay visible on the button.</p>"
+        "under <b>Search mode</b> and <b>Special search</b>. Both selections appear beside the button. Open the menu for full names and checkmarks.</p>"
         "<p><b>Normal search:</b> recommended for everyday use. "
         "<b>Miss-prevention search:</b> try a narrow scope if text known to exist is not found. It can be very slow.</p>"
         "<p><b>Special search → Off:</b> uses your extension filter; it does not turn off searching. <b>JSON/XML:</b> searches values, "

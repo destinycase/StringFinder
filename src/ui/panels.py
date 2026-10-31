@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Union
 
-from PySide6.QtCore import QEvent, QRect, QRegularExpression, QSignalBlocker, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QRect, QRegularExpression, QSignalBlocker, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QIcon, QPainter, QPalette, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -252,6 +252,18 @@ class SearchProfileMenu(QMenu):
         return super().event(event)
 
 
+class SearchSettingsSummary(QLabel):
+    """Keep the complete accessible selection while eliding only its painting."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, self.contentsRect().width())
+        self.style().drawItemText(painter, self.contentsRect(),
+                                  Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                                  self.palette(), self.isEnabled(), text, QPalette.ColorRole.WindowText)
+        painter.end()
+
+
 class SearchOptionsPanel(QWidget):
     search_started = Signal()
     stop_requested = Signal()
@@ -272,7 +284,10 @@ class SearchOptionsPanel(QWidget):
         layout = QVBoxLayout(self)
         input_layout = QGridLayout()
         self.input_layout = input_layout
-        self.search_settings_button = QPushButton()
+        self.search_settings_button = QPushButton(AppStrings.SEARCH_SETTINGS_BUTTON)
+        self.search_settings_summary = SearchSettingsSummary()
+        self.search_settings_summary.setMinimumWidth(200)
+        self.search_settings_summary.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.search_settings_menu = QMenu(self.search_settings_button)
         self.profile_menu = SearchProfileMenu(AppStrings.SEARCH_PROFILE_LABEL, self.search_settings_menu)
         self.profile_menu.aboutToHide.connect(QToolTip.hideText)
@@ -308,7 +323,7 @@ class SearchOptionsPanel(QWidget):
             self.value_menu.addAction(action)
             self.special_mode_actions[label_text] = action
         self.value_action_group.triggered.connect(self._on_special_action_triggered)
-        self.search_settings_button.setMenu(self.search_settings_menu)
+        self.search_settings_button.clicked.connect(self._open_search_settings)
         self._refresh_search_settings()
         self.search_label = QLabel(AppStrings.SEARCH_LABEL)
         self.search_combo = SearchInputComboBox(
@@ -324,6 +339,7 @@ class SearchOptionsPanel(QWidget):
         input_layout.addWidget(self.search_label, 0, 0)
         input_layout.addWidget(self.search_combo, 0, 1)
         input_layout.addWidget(self.search_settings_button, 0, 2)
+        input_layout.addWidget(self.search_settings_summary, 0, 3)
         layout.addLayout(input_layout)
         self.query_length_notice = QLabel()
         self.query_length_notice.setObjectName("queryLengthNotice")
@@ -335,37 +351,54 @@ class SearchOptionsPanel(QWidget):
         self.search_btn = QPushButton(AppStrings.SEARCH_BTN)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)
         self.search_btn.clicked.connect(self.search_started.emit)
-        input_layout.addWidget(self.search_btn, 0, 3)
+        input_layout.addWidget(self.search_btn, 0, 4)
         self.stop_btn = QPushButton(AppStrings.SEARCH_BTN_STOP)
         self.stop_btn.setStyleSheet(UIStyles.STYLE_STOP_BTN_ACTIVE)  # 사용자가 쉽게 인지할 수 있도록 중지 버튼에 강조 색상을 적용합니다.
         self.stop_btn.clicked.connect(self.stop_requested.emit)
         self.stop_btn.setVisible(False)
-        input_layout.addWidget(self.stop_btn, 0, 3)
+        input_layout.addWidget(self.stop_btn, 0, 4)
         self._layout_search_controls()
+
+    def _open_search_settings(self):
+        self.search_settings_menu.popup(
+            self.search_settings_button.mapToGlobal(QPoint(0, self.search_settings_button.height()))
+        )
 
     def _layout_search_controls(self):
         if not hasattr(self, "stop_btn"):
             return
+        controls = (self.search_combo, self.search_settings_button, self.search_btn, self.stop_btn)
+        for control in controls:
+            control.ensurePolished()
+        height = max(32, *(control.sizeHint().height() for control in controls))
+        for control in controls:
+            control.setFixedHeight(height)
+        self.search_settings_button.setFixedWidth(
+            self.search_settings_button.fontMetrics().horizontalAdvance(AppStrings.SEARCH_SETTINGS_BUTTON) + 48
+        )
         margins = self.layout().contentsMargins()
         available = self.width() - margins.left() - margins.right()
         spacing = max(0, self.input_layout.horizontalSpacing())
         action_width = max(self.search_btn.sizeHint().width(), self.stop_btn.sizeHint().width())
-        settings_width = self.search_settings_button.sizeHint().width()
-        full_width = self.search_label.sizeHint().width() + 140 + settings_width + action_width + 3 * spacing
-        mode = 1 if available >= full_width else 2 if available >= settings_width + action_width + spacing else 3
+        settings_width = self.search_settings_button.width()
+        full_width = self.search_label.sizeHint().width() + 140 + settings_width + 200 + action_width + 4 * spacing
+        mode = 1 if available >= full_width else 2
         if mode == self._toolbar_mode:
             return
         self._toolbar_mode = mode
-        for widget in (self.search_label, self.search_combo, self.search_settings_button, self.search_btn, self.stop_btn):
+        for widget in (self.search_label, self.search_combo, self.search_settings_button,
+                       self.search_settings_summary, self.search_btn, self.stop_btn):
             self.input_layout.removeWidget(widget)
         self.input_layout.addWidget(self.search_label, 0, 0)
-        self.input_layout.addWidget(self.search_combo, 0, 1, 1, 1 if mode == 1 else 3)
-        self.input_layout.addWidget(self.search_settings_button, 0 if mode == 1 else 1,
-                                    2 if mode == 1 else 0, 1, 1 if mode == 1 else 3 if mode == 2 else 4)
-        action_row = 0 if mode == 1 else 1 if mode == 2 else 2
-        self.input_layout.addWidget(self.search_btn, action_row, 3)
-        self.input_layout.addWidget(self.stop_btn, action_row, 3)
-        self.input_layout.setColumnStretch(1, 1)
+        self.input_layout.addWidget(self.search_combo, 0, 1, 1, 1 if mode == 1 else 4)
+        action_row = 0 if mode == 1 else 1
+        self.input_layout.addWidget(self.search_settings_button, action_row, 2 if mode == 1 else 0)
+        self.input_layout.addWidget(self.search_settings_summary, action_row, 3 if mode == 1 else 1,
+                                    1, 1 if mode == 1 else 3)
+        self.input_layout.addWidget(self.search_btn, action_row, 4)
+        self.input_layout.addWidget(self.stop_btn, action_row, 4)
+        self.input_layout.setColumnStretch(1, 3)
+        self.input_layout.setColumnStretch(3, 2 if mode == 1 else 0)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -383,8 +416,12 @@ class SearchOptionsPanel(QWidget):
         )
         value = AppStrings.SPECIAL_SEARCH_MENU_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
         text = AppStrings.SEARCH_SETTINGS_SELECTION.format(profile, value)
-        self.search_settings_button.setText(text)
         self.search_settings_button.setAccessibleName(text)
+        self.search_settings_summary.setText(AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(
+            AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if self._use_complex_search else profile,
+            AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
+        ))
+        self.search_settings_summary.setAccessibleName(text)
         self.search_settings_button.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP if self._use_complex_search else "")
         self._layout_search_controls()
 
