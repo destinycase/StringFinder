@@ -29,6 +29,7 @@ htmlcov/
 data/
 /samples/
 /diagnostic/
+/docs_dev/
 
 # Logs and History
 *.log
