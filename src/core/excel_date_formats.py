@@ -11,7 +11,7 @@ def date_format(code):
 
 
 def read_date_cells(path, sheet_name):
-    cells = set()
+    cells: set[tuple[str, str]] = set()
     with zipfile.ZipFile(path) as archive:
         workbook = ET.fromstring(archive.read('xl/workbook.xml'))
         namespace = workbook.tag.split('}')[0][1:]

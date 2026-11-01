@@ -325,7 +325,7 @@ def test_empty_result_status_panels_stay_compact(search_tab_fixture, qtbot):
     assert panel.total_match_limit_banner.height() == panel.skipped_files_banner.height()
 
 
-def test_skipped_files_dialog_copies_paths_and_reasons(qtbot):
+def test_skipped_files_dialog_copies_paths_and_reasons(qtbot, isolated_clipboard):
     QApplication.clipboard().clear()
     dialog = SkippedFilesDialog(
         [("C:/restricted/a.xml", "XML 구문 오류"), ("C:/locked/b.txt", "접근 거부")],

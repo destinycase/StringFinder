@@ -605,8 +605,8 @@ class SettingsDialog(QDialog):
                     ) as temporary:
                         temporary_paths.append((Path(temporary.name), destination))
                         temporary.write(content)
-                for temporary, destination in temporary_paths:
-                    os.replace(temporary, destination)
+                for temporary_path, destination in temporary_paths:
+                    os.replace(temporary_path, destination)
                     replaced_destinations.append(str(destination))
             except OSError as exc:
                 for temporary, _ in locals().get("temporary_paths", []):

@@ -709,7 +709,7 @@ def _split_json_match_content(content: str) -> List[str]:
     """Decode explicit fields when a JSON path contains the tab delimiter."""
     if content.startswith("JSON_FIELDS|"):
         import json
-        return json.loads(content[len("JSON_FIELDS|"):])
+        return cast(List[str], json.loads(content[len("JSON_FIELDS|"):]))
     return content.split("\t", 1)
 
 
@@ -1165,7 +1165,7 @@ def detect_encoding_quickly(data: bytes) -> str:
             return "utf-8-sig"
         if requested.startswith("utf-16") and data.startswith(b"\xff\xfe" if requested.endswith("le") else b"\xfe\xff"):
             return "utf-16"
-        return requested
+        return cast(str, requested)
     if not data:
         return Constants.ENC_UTF8
     if data.startswith(b"\xef\xbb\xbf"):
@@ -1525,7 +1525,7 @@ def search_in_excel_special(
         try:
             sparse_reader = getattr(sf_engine, "SparseExcelWorkbook", None) if HAS_RUST_ENGINE else None
             use_sparse = isinstance(sparse_reader, type) and file_path.lower().endswith((".xlsx", ".xlsm"))
-            workbook = sparse_reader(file_path) if use_sparse else CalamineWorkbook.from_path(file_path)
+            workbook = cast(Any, sparse_reader)(file_path) if use_sparse else CalamineWorkbook.from_path(file_path)
         except (IOError, OSError) as e:
             return (
                 Constants.STATUS_SKIPPED,

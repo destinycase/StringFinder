@@ -1,5 +1,7 @@
 # Hidden directories (caches, IDE settings, local QA and temporary work)
 .*/
+!.github/
+!.github/**/
 
 # Python bytecode and local environments
 __pycache__/

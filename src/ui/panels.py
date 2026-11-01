@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, cast
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QRegularExpression, QSignalBlocker, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QIcon, QPainter, QPalette, QRegularExpressionValidator
@@ -129,13 +129,14 @@ class FilterListWidget(QListWidget):
         super().setItemWidget(item, widget)
         if isinstance(widget, FilterItemWidget):
             button = widget.delete_btn
-            widget.layout().removeWidget(button)
+            item_layout = cast(QHBoxLayout, widget.layout())  # FilterItemWidget creates this layout.
+            item_layout.removeWidget(button)
             button.setParent(self._action_column)
             button.hide()
             self._actions.append((item, button))
             # Removing the action must not remove the original row-height floor.
-            widget.setMinimumHeight(20 + widget.layout().contentsMargins().top()
-                                    + widget.layout().contentsMargins().bottom())
+            widget.setMinimumHeight(20 + item_layout.contentsMargins().top()
+                                    + item_layout.contentsMargins().bottom())
             item.setSizeHint(widget.sizeHint())
             # Coalesce inserts: measuring every existing row after each insert
             # makes a restored list quadratic in size.
@@ -206,7 +207,7 @@ def normalize_special_search_mode(value: Any) -> str:
         return AppStrings.SPECIAL_SEARCH_OFF
     value = value.strip()
     if value in AppStrings.SPECIAL_SEARCH_ITEMS:
-        return value
+        return cast(str, value)
     normalized = value.casefold()
     exact = "정확" in value or "exact" in normalized
     if "xml" in normalized:
@@ -365,7 +366,7 @@ class SearchOptionsPanel(QWidget):
             for profile in (AppStrings.SEARCH_PROFILE_NORMAL, AppStrings.SEARCH_PROFILE_PRECISE_COMPACT)
             for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS
         ) + 48)
-        margins = self.layout().contentsMargins()
+        margins = cast(QVBoxLayout, self.layout()).contentsMargins()  # Installed in _init_ui.
         available = self.width() - margins.left() - margins.right()
         spacing = max(0, self.input_layout.horizontalSpacing())
         action_width = max(self.search_btn.sizeHint().width(), self.stop_btn.sizeHint().width())
@@ -768,7 +769,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
             else:
                 return [special_mode.lower()]
     def get_checked_extensions(self) -> List[str]:
-        extensions = []
+        extensions: List[str] = []
         for index in range(self.ext_list.count()):
             widget = self.ext_list.itemWidget(self.ext_list.item(index))
             if isinstance(widget, FilterItemWidget) and widget.isChecked():
@@ -940,13 +941,13 @@ class FilenameFilterPanel(DenseFilterPanel):
         return self.filename_combo.currentText().strip()
 
     def get_selected_filenames(self) -> List[str]:
-        filenames = []
+        filenames: List[str] = []
         for i in range(self.filename_list.count()):
             widget = self.filename_list.itemWidget(self.filename_list.item(i))
             if isinstance(widget, FilterItemWidget) and widget.isChecked():
                 filenames.extend(part.strip() for part in widget.text().split(",") if part.strip())
         # Search is case-insensitive; overlapping checked groups form a union.
-        unique = {}
+        unique: Dict[str, str] = {}
         for value in filenames:
             unique.setdefault(value.casefold(), value)
         return list(unique.values())

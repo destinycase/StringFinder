@@ -1,0 +1,77 @@
+name: Windows checks
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+      APPDATA: ${{ github.workspace }}/docs_dev/ci/appdata
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/ci-constraints.txt
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/rust_engine -> target
+      - name: Install tested theme with its legacy Python metadata exception
+        run: python -m pip install pyqtdarktheme==2.1.0 --ignore-requires-python --no-deps
+      - name: Install development dependencies
+        run: python -m pip install -e '.[dev]' -c .github/ci-constraints.txt
+      - name: Verify dependency compatibility
+        run: python -m pip check
+      - name: Build the engine from this checkout
+        run: python build_rust.py
+      - name: Require native engine and matching version
+        run: python tools/check_dev_environment.py --require-engine
+      - name: Python lint
+        run: python -m ruff check src tests tools
+      - name: Product type checks
+        run: python -m mypy src --cache-dir docs_dev/ci/mypy_cache
+      - name: Rust formatting
+        run: cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
+      - name: Rust lint
+        run: cargo clippy --manifest-path src/rust_engine/Cargo.toml --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --manifest-path src/rust_engine/Cargo.toml --locked
+      - name: Isolated Python suite
+        run: python -m pytest -q -p no:cacheprovider --basetemp docs_dev/ci/basic --junitxml docs_dev/ci/basic.xml
+      - name: Extended stress and chaos suite
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: python -m pytest -q -o addopts= -m 'stress or chaos' -p no:cacheprovider --basetemp docs_dev/ci/extended --junitxml docs_dev/ci/extended.xml
+      - name: Native Windows clipboard integration
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          QT_QPA_PLATFORM: windows
+        run: python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp docs_dev/ci/clipboard --junitxml docs_dev/ci/clipboard.xml

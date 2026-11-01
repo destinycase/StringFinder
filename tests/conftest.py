@@ -18,11 +18,27 @@ import os
 import shutil
 import sys
 import tempfile
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QThreadPool
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+
+
+@pytest.fixture
+def isolated_clipboard(monkeypatch, qapp):
+    """Test copy payloads without reading or changing the OS clipboard."""
+    from PySide6.QtWidgets import QApplication
+
+    state = {"text": ""}
+    clipboard = SimpleNamespace(
+        setText=lambda text: state.update(text=text),
+        text=lambda: state["text"],
+        clear=lambda: state.update(text=""),
+    )
+    monkeypatch.setattr(QApplication, "clipboard", staticmethod(lambda: clipboard))
+    return clipboard
 
 
 @pytest.fixture(scope="session", autouse=True)

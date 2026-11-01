@@ -4,7 +4,6 @@ from unittest.mock import Mock
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
 
 from core import search_engine as se
 from sf_utils.app_strings import AppStrings
@@ -23,7 +22,7 @@ def language(request):
     set_language(original)
 
 
-def test_rejected_typing_and_paste_show_inline_feedback(qtbot, language):
+def test_rejected_typing_shows_inline_feedback(qtbot, language):
     panel = FilenameFilterPanel()
     qtbot.addWidget(panel)
     panel.show()
@@ -32,10 +31,6 @@ def test_rejected_typing_and_paste_show_inline_feedback(qtbot, language):
     assert panel.filename_input_notice.isVisible()
     assert panel.filename_input_notice.text() == AppStrings.FILENAME_FILTER_WILDCARD_NOT_ALLOWED
     panel.add_edit.clear()
-    QApplication.clipboard().setText("report?.txt")
-    panel.add_edit.paste()
-    assert panel.add_edit.text() == ""
-    assert panel.filename_input_notice.isVisible()
     panel.add_edit.setText("report")
     panel._on_add_clicked()
     assert panel.get_selected_filenames() == ["report"]

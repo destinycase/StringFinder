@@ -1,5 +1,14 @@
+from typing import NotRequired, TypedDict
+
 from sf_utils.app_strings import AppStrings
 from sf_utils.settings_defaults import CONFIG_SCHEMA_VERSION, DEFAULTS, DEFAULT_VERSIONS
+
+
+class AdvancedSettingSpec(TypedDict):
+    default: int | str | bool
+    minimum: NotRequired[int]
+    maximum: NotRequired[int]
+    choices: NotRequired[tuple[str, ...]]
 
 
 class Constants:
@@ -145,7 +154,7 @@ class Constants:
     # 고급 설정의 기본값과 허용 범위는 ConfigManager와 UI가 함께 사용하는
     # 단일 계약입니다. 두 계층에 숫자를 중복 선언하면 수동 편집된 설정이
     # 화면과 실제 검색에서 서로 다르게 적용될 수 있습니다.
-    ADVANCED_SETTING_SPECS = {
+    ADVANCED_SETTING_SPECS: dict[str, AdvancedSettingSpec] = {
         CONFIG_KEY_INCLUDE_JUNCTIONS: {"default": DEFAULTS["include_junctions"]},
         CONFIG_KEY_SEARCH_ENCODING: {
             "default": DEFAULTS["search_encoding"],

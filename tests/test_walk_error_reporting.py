@@ -9,7 +9,7 @@ from ui.result_view import SkippedFilesDialog, _format_skipped_files_text, norma
 
 
 @pytest.mark.parametrize("language", ["ko", "en"])
-def test_unknown_walk_errors_are_not_merged(language, qtbot):
+def test_unknown_walk_errors_are_not_merged(language, qtbot, isolated_clipboard):
     previous = get_language()
     try:
         set_language(language)

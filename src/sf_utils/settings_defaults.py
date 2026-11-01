@@ -4,9 +4,27 @@ Keep user-facing setting defaults here so a default change is explicit and can
 be migrated without overwriting values that users intentionally chose.
 """
 
+from typing import TypedDict
+
+
+class SettingDefaults(TypedDict):
+    include_junctions: bool
+    search_encoding: str
+    allow_duplicate_json_keys: bool
+    max_total_matches: int
+    max_per_file_matches: int
+    max_json_dom_size: int
+    max_small_file_size: int
+    json_mmap_threshold: int
+    timeout_worker_hang: int
+    max_json_depth: int
+    excel_max_concurrency: int
+    excel_serialization_threshold_mb: int
+
+
 CONFIG_SCHEMA_VERSION = 5
 
-DEFAULTS = {
+DEFAULTS: SettingDefaults = {
     "include_junctions": False,
     "search_encoding": "auto",
     "allow_duplicate_json_keys": False,

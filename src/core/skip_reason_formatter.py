@@ -1,7 +1,7 @@
 """Formatting helpers for localized skip reasons."""
 
 import re
-from typing import Any
+from typing import Any, cast
 
 
 def format_excel_panic_reason(detail: Any, *, app_strings: Any, constants: Any, logger: Any) -> str:
@@ -32,4 +32,4 @@ def format_excel_panic_reason(detail: Any, *, app_strings: Any, constants: Any, 
         localized_detail = app_strings.EXCEL_DETAIL_ENGINE_FAILURE.format(format_name)
     else:
         localized_detail = app_strings.EXCEL_DETAIL_UNKNOWN_FORMAT
-    return app_strings.ERROR_EXCEL_PANIC.format(localized_detail)
+    return cast(str, app_strings.ERROR_EXCEL_PANIC.format(localized_detail))

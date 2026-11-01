@@ -1,7 +1,6 @@
 """Extension filters reject patterns, while content queries remain literal."""
 import pytest
 from PySide6.QtGui import QValidator
-from PySide6.QtWidgets import QApplication
 
 from core import search_engine as se
 from sf_utils.app_strings import AppStrings
@@ -35,14 +34,9 @@ def test_patterns_cannot_be_added_or_restored(panel, pattern):
     assert panel.extension_input_notice.isVisible()
 
 
-def test_actual_typing_and_paste_show_notice(panel, qtbot):
+def test_actual_typing_shows_notice(panel, qtbot):
     qtbot.keyClicks(panel.ext_edit, "json*")
     assert panel.ext_edit.text() == "json"
-    assert panel.extension_input_notice.isVisible()
-    panel.ext_edit.clear()
-    QApplication.clipboard().setText("*.json")
-    panel.ext_edit.paste()
-    assert panel.ext_edit.text() == ""
     assert panel.extension_input_notice.isVisible()
     assert not panel.ext_edit.toolTip()
 

@@ -4,7 +4,7 @@ import time
 import warnings
 
 import qdarktheme
-from PySide6.QtCore import QByteArray, Qt, QThread, QTimer
+from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
     애플리케이션의 메인 윈도우 클래스입니다.
     검색 탭, 창 상태, 테마 및 애플리케이션 종료 처리를 담당합니다.
     """
+    _startup_paint_observer: QObject  # Retain the Python wrapper until window teardown.
 
     def __init__(self):
         """메인 윈도우를 초기화하고 필요한 시스템 설정을 수행합니다."""
@@ -91,8 +92,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """창을 닫을 때 호출되어 애플리케이션 종료 절차를 수행합니다."""
         active = any(
-            isinstance(self.tab_widget.widget(i), SearchTab)
-            and self.tab_widget.widget(i).search_state
+            isinstance(tab := self.tab_widget.widget(i), SearchTab)
+            and tab.search_state
             not in (Constants.SearchState.IDLE, Constants.SearchState.STOPPING)
             for i in range(self.tab_widget.count())
         )

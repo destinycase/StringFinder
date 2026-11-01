@@ -494,7 +494,7 @@ class ConfigManager:
 
     def _normalize_filter_container(self, value, fallback):
         if isinstance(value, dict):
-            normalized = {}
+            normalized: dict[str, Any] = {}
             for name, entry in value.items():
                 if isinstance(name, str) and name.strip() and isinstance(entry, bool):
                     normalized[name] = entry

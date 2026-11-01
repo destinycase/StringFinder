@@ -1,16 +1,14 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.38 (StringFinder v6.2.1 안정 버전 기준)
-- **최종 수정일:** 2026-10-31
+- **문서 버전:** 1.39 (StringFinder v6.2.2 안정 버전 기준)
+- **최종 수정일:** 2026-11-01
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 6.2.1 (stable)** · Updated: **2026-10-31**
+> Documentation baseline: **StringFinder 6.2.2 (stable)** · Updated: **2026-11-01**
 
 ## 문서별 역할과 읽는 순서
 
-6.2.1은 검색어 왼쪽의 한 메뉴 버튼에서 검색 모드와 특수 검색을 선택합니다. 두 하위 메뉴는 각각 단일 선택이고 현재 두 값이 고정 폭 버튼 안에 표시됩니다. 확장자·파일명 목록을 하나의 필터 창에 두 탭으로 묶습니다. 탭 이름의 수량은 보관된 체크 상태이며, 모드가 자동 지정하는 실제 검색 대상과 구분합니다. 체크한 확장자 묶음을 펼쳐 중복 없이 세고 파일명도 쉼표 묶음을 펼쳐 중복 없이 셉니다. 실제 검색 조건은 하단에 활성 검색 탭 기준으로 표시합니다. 검색 진행·시간·결과는 검색 요약에만 표시하며, 파일 열기 실패 등 오류는 상태 표시줄을 덮지 않는 별도 안내로 전달합니다.
-
-필터 데이터의 저장 형식과 검색 중 잠금은 유지합니다. 신호를 막은 세션 복원 후에도 탭 수량과 하단 조건을 직접 갱신해야 합니다. 현재 도킹 배치 버전 2는 유지하므로 이번 메뉴 변경만으로 배치를 초기화하지 않습니다. 그 이전의 개별 확장자·파일명 창 배치는 기존 전환 규칙을 적용하며 검색 조건·결과는 보존합니다. 검색 코어의 후보 선별·비교 정책은 변경하지 않았습니다. 상단 한 줄 검색 설정, 확장자 묶음의 전체 거부 검증 및 비차단 도움말 창은 6.1.4 동작을 유지합니다.
+이 가이드는 프로젝트의 구조와 책임, 검색 계약, 개발 환경 구성, 빌드·검증·배포 절차를 설명합니다. 화면 조작은 [사용자 가이드](USER_GUIDE.md), 현재 구현의 준수 조건은 [구현 정책](IMPLEMENTATION_POLICY.md), 버전별 변경 사항은 [개발 이력](DEVELOPMENT_HISTORY.md)에서 확인합니다.
 
 전체 분류와 작성 규칙은 [문서 안내](README.md)를 확인합니다.
 
@@ -216,11 +214,11 @@ JSON 특수 검색은 `allow_duplicate_json_keys` 설정(기본 `False`)을 사�
 
 Python 순회의 접근 실패는 `FileScanner.skipped`로 수집해 워커의 건너뛴 목록·최종 건수에 전달합니다. 후보 선별 정책은 [구현 정책 2.2절](IMPLEMENTATION_POLICY.md#22-검색-정책오류취소-계약), Excel 셀 열거·좌표 처리는 **5절의 Excel 설계**를 따릅니다.
 
-UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한도는 워커의 사용자 설정 계약으로 통제하며, 오류 후 완료 신호를 받아도 검색 완료로 표기하지 않습니다. 이 계약과 XML 인접 텍스트·CDATA, UTF-8 샘플 경계, UTF-16 제외 정책은 `tests/test_search_reliability_regressions.py`로 검증합니다.
+UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한도는 워커의 사용자 설정 계약으로 통제하며, 오류 후 완료 신호를 받아도 검색 완료로 표기하지 않습니다. 이 계약과 XML 인접 텍스트·CDATA, UTF-8 샘플 경계, UTF-16 제외 정책은 `tests/test_json_policy_and_search_completion.py`로 검증합니다.
 
 예상 밖 워커 예외는 `search_finished` 없이 `finished`만 전달될 수 있습니다. UI는 오류 여부와 요약 확정 여부를 별도로 추적하고, 이 경우 마지막 결과 버퍼를 비우기 전에 실패 요약을 확정해야 합니다. 일반 완료 경로를 중복 실행하지 않도록 확정 상태는 새 검색 시작 시 초기화합니다. 실패 주입 테스트는 오류 문구뿐 아니라 부분 결과 보존과 입력 잠금 해제도 함께 확인해야 합니다.
 
-검색 경로의 값 표현·선별 계약은 다음과 같습니다. `tests/test_search_omission_regressions.py`에서 실제 네이티브 엔진과 Python 경로를 비교합니다.
+검색 경로의 값 표현·선별 계약은 다음과 같습니다. `tests/test_candidate_encoding_and_value_parity.py`에서 실제 네이티브 엔진과 Python 경로를 비교합니다.
 
 - `include_junctions` 기본값은 false입니다. Python은 `os.path.isjunction()`으로 정션을 구분하고, Rust는 Windows reparse tag로 정션과 심볼릭 링크를 구분합니다. 포함 시 실제 경로를 등록하여 순환·중복 탐색을 방어합니다. Rust 등록 집합은 병렬 순회 및 모든 검색 루트가 공유합니다. 심볼릭 링크까지 무조건 허용하는 옵션으로 바꾸지 않습니다.
 - `search_encoding`은 자동/UTF-8/CP949/UTF-16 LE/BE 중 하나입니다. 필터가 아니라 디코딩 정책이며, 검색 시작 시 설정 스냅샷과 Rust SearchOptions에 전달합니다. 지정 모드에서는 다른 인코딩으로 자동 재시도하지 않습니다. Excel 바이너리 파서에는 적용하지 않습니다. 자동 UTF-16 보완은 UTF-8 및 유효 CP949와 충돌하지 않는 한글 중심 표본만 사용하며, 모호한 파일의 완전 자동 판별을 보장하지 않습니다.
@@ -246,9 +244,9 @@ UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한�
 
 성능 진단은 일반/누락 방지 두 시나리오를 각각 5회 실행합니다. 보고서 형식 버전은 6이며, 삭제된 두 존재 확인 시나리오를 새 측정으로 재해석하지 않습니다. A–J의 D는 큰 파일 전체 검색으로 바뀌었으므로 과거 조기 종료 D와 직접 비교하지 않습니다. 이전 A–J 표본을 재사용한다면 `python scripts/benchmark_performance.py --force-gen`으로 새 표본을 생성한 뒤 측정하세요.
 
-6.2.1의 통합 메뉴는 검색 엔진의 정책을 추가하지 않습니다. 일반/누락 방지 선택은 기존 `use_complex_search`, 값 검색 선택은 기존 `special_mode` 저장값을 사용합니다. 메뉴 표시 순서는 JSON → XML → Excel이지만 저장값을 메뉴 위치로 해석하지 않습니다. 이전 `끄기`·`기본`·`Default`는 현재 사용 안함으로 복원합니다. 화면의 메뉴와 확장자 필터가 같은 선택을 유지하도록 연결하며, 신호를 차단한 세션 복원 후에는 메뉴 체크와 선택 상태 문구를 다시 맞춥니다. 검색 중에는 열린 메뉴를 닫고 두 그룹의 선택을 잠급니다. 누락 방지 검색 항목과 선택된 버튼에만 사용 안내 툴팁을 제공합니다. 이전 두 콤보박스와 숨김 검색 옵션 체크박스는 남겨 두지 않습니다. 관련 UI·세션·검색 전달 검증은 `tests/test_search_settings_menu.py`를 확인합니다.
+6.2.2의 통합 메뉴는 검색 엔진의 정책을 추가하지 않습니다. 일반/누락 방지 선택은 기존 `use_complex_search`, 값 검색 선택은 기존 `special_mode` 저장값을 사용합니다. 메뉴 표시 순서는 JSON → XML → Excel이지만 저장값을 메뉴 위치로 해석하지 않습니다. 이전 `끄기`·`기본`·`Default`는 현재 사용 안함으로 복원합니다. 화면의 메뉴와 확장자 필터가 같은 선택을 유지하도록 연결하며, 신호를 차단한 세션 복원 후에는 메뉴 체크와 선택 상태 문구를 다시 맞춥니다. 검색 중에는 열린 메뉴를 닫고 두 그룹의 선택을 잠급니다. 누락 방지 검색 항목과 선택된 버튼에만 사용 안내 툴팁을 제공합니다. 이전 두 콤보박스와 숨김 검색 옵션 체크박스는 남겨 두지 않습니다. 관련 UI·세션·검색 전달 검증은 `tests/test_search_settings_menu.py`를 확인합니다.
 
-### 6.2.1 검색 설정 표시와 배치
+### 6.2.2 검색 설정 표시와 배치
 
 검색줄은 고정 폭 설정 버튼·검색할 문자열·입력 칸·검색 버튼 순서입니다. 별도의 선택 상태 라벨은 두지 않습니다. 설정 버튼의 문구만 현재 선택에 맞춰 바꾸며, 한 언어의 모든 짧은 선택 이름과 경고 아이콘을 수용하도록 폭을 계산합니다. 설정 변경으로 폭이 달라지면 안 됩니다. 메뉴 화살표 없이 클릭으로 메뉴를 열고, 입력·설정·검색·중지 버튼의 높이는 통일합니다. 좁은 창에서는 설정 아래에 입력과 검색을 배치합니다. 전체 이름은 메뉴와 접근성 정보에 유지합니다. 화면용 `SPECIAL_SEARCH_MENU_ITEMS`와 검색·세션용 `SPECIAL_SEARCH_ITEMS`는 같은 인덱스로 대응하지만 역할이 다릅니다. 화면의 대문자 EXCEL 문구를 엔진에 직접 넘기지 않습니다. 메뉴 표시 순서는 JSON·XML·Excel이며 기존 저장값은 유지합니다. 노란 경고 아이콘은 메뉴 오른쪽에 그려 테마가 제공하는 선택 체크 표시를 가리지 않습니다. 한글·영문 문구, 전체 모드 조합의 전달, 좁은 창 배치 및 경고 색상은 `tests/test_search_settings_menu.py`에서 검증합니다.
 
@@ -268,7 +266,7 @@ UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한�
 
 구조 검색의 기본 `content` 직렬화 형식은 JSON/XML의 경우 `path\tvalue`, Excel의 경우 `sheet\tcell\tvalue`입니다. JSON 키에 탭이 있으면 필드를 모호하게 나누지 않도록 `JSON_FIELDS|` 접두부와 JSON 배열로 경로·값을 전달합니다. 이는 오류 마커가 아닌 정상 결과 형식입니다. Python의 `_normalize_rust_matches()`가 이 값을 UI 모델용 튜플로 변환하므로 형식 변경 시 Rust 생성부, Python 정규화 계층, UI 모델과 세션 회귀 테스트를 함께 수정해야 합니다. 구버전 세션·확장 모듈이 사용한 Excel `sheet | cell | value` 형식도 계속 읽으며, 시트 이름에 ` | `가 들어갈 수 있으므로 오른쪽의 셀·값 필드부터 분리합니다.
 
-XML 단일 파일 결과도 같은 정규화 계층을 사용합니다. `_visible_match_count()`는 제한 메타데이터를 결과 수에 포함하지 않으며, 정상 결과와 부분 검색 안내는 별도 스트림으로 전달합니다. 관련 실패 주입·문자열 표시·XML 제한 회귀는 `tests/test_audit_integrity_fixes.py`로 확인합니다.
+XML 단일 파일 결과도 같은 정규화 계층을 사용합니다. `_visible_match_count()`는 제한 메타데이터를 결과 수에 포함하지 않으며, 정상 결과와 부분 검색 안내는 별도 스트림으로 전달합니다. 관련 실패 주입·문자열 표시·XML 제한 회귀는 `tests/test_storage_preview_and_packaging_boundaries.py`로 확인합니다.
 
 메모리 매핑 실패의 프로토콜 코드는 `ERR_MMAP`입니다. 정의되지 않은 코드나 잘못 표기된 코드는 다른 코드로 추정 변환하지 않습니다. 저장 세션 복원 시 형식·코드 검증에 실패한 스킵 항목과 오염된 로그 레코드는 제외합니다. 세션 파일 자체의 제거·보존 조건은 [구현 정책 3.4절](IMPLEMENTATION_POLICY.md#34-설정-현지화-ui-모델의-함정)을 따릅니다.
 
@@ -316,8 +314,11 @@ python -m venv .venv
 
 # Python 런타임 및 개발 의존성 설치
 
+python -m pip install pyqtdarktheme==2.1.0 --ignore-requires-python --no-deps
 python -m pip install -e ".[dev]"
 ```
+
+현재 화면에 사용하는 테마 2.1.0은 배포 메타데이터의 Python 상한 때문에 3.12에서 일반 설치가 거부될 수 있습니다. 위 첫 명령은 이 패키지에만 버전 메타데이터 예외를 적용하며 의존성은 다음 명령에서 설치합니다. 다른 패키지에는 예외를 적용하지 않습니다. 새 테마로 바꾸지 않고 현재 동작을 검증하는 방식이며, 설치 후 `python -m pip check`와 UI 검사를 확인하세요.
 
 ### 6.3 Rust 엔진 릴리스 빌드
 
@@ -328,7 +329,7 @@ python build_rust.py
 
 ### 6.4 기본 테스트와 정적 검사
 
-기본 `pytest`는 `pyproject.toml`의 설정에 따라 stress·chaos를 제외합니다. 전체 Python 검증과 릴리스 추가 검증 명령은 **7.3절**을 따릅니다. Rust 변경에는 같은 절의 포맷·Clippy 검사도 포함합니다.
+기본 `pytest`는 `pyproject.toml`의 설정에 따라 stress·chaos·실제 클립보드 연동(`os_clipboard`)을 제외합니다. 전체 Python 검증과 릴리스 추가 검증 명령은 **7.3절**을 따릅니다. Rust 변경에는 같은 절의 포맷·Clippy 검사도 포함합니다.
 
 테스트는 제품 코드의 결과나 상태를 검증해야 합니다. 실패 조건이 없는 검사와 제품 구현을 호출하지 않는 자체 시뮬레이션은 회귀 방어로 계산하지 않습니다. Rust 감시 스레드 반복 호출 검증은 별도 프로세스에서 실제 검색 결과와 종료 후 스레드 수를 확인하고, 시간 초과 시 실패시킵니다. 검색 예외를 출력만 하고 통과시키지 않습니다. Qt 창 종료 대기와 공통 스레드·이벤트·GC 정리는 테스트 간 격리를 위해 유지합니다.
 ```bash
@@ -351,6 +352,36 @@ XML 파서 변경 시에는 최소한 다음 회귀 조건도 확인합니다.
 - 루트 뒤 DOCTYPE, 중복 DOCTYPE, 루트 뒤 XML 선언은 모두 스킵되어야 합니다.
 - 내부 DTD 엔터티가 있는 문서는 엔터티를 확장하지 않고 `ERR_XML_UNSUPPORTED_DTD`로 스킵되어야 합니다.
 - XML 선언·주석·처리 지시문이 올바른 위치에 있는 정상 문서는 기존과 같이 검색되어야 합니다.
+
+### 6.4.1 Windows 자동 검사
+
+`.github/workflows/ci.yml`은 main 푸시와 main 대상 PR, 수동 실행, 주간 예약 실행을 정의합니다. Python 3.12와 Rust 1.93.0을 준비하고 .github/ci-constraints.txt의 기준 버전으로 의존성을 설치한 뒤, 커밋된 엔진을 재사용하지 않고 `build_rust.py`로 현재 소스의 엔진을 빌드합니다. `check_dev_environment.py --require-engine`으로 활성화·공식 경로·앱 버전·API를 확인하여 네이티브 검사가 조용히 건너뛰어지는 것을 방지합니다. 검사 권한은 저장소 읽기이며 EXE 생성·자동 게시·Git 이력 변경은 하지 않습니다. pip·Cargo 캐시와 최신 커밋만 가져오는 checkout으로 반복 비용을 줄입니다.
+
+기본 작업은 Ruff, 제품 mypy, Rust 포맷·Clippy·테스트, 격리된 Python 기본 검사를 수행합니다. Qt는 `offscreen`으로 실행합니다. 주간·수동 실행은 stress/chaos와 실제 Windows Qt 클립보드 연동도 추가합니다. 예약 시각은 매주 일요일 UTC 00:00(한국 시간 09:00)입니다. 저장소의 Actions가 활성화되어야 하며, 설정 파일을 원격에 푸시한 후 실제 실행 결과를 확인해야 합니다. 로컬 통과를 GitHub 실행 성공으로 표기하지 않습니다.
+
+로컬에서는 아래처럼 같은 검사를 재현합니다. 검증 자료는 Git에서 제외되는 `docs_dev/` 아래에 두고 사용자의 실제 설정과 분리합니다.
+
+```powershell
+python -m pip install pyqtdarktheme==2.1.0 --ignore-requires-python --no-deps
+python -m pip install -e ".[dev]" -c .github/ci-constraints.txt
+python -m pip check
+$env:QT_QPA_PLATFORM = "offscreen"
+$env:APPDATA = Join-Path $PWD "docs_dev/ci_local/appdata"
+python build_rust.py
+python tools/check_dev_environment.py --require-engine
+python -m ruff check src tests tools
+python -m mypy src --cache-dir docs_dev/ci_local/mypy_cache
+cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
+cargo clippy --manifest-path src/rust_engine/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path src/rust_engine/Cargo.toml --locked
+python -m pytest -q -p no:cacheprovider --basetemp docs_dev/ci_local/basic
+python -m pytest -q -o addopts= -m "stress or chaos" -p no:cacheprovider --basetemp docs_dev/ci_local/extended
+python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp docs_dev/ci_local/clipboard
+```
+
+복사할 내용의 검사는 가짜 클립보드로 격리하고 Qt의 실제 붙여넣기·복사는 `os_clipboard`로 분리합니다. 실제 Windows 연동을 로컬에서 확인하려면 마지막 명령만 `QT_QPA_PLATFORM=windows`로 바꿔 전용 테스트 환경에서 실행하세요.
+
+제품 타입 검사는 `mypy src`를 합격 조건으로 사용합니다. 진단 도구는 별도 관리하며, 가져온 `tools.*`의 오류만으로 제품 검사가 실패하지 않도록 `follow_imports=silent`를 적용합니다. 함수의 타입 정보는 유지하며 제품 전체를 `Any`나 일괄 ignore로 바꾸지 않습니다. `python -m mypy tools/diagnostic_benchmark.py --cache-dir docs_dev/ci_local/tool_mypy_cache`는 도구 자체의 미정리 타입 오류를 계속 표시합니다. 제품 오류 0건이 도구 오류 0건이나 실행 시 결함 없음을 뜻하지는 않습니다.
 
 ### 6.5 성능 벤치마크 실행
 
@@ -378,7 +409,7 @@ python build.py
 
 빌드·정리 경로는 `build_support.py`로 실제 경로를 검사합니다. 다른 프로젝트를 포함할 수 있는 문자열 접두사 비교 대신 경로 포함 관계를 확인하고, 정션·심볼릭 링크와 프로젝트 밖 삭제를 차단합니다. EXE의 Rust 엔진은 `rust_engine/sf_engine.pyd` 한 곳에만 포함하며 `verify_project_payload()`로 프로젝트 모듈·진입점의 실행 코드와 현재 소스, 엔진 바이트를 비교합니다. 불일치나 엔진 중복이 있으면 배포본을 교체하지 않습니다. Python/Qt 등 제삼자 의존성을 설치된 Python 경로에서 수집하는 것은 정상입니다.
 
-패키징 코드 변조·정션·실패 주입 검증은 `tests/test_audit_integrity_fixes.py`와 `tests/test_packaging_guards.py`를 참조합니다.
+패키징 코드 변조·정션·실패 주입 검증은 `tests/test_storage_preview_and_packaging_boundaries.py`와 `tests/test_packaging_guards.py`를 참조합니다.
 
 ---
 
@@ -404,7 +435,7 @@ python build.py
 
 시스템 자가 진단 대기 창은 닫을 수 있지만 Python 진단 스레드를 강제로 중단하지 않습니다. 버튼·Esc·창 닫기를 모두 처리하며, 완료 전 중복 실행을 막습니다. 창을 닫은 뒤 완료되면 버튼 상태만 복구하고 완료 팝업은 다시 띄우지 않습니다. 설정 창이 파괴된 뒤 도착한 시그널은 안전하게 무시합니다.
 
-파일 열기·필터 입력의 UX 회귀는 `tests/test_review_ux_feedback.py`로 확인합니다. 실행 가능 파일의 확인·폴백 정책은 [구현 정책 2.2절](IMPLEMENTATION_POLICY.md#22-검색-정책오류취소-계약), 후보 필터 계약은 **4.1절**을 따릅니다.
+파일 열기·필터 입력의 UX 회귀는 `tests/test_filter_open_and_diagnostic_feedback.py`로 확인합니다. 실행 가능 파일의 확인·폴백 정책은 [구현 정책 2.2절](IMPLEMENTATION_POLICY.md#22-검색-정책오류취소-계약), 후보 필터 계약은 **4.1절**을 따릅니다.
 
 실무 폴더의 병목을 확인하려면 GUI의 **성능 진단** 또는 다음 명령을 사용합니다.
 
@@ -447,7 +478,7 @@ python tools/benchmark_excel.py
 Excel 보완 세트는 아래 명령으로 측정합니다. 기존 밀집 Rust 전용 도구와 달리 제품의 `search_in_excel_special()`을 사용하여 **일반/누락 방지 × 전체 결과**을 비교합니다. 기본값은 표본별 준비 실행 후 조합당 5회이며 32개 조합의 결과 수·전체 결과의 시트/좌표/값을 매회 검사합니다. 검증 실패나 부분 검색은 정상 측정으로 기록하지 않습니다.
 
 ```powershell
-python tools/benchmark_excel_suite.py --repeats 5 --output .qa_excel_suite/results.json --record-tag v6.1.2-excel
+python tools/benchmark_excel_suite.py --repeats 5 --output docs_dev/qa_excel_suite/results.json --record-tag v6.1.2-excel
 ```
 
 - 표본은 밀집 문자열 10만 셀, 실제 값 2개가 있는 1억 셀 직사각형 범위, 캐시된 수식 결과 10만 셀, 날짜/시간 10만 셀의 XLSX입니다. 각 표본에서 첫 위치·끝 위치·2건 적중·무결과를 검사합니다. `--rows`/`--columns`를 바꾸면 다른 크기의 측정이므로 기본 기준선과 구분한 태그를 사용합니다.
@@ -469,7 +500,7 @@ cargo fmt --manifest-path src/rust_engine/Cargo.toml -- --check
 cargo clippy --release --manifest-path src/rust_engine/Cargo.toml -- -D warnings
 ```
 
-기본 pytest 실행은 stress·chaos를 제외합니다. 릴리스 추가 검증에서는 다음처럼 명시적으로 실행하고, 결과 수뿐 아니라 테스트의 실제 단언 범위를 확인합니다.
+기본 pytest 실행은 stress·chaos·실제 클립보드 연동(`os_clipboard`)을 제외합니다. 릴리스 추가 검증에서는 다음처럼 명시적으로 실행하고, 결과 수뿐 아니라 테스트의 실제 단언 범위를 확인합니다.
 
 ```powershell
 python -m pytest -m "stress or chaos" -p no:cacheprovider --basetemp .qa_release_stress
@@ -511,3 +542,25 @@ Rust 기본 검색과 Python 누락 방지 검색은 구현을 분리하되, 다
 | 배포/의존성 | Rust 테스트·Clippy, Python 테스트·Ruff, Rust 바이너리 교체, PyInstaller smoke test, Python/Rust/EXE 버전 일치 |
 
 변경 위험이 있는 테스트에는 의도된 사양을 직접 단언합니다. 테스트 수가 통과했더라도 해당 경계 조건을 실제로 검증하지 않는다면 회귀 방어가 된 것으로 간주하지 않습니다.
+
+### 7.6 테스트를 추가하거나 찾는 방법
+
+새 검사는 사건명 대신 지키는 기능에 맞는 파일에 추가합니다. 사건의 배경은 테스트 설명이나 Git 이력에 남깁니다. 기존 파일을 옮길 때에는 검사 본문뿐 아니라 fixture의 범위·자동 적용·마커·언어 복구와 수집 목록까지 대조합니다. 파일 이름이 달라도 입력·검색 경로·오류 경계가 다르면 중복 검사가 아닙니다. 이번 정리는 모듈 전체를 이동하여 기존 fixture 범위를 유지하며, 검사 수를 줄이기 위해 회귀 조건을 삭제하지 않습니다.
+
+| 확인할 기능 | 관련 테스트 파일 예시 |
+| --- | --- |
+| 검색 경로 간 후보·내용 일치 | `test_search_path_matrix.py`, `test_candidate_encoding_and_value_parity.py` |
+| JSON 정책·검색 완료 | `test_json_policy_and_search_completion.py`, `test_structured_validation_and_localization.py` |
+| 구조화 값·부분 실패 | `test_structured_value_and_failure_contracts.py` |
+| Excel 검색 경로 전달 | `test_excel_search_mode_routing.py` |
+| 네이티브 텍스트 인코딩·미리보기 | `test_native_text_encoding_and_preview.py` |
+| 워커·감시 스레드 종료 | `test_worker_completion_and_monitor.py` |
+| 설정 저장·실제 열린 JSON의 크기 제한 | `test_config_storage_and_json_open_limits.py` |
+| 파일 저장·미리보기·패키징 경계 | `test_storage_preview_and_packaging_boundaries.py` |
+| 정렬·설치·XML 계약 | `test_sort_install_and_xml_contracts.py` |
+| 필터·파일 열기·자가 진단 안내 | `test_filter_open_and_diagnostic_feedback.py` |
+| 설정·대소문자 및 검색 방식·내보내기 | `test_configuration_and_case_policy.py`, `test_profile_and_export_contracts.py` |
+| 엔진 오류·Unicode 정책 | `test_engine_error_and_unicode_policy.py` |
+| 실제 클립보드 연동 / CI 엔진 검증 | `test_clipboard_integration.py`, `test_ci_engine_gate.py` |
+
+EXE·개발용 엔진의 Git 보관과 작업별 배포 규칙은 소유자의 결정에 따라 유지합니다. 이번 자동 검사 구성은 배포 정책 전환이나 대형 모듈 분할을 포함하지 않습니다.

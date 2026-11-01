@@ -6,6 +6,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from functools import lru_cache
+from typing import cast
 from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
 from PySide6.QtCore import QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
@@ -134,7 +135,7 @@ def _walk_reason_prefixes():
     from sf_utils.english_strings import ENGLISH_STRINGS
     from sf_utils.localization import get_korean_strings
 
-    return tuple(template.split("{}", 1)[0] for template in (
+    return tuple(cast(str, template).split("{}", 1)[0] for template in (
         get_korean_strings()["SKIP_REASON_WALK"], ENGLISH_STRINGS["SKIP_REASON_WALK"]
     ))
 
