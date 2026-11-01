@@ -44,14 +44,19 @@ def test_config_failure_preserves_original_and_cleans_unique_temps(mock_config_m
     manager.cancel_start()
     original = Path(manager.config_path).read_bytes()
     paths = []
+    real_dump, real_replace = json.dump, os.replace
     monkeypatch.setattr("sf_utils.config_manager.time.sleep", lambda _: None)
 
     def failed_write(payload, stream, **kwargs):
+        if Path(stream.name).parent != Path(manager.config_dir):
+            return real_dump(payload, stream, **kwargs)
         paths.append(stream.name)
         stream.write("partial")
         raise OSError("disk full")
 
     def failed_replace(source, destination):
+        if Path(destination) != Path(manager.config_path):
+            return real_replace(source, destination)
         paths.append(source)
         raise PermissionError("target locked")
 
