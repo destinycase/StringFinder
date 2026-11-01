@@ -1,4 +1,9 @@
 """Safe shortcuts preserve candidates, values, positions, skips and final batches."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+import textwrap
 import threading
 import time
 
@@ -85,3 +90,67 @@ def test_dispatcher_disconnect_preserves_callback_error(tmp_path, api):
     with pytest.raises(RuntimeError, match="callback probe"):
         search([str(tmp_path if api == "directory" else path)], "needle",
                results_callback=broken_callback, _flush_ms=1000)
+
+
+@pytest.mark.parametrize("api", ["search_dir", "search_files_list"])
+@pytest.mark.parametrize("hit", [True, False], ids=["hit", "no_match"])
+def test_dispatcher_shutdown_does_not_wait_for_flush_interval(tmp_path, api, hit):
+    """A leaked sender must not restore the 1s idle wait or hang pytest."""
+    native = engine.sf_engine
+    if native is None:
+        pytest.skip("real native engine required")
+    for index in range(3):
+        (tmp_path / f"sample_{index}.txt").write_text(f"needle {index}\nother\n", encoding="utf-8")
+    child_code = textwrap.dedent("""
+        import faulthandler
+        import importlib.util
+        import json
+        from pathlib import Path
+        import sys
+        import time
+
+        faulthandler.dump_traceback_later(12)
+        engine_path, directory, api, query = sys.argv[1:]
+        spec = importlib.util.spec_from_file_location("shutdown_check.sf_engine", engine_path)
+        native = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(native)
+        search = getattr(native, api)
+        root = Path(directory)
+        paths = [str(root)] if api == "search_dir" else sorted(str(p) for p in root.glob("*.txt"))
+
+        def values(rows):
+            return sorted((path, [(m.line, m.content, m.offset, m.length, m.kind)
+                                  for m in matches]) for path, matches in rows)
+
+        expected, skipped = search(paths, query)
+        assert skipped == [], skipped
+        assert len(expected) == (3 if query == "needle" else 0), expected
+        expected = values(expected)
+        samples = []
+        for iteration in range(6):  # One warmup, then five measured calls.
+            received = []
+            started = time.perf_counter()
+            remaining, skipped = search(paths, query, results_callback=received.extend, _flush_ms=1000)
+            elapsed = time.perf_counter() - started
+            assert remaining == [] and skipped == [], (remaining, skipped)
+            assert values(received) == expected, values(received)
+            if iteration:
+                samples.append(elapsed)
+        faulthandler.cancel_dump_traceback_later()
+        print(json.dumps({"api": api, "query": query, "engine_version": native.ENGINE_VERSION,
+                          "samples_ms": [round(value * 1000, 3) for value in samples],
+                          "minimum_ms": round(min(samples) * 1000, 3)}), flush=True)
+        assert min(samples) < 0.5, f"Dispatcher shutdown waited for flush timeout: {samples}"
+    """)
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", child_code, str(Path(native.__file__).resolve()),
+             str(tmp_path), api, "needle" if hit else "absent"],
+            cwd=tmp_path, env=env, capture_output=True, encoding="utf-8", errors="replace", timeout=20,
+        )
+    except subprocess.TimeoutExpired as error:
+        pytest.fail(f"Dispatcher shutdown timed out ({api}, hit={hit}): {error.stdout!r}\n{error.stderr!r}")
+    print(result.stdout, end="")
+    assert result.returncode == 0, result.stdout + result.stderr
