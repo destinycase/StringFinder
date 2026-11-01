@@ -99,8 +99,14 @@ def test_dispatcher_shutdown_does_not_wait_for_flush_interval(tmp_path, api, hit
     native = engine.sf_engine
     if native is None:
         pytest.skip("real native engine required")
-    for index in range(3):
-        (tmp_path / f"sample_{index}.txt").write_text(f"needle {index}\nother\n", encoding="utf-8")
+    if hit:
+        # Leave work after the early result so the dispatcher must wake from idle.
+        (tmp_path / "000_hit.txt").write_text("needle\nother\n", encoding="utf-8")
+        for index in range(300):
+            (tmp_path / f"noise_{index:03d}.txt").write_text(f"other {index}\n", encoding="utf-8")
+    else:
+        for index in range(3):
+            (tmp_path / f"sample_{index}.txt").write_text(f"needle {index}\nother\n", encoding="utf-8")
     child_code = textwrap.dedent("""
         import faulthandler
         import importlib.util
@@ -116,7 +122,11 @@ def test_dispatcher_shutdown_does_not_wait_for_flush_interval(tmp_path, api, hit
         spec.loader.exec_module(native)
         search = getattr(native, api)
         root = Path(directory)
-        paths = [str(root)] if api == "search_dir" else sorted(str(p) for p in root.glob("*.txt"))
+        files = sorted(root.glob("*.txt"))
+        if query == "needle":
+            hit_path = root / "000_hit.txt"
+            files = [hit_path] + [path for path in files if path != hit_path]
+        paths = [str(root)] if api == "search_dir" else [str(path) for path in files]
 
         def values(rows):
             return sorted((path, [(m.line, m.content, m.offset, m.length, m.kind)
@@ -124,7 +134,8 @@ def test_dispatcher_shutdown_does_not_wait_for_flush_interval(tmp_path, api, hit
 
         expected, skipped = search(paths, query)
         assert skipped == [], skipped
-        assert len(expected) == (3 if query == "needle" else 0), expected
+        assert len(expected) == (1 if query == "needle" else 0), expected
+        assert sum(len(matches) for _, matches in expected) == (1 if query == "needle" else 0), expected
         expected = values(expected)
         samples = []
         for iteration in range(6):  # One warmup, then five measured calls.
