@@ -406,6 +406,24 @@ fn search_walk_builder(
     builder
 }
 
+fn size_check_metadata(
+    entry: &ignore::DirEntry,
+    fresh: bool,
+    limit: u64,
+) -> Option<std::fs::Metadata> {
+    if fresh {
+        return std::fs::metadata(entry.path()).ok();
+    }
+    entry.metadata().ok().and_then(|metadata| {
+        if metadata.len() > limit {
+            // A formerly large file may have shrunk since enumeration.
+            std::fs::metadata(entry.path()).ok()
+        } else {
+            Some(metadata)
+        }
+    })
+}
+
 /// Distinguish Windows mount-point junctions from symbolic links. Only linked
 /// directories need the reparse query; ordinary files retain the cheap path.
 fn is_junction(path: &Path) -> bool {
@@ -742,7 +760,13 @@ fn apply_match_limit(matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatc
 }
 
 fn exact_line_matches(line: &[u8], pat_upper: &str) -> bool {
-    let s = simdutf8::basic::from_utf8(line).unwrap_or("INVALID_UTF8");
+    let Ok(s) = simdutf8::basic::from_utf8(line) else {
+        return false;
+    };
+    if s.is_ascii() {
+        // str::trim includes vertical tabs, unlike trim_ascii.
+        return s.trim().eq_ignore_ascii_case(pat_upper);
+    }
     let s_norm = crate::utils::normalize_unicode(s);
     s_norm.trim().to_lowercase().to_uppercase() == pat_upper
 }
@@ -1444,7 +1468,24 @@ pub fn search_dir(
                             }
                         }
 
-                        if let Ok(metadata) = std::fs::metadata(path) {
+                        // Directory entries already carry metadata on Windows.
+                        // Keep fresh lookups for resource reservations, links and
+                        // Excel. Recheck cached oversized files before excluding
+                        // them; opened-file metadata remains the final size check.
+                        let excel_extension = path
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .is_some_and(|ext| {
+                                ["xlsx", "xlsm", "xls", "xlsb"]
+                                    .iter()
+                                    .any(|known| ext.eq_ignore_ascii_case(known))
+                            });
+                        let metadata = size_check_metadata(
+                            &entry,
+                            include_junctions || is_json || is_xml || is_excel || excel_extension,
+                            common_file_size_limit,
+                        );
+                        if let Some(metadata) = metadata {
                             if metadata.len() > common_file_size_limit {
                                 let f_path = path.to_string_lossy().to_string();
                                 let mut skipped = skip_ref
@@ -1541,7 +1582,9 @@ pub fn search_dir(
         // A3: done_flag를 먼저 설정하여 dispatcher와 monitor 스레드가 종료 루프에 진입할 수 있도록 합니다.
         done_flag.store(true, Ordering::SeqCst);
         let _ = monitor_done_tx.send(());
-        if let Some((_, handle)) = results_dispatcher {
+        drop(tx_main);
+        if let Some((tx, handle)) = results_dispatcher {
+            drop(tx);
             let _ = handle.join();
         }
         if let Some(h) = monitor_handle {
@@ -1869,7 +1912,9 @@ fn search_files_list(
         // B1: done_flag를 먼저 설정하여 dispatcher와 monitor 스레드가 종료 루프에 진입할 수 있도록 합니다.
         done_flag.store(true, Ordering::SeqCst);
         let _ = monitor_done_tx.send(());
-        if let Some((_, handle)) = results_dispatcher {
+        drop(tx_main);
+        if let Some((tx, handle)) = results_dispatcher {
+            drop(tx);
             let _ = handle.join();
         }
         if let Some(h) = monitor_handle {
@@ -2352,6 +2397,92 @@ mod tests {
         let matches = do_search_with_mmap(data, UTF_8, "NEEDLE", &ac, true, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, 2);
+    }
+
+    #[test]
+    fn invalid_utf8_is_not_a_synthetic_exact_match() {
+        assert!(!exact_line_matches(b"\xff", "INVALID_UTF8"));
+        assert!(exact_line_matches(b"invalid_utf8", "INVALID_UTF8"));
+    }
+
+    #[test]
+    fn cached_size_checks_revalidate_shrinking_files_and_opened_file_growth() {
+        let unique = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("sf-size-cache-{unique}"));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("sample.txt");
+        fs::write(&path, b"formerly too big").unwrap();
+        let entry = search_walk_builder(&root, false, false)
+            .build()
+            .filter_map(Result::ok)
+            .find(|entry| entry.path() == path)
+            .unwrap();
+        fs::write(&path, b"needle").unwrap();
+        assert_eq!(size_check_metadata(&entry, false, 8).unwrap().len(), 6);
+
+        let small_entry = search_walk_builder(&root, false, false)
+            .build()
+            .filter_map(Result::ok)
+            .find(|entry| entry.path() == path)
+            .unwrap();
+        fs::write(&path, b"needle has grown").unwrap();
+        assert_eq!(
+            size_check_metadata(&small_entry, true, 8).unwrap().len(),
+            16
+        );
+        let ac = build_test_ac("needle");
+        let result = search_file_internal(InternalSearchParams {
+            encoding: None,
+            allow_duplicate_json_keys: false,
+            path: &path,
+            pattern: "needle",
+            pat_upper: "NEEDLE",
+            ac: &ac,
+            is_exact: false,
+            is_json: false,
+            is_xml: false,
+            is_excel: false,
+            exclude_hidden: false,
+            exclude_binary: false,
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            max_per_file: 10,
+            max_json_depth: 100,
+            max_json_size: 8,
+        });
+        assert_eq!(result.unwrap().unwrap_err(), "ERR_TOO_LARGE|16 bytes");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ascii_exact_comparison_preserves_unicode_pattern_and_whitespace_contract() {
+        for query in ["s", "ſ", "K", "\u{212a}", "ss", "ß", "needle", "가", ""] {
+            let pattern = crate::utils::normalize_unicode(query)
+                .to_lowercase()
+                .to_uppercase();
+            for byte in 0..=127u8 {
+                for text in [
+                    vec![byte],
+                    vec![byte, b's', byte],
+                    vec![byte, b'K', byte],
+                    vec![byte, b'n', b'e', b'e', b'd', b'l', b'e', byte],
+                ] {
+                    let line = std::str::from_utf8(&text).unwrap();
+                    let reference = crate::utils::normalize_unicode(line)
+                        .trim()
+                        .to_lowercase()
+                        .to_uppercase()
+                        == pattern;
+                    assert_eq!(
+                        exact_line_matches(&text, &pattern),
+                        reference,
+                        "byte={byte}, query={query:?}, text={text:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

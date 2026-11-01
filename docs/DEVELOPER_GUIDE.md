@@ -1,14 +1,16 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.39 (StringFinder v6.2.2 안정 버전 기준)
-- **최종 수정일:** 2026-11-01
+- **문서 버전:** 1.40 (StringFinder v6.2.3 안정 버전 기준)
+- **최종 수정일:** 2026-11-02
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 6.2.2 (stable)** · Updated: **2026-11-01**
+> Documentation baseline: **StringFinder 6.2.3 (stable)** · Updated: **2026-11-02**
 
 ## 문서별 역할과 읽는 순서
 
 이 가이드는 프로젝트의 구조와 책임, 검색 계약, 개발 환경 구성, 빌드·검증·배포 절차를 설명합니다. 화면 조작은 [사용자 가이드](USER_GUIDE.md), 현재 구현의 준수 조건은 [구현 정책](IMPLEMENTATION_POLICY.md), 버전별 변경 사항은 [개발 이력](DEVELOPMENT_HISTORY.md)에서 확인합니다.
+
+6.2.3의 검색 최적화는 일반 텍스트의 중복 파일 정보 조회와 결과 전달 스레드의 종료 대기를 줄입니다. 파일을 연 뒤의 최종 크기·숨김 속성 검사와 구조 문서·Excel의 메모리 예약 검사는 유지합니다. ASCII 정확 일치도 기존 공백 제거와 검색어 정규화 결과를 따르며, 잘못된 UTF-8 줄에 내부 오류 문자열을 대입해 비교하지 않습니다. 누락 방지 검색의 ASCII 사전 판정은 적중 표본의 시간 증가가 남아 제품에 포함하지 않았습니다. 검증은 `tests/test_search_fast_path_integrity.py`, 상세 계약은 [구현 정책](IMPLEMENTATION_POLICY.md), 측정 범위와 한계는 [성능 개선 기록](PERFORMANCE_HISTORY.md)을 확인하세요.
 
 전체 분류와 작성 규칙은 [문서 안내](README.md)를 확인합니다.
 
