@@ -357,7 +357,7 @@ XML 파서 변경 시에는 최소한 다음 회귀 조건도 확인합니다.
 
 `.github/workflows/ci.yml`은 main 푸시와 main 대상 PR, 수동 실행, 주간 예약 실행을 정의합니다. Python 3.12와 Rust 1.93.0을 준비하고 .github/ci-constraints.txt의 기준 버전으로 의존성을 설치한 뒤, 커밋된 엔진을 재사용하지 않고 `build_rust.py`로 현재 소스의 엔진을 빌드합니다. `check_dev_environment.py --require-engine`으로 활성화·공식 경로·앱 버전·API를 확인하여 네이티브 검사가 조용히 건너뛰어지는 것을 방지합니다. 검사 권한은 저장소 읽기이며 EXE 생성·자동 게시·Git 이력 변경은 하지 않습니다. pip·Cargo 캐시와 최신 커밋만 가져오는 checkout으로 반복 비용을 줄입니다.
 
-기본 작업은 Ruff, 제품 mypy, Rust 포맷·Clippy·테스트, 격리된 Python 기본 검사를 수행합니다. Qt는 `offscreen`으로 실행합니다. 주간·수동 실행은 stress/chaos와 실제 Windows Qt 클립보드 연동도 추가합니다. 예약 시각은 매주 일요일 UTC 00:00(한국 시간 09:00)입니다. 저장소의 Actions가 활성화되어야 하며, 설정 파일을 원격에 푸시한 후 실제 실행 결과를 확인해야 합니다. 로컬 통과를 GitHub 실행 성공으로 표기하지 않습니다.
+기본 작업은 Ruff, 제품·진단 도구 mypy, Rust 포맷·Clippy·테스트, 격리된 Python 기본 검사를 수행합니다. Qt는 `offscreen`으로 실행합니다. 주간·수동 실행은 stress/chaos와 실제 Windows Qt 클립보드 연동도 추가합니다. 예약 시각은 매주 일요일 UTC 00:00(한국 시간 09:00)입니다. 저장소의 Actions가 활성화되어야 하며, 설정 파일을 원격에 푸시한 후 실제 실행 결과를 확인해야 합니다. 로컬 통과를 GitHub 실행 성공으로 표기하지 않습니다.
 
 로컬에서는 아래처럼 같은 검사를 재현합니다. 검증 자료는 Git에서 제외되는 `docs_dev/` 아래에 두고 사용자의 실제 설정과 분리합니다.
 
@@ -370,7 +370,7 @@ $env:APPDATA = Join-Path $PWD "docs_dev/ci_local/appdata"
 python build_rust.py
 python tools/check_dev_environment.py --require-engine
 python -m ruff check src tests tools
-python -m mypy src --cache-dir docs_dev/ci_local/mypy_cache
+python -m mypy src tools/diagnostic_benchmark.py --cache-dir docs_dev/ci_local/mypy_cache
 cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
 cargo clippy --manifest-path src/rust_engine/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src/rust_engine/Cargo.toml --locked
@@ -381,7 +381,7 @@ python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp d
 
 복사할 내용의 검사는 가짜 클립보드로 격리하고 Qt의 실제 붙여넣기·복사는 `os_clipboard`로 분리합니다. 실제 Windows 연동을 로컬에서 확인하려면 마지막 명령만 `QT_QPA_PLATFORM=windows`로 바꿔 전용 테스트 환경에서 실행하세요.
 
-제품 타입 검사는 `mypy src`를 합격 조건으로 사용합니다. 진단 도구는 별도 관리하며, 가져온 `tools.*`의 오류만으로 제품 검사가 실패하지 않도록 `follow_imports=silent`를 적용합니다. 함수의 타입 정보는 유지하며 제품 전체를 `Any`나 일괄 ignore로 바꾸지 않습니다. `python -m mypy tools/diagnostic_benchmark.py --cache-dir docs_dev/ci_local/tool_mypy_cache`는 도구 자체의 미정리 타입 오류를 계속 표시합니다. 제품 오류 0건이 도구 오류 0건이나 실행 시 결함 없음을 뜻하지는 않습니다.
+제품과 진단 도구의 타입 검사는 위 명령을 합격 조건으로 사용합니다. 진단 보고서는 숫자·문자열·목록을 구분한 자료형을 수집부터 Markdown 출력까지 공유합니다. 진단 도구를 별도로 우회하던 `follow_imports=silent` 설정은 제거했으며, 일괄 `Any`나 오류 무시 설정으로 통과시키지 않습니다. 타입 검사 통과가 실행 시 결함 없음을 뜻하지는 않으므로 진단 실행·취소·보고서 생성 테스트도 함께 확인합니다.
 
 ### 6.5 성능 벤치마크 실행
 

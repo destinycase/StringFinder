@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 from pathlib import Path
 
 from sf_utils.constants import Constants
@@ -220,3 +221,48 @@ def test_report_includes_actionable_aggregates_and_private_file_ids(tmp_path, mo
     assert "Files larger than 1 GiB: **0**" in markdown
     assert "query text redacted" in report["workload"]["query"]
     assert observed_queries[0] not in encoded
+
+
+def test_report_round_trip_keeps_metrics_slow_files_and_markdown(tmp_path, monkeypatch):
+    """The typed collector must still produce ordinary JSON-compatible data."""
+    (tmp_path / "sample.txt").write_text("data", encoding="utf-8")
+    clock = {"now": 0.0}
+
+    def search(*_args, **_kwargs):
+        clock["now"] += 0.25
+        return Constants.STATUS_SKIPPED, "ERR_OPEN|unavailable"
+
+    monkeypatch.setattr(diagnostic.time, "perf_counter", lambda: clock["now"])
+    monkeypatch.setattr(diagnostic, "search_in_file", search)
+    monkeypatch.setattr(diagnostic, "_diagnostic_search_policy", lambda: {
+        "exclude_hidden": True, "exclude_binary": False, "advanced_settings": {},
+    })
+    report = diagnostic.run(tmp_path, repeats=2, max_seconds=None)
+    restored = json.loads(json.dumps(report))
+
+    assert restored == report
+    assert diagnostic._markdown(restored) == diagnostic._markdown(report)
+    for scenario in restored["scenarios"]:
+        metric = scenario["file_type_metrics"]["text"]
+        assert metric["files"] == metric["skipped"] == 2
+        assert metric["nominal_input_bytes"] == 8
+        assert "nominal_bytes" not in metric
+        assert sum(metric["latency_buckets"].values()) == metric["files"]
+        assert metric["latency_buckets"]["100ms_to_1s"] == 2
+        slow = scenario["slow_files_anonymous"][0]
+        assert slow["observations"] == 2
+        assert slow["average_seconds"] == 0.25
+        assert slow["skip_reason_codes"] == {"ERR_OPEN": 2}
+
+
+def test_real_cancellation_event_keeps_partial_report_readable(tmp_path):
+    (tmp_path / "sample.txt").write_text("data", encoding="utf-8")
+    cancelled = threading.Event()
+    cancelled.set()
+
+    report = diagnostic.run(tmp_path, cancel_event=cancelled, max_seconds=None)
+
+    assert report["status"] == "cancelled"
+    assert report["verdict"] == "INCOMPLETE"
+    assert report["diagnostic_config"]["completed_work_units"] == 0
+    assert "INCOMPLETE" in diagnostic._markdown(report)

@@ -21,7 +21,7 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Callable, NotRequired, Protocol, TypedDict, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -47,6 +47,175 @@ SCENARIO_LABELS = {
 }
 
 LATENCY_BUCKETS = (0.001, 0.005, 0.025, 0.1, 1.0, 10.0)
+
+
+class SearchPolicy(TypedDict):
+    exclude_hidden: bool
+    exclude_binary: bool
+    advanced_settings: dict[str, int | str | bool]
+
+
+class FileMetadata(TypedDict):
+    size: int | None
+    type: str
+    extension: str
+    size_bucket: str
+    file_id: str
+
+
+class MetricCounts(TypedDict):
+    files: int
+    elapsed_seconds: float
+    matches: int
+    skipped: int
+    errors: int
+    max_file_seconds: float
+
+
+class RawMetric(MetricCounts):
+    nominal_bytes: int
+    latency_buckets: list[int]
+
+
+class FinalMetric(MetricCounts):
+    nominal_input_bytes: int
+    nominal_mb_per_second: float | None
+    files_per_second: float | None
+    average_file_seconds: float | None
+    latency_buckets: dict[str, int]
+
+
+class SlowFile(TypedDict):
+    file_id: str
+    extension: str
+    file_type: str
+    size_bucket: str
+    size_bytes: int | None
+    observations: int
+    elapsed_total_seconds: float
+    min_seconds: float
+    max_seconds: float
+    skipped: int
+    skip_reason_codes: dict[str, int]
+    unknown_skip_categories: dict[str, int]
+    exception_types: dict[str, int]
+    average_seconds: NotRequired[float]
+
+
+class RunRow(TypedDict):
+    run: int
+    complete: bool
+    elapsed_seconds: float
+    files_processed: int
+    nominal_input_bytes: int
+    files_per_second: float | None
+    nominal_mb_per_second: float | None
+    match_files: int
+    matches: int
+    skipped: int
+    errors: int
+    skip_reason_codes: dict[str, int]
+    unknown_skip_categories: dict[str, int]
+    exception_types: dict[str, int]
+    verdict: str
+
+
+class RuntimeEnvironment(TypedDict):
+    python_version: str
+    python_implementation: str
+    os: str
+    machine: str
+    processor: str
+    logical_cpus: int
+    memory_total_mb: NotRequired[float]
+    memory_available_mb_at_start: NotRequired[float]
+    rust_engine: dict[str, object]
+    dependencies: NotRequired[dict[str, str | None]]
+
+
+class ScenarioResource(TypedDict):
+    before: dict[str, float | None]
+    after: dict[str, float | None]
+    samples_interval_seconds: int
+    samples: list[dict[str, float | None]]
+    samples_truncated: bool
+    process_cpu_seconds: float | None
+    process_cpu_cores_equivalent: float | None
+
+
+class Scenario(TypedDict):
+    name: str
+    display_name: str
+    search_mode: str
+    engine_route: str
+    status: str
+    time_budget_seconds: float | None
+    repeats_requested: int
+    repeats_completed: int
+    elapsed_seconds: float
+    run_time_statistics: dict[str, float | None]
+    runs: list[RunRow]
+    files_processed: int
+    measurement_coverage_percent: float
+    nominal_input_bytes: int
+    match_files: int
+    matches: int
+    skipped: int
+    errors: int
+    skip_reason_codes: dict[str, int]
+    unknown_skip_categories: dict[str, int]
+    exception_types: dict[str, int]
+    file_type_metrics: dict[str, FinalMetric]
+    extension_metrics: dict[str, FinalMetric]
+    size_bucket_metrics: dict[str, FinalMetric]
+    slow_files_anonymous: list[SlowFile]
+    resource: ScenarioResource
+
+
+class TargetProfile(TypedDict):
+    root_type: str
+    file_count: int
+    total_bytes: int
+    files_over_1gib: int
+    types: dict[str, int]
+    extensions: dict[str, int]
+    size_buckets: dict[str, int]
+    directory_depth_buckets: dict[str, int]
+    stat_failures: int
+    hidden_files_excluded: int
+
+
+class DiagnosticConfig(TypedDict):
+    repeats: int
+    scenario_count: int
+    max_seconds: int | None
+    total_work_units: int
+    completed_work_units: int
+    completion_percent: float
+    scenario_time_slicing: bool
+    resource_sample_interval_seconds: int
+
+
+class DiagnosticReport(TypedDict):
+    """JSON report contract shared by the collector and Markdown renderer."""
+
+    diagnostic_version: int
+    app_version: str
+    created_at_utc: str
+    status: str
+    verdict: str
+    workload: dict[str, str]
+    target: TargetProfile
+    timing: dict[str, float | None]
+    diagnostic_config: DiagnosticConfig
+    search_policy: SearchPolicy
+    environment: RuntimeEnvironment
+    scenarios: list[Scenario]
+    privacy: dict[str, bool | str]
+
+
+class CancellationEvent(Protocol):
+    def is_set(self) -> bool: ...
 
 
 def _classify(path: Path) -> str:
@@ -126,7 +295,7 @@ def _files(root: Path, *, exclude_hidden: bool = True) -> tuple[list[Path], int]
     return files, hidden_files_excluded
 
 
-def _diagnostic_search_policy() -> dict[str, object]:
+def _diagnostic_search_policy() -> SearchPolicy:
     """Return only effective, non-sensitive settings that affect search work."""
     from sf_utils.config_manager import ConfigManager
 
@@ -170,7 +339,7 @@ def _anonymous_file_id(path: Path, size: int | None, salt: bytes) -> str:
 def _skip_code(reason: object) -> str:
     code, _detail = decode_skip_reason(reason)
     if code != "ERR_UNKNOWN":
-        return code
+        return cast(str, code)
     text = str(reason or "")
     # Python-side skips are already localized. Match only fixed template text;
     # never place the raw reason (which may contain paths) in the report.
@@ -178,11 +347,11 @@ def _skip_code(reason: object) -> str:
         template = str(getattr(AppStrings, template_name, ""))
         prefix = template.split("{", 1)[0].strip()
         if prefix and prefix in text:
-            return candidate
+            return cast(str, candidate)
     return "ERR_UNKNOWN"
 
 
-def _new_metric() -> dict[str, object]:
+def _new_metric() -> RawMetric:
     return {
         "files": 0,
         "nominal_bytes": 0,
@@ -227,14 +396,15 @@ def _resource_snapshot() -> dict[str, float | None]:
     return result
 
 
-def _runtime_environment() -> dict[str, object]:
-    info: dict[str, object] = {
+def _runtime_environment() -> RuntimeEnvironment:
+    info: RuntimeEnvironment = {
         "python_version": platform.python_version(),
         "python_implementation": platform.python_implementation(),
         "os": platform.platform(),
         "machine": platform.machine(),
         "processor": platform.processor(),
         "logical_cpus": os.cpu_count() or 1,
+        "rust_engine": {},
     }
     try:
         import psutil
@@ -265,13 +435,16 @@ def _runtime_environment() -> dict[str, object]:
     return info
 
 
-def _finalize_metrics(metrics: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
-    finalized: dict[str, dict[str, object]] = {}
+def _finalize_metrics(metrics: dict[str, RawMetric]) -> dict[str, FinalMetric]:
+    finalized: dict[str, FinalMetric] = {}
     for key, metric in metrics.items():
         elapsed = float(metric["elapsed_seconds"])
         files = int(metric["files"])
         finalized[key] = {
-            **metric,
+            "files": metric["files"],
+            "matches": metric["matches"],
+            "skipped": metric["skipped"],
+            "errors": metric["errors"],
             "elapsed_seconds": round(elapsed, 6),
             "nominal_input_bytes": int(metric["nominal_bytes"]),
             "nominal_mb_per_second": round(int(metric["nominal_bytes"]) / (1024 * 1024) / elapsed, 3)
@@ -290,17 +463,16 @@ def _finalize_metrics(metrics: dict[str, dict[str, object]]) -> dict[str, dict[s
                 "10s_or_more": metric["latency_buckets"][6],
             },
         }
-        finalized[key].pop("nominal_bytes")
     return finalized
 
 
 def run(
     root: Path,
     repeats: int = 5,
-    progress_callback=None,
-    cancel_event=None,
+    progress_callback: Callable[[int, int, str, str], None] | None = None,
+    cancel_event: CancellationEvent | None = None,
     max_seconds: int | None = DEFAULT_MAX_SECONDS,
-) -> dict[str, object]:
+) -> DiagnosticReport:
     """Collect an actionable report without exporting file paths or contents."""
     wall_started = time.perf_counter()
     environment = _runtime_environment()
@@ -313,7 +485,7 @@ def run(
     inventory_seconds = time.perf_counter() - inventory_started
     metadata_started = time.perf_counter()
     salt = secrets.token_bytes(32)
-    metadata: dict[Path, dict[str, object]] = {}
+    metadata: dict[Path, FileMetadata] = {}
     inventory_types: Counter[str] = Counter()
     inventory_extensions: Counter[str] = Counter()
     inventory_sizes: Counter[str] = Counter()
@@ -358,7 +530,7 @@ def run(
     benchmark_started = time.perf_counter()
     total_work = max(1, len(paths) * max(1, repeats) * len(SCENARIOS))
     completed_work = 0
-    scenarios: list[dict[str, object]] = []
+    scenarios: list[Scenario] = []
     stop_status: str | None = None
     budget_limited = False
 
@@ -370,7 +542,7 @@ def run(
             else benchmark_started + max_seconds * (scenario_index + 1) / len(SCENARIOS)
         )
         resource_before = _resource_snapshot()
-        resource_samples: list[dict[str, float | int | None]] = [
+        resource_samples: list[dict[str, float | None]] = [
             {
                 "elapsed_seconds": 0.0,
                 "rss_mb": resource_before.get("rss_mb"),
@@ -383,14 +555,14 @@ def run(
         last_resource_sample_time = scenario_started
         last_resource_snapshot = resource_before
         resource_samples_truncated = False
-        run_rows: list[dict[str, object]] = []
-        type_metrics: dict[str, dict[str, object]] = defaultdict(_new_metric)
-        extension_metrics: dict[str, dict[str, object]] = defaultdict(_new_metric)
-        size_metrics: dict[str, dict[str, object]] = defaultdict(_new_metric)
+        run_rows: list[RunRow] = []
+        type_metrics: dict[str, RawMetric] = defaultdict(_new_metric)
+        extension_metrics: dict[str, RawMetric] = defaultdict(_new_metric)
+        size_metrics: dict[str, RawMetric] = defaultdict(_new_metric)
         skip_codes: Counter[str] = Counter()
         unknown_skip_categories: Counter[str] = Counter()
         exception_types: Counter[str] = Counter()
-        slow_file_stats: dict[str, dict[str, object]] = {}
+        slow_file_stats: dict[str, SlowFile] = {}
         total_matches = total_match_files = total_skipped = total_errors = 0
         scenario_processed = 0
         scenario_timed_out = False
@@ -426,9 +598,7 @@ def run(
                 exception_name: str | None = None
                 file_started = time.perf_counter()
                 try:
-                    with use_search_settings_snapshot(
-                        cast(dict[str, Any], search_policy["advanced_settings"])
-                    ):
+                    with use_search_settings_snapshot(search_policy["advanced_settings"]):
                         result = search_in_file(
                             str(path),
                             diagnostic_query,
@@ -609,7 +779,7 @@ def run(
         current_read = resource_after.get("process_read_bytes")
         previous_write = last_resource_snapshot.get("process_write_bytes")
         current_write = resource_after.get("process_write_bytes")
-        final_sample: dict[str, float | int | None] = {
+        final_sample: dict[str, float | None] = {
             "elapsed_seconds": round(final_elapsed, 3),
             "rss_mb": resource_after.get("rss_mb"),
             "system_memory_available_mb": resource_after.get("system_memory_available_mb"),
@@ -641,7 +811,17 @@ def run(
         cpu_delta = None
         if resource_before["cpu_time_seconds"] is not None and resource_after["cpu_time_seconds"] is not None:
             cpu_delta = round(float(resource_after["cpu_time_seconds"]) - float(resource_before["cpu_time_seconds"]), 3)
-        scenario: dict[str, object] = {
+        slow_files: list[SlowFile] = [
+            {
+                **row,
+                "elapsed_total_seconds": round(float(row["elapsed_total_seconds"]), 6),
+                "average_seconds": round(float(row["elapsed_total_seconds"]) / int(row["observations"]), 6),
+                "min_seconds": round(float(row["min_seconds"]), 6),
+                "max_seconds": round(float(row["max_seconds"]), 6),
+            }
+            for row in slow_file_stats.values()
+        ]
+        scenario: Scenario = {
             "name": name,
             "display_name": SCENARIO_LABELS[name],
             "search_mode": "miss_prevention" if precise else "normal",
@@ -681,16 +861,7 @@ def run(
             "extension_metrics": _finalize_metrics(extension_metrics),
             "size_bucket_metrics": _finalize_metrics(size_metrics),
             "slow_files_anonymous": sorted(
-                [
-                    {
-                        **row,
-                        "elapsed_total_seconds": round(float(row["elapsed_total_seconds"]), 6),
-                        "average_seconds": round(float(row["elapsed_total_seconds"]) / int(row["observations"]), 6),
-                        "min_seconds": round(float(row["min_seconds"]), 6),
-                        "max_seconds": round(float(row["max_seconds"]), 6),
-                    }
-                    for row in slow_file_stats.values()
-                ],
+                slow_files,
                 key=lambda row: float(row["max_seconds"]),
                 reverse=True,
             )[:50],
@@ -794,7 +965,7 @@ def _format_bytes(byte_count: int | None) -> str:
     return f"{value:,} bytes"
 
 
-def _markdown(report: dict[str, object]) -> str:
+def _markdown(report: DiagnosticReport) -> str:
     target = report["target"]
     timing = report["timing"]
     config = report["diagnostic_config"]
@@ -868,11 +1039,11 @@ def _markdown(report: dict[str, object]) -> str:
     lines.extend(["", "## Resource samples", "", "| Scenario | Samples | Peak sampled RSS | Lowest available system memory | Highest sampled CPU use | Sampled read | Sampled write |", "|---|---:|---:|---:|---:|---:|---:|"])
     for item in report["scenarios"]:
         points = item["resource"]["samples"]
-        rss_values = [float(point["rss_mb"]) for point in points if point.get("rss_mb") is not None]
-        available_values = [float(point["system_memory_available_mb"]) for point in points if point.get("system_memory_available_mb") is not None]
-        cpu_values = [float(point["cpu_cores_equivalent"]) for point in points if point.get("cpu_cores_equivalent") is not None]
-        read_values = [int(point["read_bytes_since_previous_sample"]) for point in points if point.get("read_bytes_since_previous_sample") is not None]
-        write_values = [int(point["write_bytes_since_previous_sample"]) for point in points if point.get("write_bytes_since_previous_sample") is not None]
+        rss_values = [float(sample_value) for point in points if (sample_value := point.get("rss_mb")) is not None]
+        available_values = [float(sample_value) for point in points if (sample_value := point.get("system_memory_available_mb")) is not None]
+        cpu_values = [float(sample_value) for point in points if (sample_value := point.get("cpu_cores_equivalent")) is not None]
+        read_values = [int(sample_value) for point in points if (sample_value := point.get("read_bytes_since_previous_sample")) is not None]
+        write_values = [int(sample_value) for point in points if (sample_value := point.get("write_bytes_since_previous_sample")) is not None]
         lines.append(
             f"| {item['display_name']} | {len(points)} | {_format_bytes(int(max(rss_values) * 1024 * 1024)) if rss_values else 'unavailable'} | "
             f"{_format_bytes(int(min(available_values) * 1024 * 1024)) if available_values else 'unavailable'} | "
@@ -890,8 +1061,8 @@ def _markdown(report: dict[str, object]) -> str:
             "|---|---|---:|",
         ]
     )
-    for dimension, label in (("types", "type"), ("extensions", "extension"), ("size_buckets", "size"), ("directory_depth_buckets", "depth")):
-        for key, count in sorted(target[dimension].items()):
+    for counts, label in ((target["types"], "type"), (target["extensions"], "extension"), (target["size_buckets"], "size"), (target["directory_depth_buckets"], "depth")):
+        for key, count in sorted(counts.items()):
             lines.append(f"| {label} | {key} | {count:,} |")
     lines.extend(["", "## Environment", "", f"- OS: `{env.get('os')}`; Python: `{env.get('python_implementation')} {env.get('python_version')}`", f"- CPU: `{env.get('processor') or env.get('machine')}`; logical CPUs: {env.get('logical_cpus')}", f"- Memory: {env.get('memory_total_mb', 'unknown')} MiB total; {env.get('memory_available_mb_at_start', 'unknown')} MiB available at start", f"- Rust engine: `{env.get('rust_engine')}`; dependencies: `{env.get('dependencies', {})}`", "", "## Privacy and limitations", "", "Paths, filenames, file contents, sheet names, and the generated query are not exported. Anonymous file IDs are report-scoped HMAC pseudonyms. Exact file sizes and environment/resource data are included."])
     return "\n".join(lines) + "\n"

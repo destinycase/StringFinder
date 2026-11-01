@@ -75,9 +75,3 @@ warn_unused_configs = true
 disallow_untyped_defs = false  # 점진적 도입
 check_untyped_defs = true
 ignore_missing_imports = true
-
-# Preserve imported signatures without making the development-tool backlog a
-# product gate. Explicitly checking tools/diagnostic_benchmark.py still reports it.
-[[tool.mypy.overrides]]
-module = "tools.*"
-follow_imports = "silent"
