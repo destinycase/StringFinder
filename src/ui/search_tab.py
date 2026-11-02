@@ -98,6 +98,7 @@ class SearchTab(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.search_dock)
         self.search_panel.search_started.connect(self.start_search)
         self.search_panel.stop_requested.connect(self.stop)
+        self.search_panel.settings_changed.connect(self.filter_status_changed.emit)
         # 폴더 필터 도크
         self.folder_dock = QDockWidget(AppStrings.DOCK_FOLDER_TITLE, self)
         self.folder_dock.setObjectName(Constants.OBJ_NAME_FOLDER_DOCK)
@@ -206,8 +207,10 @@ class SearchTab(QMainWindow):
         self.filter_status_changed.emit()
 
     def get_filter_status_text(self):
-        return "  |  ".join(panel.status_label.text().replace("\n", " · ") for panel in
-                            (self.folder_panel, self.ext_panel, self.filename_panel))
+        selections = [self.search_panel.search_settings_button.text()]
+        selections.extend(panel.status_label.text().replace("\n", " · ") for panel in
+                          (self.folder_panel, self.ext_panel, self.filename_panel))
+        return " | ".join(selections)
 
     def show_log_window(self):
         """Show this search tab's logs in a separate modeless window."""

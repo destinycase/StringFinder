@@ -259,6 +259,7 @@ class SearchOptionsPanel(QWidget):
     history_deleted = Signal(str, str)  # 유형, 텍스트
     history_cleared = Signal(str)  # 유형
     special_mode_changed = Signal(str)
+    settings_changed = Signal()
 
     def __init__(self, parent=None, config_manager=None):
         super().__init__(parent)
@@ -369,16 +370,22 @@ class SearchOptionsPanel(QWidget):
             for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS
         ]
         self.search_settings_button.setFixedWidth(max(metrics.horizontalAdvance(text) for text in selections) + 48)
-        label_width = max(self.search_label.sizeHint().width(), self.search_settings_label.sizeHint().width())
-        self.search_label.setFixedWidth(label_width)
-        self.search_settings_label.setFixedWidth(label_width)
+        labels = (self.search_label, self.search_settings_label)
+        # Clear narrow-layout constraints before measuring the natural widths.
+        for label in labels:
+            label.setMinimumWidth(0)
+            label.setMaximumWidth(16777215)  # Qt's default maximum widget size.
+        label_widths = [label.sizeHint().width() for label in labels]
         margins = cast(QVBoxLayout, self.layout()).contentsMargins()  # Installed in _init_ui.
         available = self.width() - margins.left() - margins.right()
         spacing = max(0, self.input_layout.horizontalSpacing())
         action_width = max(self.search_btn.sizeHint().width(), self.stop_btn.sizeHint().width())
         settings_width = self.search_settings_button.width()
-        full_width = 2 * label_width + 140 + settings_width + action_width + 4 * spacing
+        full_width = sum(label_widths) + 140 + settings_width + action_width + 4 * spacing
         mode = 1 if available >= full_width else 2
+        if mode == 2:
+            for label in labels:
+                label.setFixedWidth(max(label_widths))
         if mode == self._toolbar_mode:
             return
         self._toolbar_mode = mode
@@ -425,12 +432,19 @@ class SearchOptionsPanel(QWidget):
         self._layout_search_controls()
 
     def set_complex_search(self, precise: bool):
+        changed = self._use_complex_search != (precise is True)
         self._use_complex_search = precise is True
         self._refresh_search_settings()
+        if changed:
+            self.settings_changed.emit()
 
     def set_special_mode(self, mode: str):
-        self._special_mode = normalize_special_search_mode(mode)
+        normalized = normalize_special_search_mode(mode)
+        changed = self._special_mode != normalized
+        self._special_mode = normalized
         self._refresh_search_settings()
+        if changed:
+            self.settings_changed.emit()
 
     def _on_special_action_triggered(self, action):
         self.set_special_mode(action.data())

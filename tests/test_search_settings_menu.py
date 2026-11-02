@@ -196,8 +196,8 @@ def test_long_selection_keeps_query_and_buttons_inside_panel(qtbot, language, wi
         assert widget.geometry().right() < panel.width()
         assert widget.geometry().left() >= 0
     assert panel.search_combo.width() >= 100
-    assert panel.search_settings_label.width() == panel.search_label.width()
     if panel._toolbar_mode == 2:
+        assert panel.search_settings_label.width() == panel.search_label.width()
         assert panel.search_settings_label.geometry().left() == panel.search_label.geometry().left()
         assert panel.search_settings_button.geometry().left() == panel.search_combo.geometry().left()
     if panel._toolbar_mode == 1:
@@ -299,3 +299,49 @@ def test_display_resources_do_not_use_retired_names(language):
         value = str(getattr(AppStrings, key))
         for retired in ("누락 방지", "특수 검색", "값 만", "Miss-prevention", "Special search"):
             assert retired not in value
+
+
+def test_label_widths_follow_layout_after_repeated_resizing(qtbot, language):
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    for width in (1280, 600, 1280, 600, 1280):
+        panel.resize(width, 180)
+        qtbot.wait(10)
+        if width == 1280:
+            assert panel._toolbar_mode == 1
+            for label in (panel.search_label, panel.search_settings_label):
+                assert label.minimumWidth() == 0
+                assert label.maximumWidth() == 16777215
+                assert label.width() == label.sizeHint().width()
+            if language == "ko":
+                assert panel.search_settings_label.width() < panel.search_label.width()
+        else:
+            assert panel._toolbar_mode == 2
+            assert panel.search_settings_label.width() == panel.search_label.width()
+
+
+def test_layout_switch_uses_sum_of_natural_label_widths(qtbot, language):
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    panel.resize(1280, 180)
+    panel.show()
+    qtbot.wait(10)
+    margins = panel.layout().contentsMargins()
+    labels = panel.search_label.sizeHint().width() + panel.search_settings_label.sizeHint().width()
+    actions = max(panel.search_btn.sizeHint().width(), panel.stop_btn.sizeHint().width())
+    boundary = (margins.left() + margins.right() + labels + 140
+                + panel.search_settings_button.width() + actions + 4 * panel.input_layout.horizontalSpacing())
+    for width, expected in ((boundary, 1), (boundary - 1, 2), (boundary, 1)):
+        panel.resize(width, 180)
+        qtbot.wait(10)
+        assert panel.width() == width
+        assert panel._toolbar_mode == expected
+
+
+def test_no_result_encoding_guidance_is_a_separate_paragraph(language):
+    paragraphs = AppStrings.RESULT_EMPTY_NO_MATCH.format("needle").split("\n\n")
+    assert len(paragraphs) == 3
+    assert "needle" in paragraphs[0]
+    assert "NFD" in paragraphs[1] and "ß" in paragraphs[1]
+    assert ("인코딩" if language == "ko" else "encoding") in paragraphs[2]

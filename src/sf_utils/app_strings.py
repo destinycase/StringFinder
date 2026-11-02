@@ -300,11 +300,11 @@ class AppStrings:
     RESULT_SEARCHING_MSG = '"{}" 검색 중 입니다.'
     RESULT_EMPTY_NO_FOLDER = "검색할 폴더를 추가해주세요."
     RESULT_EMPTY_NO_MATCH = (
-                                "'{}'에 대한 검색 결과가 없습니다. 아래 검색어의 경우에는 글자 변형 검색을 권장합니다.\n\n"
-                                "macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
-                                "독일어 ß↔ss 등 다국어 특수 대소문자 관계\n"
-                                "인코딩 문제는 설정의 문자 인코딩을 확인하세요. 이 검색 방식도 모든 인코딩 문제를 해결하지는 않습니다.\n"
-                            )
+        "'{}'에 대한 검색 결과가 없습니다. 아래 경우에는 글자 변형 검색을 권장합니다.\n\n"
+        "macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
+        "독일어 ß↔ss 등 다국어 특수 대소문자 관계\n\n"
+        "글자가 깨져 보이는 등 인코딩 문제가 의심되면 설정의 문자 인코딩을 확인하세요."
+    )
     RESULT_SUMMARY_FORMAT = "파일 수 : {file_count} | 문자열 수 : {match_count} | 시간 : {duration}s"
     SKIPPED_FILES_COUNT = "⚠ 건너뛴 파일 수: {}"
     TOTAL_MATCH_LIMIT_REACHED = "⚠ 결과 수량 제한 도달 ({})"

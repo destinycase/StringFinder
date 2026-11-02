@@ -5,10 +5,10 @@ ENGLISH_STRINGS = {
     "FOLDER_FILTER_USAGE": "Select folders to search.\nTheir subfolders are included.",
     "FOLDER_FILTER_EMPTY": 'Select a folder',
     "FOLDER_FILTER_SELECTED": '{} folders selected',
-    "EXTENSION_FILTER_USAGE": "Specify extensions to narrow the search.\nGroup multiple extensions in one entry using commas.",
+    "EXTENSION_FILTER_USAGE": "Specify extensions to reduce unnecessary searching.\nGroup multiple extensions in one entry using commas.",
     "EXTENSION_FILTER_ALL": 'All extensions',
     "EXTENSION_FILTER_SELECTED": '{} extensions selected - {}',
-    "FILENAME_FILTER_USAGE": "Specify part of a filename to narrow the search.\nGroup multiple terms in one entry using commas.",
+    "FILENAME_FILTER_USAGE": "Specify part of a filename to reduce unnecessary searching.\nGroup multiple terms in one entry using commas.",
     "FILENAME_FILTER_ALL": 'No filename restriction',
     "FILENAME_FILTER_SELECTED": '{} filename filters selected - {}',
     "ADVANCED_INCLUDE_JUNCTIONS": "Windows linked folders (junctions)",
@@ -262,10 +262,10 @@ ENGLISH_STRINGS = {
     "RESULT_SEARCHING_MSG": "Searching for \"{}\"...",
     "RESULT_EMPTY_NO_FOLDER": "Add a folder to search.",
     "RESULT_EMPTY_NO_MATCH": (
-        "No results found for '{}'. Character variant search is recommended for:\n\n"
+        "No results found for '{}'. Consider character variant search for these cases:\n\n"
         "Decomposed (NFD) text, such as Korean text in files created on macOS\n"
-        "Special multilingual case relationships, such as German ß↔ss\n"
-        "Check the text encoding setting for encoding issues; this mode does not fix all of them."
+        "Special multilingual case relationships, such as German ß and ss\n\n"
+        "If characters look garbled or you suspect an encoding issue, check Text encoding in Settings."
     ),
     "RESULT_SUMMARY_FORMAT": "Files: {file_count} | Strings: {match_count} | Time: {duration}s",
     "SKIPPED_FILES_COUNT": "⚠ Skipped files: {}",
