@@ -2,26 +2,10 @@ from PySide6.QtCore import QSortFilterProxyModel, Qt
 
 
 class ResultProxyModel(QSortFilterProxyModel):
-    """검색 결과 목록의 정렬 및 필터링을 담당하는 프록시 모델입니다."""
+    """검색 결과 목록의 정렬을 담당합니다. 필터링과 페이지 구성은 원본 모델에서 처리합니다."""
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.file_filter = ""  # 파일명 필터 문자열
-        self.folder_filter = ""  # 폴더 경로 필터 문자열
 
-    def setFileFilter(self, text):
-        self.file_filter = text.lower()
-        sm = self.sourceModel()
-        if sm and hasattr(sm, "set_filters"):
-            sm.set_filters(self.file_filter, self.folder_filter)
-        self.invalidate()
 
-    def setFolderFilter(self, text):
-        self.folder_filter = text.lower()
-        sm = self.sourceModel()
-        if sm and hasattr(sm, "set_filters"):
-            sm.set_filters(self.file_filter, self.folder_filter)
-        self.invalidate()
 
     def filterAcceptsRow(self, _source_row, _source_parent):
         """필터링은 소스 모델(SearchResultModel)에서 직접 처리합니다."""
@@ -48,19 +32,10 @@ class ResultProxyModel(QSortFilterProxyModel):
 
 class MatchProxyModel(QSortFilterProxyModel):
     """
-    상세 목록의 각 컬럼을 독립적으로 필터링하는 프록시 모델입니다.
+    상세 목록을 뷰에 연결합니다. 컬럼별 필터링은 원본 모델에서 처리합니다.
     """
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.filters = {}  # 컬럼 인덱스별 필터 텍스트 저장 (column_index: filter_text)
 
-    def setColumnFilter(self, column, text):
-        self.filters[column] = text.lower()
-        sm = self.sourceModel()
-        if sm and hasattr(sm, "set_column_filter"):
-            sm.set_column_filter(column, text)
-        self.invalidate()
 
     def filterAcceptsRow(self, _source_row, _source_parent):
         """필터링은 소스 모델에서 직접 처리하므로 항상 True를 반환합니다."""

@@ -59,11 +59,8 @@ class AppStrings:
     INFO_CLEAR_SUCCESS = "데이터가 성공적으로 삭제되었습니다."
     INFO_RESET_LAYOUT_DONE = "레이아웃이 초기화되었습니다."
     INFO_LOGS_DELETED = "로그가 삭제되었습니다."
-    HISTORY_CLEAR_ALL = "--- 기록 삭제 ---"
     DOCK_SEARCH_TITLE = "검색 설정"
     DOCK_FOLDER_TITLE = "검색 폴더"
-    DOCK_EXT_TITLE = "확장자 필터"
-    DOCK_FILENAME_TITLE = "파일명 필터"
     DOCK_RESULT_TITLE = "검색 결과"
     MENU_LOCK_LAYOUT = "레이아웃 잠금"
     MENU_RESET_LAYOUT = "레이아웃 초기화"
@@ -288,14 +285,8 @@ class AppStrings:
     # =========================================================================
     # [6] 상태 및 결과 메시지 (Status & Results)
     # =========================================================================
-    STATUS_READY = "준비"
-    STATUS_IDLE = "대기 중"
-    STATUS_SCANNING = "파일 스캔 중..."
-    STATUS_SEARCHING = "문자열 검색 중..."
-    STATUS_STOPPING = "중지 중..."
     STATUS_FOUND_COUNT = "{}개 파일에서 검색 완료"
     STATUS_ERROR_PREFIX = "[오류] "
-    RESULT_SUMMARY_TEMPLATE = "발견: {}개 파일 | {}개 문자열"
     RESULT_EMPTY_MSG = "검색을 시작 해주세요."
     RESULT_SEARCHING_MSG = '"{}" 검색 중 입니다.'
     RESULT_EMPTY_NO_FOLDER = "검색할 폴더를 추가해주세요."
@@ -405,7 +396,6 @@ class AppStrings:
 
     # 기존 검색 모드명 (안전성 확보를 위해 확인)
     SEARCH_MODE_EXACT = "정확히 일치"
-    SEARCH_MODE_COMPLEX = "글자 변형 검색"
     # =========================================================================
     # [7] 내보내기 (Export)
     # =========================================================================
@@ -423,7 +413,6 @@ class AppStrings:
     # [8] 시스템 로그 (System Logs) - 형식: [시스템] 메시지
     # =========================================================================
     LOG_SYS_APP_STARTED_DECO = "--- 애플리케이션 시작 ---"
-    LOG_SYS_APP_CLOSED = "--- 애플리케이션 종료 ---"
     LOG_SYS_SINGLE_INSTANCE_DETECTED = "[시스템] 중복 실행 시도 감지: 기존 창을 활성화합니다."
     LOG_SYS_SHUTDOWN = "[시스템] 애플리케이션 종료 중..."
     LOG_SYS_LOG_CLEANUP_DONE = "[시스템] 로그 파일 정리 완료 ({}개 제거)."
@@ -433,12 +422,8 @@ class AppStrings:
     LOG_SYS_WKR_SHUTDOWN_DONE = "[시스템] 워커 프로세스 종료 완료."
     LOG_SYS_WKR_SHUTDOWN_FAIL = "[시스템] 워커 프로세스 종료 실패: {}"
     LOG_SYS_SF_ENGINE_NOT_FOUND = "[시스템] Rust 라이브러리 유실 감지: {}"
-    LOG_SYS_LOG_DIR_TEMP = "[시스템] 로그 폴더 생성 실패: 임시 경로를 사용합니다: {}"
     LOG_SYS_UNCAUGHT_EXCEPTION = "[시스템] 처리되지 않은 예외 발생."
-    LOG_SYS_SCAN_WORKER_BROKEN = "[시스템] 스캔 워커 객체 손상 감지 (None)."
     LOG_SYS_QT_THREAD_WARNING = "[시스템] QThread 경고 발생: {}\n상세 스택:\n{}"
-    LOG_SYS_CLI_ARGS_PARSE_FAIL = "[시스템] 명령어 인수 분석 실패: {}"
-    LOG_SYS_DATA_DIR_CHECK_FAIL = "[시스템] 데이터 폴더 접근 실패: {}"
     LOG_SYS_CLEANUP_SKIP = "[시스템] 로그 정리 중단 ({}): {}"
     LOG_SYS_CLEANUP_ERROR = "[시스템] 종료 정리 작업 중 오류 발생: {}"
     TITLE_RUST_ENGINE_MISSING = "StringFinder — 엔진 로드 실패"
@@ -451,8 +436,6 @@ class AppStrings:
         "문제가 지속되면 프로그램을 재설치하세요."
     )
     # 하위 호환용 (기존 참조가 있을 경우를 위해 유지)
-    MSG_RUST_LOAD_FAIL = "[시스템] Rust 엔진 로딩 실패 (필수 요건 미충족)."
-    MSG_RUST_LOAD_FAIL_GUIDE = MSG_RUST_ENGINE_MISSING
     MSG_QT_THREAD_DESTROYED = "[시스템] 스레드가 정상 종료 전 파괴되었습니다."
     MSG_QT_RESOURCE_LEAK = "[시스템] 애플리케이션 종료 시 일부 리소스 해제 실패."
     MSG_CRITICAL_ERROR_POPUP = (
@@ -460,12 +443,9 @@ class AppStrings:
     )
     LOG_SYS_CRITICAL_STOP_ALL = "[시스템] 치명적 오류 감지로 인한 모든 작업 강제 중단."
     LOG_SYS_TAB_STOP_FAIL = "[시스템] 탭 동작 중지 실패: {}"
-    LOG_SYS_MEMORY_WARNING = "[시스템] 메모리 임계치 경고: {} (현재: {}%)"
     LOG_SYS_MEMORY_CHECK_FAIL = "[시스템] 시스템 리소스 확인 실패: {}"
-    LOG_SYS_RUST_FAIL_MSG_UI_MISSING = "[안내] Rust 로드 실패 알림 중 UI 객체 참조 상실: {}"
     LOG_SYS_NO_TABS_TO_REMOVE = "[안내] 닫을 수 있는 활성 탭이 없습니다."
     LOG_SYS_CLEANUP_SIGNALER_FAIL = "[안내] 로깅 신호기 연결 해제 실패: {}"
-    LOG_SYS_CLEANUP_DEFERRED = "[안내] 시스템 자원 정리 작업 지연됨."
     LOG_SYS_SINGLE_INSTANCE_LOCK_SUCCESS = "[시스템] 단일 인스턴스 배타적 락 획득: {}"
     # =========================================================================
     # [9] 설정 로그 (Config Logs) - 형식: [설정] 메시지
@@ -474,8 +454,6 @@ class AppStrings:
     LOG_CFG_READ_ERROR = "[설정] 파일 읽기 실패: {}"
     LOG_CFG_SAVE_FAIL = "[설정] 구성 저장 실패: {}"
     LOG_CFG_SAVE_SHUTDOWN_FAIL = "[설정] 종료 시 최종 구성 저장 실패."
-    LOG_CFG_SAVED = "[설정] 구성 파일 저장 완료: {}"
-    LOG_CFG_SAVE_ERROR = "[설정] 구성 파일 저장 중 오류 발생: {} ({})"
     LOG_CFG_SAVE_RETRY = "[설정] 저장 재시도({}) 실패: {}"
     LOG_CFG_MIGRATE_WARN = (
         "[설정] 구성 파일 버전 상충 (파일: v{}, 앱: v{}): 일부 항목이 초기화될 수 있습니다."
@@ -495,12 +473,10 @@ class AppStrings:
     LOG_SYS_CLOSE_CLEANUP_FAIL = "[시스템] 종료 시 리소스 정리 실패: {}"
     LOG_SYS_HANDLER_CLEANUP_FAIL = "[시스템] 클린업 핸들러 실행 오류: {}"
     LOG_SYS_CRITICAL_POPUP_FAIL = "[시스템] 치명적 오류 팝업 출력 실패: {}"
-    LOG_SYS_LOG_CLEANUP_FAILURE = "[시스템] 로그 데이터 정리 실패: {}"
     LOG_SES_LIST_FAIL = "[세션] 세션 목록 조회 실패: {}"
     LOG_CFG_SESSION_TITLE_READ_FAIL = "[세션] 세션 제목 로딩 실패: {}"
     LOG_CFG_SESSION_SEARCH_FAIL = "[세션] 세션 데이터 탐색 중 오류 발생: {}"
     LOG_CFG_UNEXPECTED_LOAD_ERROR = "[설정] 알 수 없는 구성 로딩 오류: {}"
-    LOG_CFG_BACKUP_CLEANUP_FAIL = "[설정] 백업 구성 파일 정리 실패: {}"
     LOG_CFG_TEMP_REMOVE_FAIL = "[설정] 임시 구성 파일 제거 실패: {}"
     LOG_SES_TEMP_CLEANUP_FAIL = "[세션] 임시 세션 데이터 정리 실패: {}"
     LOG_CFG_LOG_FILE_CLEANUP_FAIL = "[설정] 로그 파일 자동 정리 실패 ('{}'): {}"
@@ -514,43 +490,23 @@ class AppStrings:
     LOG_SCH_COND_FOLDER = "  └─ 대상 폴더: {}"
     LOG_SCH_COND_FILENAME = "  └─ 파일명 필터: '{}'"
     LOG_SCH_COND_EXT = "  └─ 확장자 필터: '{}' (특수 모드: {})"
-    LOG_SCH_PATH_ENTER = "=== [검색] 엔진 가동 ==="
-    LOG_SCH_SCAN_DONE = "[스캔] 대상 파일 확보 완료: '{}'개 ({:.3f}초)."
-    LOG_SCH_SCAN_DONE_WITH_SKIPPED = "[스캔] 대상 파일 확보 완료: {}개 (스킵: {}개, {:.3f}초)."
-    LOG_SCH_SCAN_DONE_SIMPLE = "[스캔] 파일 스캔 완료 ({:.3f}초)."
-    LOG_SCH_SCAN_STARTED_TYPE = "[스캔] 파일 스캔 시작 ({})..."
-    LOG_SCH_SCAN_TYPE_RUST = "Rust 고속 경로"
-    LOG_SCH_SCAN_TYPE_PYTHON = "Python 정밀 경로"
-    LOG_SCH_SKIPPED_FILES_LIST = "[스캔] 검색 제외 대상 목록:"
-    LOG_SCH_SCAN_DONE_FAST_PATH = "[스캔] 파일 스캔 완료 (고속 경로 적용)."
-    LOG_SCH_SEARCH_DONE = "=== [검색] 작업 완료 (전체 소요 시간: {:.3f}초) ==="
     LOG_SCH_NO_FILES = "[검색] 검색 대상 파일이 없습니다."
     LOG_SCH_EMPTY_QUERY = "[검색] 검색어가 입력되지 않았습니다."
     LOG_SCH_FOLDER_ACCESS_DENIED = "[스캔] 폴더 접근 권한 거부: {} ({})"
     LOG_SCH_SCAN_OS_ERROR = "[스캔] 시스템 입출력 오류 발생: {} ({})"
-    LOG_SCH_RUST_MODE = "[엔진] Rust 가속 모드 활성화 완료."
-    LOG_SCH_PYTHON_MODE = "[엔진] Python 정밀 모드 활성화 완료."
-    LOG_SCH_HYBRID_MODE = "[엔진] 하이브리드 모드(Rust + Python) 가동."
     LOG_SCH_STOP_REQUESTED = "[제어] 사용자 중지 요청 수신 중..."
     LOG_SCH_STOPPED_BY_USER = "[제어] 사용자에 의해 작업이 중지되었습니다."
     LOG_SCH_RESTART_PENDING = "[제어] 재시작 대기 중..."
     LOG_SCH_RESTART_SCHEDULED = "[제어] 재시작 예약됨."
-    LOG_SCH_SKIP_COUNT = "[안내] 총 {}개 파일이 검색에서 제외되었습니다."
-    LOG_SCH_SKIP_REASON = "  └─ '{}' (사유: {})"
-    LOG_SCH_SKIP_SIMPLE = "  └─ '{}'"
-    LOG_SCH_ALL_FILES_GUIDE = "[안내] 전체 파일 스캔 모드."
-    LOG_SCH_FILENAME_FILTER_GUIDE = "[안내] 파일명 필터 적용 완료: '{}'"
     LOG_SCH_ALL_DONE = "=== [검색] 모든 작업이 종료되었습니다. (합계: {:.3f}초) ==="
     LOG_SCH_FAILED_PARTIAL = "[검색 오류 · 결과 불완전] 확보한 결과: {}개 파일, {}건 / 건너뛴 파일: {}개"
     LOG_WKR_STARTED = "[엔진] 병렬 검색 데이터 처리 시작 ('{}' | 필터: {} | {})"
     LOG_WKR_RUNNING = "  └─ 현재 처리 중: {}개 파일..."
     LOG_WKR_PROGRESS = "  └─ 검색 진행률: {}% ({}/{})"
     LOG_WKR_COMPLEX_ACT = "[엔진] 유니코드 글자 변형 검색 모드(Python) 가동."
-    LOG_WKR_PYTHON_ACT = "[엔진] Python 엔진 기반 검색 수행 중..."
     LOG_WKR_RUST_ACT = "[엔진] Rust 통합 엔진 활성화 중 (대상: {}개 경로)."
     LOG_WKR_DONE = "[엔진] 병렬 검색 처리 종료 (발견: {}, 검색 결과: {}, {:.3f}초)."
     LOG_WKR_EXCEL_SCAN = "[엔진] Excel 구조 파일 검색 활성화."
-    LOG_WKR_STOP_SIGNAL = "[워커] 작업 중단 신호 감지."
     LOG_WKR_ADAPTIVE_POLICY_INFO = "[워커] 적응형 자원 정책: 코어 {}개 중 {}개 워커 할당."
     # =========================================================================
     # [11] 리소스 및 성능 로그 (Resource & Performance) - 형식: [리소스 / 성능] 메시지
@@ -566,6 +522,7 @@ class AppStrings:
     LOG_PERF_ADJUST_MATCH_FAIL = "[성능] 검색 결과 상세 컬럼 폭 조정 실패: {}"
     LOG_PERF_MANAGER_SHUTDOWN_ERROR = "[성능] 전역 멀티프로세싱 매니저 종료 중 예외 발생: {}"
     LOG_WKR_MANAGER_SHUTDOWN_IGNORED = "[워커] 전역 매니저 종료 무시 (채널 닫힘): {}"
+    LOG_UI_RESULT_LAYOUT_DEFAULT = "[화면] 저장된 결과 분할 상태를 복원하지 못해 기본 배치를 유지합니다."
     LOG_WKR_SIGNAL_EMIT_FAIL = "[워커] 상태 신호 전송 실패 ({}): {}"
     LOG_WKR_FUTURE_SCHEDULING_SKIPPED = "[워커] 작업 예약 건너뜀 (이미 중단): {}"
     LOG_WKR_FUTURE_SUBMISSION_FAIL = "[워커] 작업 제출(Future) 실패: {}"
@@ -576,8 +533,6 @@ class AppStrings:
     LOG_SYS_RUST_HASH = "[시스템] Rust 엔진 무결성 체크(SHA-256): {}"
     LOG_SCH_RUST_PERF_STATS = "[성능] Rust 원시 통계: Count={}, Call={:.4f}s, Norm={:.4f}s"
     LOG_SCH_ENGINE_ISOLATION_BAIL = "[엔진] 고립 정책에 의한 작업 차단 (사유: {}): {}"
-    LOG_SCH_BINARY_COUNT_PARSE_FAIL = "[엔진] 바이너리 검색 결과 수 분석 실패 (길이 {}): {}"
-    LOG_SYS_RUST_NO_FALLBACK = "[시스템] Rust 엔진 로딩 실패 (Python 폴백 정책 미적용 환경)."
     # =========================================================================
     # [12] 에러 메시지 (Error Messages) - 형식: [오류] 메시지
     # =========================================================================
@@ -651,7 +606,6 @@ class AppStrings:
     LOG_SCH_BINARY_CHECK_ERROR = "[오류] 바이너리 무결성 점검 오류: {}"
     LOG_SCH_RUST_DIR_FATAL = "[오류] Rust 디렉토리 검색 중 치명적 예외 ('{}'): {}"
     LOG_SCH_RUST_FILELIST_FATAL = "[오류] Rust 파일 목록 생성 중 치명적 예외 ('{}'): {}"
-    LOG_SRCH_RUST_MEM_GUARD_WARN = "[안내] Rust 엔진 메모리 보호 가드 작동: {}"
     LOG_SCH_ERROR_FILE = "[오류] 개별 파일 처리 실패 ('{}'): {}"
     LOG_SCH_RUST_EXCEL_FAIL = "[오류] Rust 기반 Excel 검색 실패 ('{}'): {}"
     LOG_SCH_JSON_FAIL = "[오류] Python 기반 JSON 검색 실패: {}"
@@ -660,15 +614,11 @@ class AppStrings:
     LOG_SCH_STREAM_ERROR = "[오류] 데이터 스트림 처리 흐름 중단: {}"
     LOG_SCH_STOP_THREAD_ERR = "[오류] 작업 스레드 중지 처리 실패: {}"
     LOG_SCH_SEARCH_THREAD_ERROR = "[오류] 검색 스레드 종료 절차 중 오류 수신: {}"
-    LOG_SCH_EXCEL_SHEET_ERROR_DETAIL = "[엔진] Excel 시트 분석 중 예외 발생: {}"
-    LOG_SCH_EXCEL_ENGINE_PANIC_EXT = "[엔진] Excel 코어 패닉 감지 ('{}'): {}"
     LOG_SCH_EXCEL_ENGINE_PANIC = "[엔진] Excel 코어 치명적 패닉: {}"
     LOG_SCH_SKIP_RAW_DETAIL = "[엔진] 건너뛴 파일 원본 진단 ({}): {}"
     LOG_THEME_APPLY_FAIL = "[화면] 시각 테마 적용 실패 (테마={}): {}"
     ERROR_SORT_WORKER = "[오류] 데이터 정렬 워커(SortWorker) 동작 실패: {}"
     LOG_WKR_BATCH_ERROR = "[워커] 배치 작업 단위 오류: {}"
-    LOG_WORKER_ERROR_SIGNAL_FAIL = "[워커] 내부 오류 신호 전송 실패."
-    LOG_WORKER_FINISH_SIGNAL_FAIL = "[워커] 내부 완료 신호 전송 실패."
     LOG_QT_INFO = "[Qt] 안내 메시지: {}"
     LOG_QT_WARNING = "[Qt] 경고 메시지: {}"
     LOG_QT_CRITICAL = "[Qt] 치명적 시스템 오류: {}"

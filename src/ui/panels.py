@@ -222,7 +222,7 @@ def normalize_special_search_mode(value: Any) -> str:
 
 
 class SearchProfileMenu(QMenu):
-    """Only the miss-prevention choice has explanatory hover guidance."""
+    """글자 변형 검색 항목에만 사용 안내를 표시합니다."""
 
     def sizeHint(self):
         # Reserve a trailing icon column without using Qt's checkmark column.
@@ -256,8 +256,6 @@ class SearchProfileMenu(QMenu):
 class SearchOptionsPanel(QWidget):
     search_started = Signal()
     stop_requested = Signal()
-    history_deleted = Signal(str, str)  # 유형, 텍스트
-    history_cleared = Signal(str)  # 유형
     special_mode_changed = Signal(str)
     settings_changed = Signal()
 
@@ -854,11 +852,6 @@ class FilenameFilterPanel(DenseFilterPanel):
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
-        # Compatibility holder for old session data; it is intentionally not
-        # added to the layout, so users only see the list-add workflow.
-        self.filename_combo = SearchInputComboBox()
-        self.filename_combo.setEditable(True)
-        self.filename_combo.setVisible(False)
         self.filename_list = FilterListWidget()
         self.usage_label = self.filename_list.empty_hint
         self.usage_label.setText(AppStrings.FILENAME_FILTER_USAGE)
@@ -961,8 +954,6 @@ class FilenameFilterPanel(DenseFilterPanel):
                 widget.checkbox.setChecked(checked)
         self.filter_changed.emit()
 
-    def get_filename_filter_text(self) -> str:
-        return self.filename_combo.currentText().strip()
 
     def get_selected_filenames(self) -> List[str]:
         filenames: List[str] = []

@@ -1,3 +1,4 @@
+import logging
 import os
 import tomllib
 
@@ -27,6 +28,6 @@ def get_app_version() -> str:
                 if isinstance(version, str):
                     return version
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("프로젝트 버전 파일을 읽지 못했습니다.", exc_info=True)
 
     return "0.0.0-unknown"  # 버전 정보 상실 시 알 수 없음으로 표시

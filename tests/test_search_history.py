@@ -65,7 +65,7 @@ def test_valid_search_records_only_after_dispatch(qtbot, mock_config_manager, tm
     assert mock_config_manager.get_history() == ["searched query"]
     assert items(tab.search_panel.search_combo) == ["searched query"]
     assert tab.search_panel.search_combo.currentText() == "  searched query  "
-    assert mock_config_manager.get_filename_history() == []
+    assert mock_config_manager.get("filename_history", []) == []
 
 
 @pytest.mark.parametrize("query", ["", "x" * 1001, "no folders"])

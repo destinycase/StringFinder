@@ -1,14 +1,14 @@
 """
 [test_proxy_filtering.py]
 
-이 테스트는 UI 모델과 뷰 사이의 데이터 변환 및 필터링 프록시 로직을 검증합니다.
+이 테스트는 원본 모델의 필터 결과가 프록시 뷰에 반영되는지 검증합니다.
 
 - 테스트 목적:
   1. 하이라이팅 태그(HTML)가 포함된 데이터가 프록시 필터링 중에도 정확한 검색 결과를 필터링하는지 확인.
   2. 클립보드 복사 또는 편집 등을 위한 순수 텍스트 데이터(EditRole)와 표시용 데이터(DisplayRole)의 분리 무결성 보장.
 
 - 주요 검증 사항:
-  1. `MatchProxyModel` 및 `ResultProxyModel`의 컬럼 기반 동적 필터링 작동.
+  1. 원본 모델의 필터를 변경하면 프록시에서도 보이는 행 수가 갱신되는지 확인.
   2. HTML 태그가 제거된 원본 데이터를 기준으로 하는 검색 필터 정확도.
 """
 
@@ -54,13 +54,13 @@ def test_match_proxy_model_filtering_with_html():
     proxy_model.setSourceModel(source_model)
 
     # Normal 모드에서는 모든 필터링이 0번 컬럼으로 수행됨
-    proxy_model.setColumnFilter(0, "prefix")
+    source_model.set_column_filter(0, "prefix")
     assert proxy_model.rowCount() == 1
 
-    proxy_model.setColumnFilter(0, "target")
+    source_model.set_column_filter(0, "target")
     assert proxy_model.rowCount() == 1
 
-    proxy_model.setColumnFilter(0, "nonexistent")
+    source_model.set_column_filter(0, "nonexistent")
     assert proxy_model.rowCount() == 0
 
 
@@ -73,9 +73,8 @@ def test_result_proxy_model_filtering():
     proxy_model = ResultProxyModel()
     proxy_model.setSourceModel(source_model)
 
-    proxy_model.setFileFilter("file1")
+    source_model.set_filters("file1", "")
     assert proxy_model.rowCount() == 1
 
-    proxy_model.setFileFilter("")
-    proxy_model.setFolderFilter("folder2")
+    source_model.set_filters("", "folder2")
     assert proxy_model.rowCount() == 1

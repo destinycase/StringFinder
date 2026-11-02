@@ -349,14 +349,6 @@ class SearchResultModel(QAbstractTableModel):
         """전체 결과 수를 반환합니다 (버퍼에 있는 모든 결과)"""
         return len(self._result_buffer)
 
-    def set_pagination_enabled(self, enabled):
-        """페이지네이션 활성화/비활성화를 설정합니다"""
-        self._pagination_enabled = enabled
-        if not enabled:
-            self._load_all_from_buffer()
-        else:
-            self._current_page = 1
-            self._load_current_page_data()
 
     def sort_globally(self):
         """전체 데이터를 매치 수 DESC, 경로 ASC 순으로 정렬합니다 (비동기)."""
@@ -373,11 +365,6 @@ class SearchResultModel(QAbstractTableModel):
 
         self._start_sort(global_key)
 
-    def _load_all_from_buffer(self):
-        """버퍼의 모든 결과를 즉시 로드합니다 (페이지네이션 비활성화 시)."""
-        self.beginResetModel()
-        self._data = list(self._filtered_buffer)
-        self.endResetModel()
 
     def get_full_data(self, row):
         """특정 행의 전체 데이터(경로 및 매칭 리스트)를 반환합니다."""
@@ -578,6 +565,7 @@ class MatchDetailModel(QAbstractTableModel):
                     parts.append(escape(display_val[last_end:]))
                     return "".join(parts)
                 except Exception:
+                    # 강조만 실패하면 원문을 이스케이프해 일반 텍스트로 표시합니다.
                     pass
         return escape(display_val)
 

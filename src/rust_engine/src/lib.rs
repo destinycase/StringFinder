@@ -1953,10 +1953,11 @@ fn validate_query_length(query: &str) -> PyResult<()> {
 #[pymodule]
 fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // [Stability] 커스텀 패닉 훅 설치:
-    // catch_unwind가 모든 패닉을 처리하므로, Rust 기본 훅의 stderr 출력은 불필요합니다.
-    // 훅을 no-op으로 교체하여 로그 창에 원시 패닉 메시지가 출력되는 현상을 방지합니다.
+    // Excel 파서의 unwind 패닉은 해당 처리 경계에서 사용자용 오류로 변환합니다.
+    // 원시 패닉 출력 억제는 예외 처리를 대신하지 않습니다. 보조 스레드의
+    // join 실패 전달은 별도 보완 대상이며 이 훅의 동작은 여기서 바꾸지 않습니다.
     std::panic::set_hook(Box::new(|_info| {
-        // 의도적으로 비워둠: catch_unwind에서 패닉을 처리하므로 별도 출력 불필요
+        // 기존 출력 억제 정책 유지. 모든 패닉이 복구된다는 의미는 아닙니다.
     }));
 
     m.add_class::<SearchMatch>()?;

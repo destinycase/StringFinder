@@ -26,7 +26,7 @@ from sf_utils.constants import Constants
 def test_detect_encoding_utf16le():
     data = b"\xff\xfe\x48\x00\x65\x00\x6c\x00\x6c\x00\x6f\x00"  # "Hello" 문자열
     encoding = detect_encoding_quickly(data)
-    assert encoding in [Constants.ENC_UTF16_LE, Constants.ENC_UTF16]
+    assert encoding in ["utf-16-le", "utf-16"]
 
 
 def test_search_utf16le_file(tmp_path):
@@ -124,7 +124,7 @@ def test_search_large_file_size_limit(temp_dir, monkeypatch):
     with open(file_path, "w", encoding="utf-8") as f:
         f.write('{"msg":"needle"}')
 
-    forced_size = Constants.MAX_JSON_DOM_SIZE + 1
+    forced_size = Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024 + 1
     monkeypatch.setattr("core.search_engine.os.path.getsize", lambda _p: forced_size)
     result = search_in_file(file_path, "needle", special_mode=Constants.MODE_JSON, use_complex_search=True)
 

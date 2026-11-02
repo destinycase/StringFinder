@@ -164,11 +164,6 @@ def test_history_bubble_up(temp_dir):
         hist = [x for x in cm.get_history() if "Clear" not in x and "---" not in x]
         assert hist == ["first", "second"]
 
-        cm.add_filename_history("file1")
-        cm.add_filename_history("file2")
-        cm.add_filename_history("file1")
-        filename_history = [x for x in cm.get_filename_history() if "Clear" not in x and "---" not in x]
-        assert filename_history == ["file1", "file2"]
 
 
 def test_new_settings(temp_dir):

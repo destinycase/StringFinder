@@ -233,13 +233,22 @@ class SearchWorker(QRunnable):
         self.all_skipped: List[Any] = []
 
     def _safe_emit(self, signal, *args):
+        """전송 실패만 기록하며, Qt 수신 함수에서 발생하는 예외까지 포착하지는 않습니다."""
         try:
             signal.emit(*args)
-        except RuntimeError:
-            # Signal source has been deleted
-            pass
-        except Exception:
-            pass
+        except Exception as error:
+            message = str(error).lower()
+            if isinstance(error, RuntimeError) and (
+                "signal source has been deleted" in message
+                or ("internal c++ object" in message and "already deleted" in message)
+            ):
+                # 종료 중 Qt 송신 객체가 삭제된 경우에는 알릴 대상이 없으므로 무시합니다.
+                return
+            try:
+                logger.warning(AppStrings.LOG_WKR_SIGNAL_EMIT_FAIL.format(repr(signal), error), exc_info=True)
+            except Exception:
+                # 종료 중 로그 수신 객체도 삭제됐다면 진단 실패를 워커에 다시 전파하지 않습니다.
+                pass
 
     def _stop_for_memory_pressure(self, diagnostic: str = "") -> None:
         """Stop the search and notify the UI once when memory pressure is detected."""

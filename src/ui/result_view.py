@@ -1253,9 +1253,11 @@ class ResultView(QWidget):
         _, result_state, _ = self.config_manager.get_splitter_states()
         if result_state:
             try:
-                self.result_splitter.restoreState(QByteArray.fromHex(result_state.encode()))
+                if not self.result_splitter.restoreState(QByteArray.fromHex(result_state.encode())):
+                    logger.debug(AppStrings.LOG_UI_RESULT_LAYOUT_DEFAULT)
             except Exception:
-                pass
+                # 손상된 저장값은 현재 기본 배치를 유지하며 검색 데이터에는 영향을 주지 않습니다.
+                logger.debug(AppStrings.LOG_UI_RESULT_LAYOUT_DEFAULT, exc_info=True)
         self._restore_column_widths(Constants.VIEW_RESULT)
         self._restore_column_widths(Constants.VIEW_MATCH)
 

@@ -57,8 +57,6 @@ class ConfigManager:
             logger.warning(AppStrings.LOG_CFG_APPDATA_FALLBACK.format(e, self.config_dir))
         self.config_path = os.path.join(self.config_dir, Constants.CONFIG_FILENAME)
         self.CURRENT_CONFIG_VERSION = Constants.CONFIG_SCHEMA_VERSION
-        self.last_load_error: Optional[Exception] = None
-        self.last_save_error: Optional[Exception] = None
         self._defaults: Dict[str, Any] = {
             Constants.CONFIG_KEY_VERSION: self.CURRENT_CONFIG_VERSION,
             Constants.CONFIG_KEY_FILTERS: {
@@ -103,7 +101,6 @@ class ConfigManager:
         }
         self._config_lock = threading.RLock()
         self._save_lock = threading.Lock()
-        self.last_load_error = None  # _load() 호출 전 에러 상태 초기화
         self._config: Dict[str, Any] = self._load()
         self.sessions_dir: str = os.path.join(self.config_dir, Constants.SESSIONS_DIRNAME)
         os.makedirs(self.sessions_dir, exist_ok=True)
@@ -244,13 +241,10 @@ class ConfigManager:
                     merged = self._apply_default_version_updates(merged, data)
                     return merged
             except json.JSONDecodeError as e:
-                self.last_load_error = e
                 logger.warning(AppStrings.LOG_CFG_LOAD_FAIL.format(e))
             except (IOError, OSError) as e:
-                self.last_load_error = e
                 logger.error(AppStrings.LOG_CFG_READ_ERROR.format(e))
             except Exception as e:
-                self.last_load_error = e
                 logger.error(AppStrings.LOG_CFG_UNEXPECTED_LOAD_ERROR.format(e))
         return copy.deepcopy(self._defaults)
 
@@ -390,17 +384,16 @@ class ConfigManager:
                         # Retry without moving the previous settings away.
                         # Failed replacement must preserve the original path.
                         os.replace(temp_path, self.config_path)
-                    self.last_save_error = None  # 성공 시 에러 상태 초기화
                     return True
                 except (IOError, OSError) as e:
-                    self.last_save_error = e
+                    # 종료 시에도 기존 설정 보존을 위해 같은 재시도 정책을 씁니다.
+                    # 대기 합계는 1초이며 파일 I/O와 저장 락 대기 시간은 별도입니다.
                     if attempt < 4:
                         logger.debug(AppStrings.LOG_CFG_SAVE_RETRY.format(attempt + 1, e))
                         time.sleep(0.1 * (attempt + 1))
                     else:
                         logger.error(AppStrings.LOG_CFG_SAVE_FAIL.format(e))
                 except Exception as e:
-                    self.last_save_error = e
                     logger.error(AppStrings.LOG_CFG_SAVE_FAIL.format(e), exc_info=True)
                     break
                 finally:
@@ -438,59 +431,16 @@ class ConfigManager:
             self._config[Constants.CONFIG_KEY_HISTORY] = history[:20]
         self.save()
 
-    def remove_history_item(self, text):
-        with self._config_lock:
-            history = self._config.get(Constants.CONFIG_KEY_HISTORY, [])
-            if isinstance(history, list) and text in history:
-                history.remove(text)
-            else:
-                return
-        # 락이 해제된 후에 저장을 예약하여 데드락 방지
-        self.save()
 
-    def clear_history(self):
-        with self._config_lock:
-            self._config[Constants.CONFIG_KEY_HISTORY] = []
-        self.save()
 
     def get_history(self):
         with self._config_lock:
             history = self._config.get(Constants.CONFIG_KEY_HISTORY, [])
             return copy.deepcopy(history) if isinstance(history, list) else []
 
-    def add_filename_history(self, filename):
-        """파일명 필터 히스토리를 최신순으로 추가한다."""
-        if not filename:
-            return
-        with self._config_lock:
-            history = self._config.get(Constants.CONFIG_KEY_FILENAME_HISTORY)
-            if not isinstance(history, list):
-                history = []
-                self._config[Constants.CONFIG_KEY_FILENAME_HISTORY] = history
-            if filename in history:
-                history.remove(filename)
-            history.insert(0, filename)
-            self._config[Constants.CONFIG_KEY_FILENAME_HISTORY] = history[:20]
-        self.save()
 
-    def remove_filename_history_item(self, text):
-        with self._config_lock:
-            history = self._config.get(Constants.CONFIG_KEY_FILENAME_HISTORY, [])
-            if isinstance(history, list) and text in history:
-                history.remove(text)
-            else:
-                return
-        self.save()
 
-    def clear_filename_history(self):
-        with self._config_lock:
-            self._config[Constants.CONFIG_KEY_FILENAME_HISTORY] = []
-        self.save()
 
-    def get_filename_history(self):
-        with self._config_lock:
-            history = self._config.get(Constants.CONFIG_KEY_FILENAME_HISTORY, [])
-            return copy.deepcopy(history) if isinstance(history, list) else []
 
     def _normalize_filter_container(self, value, fallback):
         if isinstance(value, dict):

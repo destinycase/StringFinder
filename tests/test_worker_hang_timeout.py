@@ -39,7 +39,7 @@ def test_worker_hang_timeout_resource_cleanup(mock_worker):
     
     from concurrent.futures import Future
 
-    # _get_adv_setting을 모킹하여 TIMEOUT_WORKER_HANG 값을 0.5초로 강제함
+    # _get_adv_setting을 모킹하여 검색 대기 설정값을 0.5초로 강제함
     with patch("core.worker._get_adv_setting", return_value=0.5):
         # GlobalExecutor.get_executor를 모킹하여 가짜 실행기 반환
         mock_executor = MagicMock()

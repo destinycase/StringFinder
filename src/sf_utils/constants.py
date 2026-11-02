@@ -40,30 +40,18 @@ class Constants:
     DEFAULT_TIMEOUT_WORKER_HANG = DEFAULTS["timeout_worker_hang"]
     DEFAULT_MAX_JSON_DEPTH = DEFAULTS["max_json_depth"]
     SETTING_MAX_SEARCH_FILE_SIZE_MB = 1024
-    DEFAULT_EXCEL_MAX_CONCURRENCY = DEFAULTS["excel_max_concurrency"]
-    DEFAULT_EXCEL_SERIALIZATION_THRESHOLD_MB = DEFAULTS["excel_serialization_threshold_mb"]
 
     # 유지보수 호환상 기존 상수를 기본값 기반 동적 연산 프로퍼티가 아닌 형태로 남길 경우:
-    MAX_JSON_DOM_SIZE = DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024
-    MAX_SMALL_FILE_SIZE = DEFAULT_MAX_SMALL_FILE_SIZE_MB * 1024 * 1024
-    JSON_MMAP_THRESHOLD = DEFAULT_JSON_MMAP_THRESHOLD_MB * 1024 * 1024
     
-    TYPE_SEARCH = "search"
-    TYPE_FILENAME = "filename"
     VIEW_RESULT = "result"
     VIEW_MATCH = "match"
     ENC_UTF8 = "utf-8"
     ENC_UTF8_SIG = "utf-8-sig"
-    ENC_UTF16 = "utf-16"
-    ENC_UTF16_LE = "utf-16-le"
-    ENC_UTF16_BE = "utf-16-be"
-    ENC_EUCKR = "euc-kr"
     ENC_CP949 = "cp949"
     MODE_XML = "XML"
     MODE_JSON = "JSON"
     MODE_EXCEL = "Excel"
     MODE_EXACT = AppStrings.SEARCH_MODE_EXACT
-    MODE_COMPLEX = AppStrings.SEARCH_MODE_COMPLEX
     MODE_NORMAL = "Normal"
     EXT_XML = ".xml"
     EXT_JSON = ".json"
@@ -78,7 +66,6 @@ class Constants:
     RUST_MODE_EXCLUDE_BINARY = 1 << 5
     SYMBOL_CLOSE = "×"
     YIELD_SLEEP_TIME = 0.001
-    HISTORY_ACTION_CLEAR = "action_clear"
     STATUS_SKIPPED = "SKIPPED"
     PAYLOAD_INPUTS = "inputs"
     PAYLOAD_RESULTS = "results"
@@ -131,8 +118,6 @@ class Constants:
     CONFIG_KEY_TABS = "tabs"
     OBJ_NAME_SEARCH_DOCK = "SearchDock"
     OBJ_NAME_FOLDER_DOCK = "FolderDock"
-    OBJ_NAME_EXT_DOCK = "ExtDock"
-    OBJ_NAME_FILENAME_DOCK = "FilenameDock"
     
     # 고급 설정용 키
     CONFIG_KEY_ADVANCED = "advanced"
@@ -217,9 +202,6 @@ class Constants:
     BATCH_SIZE_NORMAL = 100
     # 워커 진단/호환용 최근 결과만 보관합니다. 전체 결과는 UI 시그널로 전달됩니다.
     WORKER_RESULT_RETENTION = 2_048
-    TIMEOUT_WORKER_HANG = DEFAULT_TIMEOUT_WORKER_HANG
-    MAX_TOTAL_MATCHES = DEFAULT_MAX_TOTAL_MATCHES  # 글로벌 매치 상한 (기본값 캐시)
-    MAX_PER_FILE_MATCHES = DEFAULT_MAX_PER_FILE_MATCHES  # 파일당 매치 상한 (기본값 캐시)
     # 검색 프로세스 트리 기준 보호값입니다. 시스템 전체 사용률만 보면
     # 다른 애플리케이션의 메모리 사용 때문에 정상 검색이 중단될 수 있습니다.
     # 메모리 보호는 전체 RAM 비율만으로 판정하지 않습니다. 저용량 장치에서는

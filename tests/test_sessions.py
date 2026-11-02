@@ -58,7 +58,7 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
     qtbot.addWidget(tab)
 
     tab.search_panel.search_combo.set_current_text("persistent_query")
-    tab.filename_panel.filename_combo.set_current_text("*.py")
+    tab.filename_panel.add_filename("report,invoice")
     tab.logs_output.setPlainText("Test Logs")
 
     test_results = [("path/to/file.txt", 1, [[1, "line content"]])]
@@ -79,6 +79,7 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
     new_tab.load_state(state)
 
     assert new_tab.search_panel.search_combo.currentText() == "persistent_query"
+    assert new_tab.filename_panel.get_selected_filenames() == ["report", "invoice"]
     assert new_tab.result_view_panel.result_model.rowCount() == 1
     assert new_tab.logs_output.toPlainText() == "Test Logs"
     assert not new_tab.result_view_panel.result_splitter.isHidden()

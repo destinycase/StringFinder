@@ -91,6 +91,7 @@ def main():
                     try:
                         logger.debug(AppStrings.LOG_SYS_STDERR_FLUSH_FAIL.format(e))
                     except Exception:
+                        # 표준 오류와 로그가 모두 닫혔으면 종료 경로에서 추가 진단을 시도하지 않습니다.
                         pass
             if "QThread: Destroyed while thread" in text and not self.warning_detected:
                 self.warning_detected = True
@@ -119,6 +120,7 @@ def main():
                         try:
                             self.original_stderr.write(f"Failed to schedule warning popup: {e}\n")
                         except Exception:
+                            # 표준 오류의 대체 출력까지 실패하면 재귀 로깅을 피하기 위해 무시합니다.
                             pass
             elif "DirectWrite: CreateFontFaceFromHDC() failed" in text:
                 # Windows 환경의 특정 폰트 렌더링 로그 노이즈를 필터링합니다.
