@@ -2172,14 +2172,14 @@ def search_in_file(
         with open(file_path, "rb") as f_chk:
             head = f_chk.read(4096)
             detected_enc_quick = detect_encoding_quickly(head)
-    except Exception:
-        pass
+    except Exception as error:
+        # 감지 함수의 예상 밖 오류도 검색을 막지 않습니다. 기존 재읽기 동작을 유지합니다.
+        logger.debug(AppStrings.LOG_SCH_ENCODING_PROBE_FAIL.format(file_path, error), exc_info=True)
 
     t_rust = 0.0
     t_norm = 0.0
     rust_results = None
-    # Default searches use the fast Rust engine. Miss-prevention searches intentionally
-    # use Python so Unicode case folding and normalization follow one policy.
+    # 기본 검색은 Rust를, 글자 변형 검색은 Python을 사용해 해당 비교 정책을 유지합니다.
     # Cache the binary classification only on paths that may need Python.
     is_binary = is_binary_file(file_path) if not HAS_RUST_ENGINE or use_complex_search else False
     if HAS_RUST_ENGINE and not use_complex_search and not force_python:
@@ -2244,9 +2244,20 @@ def search_in_file(
                             # NUL 바이트가 포함되어 있으면 UTF-16일 가능성이 높으므로 폴백 허용
                             if b"\x00" not in chk_data:
                                 return None
-                except Exception:
-                    logger.debug(AppStrings.LOG_SCH_ENGINE_ISOLATION_BAIL.format("(Pre-check fail)", file_path))
-                    return None
+                except OSError as error:
+                    logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
+                    return (
+                        Constants.STATUS_SKIPPED,
+                        AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(error)),
+                    )
+                except Exception as error:
+                    logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
+                    return (
+                        Constants.STATUS_SKIPPED,
+                        AppStrings.ERROR_UNEXPECTED_FILE.format(
+                            file_path, _localize_internal_error_detail("encoding compatibility check", error)
+                        ),
+                    )
         except Exception as e:
             logger.error(AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format(file_path, e), exc_info=True)
             return (
@@ -2257,8 +2268,7 @@ def search_in_file(
                 ),
             )
 
-    # Python handles miss-prevention searches and the limited compatibility cases that
-    # cannot be completed by the Rust path.
+    # 글자 변형 검색과 Rust에서 끝내지 못한 제한된 호환 경로만 Python에서 처리합니다.
     exclude_binary = bool(kwargs.get("exclude_binary", False))
     if exclude_binary and is_binary:
         # 옵션 계약 준수: 바이너리 파일 제외 시 Python 경로에서도 즉시 반환
@@ -2278,9 +2288,20 @@ def search_in_file(
                         detected = detect_encoding_quickly(chk_data)
                         if detected not in ["utf-16-le", "utf-16-be"]:
                             return None
-        except Exception:
-            logger.debug(AppStrings.LOG_SCH_ENGINE_ISOLATION_BAIL.format("(Python Fallback fail)", file_path))
-            return None
+        except OSError as error:
+            logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(error)),
+            )
+        except Exception as error:
+            logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_UNEXPECTED_FILE.format(
+                    file_path, _localize_internal_error_detail("encoding compatibility check", error)
+                ),
+            )
     is_exact = bool(special_mode and Constants.MODE_EXACT in special_mode)
     max_per_file = _positive_limit(
         None,

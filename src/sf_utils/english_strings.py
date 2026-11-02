@@ -472,6 +472,8 @@ ENGLISH_STRINGS = {
     "LOG_SYS_RUST_PATH": "[System] Loaded Rust engine path: {}",
     "LOG_SYS_RUST_HASH": "[System] Rust engine integrity check (SHA-256): {}",
     "LOG_SCH_RUST_PERF_STATS": "[Performance] Raw Rust statistics: Count={}, Call={:.4f}s, Norm={:.4f}s",
+    "LOG_SCH_ENCODING_PROBE_FAIL": "[Engine] Encoding pre-check failed ('{}'): {}. Encoding is unconfirmed; continuing the search.",
+    "LOG_SCH_COMPATIBILITY_PROBE_FAIL": "[Engine] Compatibility pre-read failed ('{}'): {}",
     "LOG_SCH_ENGINE_ISOLATION_BAIL": "[Engine] Task blocked by isolation policy (reason: {}): {}",
     "ERROR_TITLE": "Error",
     "ERROR_UNKNOWN": "Unknown system error.",

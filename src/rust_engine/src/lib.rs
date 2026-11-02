@@ -34,6 +34,42 @@ type RawFileMatches = Vec<(String, Vec<RawMatch>)>;
 type FileMatches = Vec<(String, Vec<SearchMatch>)>;
 type SkippedEntries = Vec<(String, String)>;
 
+// 호출자는 모든 송신자를 닫고 GIL을 해제한 상태에서 이 함수를 호출합니다.
+// 하나가 실패해도 나머지 스레드를 끝까지 정리한 뒤 오류를 돌려줍니다.
+fn join_auxiliary_threads(
+    dispatcher: Option<std::thread::JoinHandle<()>>,
+    monitor: Option<std::thread::JoinHandle<()>>,
+) -> Option<String> {
+    let mut error: Option<String> = None;
+    for (name, handle) in [
+        ("results dispatcher", dispatcher),
+        ("monitor thread", monitor),
+    ] {
+        if let Some(handle) = handle {
+            if handle.join().is_err() {
+                let message = format!("{name} terminated unexpectedly");
+                if let Some(previous) = error.as_mut() {
+                    previous.push_str("; ");
+                    previous.push_str(&message);
+                } else {
+                    error = Some(message);
+                }
+            }
+        }
+    }
+    error
+}
+
+fn merge_completion_errors(
+    callback_error: Option<String>,
+    thread_error: Option<String>,
+) -> Option<String> {
+    match (callback_error, thread_error) {
+        (Some(callback), Some(thread)) => Some(format!("{callback}; {thread}")),
+        (callback, thread) => callback.or(thread),
+    }
+}
+
 const REASON_ERR_MMAP: &str = "ERR_MMAP";
 const REASON_ERR_OPEN: &str = "ERR_OPEN";
 const REASON_ERR_ENCODING: &str = "ERR_ENCODING";
@@ -616,8 +652,17 @@ fn search_file(
     }
     // The monitor needs the GIL to check the Python cancellation event.
     // Release it while joining, including when the search returns an error.
-    if let Some(h) = monitor_handle {
-        let _ = py.allow_threads(|| h.join());
+    let thread_error = if let Some(handle) = monitor_handle {
+        py.allow_threads(|| join_auxiliary_threads(None, Some(handle)))
+    } else {
+        None
+    };
+    if let Some(thread_error) = thread_error {
+        let message = match &res {
+            Some(Err(search_error)) => format!("{search_error}; {thread_error}"),
+            _ => thread_error,
+        };
+        return Err(pyo3::exceptions::PyRuntimeError::new_err(message));
     }
 
     match res {
@@ -1398,7 +1443,7 @@ pub fn search_dir(
     let skipped = Arc::new(Mutex::new(Vec::new()));
     let tx_main = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
 
-    py.allow_threads(|| {
+    let thread_error = py.allow_threads(|| {
         for root_path in root_paths {
             if stop_flag.load(Ordering::Relaxed) {
                 break;
@@ -1583,13 +1628,11 @@ pub fn search_dir(
         done_flag.store(true, Ordering::SeqCst);
         let _ = monitor_done_tx.send(());
         drop(tx_main);
-        if let Some((tx, handle)) = results_dispatcher {
+        let dispatcher_handle = results_dispatcher.map(|(tx, handle)| {
             drop(tx);
-            let _ = handle.join();
-        }
-        if let Some(h) = monitor_handle {
-            let _ = h.join();
-        }
+            handle
+        });
+        join_auxiliary_threads(dispatcher_handle, monitor_handle)
     });
 
     let final_res = to_python_file_matches(
@@ -1602,7 +1645,7 @@ pub fn search_dir(
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
-    if let Some(error) = callback_state.error_message() {
+    if let Some(error) = merge_completion_errors(callback_state.error_message(), thread_error) {
         return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error));
     }
     Ok((final_res, final_skip))
@@ -1913,13 +1956,11 @@ fn search_files_list(
         done_flag.store(true, Ordering::SeqCst);
         let _ = monitor_done_tx.send(());
         drop(tx_main);
-        if let Some((tx, handle)) = results_dispatcher {
+        let dispatcher_handle = results_dispatcher.map(|(tx, handle)| {
             drop(tx);
-            let _ = handle.join();
-        }
-        if let Some(h) = monitor_handle {
-            let _ = h.join();
-        }
+            handle
+        });
+        let thread_error = join_auxiliary_threads(dispatcher_handle, monitor_handle);
         let final_res = to_python_file_matches(
             results
                 .lock()
@@ -1930,7 +1971,7 @@ fn search_files_list(
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        if let Some(error) = callback_state.error_message() {
+        if let Some(error) = merge_completion_errors(callback_state.error_message(), thread_error) {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error));
         }
         Ok((final_res, final_skip))
@@ -1954,8 +1995,8 @@ fn validate_query_length(query: &str) -> PyResult<()> {
 fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // [Stability] 커스텀 패닉 훅 설치:
     // Excel 파서의 unwind 패닉은 해당 처리 경계에서 사용자용 오류로 변환합니다.
-    // 원시 패닉 출력 억제는 예외 처리를 대신하지 않습니다. 보조 스레드의
-    // join 실패 전달은 별도 보완 대상이며 이 훅의 동작은 여기서 바꾸지 않습니다.
+    // 원시 패닉 출력 억제는 예외 처리를 대신하지 않습니다.
+    // 보조 스레드는 GIL을 해제한 상태에서 모두 정리하고 join 실패를 오류로 전달합니다.
     std::panic::set_hook(Box::new(|_info| {
         // 기존 출력 억제 정책 유지. 모든 패닉이 복구된다는 의미는 아닙니다.
     }));
@@ -2031,6 +2072,86 @@ fn extract_line_content_bytes(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn auxiliary_threads_join_normally_without_an_error() {
+        let completed = Arc::new(AtomicU64::new(0));
+        let first = completed.clone();
+        let second = completed.clone();
+        let dispatcher = std::thread::spawn(move || {
+            first.fetch_add(1, Ordering::SeqCst);
+        });
+        let monitor = std::thread::spawn(move || {
+            second.fetch_add(1, Ordering::SeqCst);
+        });
+        assert!(join_auxiliary_threads(Some(dispatcher), Some(monitor)).is_none());
+        assert_eq!(completed.load(Ordering::SeqCst), 2);
+        assert!(join_auxiliary_threads(None, None).is_none());
+    }
+
+    #[test]
+    fn dispatcher_panic_does_not_skip_joining_the_monitor() {
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        let (finished, received) = std::sync::mpsc::channel();
+        let completed = Arc::new(AtomicBool::new(false));
+        let monitor_completed = completed.clone();
+        let dispatcher = std::thread::spawn(|| panic!("test dispatcher failure"));
+        let monitor = std::thread::spawn(move || {
+            wait.recv().unwrap();
+            monitor_completed.store(true, Ordering::SeqCst);
+        });
+        let cleanup = std::thread::spawn(move || {
+            finished
+                .send(join_auxiliary_threads(Some(dispatcher), Some(monitor)))
+                .unwrap();
+        });
+        assert!(matches!(
+            received.recv_timeout(std::time::Duration::from_millis(50)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        release.send(()).unwrap();
+        let error = received
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        cleanup.join().unwrap();
+        assert!(completed.load(Ordering::SeqCst));
+        assert_eq!(error, "results dispatcher terminated unexpectedly");
+    }
+
+    #[test]
+    fn monitor_panic_is_reported_without_a_dispatcher() {
+        let monitor = std::thread::spawn(|| panic!("test monitor failure"));
+        assert_eq!(
+            join_auxiliary_threads(None, Some(monitor)).as_deref(),
+            Some("monitor thread terminated unexpectedly")
+        );
+    }
+
+    #[test]
+    fn completion_errors_preserve_both_thread_failures_and_callback_error() {
+        let dispatcher = std::thread::spawn(|| panic!("test dispatcher failure"));
+        let monitor = std::thread::spawn(|| panic!("test monitor failure"));
+        let thread_error = join_auxiliary_threads(Some(dispatcher), Some(monitor));
+        assert_eq!(
+            merge_completion_errors(Some("results callback failed: probe".into()), thread_error)
+                .as_deref(),
+            Some("results callback failed: probe; results dispatcher terminated unexpectedly; monitor thread terminated unexpectedly")
+        );
+    }
+
+    #[test]
+    fn completion_errors_preserve_existing_callback_only_behavior() {
+        assert!(merge_completion_errors(None, None).is_none());
+        assert_eq!(
+            merge_completion_errors(Some("original callback error".into()), None).as_deref(),
+            Some("original callback error")
+        );
+        assert_eq!(
+            merge_completion_errors(None, Some("monitor thread terminated unexpectedly".into()))
+                .as_deref(),
+            Some("monitor thread terminated unexpectedly")
+        );
+    }
     use super::*;
 
     #[test]

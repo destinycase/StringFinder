@@ -6,7 +6,6 @@ class ResultProxyModel(QSortFilterProxyModel):
 
 
 
-
     def filterAcceptsRow(self, _source_row, _source_parent):
         """필터링은 소스 모델(SearchResultModel)에서 직접 처리합니다."""
         return True
@@ -34,7 +33,6 @@ class MatchProxyModel(QSortFilterProxyModel):
     """
     상세 목록을 뷰에 연결합니다. 컬럼별 필터링은 원본 모델에서 처리합니다.
     """
-
 
 
     def filterAcceptsRow(self, _source_row, _source_parent):

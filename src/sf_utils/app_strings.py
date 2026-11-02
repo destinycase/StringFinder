@@ -532,6 +532,8 @@ class AppStrings:
     LOG_SYS_RUST_PATH = "[시스템] 로드된 Rust 엔진 경로: {}"
     LOG_SYS_RUST_HASH = "[시스템] Rust 엔진 무결성 체크(SHA-256): {}"
     LOG_SCH_RUST_PERF_STATS = "[성능] Rust 원시 통계: Count={}, Call={:.4f}s, Norm={:.4f}s"
+    LOG_SCH_ENCODING_PROBE_FAIL = "[엔진] 인코딩 사전 확인 실패 ('{}'): {}. 인코딩을 확정하지 못했지만 검색을 계속합니다."
+    LOG_SCH_COMPATIBILITY_PROBE_FAIL = "[엔진] 호환성 사전 읽기 실패 ('{}'): {}"
     LOG_SCH_ENGINE_ISOLATION_BAIL = "[엔진] 고립 정책에 의한 작업 차단 (사유: {}): {}"
     # =========================================================================
     # [12] 에러 메시지 (Error Messages) - 형식: [오류] 메시지
