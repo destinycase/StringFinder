@@ -32,16 +32,20 @@ def test_defaults_and_menu_order(qtbot, language):
     assert [action.text() for action in panel.value_menu.actions()] == [
         AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6)
     ]
-    assert panel.search_settings_button.text() == AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(
-        AppStrings.SEARCH_PROFILE_NORMAL, AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[0]
-    )
+    assert panel.search_settings_button.text() == AppStrings.SEARCH_PROFILE_NORMAL_COMPACT
     assert not hasattr(panel, "search_settings_summary")
     assert panel.search_settings_button.menu() is None
     assert panel.search_settings_button.accessibleName() == (
-        "검색 모드: 일반 검색 / 특수 검색 : 사용 안함" if language == "ko"
-        else "Search mode: Normal search / Special search: Off"
+        "검색 모드: 기본 검색 (권장) / 값만 검색: 사용 안 함" if language == "ko"
+        else "Search mode: Default search (recommended) / Values only: Off"
     )
     assert not hasattr(panel, "search_profile_combo")
+    assert [action.text() for action in panel.profile_actions] == (
+        ["기본 검색 (권장)", "글자 변형 검색 (느림)"] if language == "ko"
+        else ["Default search (recommended)", "Character variant search (slow)"]
+    )
+    assert panel.search_settings_label.text() == ("검색 설정" if language == "ko" else "Search settings")
+    assert panel.search_settings_label.buddy() is panel.search_settings_button
 
 
 @pytest.mark.parametrize("precise", [False, True])
@@ -62,10 +66,11 @@ def test_each_group_has_exactly_one_selection(qtbot, language, precise, value_in
     assert panel.search_settings_button.accessibleName() == AppStrings.SEARCH_SETTINGS_SELECTION.format(
         profile, AppStrings.SPECIAL_SEARCH_MENU_ITEMS[value_index]
     )
-    assert panel.search_settings_button.text() == AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(
-        AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if precise else profile,
-        AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[value_index]
-    )
+    compact_profile = AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if precise else AppStrings.SEARCH_PROFILE_NORMAL_COMPACT
+    value = AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[value_index]
+    expected = AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(compact_profile, value) if value else compact_profile
+    assert panel.search_settings_button.text() == expected
+    assert panel.search_settings_label.buddy() is panel.search_settings_button
     assert (not panel.search_settings_button.icon().isNull()) is precise
 
 
@@ -143,15 +148,21 @@ def test_requested_labels_and_input_order(qtbot, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
     row = panel.input_layout
-    assert row.itemAt(0).widget() is panel.search_settings_button
+    assert row.itemAtPosition(0, 0).widget() is panel.search_settings_label
     assert panel.search_label.text() == ("검색할 문자열" if language == "ko" else "Text to search")
     assert row.indexOf(panel.search_settings_button) < row.indexOf(panel.search_combo) < row.indexOf(panel.search_btn)
     if language == "ko":
-        assert panel.value_menu.title() == "특수 검색"
+        assert panel.value_menu.title() == "값만 검색"
         assert [action.text() for action in panel.value_menu.actions()] == [
-            "사용 안함", "JSON 값 만 검색 (부분 일치)", "JSON 값 만 검색 (정확히 일치)",
-            "XML 값 만 검색 (부분 일치)", "XML 값 만 검색 (정확히 일치)",
-            "EXCEL 값 만 검색 (부분 일치)", "EXCEL 값 만 검색 (정확히 일치)",
+            "사용 안 함", "JSON (부분 일치)", "JSON (정확히 일치)",
+            "XML (부분 일치)", "XML (정확히 일치)",
+            "Excel (부분 일치)", "Excel (정확히 일치)",
+        ]
+    else:
+        assert panel.value_menu.title() == "Values only"
+        assert [action.text() for action in panel.value_menu.actions()] == [
+            "Off", "JSON (contains)", "JSON (exact)", "XML (contains)", "XML (exact)",
+            "Excel (contains)", "Excel (exact)",
         ]
 
 
@@ -181,10 +192,14 @@ def test_long_selection_keeps_query_and_buttons_inside_panel(qtbot, language, wi
     panel.resize(width, 220)
     panel.show()
     qtbot.wait(30)
-    for widget in (panel.search_label, panel.search_combo, panel.search_settings_button, panel.search_btn):
+    for widget in (panel.search_settings_label, panel.search_label, panel.search_combo, panel.search_settings_button, panel.search_btn):
         assert widget.geometry().right() < panel.width()
         assert widget.geometry().left() >= 0
     assert panel.search_combo.width() >= 100
+    assert panel.search_settings_label.width() == panel.search_label.width()
+    if panel._toolbar_mode == 2:
+        assert panel.search_settings_label.geometry().left() == panel.search_label.geometry().left()
+        assert panel.search_settings_button.geometry().left() == panel.search_combo.geometry().left()
     if panel._toolbar_mode == 1:
         assert abs(panel.search_combo.geometry().center().y()
                    - panel.search_settings_button.geometry().center().y()) <= 1
@@ -250,3 +265,37 @@ def test_old_modes_restore_in_current_language(qtbot, old_mode, index, language)
     panel.load_state({C.PAYLOAD_USE_COMPLEX_SEARCH: True, C.PAYLOAD_SPECIAL_MODE: old_mode})
     assert panel.is_complex_search()
     assert panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[index]].isChecked()
+
+
+@pytest.mark.parametrize("precise", [False, True])
+@pytest.mark.parametrize("saved_mode,index", [
+    ("사용 안함", 0), ("Off", 0),
+    ("XML (부분 일치)", 1), ("XML (정확히 일치)", 2),
+    ("JSON (부분 일치)", 3), ("JSON (정확히 일치)", 4),
+    ("Excel (부분 일치)", 5), ("Excel (정확히 일치)", 6),
+    ("XML (contains)", 1), ("XML (exact)", 2),
+    ("JSON (contains)", 3), ("JSON (exact)", 4),
+    ("Excel (contains)", 5), ("Excel (exact)", 6),
+])
+def test_legacy_saved_values_remain_engine_values(qtbot, language, precise, saved_mode, index):
+    expected = (["사용 안함", "XML (부분 일치)", "XML (정확히 일치)",
+                 "JSON (부분 일치)", "JSON (정확히 일치)", "Excel (부분 일치)", "Excel (정확히 일치)"]
+                if language == "ko" else
+                ["Off", "XML (contains)", "XML (exact)", "JSON (contains)", "JSON (exact)",
+                 "Excel (contains)", "Excel (exact)"])
+    assert AppStrings.SPECIAL_SEARCH_ITEMS == expected
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    panel.load_state({C.PAYLOAD_USE_COMPLEX_SEARCH: precise, C.PAYLOAD_SPECIAL_MODE: saved_mode})
+    state = panel.get_state()
+    assert state[C.PAYLOAD_USE_COMPLEX_SEARCH] is precise
+    assert state[C.PAYLOAD_SPECIAL_MODE] == expected[index]
+
+
+def test_display_resources_do_not_use_retired_names(language):
+    for key in ("SEARCH_PROFILE_NORMAL", "SEARCH_PROFILE_PRECISE", "SEARCH_PROFILE_PRECISE_COMPACT",
+                "SPECIAL_SEARCH_LABEL", "SPECIAL_SEARCH_MENU_ITEMS", "COMPLEX_SEARCH_TOOLTIP",
+                "SEARCH_HELP_TEXT", "SEARCH_EDIT_PLACEHOLDER", "RESULT_EMPTY_NO_MATCH"):
+        value = str(getattr(AppStrings, key))
+        for retired in ("누락 방지", "특수 검색", "값 만", "Miss-prevention", "Special search"):
+            assert retired not in value

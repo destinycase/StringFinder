@@ -273,7 +273,9 @@ class SearchOptionsPanel(QWidget):
         layout = QVBoxLayout(self)
         input_layout = QGridLayout()
         self.input_layout = input_layout
+        self.search_settings_label = QLabel(AppStrings.SEARCH_SETTINGS_LABEL)
         self.search_settings_button = QPushButton()
+        self.search_settings_label.setBuddy(self.search_settings_button)
         self.search_settings_button.setStyleSheet("QPushButton { text-align: left; padding-left: 8px; }")
         self.search_settings_menu = QMenu(self.search_settings_button)
         self.profile_menu = SearchProfileMenu(AppStrings.SEARCH_PROFILE_LABEL, self.search_settings_menu)
@@ -361,34 +363,39 @@ class SearchOptionsPanel(QWidget):
             control.setFixedHeight(height)
         metrics = self.search_settings_button.fontMetrics()
         # Reserve the longest selection and warning icon, independent of the current choice.
-        self.search_settings_button.setFixedWidth(max(
-            metrics.horizontalAdvance(AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(profile, value))
-            for profile in (AppStrings.SEARCH_PROFILE_NORMAL, AppStrings.SEARCH_PROFILE_PRECISE_COMPACT)
+        selections = [
+            profile if not value else AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(profile, value)
+            for profile in (AppStrings.SEARCH_PROFILE_NORMAL_COMPACT, AppStrings.SEARCH_PROFILE_PRECISE_COMPACT)
             for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS
-        ) + 48)
+        ]
+        self.search_settings_button.setFixedWidth(max(metrics.horizontalAdvance(text) for text in selections) + 48)
+        label_width = max(self.search_label.sizeHint().width(), self.search_settings_label.sizeHint().width())
+        self.search_label.setFixedWidth(label_width)
+        self.search_settings_label.setFixedWidth(label_width)
         margins = cast(QVBoxLayout, self.layout()).contentsMargins()  # Installed in _init_ui.
         available = self.width() - margins.left() - margins.right()
         spacing = max(0, self.input_layout.horizontalSpacing())
         action_width = max(self.search_btn.sizeHint().width(), self.stop_btn.sizeHint().width())
         settings_width = self.search_settings_button.width()
-        full_width = self.search_label.sizeHint().width() + 140 + settings_width + action_width + 3 * spacing
+        full_width = 2 * label_width + 140 + settings_width + action_width + 4 * spacing
         mode = 1 if available >= full_width else 2
         if mode == self._toolbar_mode:
             return
         self._toolbar_mode = mode
-        for widget in (self.search_settings_button, self.search_label, self.search_combo,
-                       self.search_btn, self.stop_btn):
+        for widget in (self.search_settings_label, self.search_settings_button, self.search_label,
+                       self.search_combo, self.search_btn, self.stop_btn):
             self.input_layout.removeWidget(widget)
-        self.input_layout.addWidget(self.search_settings_button, 0, 0, 1, 1 if mode == 1 else 4,
+        for column in range(5):
+            self.input_layout.setColumnStretch(column, 0)
+        self.input_layout.addWidget(self.search_settings_label, 0, 0)
+        self.input_layout.addWidget(self.search_settings_button, 0, 1, 1, 1 if mode == 1 else 2,
                                     Qt.AlignmentFlag.AlignLeft)
         query_row = 0 if mode == 1 else 1
-        self.input_layout.addWidget(self.search_label, query_row, 1 if mode == 1 else 0)
-        self.input_layout.addWidget(self.search_combo, query_row, 2 if mode == 1 else 1,
-                                    1, 1 if mode == 1 else 2)
-        self.input_layout.addWidget(self.search_btn, query_row, 3)
-        self.input_layout.addWidget(self.stop_btn, query_row, 3)
-        self.input_layout.setColumnStretch(1, 0 if mode == 1 else 1)
-        self.input_layout.setColumnStretch(2, 1)
+        self.input_layout.addWidget(self.search_label, query_row, 2 if mode == 1 else 0)
+        self.input_layout.addWidget(self.search_combo, query_row, 3 if mode == 1 else 1)
+        self.input_layout.addWidget(self.search_btn, query_row, 4 if mode == 1 else 2)
+        self.input_layout.addWidget(self.stop_btn, query_row, 4 if mode == 1 else 2)
+        self.input_layout.setColumnStretch(3 if mode == 1 else 1, 1)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -407,10 +414,13 @@ class SearchOptionsPanel(QWidget):
         value = AppStrings.SPECIAL_SEARCH_MENU_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
         text = AppStrings.SEARCH_SETTINGS_SELECTION.format(profile, value)
         self.search_settings_button.setAccessibleName(text)
-        self.search_settings_button.setText(AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(
-            AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if self._use_complex_search else profile,
-            AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
-        ))
+        compact_profile = (AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if self._use_complex_search
+                           else AppStrings.SEARCH_PROFILE_NORMAL_COMPACT)
+        compact_value = AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
+        self.search_settings_button.setText(
+            AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(compact_profile, compact_value)
+            if compact_value else compact_profile
+        )
         self.search_settings_button.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP if self._use_complex_search else "")
         self._layout_search_controls()
 

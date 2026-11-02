@@ -100,12 +100,12 @@ class AppStrings:
     ADVANCED_ALLOW_DUPLICATE_JSON_KEYS = "JSON 중복 키"
     JSON_DUPLICATE_KEYS_DENY = "허용 안 함"
     JSON_DUPLICATE_KEYS_ALLOW = "허용"
-    JSON_DUPLICATE_KEYS_DESCRIPTION = "JSON 특수 검색에 적용됩니다. 허용하면 반복된 키의 모든 값을 검색합니다."
+    JSON_DUPLICATE_KEYS_DESCRIPTION = "JSON 값만 검색에 적용됩니다. 허용하면 반복된 키의 모든 값을 검색합니다."
     ADVANCED_MAX_TOTAL_MATCHES = "전체 검색 결과 수 제한"
     ADVANCED_MAX_PER_FILE_MATCHES = "파일당 검색 결과 수 제한"
     ADVANCED_MAX_SEARCH_FILE_SIZE = "검색 파일 크기 제한"
     ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION = "모든 검색 방식과 파일 형식에 적용되는 파일 크기 상한입니다. 설정한 크기를 초과하는 파일은 건너뜁니다. 최대 1GB까지 설정할 수 있습니다."
-    ADVANCED_PRECISE_SEARCH_GROUP = "누락 방지 검색 전용"
+    ADVANCED_PRECISE_SEARCH_GROUP = "글자 변형 검색 전용"
     ADVANCED_DIAGNOSTICS_GROUP = "진단 도구"
     ADVANCED_MAX_SMALL_FILE_SIZE = "작은 텍스트 파일 빠른 처리 기준"
     ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION = "이 크기보다 작은 텍스트 파일은 더 빠른 방식으로 처리합니다."
@@ -147,26 +147,28 @@ class AppStrings:
     # [3] 도움말 및 툴팁 (Tooltips & Guidance)
     # =========================================================================
     COMPLEX_SEARCH_TOOLTIP = (
-        "다음 경우에 누락 방지 검색을 사용하세요.\n\n"
-        "• macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
-        "• 독일어 ß↔ss 등 다국어 특수 대소문자 · 분음 기호\n"
-        "• 기본 검색에서 누락된 비표준 또는 일부 손상 인코딩 텍스트\n\n"
-        "일반적인 한글·영문 검색은 일반 검색을 권장합니다."
+        "기본 검색으로 찾지 못했을 때만 글자 변형 검색을 사용하세요.\n\n"
+        "• 한글 자모의 조합·분리 표현 차이(NFC/NFD)\n"
+        "• 독일어 ß와 ss 같은 특수 대소문자 관계\n\n"
+        "느리므로 적은 파일부터 시도하세요. 모든 인코딩 문제를 해결하지는 않습니다."
     )
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_BINARY_LABEL = "바이너리 파일 제외"
     SEARCH_PROFILE_LABEL = "검색 모드"
-    SEARCH_PROFILE_NORMAL = "일반 검색"
-    SEARCH_PROFILE_PRECISE = "누락 방지 검색(매우 느림)"
+    SEARCH_PROFILE_NORMAL = "기본 검색 (권장)"
+    SEARCH_SETTINGS_LABEL = "검색 설정"
+    SEARCH_PROFILE_NORMAL_COMPACT = "기본 검색"
+    SPECIAL_SEARCH_OFF_DISPLAY = "사용 안 함"
+    SEARCH_PROFILE_PRECISE = "글자 변형 검색 (느림)"
     FILENAME_FILTER_INVALID_GROUP = "쉼표 사이에 파일명 조건을 입력하세요."
     SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
-    SPECIAL_SEARCH_LABEL = "특수 검색"
-    SEARCH_SETTINGS_SELECTION = "검색 모드: {} / 특수 검색 : {}"
-    SEARCH_PROFILE_PRECISE_COMPACT = "누락 방지"
+    SPECIAL_SEARCH_LABEL = "값만 검색"
+    SEARCH_SETTINGS_SELECTION = "검색 모드: {} / 값만 검색: {}"
+    SEARCH_PROFILE_PRECISE_COMPACT = "글자 변형 검색 (느림)"
     SEARCH_SETTINGS_COMPACT_SELECTION = "{} · {}"
     SPECIAL_SEARCH_COMPACT_ITEMS = [
-        "특수 검색 사용 안함", "XML 부분 일치", "XML 정확히 일치",
-        "JSON 부분 일치", "JSON 정확히 일치", "EXCEL 부분 일치", "EXCEL 정확히 일치",
+        "", "XML 값 (부분 일치)", "XML 값 (정확히 일치)",
+        "JSON 값 (부분 일치)", "JSON 값 (정확히 일치)", "Excel 값 (부분 일치)", "Excel 값 (정확히 일치)",
     ]
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
@@ -189,17 +191,17 @@ class AppStrings:
 		"<p>- 파일명 필터에는 와일드카드를 사용할 수 없습니다.</p>"
         "<br>"
         "<h3>검색 설정</h3>"
-		"<p>- 검색할 문자열 입력 칸 왼쪽 버튼을 눌러 <b>검색 모드</b>와 <b>특수 검색</b>를 선택할 수 있습니다.</p>"
+		"<p>- 검색할 문자열 입력 칸 왼쪽 버튼을 눌러 <b>검색 모드</b>와 <b>값만 검색</b>을 선택할 수 있습니다.</p>"
 		"<h4>검색 모드</h4>"
-        "<p><b>일반 검색</b></p>"
+        "<p><b>기본 검색</b></p>"
 		"<p>일반적인 영어, 한글 검색을 합니다.(기본)</p>"
-        "<p><b>누락 방지 검색</b></p>"
+        "<p><b>글자 변형 검색</b></p>"
 		"<p>- 파일에 글자가 있는데 찾지 못했을 때 좁은 범위에서 시도하세요. 매우 느립니다. 아래 경우 이용하세요.</p>"
 		"<p>- macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열</p>"
-		"<p>- 독일어 ß↔ss 등 다국어 특수 대소문자 · 분음 기호</p>"
-		"<p>- 비표준 또는 일부 손상 인코딩 텍스트</p>"
-		"<h4>특수 검색</h4>"
-        "<p><b>사용 안함</b></p>"
+		"<p>- 독일어 ß↔ss 등 다국어 특수 대소문자 관계</p>"
+		"<p>- 인코딩 문제는 설정의 문자 인코딩을 확인하세요. 이 검색 방식도 모든 인코딩 문제를 해결하지는 않습니다.</p>"
+		"<h4>값만 검색</h4>"
+        "<p><b>사용 안 함</b></p>"
 		"<p>- 확장자 필터 조건을 사용합니다. 검색 전체를 끄는 설정이 아닙니다.(기본)</p>"
         "<p><b>JSON/XML</b></p>"
 		"<p>- 항목·태그·속성 이름을 제외하고 값을 검색합니다.</p>"
@@ -240,19 +242,19 @@ class AppStrings:
     ]
     # Stable engine/session values above; independently editable menu labels below.
     SPECIAL_SEARCH_MENU_ITEMS = [
-        SPECIAL_SEARCH_OFF,
-        "XML 값 만 검색 (부분 일치)",
-        "XML 값 만 검색 (정확히 일치)",
-        "JSON 값 만 검색 (부분 일치)",
-        "JSON 값 만 검색 (정확히 일치)",
-        "EXCEL 값 만 검색 (부분 일치)",
-        "EXCEL 값 만 검색 (정확히 일치)",
+        SPECIAL_SEARCH_OFF_DISPLAY,
+        "XML (부분 일치)",
+        "XML (정확히 일치)",
+        "JSON (부분 일치)",
+        "JSON (정확히 일치)",
+        "Excel (부분 일치)",
+        "Excel (정확히 일치)",
     ]
     # =========================================================================
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)
     # =========================================================================
     SEARCH_EDIT_PLACEHOLDER = (
-        "검색할 문자열 입력...(검색을 원하는 문자열이 '한글', '영어', '일반 특수 문자'가 아닌 경우. 누락 방지 검색 사용)"
+        "검색할 문자열 입력… 기본 검색으로 찾지 못한 글자 표현은 글자 변형 검색으로 확인하세요."
     )
     EXT_EDIT_PLACEHOLDER = "예: txt 또는 xlsx,xlsm"
     EXTENSION_FILTER_WILDCARD_NOT_ALLOWED = "확장자 필터에는 와일드카드·패턴 문자(*, ?, [, ], \\)를 사용할 수 없습니다."
@@ -298,10 +300,10 @@ class AppStrings:
     RESULT_SEARCHING_MSG = '"{}" 검색 중 입니다.'
     RESULT_EMPTY_NO_FOLDER = "검색할 폴더를 추가해주세요."
     RESULT_EMPTY_NO_MATCH = (
-                                "'{}'에 대한 검색 결과가 없습니다. 아래 검색어의 경우에는 누락 방지 검색을 권장합니다.\n\n"
+                                "'{}'에 대한 검색 결과가 없습니다. 아래 검색어의 경우에는 글자 변형 검색을 권장합니다.\n\n"
                                 "macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
-                                "독일어 ß↔ss 등 다국어 특수 대소문자 · 분음 기호\n"
-                                "비표준 또는 일부 손상 인코딩 텍스트\n"
+                                "독일어 ß↔ss 등 다국어 특수 대소문자 관계\n"
+                                "인코딩 문제는 설정의 문자 인코딩을 확인하세요. 이 검색 방식도 모든 인코딩 문제를 해결하지는 않습니다.\n"
                             )
     RESULT_SUMMARY_FORMAT = "파일 수 : {file_count} | 문자열 수 : {match_count} | 시간 : {duration}s"
     SKIPPED_FILES_COUNT = "⚠ 건너뛴 파일 수: {}"
@@ -403,7 +405,7 @@ class AppStrings:
 
     # 기존 검색 모드명 (안전성 확보를 위해 확인)
     SEARCH_MODE_EXACT = "정확히 일치"
-    SEARCH_MODE_COMPLEX = "누락 방지 검색"
+    SEARCH_MODE_COMPLEX = "글자 변형 검색"
     # =========================================================================
     # [7] 내보내기 (Export)
     # =========================================================================
@@ -543,7 +545,7 @@ class AppStrings:
     LOG_WKR_STARTED = "[엔진] 병렬 검색 데이터 처리 시작 ('{}' | 필터: {} | {})"
     LOG_WKR_RUNNING = "  └─ 현재 처리 중: {}개 파일..."
     LOG_WKR_PROGRESS = "  └─ 검색 진행률: {}% ({}/{})"
-    LOG_WKR_COMPLEX_ACT = "[엔진] 유니코드 누락 방지 검색 모드(Python) 가동."
+    LOG_WKR_COMPLEX_ACT = "[엔진] 유니코드 글자 변형 검색 모드(Python) 가동."
     LOG_WKR_PYTHON_ACT = "[엔진] Python 엔진 기반 검색 수행 중..."
     LOG_WKR_RUST_ACT = "[엔진] Rust 통합 엔진 활성화 중 (대상: {}개 경로)."
     LOG_WKR_DONE = "[엔진] 병렬 검색 처리 종료 (발견: {}, 검색 결과: {}, {:.3f}초)."

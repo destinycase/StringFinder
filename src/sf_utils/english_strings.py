@@ -103,7 +103,7 @@ ENGLISH_STRINGS = {
     "ADVANCED_MAX_PER_FILE_MATCHES": "Per-file match limit",
     "ADVANCED_MAX_SEARCH_FILE_SIZE": "Search file size limit",
     "ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION": "This file-size limit applies to every search mode and file format. Files larger than the selected size are skipped. The maximum is 1 GB.",
-    "ADVANCED_PRECISE_SEARCH_GROUP": "Miss-prevention search only",
+    "ADVANCED_PRECISE_SEARCH_GROUP": "Character variant search only",
     "ADVANCED_DIAGNOSTICS_GROUP": "Diagnostics",
     "ADVANCED_MAX_SMALL_FILE_SIZE": "Fast processing limit for small text files",
     "ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION": "Text files below this size use a faster processing method.",
@@ -138,25 +138,27 @@ ENGLISH_STRINGS = {
     "COMBO_LOCKED": "Locked",
     "COMBO_UNLOCKED": "Unlocked",
     "COMPLEX_SEARCH_TOOLTIP": (
-        "Use miss-prevention search in these cases:\n"
-        "• Decomposed (NFD) text, such as Korean text in files created on macOS\n"
-        "• Special multilingual case or diacritic variants, such as German ß↔ss\n"
-        "• Nonstandard or partially damaged encodings missed by the default search\n"
-        "For ordinary Korean and English text, the faster default search is recommended."
+        "Use character variant search only when default search misses expected text.\n\n"
+        "• Composed and decomposed Korean characters (NFC/NFD)\n"
+        "• Special case relationships, such as German ß and ss\n\n"
+        "Try a small set of files first: this mode is slow. It does not fix every encoding issue."
     ),
     "EXCLUDE_HIDDEN_LABEL": "Exclude hidden files/folders",
     "EXCLUDE_BINARY_LABEL": "Exclude binary files",
     "SEARCH_PROFILE_LABEL": "Search mode",
-    "SEARCH_PROFILE_NORMAL": "Normal search",
-    "SEARCH_PROFILE_PRECISE": "Miss-prevention search (very slow)",
+    "SEARCH_PROFILE_NORMAL": "Default search (recommended)",
+    "SEARCH_SETTINGS_LABEL": "Search settings",
+    "SEARCH_PROFILE_NORMAL_COMPACT": "Default search",
+    "SPECIAL_SEARCH_OFF_DISPLAY": "Off",
+    "SEARCH_PROFILE_PRECISE": "Character variant search (slow)",
     "FILENAME_FILTER_INVALID_GROUP": "Enter a filename term between each comma.",
     "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
-    "SPECIAL_SEARCH_LABEL": "Special search",
-    "SEARCH_SETTINGS_SELECTION": "Search mode: {} / Special search: {}",
-    "SEARCH_PROFILE_PRECISE_COMPACT": "Miss prevention",
+    "SPECIAL_SEARCH_LABEL": "Values only",
+    "SEARCH_SETTINGS_SELECTION": "Search mode: {} / Values only: {}",
+    "SEARCH_PROFILE_PRECISE_COMPACT": "Character variant search (slow)",
     "SPECIAL_SEARCH_COMPACT_ITEMS": [
-        "Special search off", "XML contains", "XML exact",
-        "JSON contains", "JSON exact", "EXCEL contains", "EXCEL exact",
+        "", "XML values (contains)", "XML values (exact)",
+        "JSON values (contains)", "JSON values (exact)", "Excel values (contains)", "Excel values (exact)",
     ],
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
@@ -178,15 +180,15 @@ ENGLISH_STRINGS = {
         '<p>- Any checked term may match. With no checked terms, filenames are unrestricted.</p>'
         '<p>- Filename filters do not support wildcards.</p>'
         '<br><h3>Search settings</h3>'
-        '<p>- Click the button to the left of the search input to choose <b>Search mode</b> and <b>Special search</b>.</p>'
-        '<h4>Search mode</h4><p><b>Normal search</b></p>'
+        '<p>- Click the button to the left of the search input to choose <b>Search mode</b> and <b>Values only</b>.</p>'
+        '<h4>Search mode</h4><p><b>Default search</b></p>'
         '<p>Searches ordinary English and Korean text. (Default)</p>'
-        '<p><b>Miss-prevention search</b></p>'
+        '<p><b>Character variant search</b></p>'
         '<p>- Try a narrow scope when text known to exist is not found. This is very slow. Use it for the cases below.</p>'
         '<p>- Decomposed Korean characters (NFD), such as text in files created on macOS</p>'
-        '<p>- Special case mappings and diacritics in other languages, such as German ß ↔ ss</p>'
-        '<p>- Nonstandard or partially damaged text encodings</p>'
-        '<h4>Special search</h4><p><b>Off</b></p>'
+        '<p>- Special case relationships in other languages, such as German ß ↔ ss</p>'
+        '<p>- For encoding issues, check the text encoding setting. This mode does not fix every encoding issue.</p>'
+        '<h4>Values only</h4><p><b>Off</b></p>'
         '<p>- Uses your extension filter. This does not turn off searching. (Default)</p>'
         '<p><b>JSON/XML</b></p>'
         '<p>- Searches values, excluding field, tag and attribute names.</p>'
@@ -214,14 +216,14 @@ ENGLISH_STRINGS = {
     ],
     "SPECIAL_SEARCH_MENU_ITEMS": [
         "Off",
-        "XML values only (contains)",
-        "XML values only (exact)",
-        "JSON values only (contains)",
-        "JSON values only (exact)",
-        "EXCEL values only (contains)",
-        "EXCEL values only (exact)",
+        "XML (contains)",
+        "XML (exact)",
+        "JSON (contains)",
+        "JSON (exact)",
+        "Excel (contains)",
+        "Excel (exact)",
     ],
-    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... (Use miss-prevention search for complex Unicode variants)",
+    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... Try character variant search only if default search misses expected text.",
     "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm",
     "EXTENSION_FILTER_WILDCARD_NOT_ALLOWED": "Extension filters do not support wildcard or pattern characters (*, ?, [, ], \\).",
     "FILENAME_LIST_PLACEHOLDER": 'e.g. report or report,invoice',
@@ -260,10 +262,10 @@ ENGLISH_STRINGS = {
     "RESULT_SEARCHING_MSG": "Searching for \"{}\"...",
     "RESULT_EMPTY_NO_FOLDER": "Add a folder to search.",
     "RESULT_EMPTY_NO_MATCH": (
-        "No results found for '{}'. Miss-prevention search is recommended for:\n\n"
+        "No results found for '{}'. Character variant search is recommended for:\n\n"
         "Decomposed (NFD) text, such as Korean text in files created on macOS\n"
-        "Special multilingual case or diacritic variants, such as German ß↔ss\n"
-        "Nonstandard or partially damaged encodings"
+        "Special multilingual case relationships, such as German ß↔ss\n"
+        "Check the text encoding setting for encoding issues; this mode does not fix all of them."
     ),
     "RESULT_SUMMARY_FORMAT": "Files: {file_count} | Strings: {match_count} | Time: {duration}s",
     "SKIPPED_FILES_COUNT": "⚠ Skipped files: {}",
@@ -364,7 +366,7 @@ ENGLISH_STRINGS = {
     ),
     "SKIP_EMPTY_FILE": "[Skipped] Empty file",
     "SEARCH_MODE_EXACT": "exact",
-    "SEARCH_MODE_COMPLEX": "Miss-prevention search",
+    "SEARCH_MODE_COMPLEX": "Character variant search",
     "RESULT_EXPORT_TITLE": "Export results",
     "RESULT_EXPORT_FILTER": "Excel files (*.xlsx);;Text files (*.txt)",
     "RESULT_EXPORT_ALL": "Export all",
@@ -492,7 +494,7 @@ ENGLISH_STRINGS = {
     "LOG_WKR_STARTED": "[Engine] Starting parallel search processing ('{}' | filter: {} | {})",
     "LOG_WKR_RUNNING": "  └─ Processing: {} files...",
     "LOG_WKR_PROGRESS": "  └─ Search progress: {}% ({}/{})",
-    "LOG_WKR_COMPLEX_ACT": "[Engine] Unicode deep-search mode (Python) enabled.",
+    "LOG_WKR_COMPLEX_ACT": "[Engine] Character variant search (Python) enabled.",
     "LOG_WKR_PYTHON_ACT": "[Engine] Searching with the Python engine...",
     "LOG_WKR_RUST_ACT": "[Engine] Enabling the Rust engine (targets: {} paths).",
     "LOG_WKR_DONE": "[Engine] Parallel search completed (found: {}, matches: {}, {:.3f}s).",
