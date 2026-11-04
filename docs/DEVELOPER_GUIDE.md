@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.46 (StringFinder v6.3.6 안정 버전 기준)
+- **문서 버전:** 1.47 (StringFinder v6.3.7 안정 버전 기준)
 - **최종 수정일:** 2026-11-05
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 6.3.6 (stable)** · Updated: **2026-11-05**
+> Documentation baseline: **StringFinder 6.3.7 (stable)** · Updated: **2026-11-05**
 
 ## 문서별 역할과 읽는 순서
 

@@ -3,9 +3,11 @@ from typing import Any, Dict, List, Union, cast
 from PySide6.QtCore import QEvent, QPoint, QRect, QRegularExpression, QSignalBlocker, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QIcon, QPainter, QPalette, QRegularExpressionValidator
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -73,9 +75,19 @@ class FilterItemWidget(QWidget):
 
     def __init__(self, text, checked=True, on_delete=None, on_change=None):
         super().__init__()
+        # 순서를 옮길 때 같은 동작의 위젯을 다시 만들 수 있도록 생성 인자를 보관합니다.
+        self._on_delete = on_delete
+        self._on_change = on_change
+        self._compact = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(8)
+        # 손잡이와 빈 공간의 마우스 입력은 목록으로 전달되어 끌어서 옮기기를 시작합니다.
+        self.drag_handle = QLabel(Constants.SYMBOL_DRAG_HANDLE)
+        self.drag_handle.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.drag_handle.setToolTip(AppStrings.FILTER_ITEM_REORDER_TOOLTIP)
+        self.drag_handle.setStyleSheet("QLabel { color: #888; }")
+        layout.addWidget(self.drag_handle)
         self.checkbox = QCheckBox(text)
         self.checkbox.setChecked(checked)
         if on_change:
@@ -94,6 +106,7 @@ class FilterItemWidget(QWidget):
         layout.addWidget(self.delete_btn)
 
     def set_compact(self, compact):
+        self._compact = compact
         layout = self.layout()
         if layout is not None:
             layout.setContentsMargins(4, 0 if compact else 2, 4, 0 if compact else 2)
@@ -107,14 +120,28 @@ class FilterItemWidget(QWidget):
 
 
 class FilterListWidget(QListWidget):
-    """Scroll filter text normally, but keep row actions outside the viewport."""
+    """Scroll filter text normally, but keep row actions outside the viewport.
+
+    항목은 손잡이나 빈 공간을 끌어서, 또는 Alt+↑/↓로 순서를 옮길 수 있습니다.
+    Qt 기본 드래그는 항목을 지웠다 다시 넣으면서 행 위젯을 잃으므로 이동을 직접 처리합니다.
+    """
 
     ACTION_WIDTH = 28
+    AUTO_SCROLL_MARGIN = 12
+    items_reordered = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._actions = []
         self._position_pending = False
+        self._drag_row = -1
+        self._drag_origin = QPoint()
+        self._dragging = False
+        self._drop_indicator = QFrame(self.viewport())
+        self._drop_indicator.setFrameShape(QFrame.Shape.HLine)
+        self._drop_indicator.setStyleSheet("QFrame { background-color: palette(highlight); border: none; }")
+        self._drop_indicator.setFixedHeight(2)
+        self._drop_indicator.hide()
         self._action_column = QWidget(self)
         self._action_column.setAutoFillBackground(True)
         self._action_column.setBackgroundRole(QPalette.ColorRole.Base)
@@ -199,6 +226,102 @@ class FilterListWidget(QListWidget):
         self._actions.clear()
         super().clear()
         self._position_actions()
+
+    def drop_gap_at(self, y: int) -> int:
+        """뷰포트 y 위치에 놓았을 때 들어갈 자리(0~행 수)를 돌려줍니다."""
+        for row in range(self.count()):
+            if y < self.visualItemRect(self.item(row)).center().y():
+                return row
+        return self.count()
+
+    def move_row(self, source: int, target_gap: int) -> bool:
+        """``source`` 행을 ``target_gap`` 자리(그 행 앞)로 옮기고 이름·체크·밀도를 유지합니다."""
+        count = self.count()
+        if not self.isEnabled() or not 0 <= source < count:
+            return False
+        target_gap = max(0, min(target_gap, count))
+        destination = target_gap - 1 if target_gap > source else target_gap
+        if destination == source:
+            return False
+        old_widget = self.itemWidget(self.item(source))
+        if not isinstance(old_widget, FilterItemWidget):
+            return False
+        text, checked = old_widget.text(), old_widget.isChecked()
+        on_delete, on_change, compact = old_widget._on_delete, old_widget._on_change, old_widget._compact
+        # 같은 항목 객체를 다시 넣으므로 패널의 삭제 콜백이 가리키는 항목도 그대로 유효합니다.
+        item = self.takeItem(source)
+        self.insertItem(destination, item)
+        widget = FilterItemWidget(text, checked, on_delete=on_delete, on_change=on_change)
+        if compact is not None:
+            widget.set_compact(compact)
+        item.setSizeHint(widget.sizeHint())
+        self.setItemWidget(item, widget)
+        self.setCurrentRow(destination)
+        self.items_reordered.emit()
+        return True
+
+    def _show_drop_indicator(self, gap: int):
+        if gap < self.count():
+            y = self.visualItemRect(self.item(gap)).top()
+        elif self.count():
+            y = self.visualItemRect(self.item(self.count() - 1)).bottom() + 1
+        else:
+            y = 0
+        self._drop_indicator.setGeometry(0, max(0, y - 1), self.viewport().width(), 2)
+        self._drop_indicator.show()
+        self._drop_indicator.raise_()
+
+    def _finish_drag(self):
+        self._drag_row = -1
+        self._dragging = False
+        self._drop_indicator.hide()
+        self.viewport().unsetCursor()
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            item = self.itemAt(event.position().toPoint())
+            self._drag_row = self.row(item) if item is not None else -1
+            self._drag_origin = event.position().toPoint()
+            self._dragging = False
+
+    def mouseMoveEvent(self, event):
+        if self._drag_row < 0 or not event.buttons() & Qt.MouseButton.LeftButton:
+            super().mouseMoveEvent(event)
+            return
+        position = event.position().toPoint()
+        if not self._dragging:
+            if (position - self._drag_origin).manhattanLength() < QApplication.startDragDistance():
+                return
+            self._dragging = True
+            self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+        # 목록 위·아래 가장자리에서는 한 칸씩 스크롤해 보이지 않는 위치로도 옮길 수 있게 합니다.
+        scroll = self.verticalScrollBar()
+        if position.y() < self.AUTO_SCROLL_MARGIN:
+            scroll.setValue(scroll.value() - scroll.singleStep())
+        elif position.y() > self.viewport().height() - self.AUTO_SCROLL_MARGIN:
+            scroll.setValue(scroll.value() + scroll.singleStep())
+        self._show_drop_indicator(self.drop_gap_at(position.y()))
+
+    def mouseReleaseEvent(self, event):
+        if self._dragging and event.button() == Qt.MouseButton.LeftButton:
+            source = self._drag_row
+            gap = self.drop_gap_at(event.position().toPoint().y())
+            self._finish_drag()
+            self.move_row(source, gap)
+            return
+        self._finish_drag()
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.modifiers() == Qt.KeyboardModifier.AltModifier and event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            row = self.currentRow()
+            if row >= 0:
+                # 아래로 한 칸은 다음 행 뒤의 자리(row + 2)에 넣는 것과 같습니다.
+                self.move_row(row, row - 1 if event.key() == Qt.Key.Key_Up else row + 2)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 def normalize_special_search_mode(value: Any) -> str:
@@ -554,6 +677,7 @@ class FolderFilterPanel(DenseFilterPanel):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         self.folder_list = FilterListWidget()
+        self.folder_list.items_reordered.connect(self.filter_changed.emit)
         self.usage_label = self.folder_list.empty_hint
         self.usage_label.setText(AppStrings.FOLDER_FILTER_USAGE)
         # 폴더 목록의 가독성을 위해 적절한 최소 크기를 보장합니다.
@@ -663,6 +787,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         self.ext_list = FilterListWidget()
+        self.ext_list.items_reordered.connect(self.filter_changed.emit)
         self.usage_label = self.ext_list.empty_hint
         self.usage_label.setText(AppStrings.EXTENSION_FILTER_USAGE)
         self.ext_list.setMinimumHeight(50)
@@ -857,6 +982,7 @@ class FilenameFilterPanel(DenseFilterPanel):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         self.filename_list = FilterListWidget()
+        self.filename_list.items_reordered.connect(self.filter_changed.emit)
         self.usage_label = self.filename_list.empty_hint
         self.usage_label.setText(AppStrings.FILENAME_FILTER_USAGE)
         self.filename_list.setMinimumHeight(50)

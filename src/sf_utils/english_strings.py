@@ -161,6 +161,7 @@ ENGLISH_STRINGS = {
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
     "FILTER_FILENAME_TAB": "Filenames ({})",
+    "FILTER_ITEM_REORDER_TOOLTIP": "Drag to reorder. Keyboard: Alt+Up/Down",
     "SEARCH_HELP_BUTTON": "Help",
     "SEARCH_HELP_TITLE": "Search help",
     "EXTENSION_FILTER_INVALID_GROUP": "Enter extensions without empty comma-separated entries, e.g. xlsx,xlsm,xls,xlsb.",

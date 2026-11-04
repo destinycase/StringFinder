@@ -171,6 +171,7 @@ class AppStrings:
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
     FILTER_FILENAME_TAB = "파일명({})"
+    FILTER_ITEM_REORDER_TOOLTIP = "끌어서 순서를 바꿉니다. 키보드: Alt+↑/↓"
     SEARCH_HELP_BUTTON = "도움말"
     SEARCH_HELP_TITLE = "검색 도움말"
     SEARCH_HELP_TEXT =(
