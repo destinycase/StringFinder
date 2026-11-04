@@ -51,16 +51,20 @@ class Constants:
     MODE_XML = "XML"
     MODE_JSON = "JSON"
     MODE_EXCEL = "Excel"
+    # 화면 저장값(한글·영문) 모두에 들어 있는 글자로 UE 현지화 archive 모드를 판별합니다.
+    MODE_ARCHIVE = "archive"
     MODE_EXACT = AppStrings.SEARCH_MODE_EXACT
     MODE_NORMAL = "Normal"
     EXT_XML = ".xml"
     EXT_JSON = ".json"
+    EXT_ARCHIVE = ".archive"
     EXT_EXCEL = ("xlsx", "xlsm", "xls", "xlsb")
     DEFAULT_THEME = "Dark"
     DEFAULT_LANGUAGE = "ko"
     RUST_MODE_NORMAL = 0
     RUST_MODE_JSON = 1 << 0
     RUST_MODE_XML = 1 << 1
+    RUST_MODE_ARCHIVE = 1 << 2
     RUST_MODE_EXACT = 1 << 3
     RUST_MODE_EXCEL = 1 << 4
     RUST_MODE_EXCLUDE_BINARY = 1 << 5

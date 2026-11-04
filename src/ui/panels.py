@@ -216,6 +216,8 @@ def normalize_special_search_mode(value: Any) -> str:
         index = 4 if exact else 3
     elif "excel" in normalized:
         index = 6 if exact else 5
+    elif Constants.MODE_ARCHIVE in normalized:
+        index = 8 if exact else 7
     else:
         index = 0
     return AppStrings.SPECIAL_SEARCH_ITEMS[index]
@@ -301,7 +303,7 @@ class SearchOptionsPanel(QWidget):
         self.value_action_group.setExclusive(True)
         self.special_mode_actions = {}
         # Preserve stored mode labels while presenting JSON before XML.
-        for index in (0, 3, 4, 1, 2, 5, 6):
+        for index in (0, 3, 4, 1, 2, 5, 6, 7, 8):
             label_text = AppStrings.SPECIAL_SEARCH_ITEMS[index]
             # Presentation changes must not change saved modes or engine inputs.
             action = QAction(AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index], self)
@@ -788,6 +790,8 @@ class ExtensionFilterPanel(DenseFilterPanel):
                 return [Constants.EXT_JSON]
             elif Constants.MODE_EXCEL in special_mode:
                 return list(Constants.EXT_EXCEL)
+            elif Constants.MODE_ARCHIVE in special_mode:
+                return [Constants.EXT_ARCHIVE]
             else:
                 return [special_mode.lower()]
     def get_checked_extensions(self) -> List[str]:

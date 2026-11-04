@@ -30,7 +30,7 @@ def test_defaults_and_menu_order(qtbot, language):
     assert panel.profile_actions[0].isChecked()
     assert panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_OFF].isChecked()
     assert [action.text() for action in panel.value_menu.actions()] == [
-        AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6)
+        AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6, 7, 8)
     ]
     assert panel.search_settings_button.text() == AppStrings.SEARCH_PROFILE_NORMAL_COMPACT
     assert not hasattr(panel, "search_settings_summary")
@@ -49,7 +49,7 @@ def test_defaults_and_menu_order(qtbot, language):
 
 
 @pytest.mark.parametrize("precise", [False, True])
-@pytest.mark.parametrize("value_index", range(7))
+@pytest.mark.parametrize("value_index", range(9))
 def test_each_group_has_exactly_one_selection(qtbot, language, precise, value_index):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
@@ -157,12 +157,14 @@ def test_requested_labels_and_input_order(qtbot, language):
             "사용 안 함", "JSON (부분 일치)", "JSON (정확히 일치)",
             "XML (부분 일치)", "XML (정확히 일치)",
             "Excel (부분 일치)", "Excel (정확히 일치)",
+            "UE 현지화 archive (부분 일치)", "UE 현지화 archive (정확히 일치)",
         ]
     else:
         assert panel.value_menu.title() == "Values only"
         assert [action.text() for action in panel.value_menu.actions()] == [
             "Off", "JSON (contains)", "JSON (exact)", "XML (contains)", "XML (exact)",
             "Excel (contains)", "Excel (exact)",
+            "UE localization archive (contains)", "UE localization archive (exact)",
         ]
 
 
@@ -183,12 +185,13 @@ def test_menu_warning_is_colored_without_replacing_selection(qtbot, language):
     menu.close()
 
 
+@pytest.mark.parametrize("value_index", [6, 8])
 @pytest.mark.parametrize("width", [600, 720, 1280])
-def test_long_selection_keeps_query_and_buttons_inside_panel(qtbot, language, width):
+def test_long_selection_keeps_query_and_buttons_inside_panel(qtbot, language, width, value_index):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
     panel.profile_actions[1].trigger()
-    panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[6]].trigger()
+    panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[value_index]].trigger()
     panel.resize(width, 220)
     panel.show()
     qtbot.wait(30)
@@ -258,7 +261,10 @@ def test_old_default_labels_restore_to_disabled(old_mode, language):
     assert normalize_special_search_mode(old_mode) == AppStrings.SPECIAL_SEARCH_OFF
 
 
-@pytest.mark.parametrize("old_mode,index", [("JSON (정확히 일치)", 4), ("XML (exact)", 2), ("Excel (contains)", 5)])
+@pytest.mark.parametrize("old_mode,index", [
+    ("JSON (정확히 일치)", 4), ("XML (exact)", 2), ("Excel (contains)", 5),
+    ("UE localization archive (exact)", 8), ("UE 현지화 archive (부분 일치)", 7),
+])
 def test_old_modes_restore_in_current_language(qtbot, old_mode, index, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
@@ -276,13 +282,17 @@ def test_old_modes_restore_in_current_language(qtbot, old_mode, index, language)
     ("XML (contains)", 1), ("XML (exact)", 2),
     ("JSON (contains)", 3), ("JSON (exact)", 4),
     ("Excel (contains)", 5), ("Excel (exact)", 6),
+    ("UE 현지화 archive (부분 일치)", 7), ("UE 현지화 archive (정확히 일치)", 8),
+    ("UE localization archive (contains)", 7), ("UE localization archive (exact)", 8),
 ])
 def test_legacy_saved_values_remain_engine_values(qtbot, language, precise, saved_mode, index):
     expected = (["사용 안함", "XML (부분 일치)", "XML (정확히 일치)",
-                 "JSON (부분 일치)", "JSON (정확히 일치)", "Excel (부분 일치)", "Excel (정확히 일치)"]
+                 "JSON (부분 일치)", "JSON (정확히 일치)", "Excel (부분 일치)", "Excel (정확히 일치)",
+                 "UE 현지화 archive (부분 일치)", "UE 현지화 archive (정확히 일치)"]
                 if language == "ko" else
                 ["Off", "XML (contains)", "XML (exact)", "JSON (contains)", "JSON (exact)",
-                 "Excel (contains)", "Excel (exact)"])
+                 "Excel (contains)", "Excel (exact)",
+                 "UE localization archive (contains)", "UE localization archive (exact)"])
     assert AppStrings.SPECIAL_SEARCH_ITEMS == expected
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)

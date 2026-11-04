@@ -26,6 +26,7 @@ from core.skip_reason_codes import (
     SKIP_CODE_ENCODING,
     SKIP_CODE_EXCEL_PANIC,
     SKIP_CODE_EXCEL_PROCESS,
+    SKIP_CODE_ARCHIVE_FORMAT,
     SKIP_CODE_JSON_PARSE,
     SKIP_CODE_JSON_SIZE_LIMIT,
     SKIP_CODE_MMAP,
@@ -279,6 +280,8 @@ RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
 RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
 RUST_MATCH_MARKER_TRUNCATED = "__SF_TRUNCATED__"
 RUST_MATCH_MARKER_JSON_DEPTH_LIMIT = "__SF_JSON_DEPTH_LIMIT__|"
+# Rust UE 현지화 archive 결과 표식입니다. 뒤에 [Namespace, Key, 원문, 번역문] JSON 배열이 옵니다.
+RUST_MATCH_MARKER_ARCHIVE_FIELDS = "ARCHIVE_FIELDS|"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
 _SKIP_REASON_TEMPLATE_NAMES = TEMPLATE_NAMES
@@ -472,6 +475,7 @@ _LOCALIZED_SKIP_MESSAGE_NAMES = (
     "ERROR_SELECTED_ENCODING",
     "ERROR_DOCUMENT_ENCODING",
     "ERROR_JSON_PARSE",
+    "ERROR_ARCHIVE_FORMAT",
     "ERROR_EXCEL_ACCESS",
     "ERROR_EXCEL_SIGNATURE",
     "ERROR_EXCEL_PROCESS",
@@ -584,6 +588,13 @@ def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> 
                 return AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(sheets)
     if resource_name == "ERROR_JSON_PARSE":
         return AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT)
+    if resource_name == "ERROR_ARCHIVE_FORMAT":
+        # 문제 위치는 언어와 무관한 구조 경로이므로 그대로 옮깁니다.
+        for catalog in (get_korean_strings(), ENGLISH_STRINGS):
+            prefix, suffix = str(catalog[resource_name]).split("{}", 1)
+            if source_reason.startswith(prefix) and source_reason.endswith(suffix):
+                location = source_reason[len(prefix):len(source_reason) - len(suffix)]
+                return AppStrings.ERROR_ARCHIVE_FORMAT.format(location)
     if resource_name == "ERROR_XML_PARSE":
         return AppStrings.ERROR_XML_PARSE.format(AppStrings.XML_DETAIL_INVALID_DOCUMENT)
     if resource_name == "ERROR_XML_UNSUPPORTED_DTD":
@@ -807,6 +818,13 @@ def _normalize_rust_matches(
                     position = "" if line == 0 else line
                     res.append((position, json_path, val, offset, length))
                     continue
+
+                if Constants.MODE_ARCHIVE.upper() in mode_up:
+                    # 예) 'ARCHIVE_FIELDS|["NS","Key","원문","번역문"]' -> (위치, NS, Key, 원문, 번역문, offset, length)
+                    archive_fields = _archive_fields_from_rust(c)
+                    if archive_fields is not None:
+                        res.append(("", *archive_fields, offset, length))
+                        continue
 
                 if "EXCEL" in mode_up:
                     # 예) "시트\t셀\t값" -> (line, sheet, cell, val, offset, length)
@@ -1134,6 +1152,8 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
         bits |= Constants.RUST_MODE_XML
     if Constants.MODE_JSON in special_mode:
         bits |= Constants.RUST_MODE_JSON
+    if Constants.MODE_ARCHIVE in special_mode:
+        bits |= Constants.RUST_MODE_ARCHIVE
 
     if Constants.MODE_EXACT in special_mode:
         bits |= Constants.RUST_MODE_EXACT
@@ -1626,6 +1646,135 @@ def search_in_excel_special(
     return None
 
 
+def _load_json_document(file_path: str, allow_duplicate_keys: bool) -> Tuple[bool, Any]:
+    """JSON 문서 전체를 엄격하게 읽고 검증합니다.
+
+    성공하면 ``(True, 문서)``, 건너뛸 파일이면 ``(False, 건너뜀 결과)``를 돌려줍니다.
+    JSON 값만 검색과 UE 현지화 archive 검색이 같은 크기·인코딩·재시도·중복 키 규칙을 쓰도록 공유합니다.
+    파일 열기 실패는 호출자의 예외 처리로 전달합니다.
+    """
+    import json
+
+    file_size = 0
+    try:
+        file_size = os.path.getsize(file_path)
+        if file_size > _max_search_file_size_bytes():
+            logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
+            return False, (
+                Constants.STATUS_SKIPPED,
+                AppStrings.SKIP_REASON_TOO_LARGE.format(
+                    AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
+                ),
+            )
+    except (OSError, IOError):
+        # 파일 크기 측정 실패 시 안전을 위해 필터링을 건너뜁니다.
+        pass
+
+    # Always validate the entire JSON document. Raw-byte
+    # negative filters cannot rule out decoded/Unicode-normalized values.
+
+    # [v4.63.9 Defensive] 변수 초기화 강제 (UnboundLocalError 원천 차단)
+    raw_bytes = None
+    encoding = None
+    processed_content = None
+
+    try:
+        with open(file_path, "rb") as f_raw:
+            # Check the opened file, not the path again: it may have been
+            # replaced or grown since preflight. Keep the size guard before
+            # either read() or mmap allocation.
+            f_size = os.fstat(f_raw.fileno()).st_size
+            size_limit_result = _file_size_limit_result(f_size)
+            if size_limit_result:
+                return False, size_limit_result
+            # 성능 최적화를 위해 일정 크기 이상의 파일은 mmap(메모리 매핑)을 사용합니다.
+            if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
+                mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
+                try:
+                    # Avoid the additional ``mm[:]`` copy. ``read()`` still creates
+                    # the byte buffer required before DOM parsing creates a string.
+                    try:
+                        # JSON loads를 위해 전체 텍스트 변환 (DOM 방식의 한계)
+                        processed_content, encoding = _decode_text_bytes(mm.read())
+                        # 디코딩 성공 시 메모리 절감을 위해 raw_bytes를 유지하지 않습니다.
+                    except UnicodeDecodeError:
+                        processed_content = None
+                        # 디코딩 실패 시 폴백 처리를 위한 데이터를 확보합니다.
+                        # mm.read() 이후이므로 seek(0) 후 전체 읽기
+                        mm.seek(0)
+                        raw_bytes = mm.read()
+                finally:
+                    mm.close()
+            else:
+                # 소형 파일은 기존 방식 유지
+                raw_bytes = f_raw.read()
+                encoding = detect_encoding_quickly(raw_bytes[:65536])
+    except (IOError, OSError) as e:
+        logger.debug(AppStrings.ERROR_READ_FILE.format(file_path, e))
+        raise
+
+    try:
+        # 손상된 바이트가 무음 치환되는 것을 방지하기 위해 strict 모드로 디코딩합니다.
+        # mmap 분기에서 이미 디코딩을 시도했을 수 있으므로 가드 추가
+        if processed_content is None:
+            # raw_bytes가 None인 경우를 대비한 가드 로직입니다.
+            if raw_bytes is not None:
+                try:
+                    processed_content, encoding = _decode_text_bytes(raw_bytes)
+                except UnicodeDecodeError:
+                    # 인코딩 감지가 틀렸거나 데이터가 손상됨. UTF-16 재시도 게이트
+                    processed_content = None
+            else:
+                processed_content = None
+        missing = object()
+        data = missing
+        if processed_content:
+            try:
+                data = loads_document(processed_content, allow_duplicate_keys)
+            except DuplicateKeyError:
+                return False, (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # JSON 파싱이나 디코딩 실패 시 No-BOM UTF-16으로 재시도를 수행합니다.
+        if data is missing:
+            # 데이터가 확보된 경우에만 재시도를 수행하여 무결성을 유지합니다.
+            # mmap 디코딩 성공 후 파싱이 실패한 경우(raw_bytes=None)는 메시지 왜곡 방지를 위해 즉시 실패 처리
+            if (_get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") == "auto"
+                    and raw_bytes is not None and encoding not in ["utf-16-le", "utf-16-be", "utf-16"]):
+                for alt_enc in ["utf-16-le", "utf-16-be"]:
+                    try:
+                        alt_content = raw_bytes.decode(alt_enc, errors="strict")
+                        data = loads_document(alt_content, allow_duplicate_keys)
+                        encoding = alt_enc
+                        processed_content = alt_content
+                        break
+                    except DuplicateKeyError:
+                        return False, (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
+                    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                        continue
+
+            if data is missing:
+                # 모든 재시도 실패 시 SKIPPED 보고 (None 반환 방지)
+                _log_raw_skip_detail("JSON", "Integrity check failed")
+                if processed_content is None:
+                    return False, _structured_decode_failure()
+                return False, (
+                    Constants.STATUS_SKIPPED,
+                    AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT),
+                )
+
+    except UnicodeError as e:
+        _log_raw_skip_detail("JSON decoding", e)
+        return False, _structured_decode_failure()
+    except Exception as e:
+        return False, (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
+        )
+    return True, data
+
+
 def search_in_json_special(
     file_path: str,
     search_string: str,
@@ -1708,123 +1857,12 @@ def search_in_json_special(
     try:
         import json
 
-        file_size = 0
-        try:
-            file_size = os.path.getsize(file_path)
-            if file_size > _max_search_file_size_bytes():
-                logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
-                return (
-                    Constants.STATUS_SKIPPED,
-                    AppStrings.SKIP_REASON_TOO_LARGE.format(
-                        AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
-                    ),
-                )
-        except (OSError, IOError):
-            # 파일 크기 측정 실패 시 안전을 위해 필터링을 건너뜁니다.
-            pass
-
-        # Always validate the entire JSON document. Raw-byte
-        # negative filters cannot rule out decoded/Unicode-normalized values.
-
-        # [v4.63.9 Defensive] 변수 초기화 강제 (UnboundLocalError 원천 차단)
-        raw_bytes = None
-        encoding = None
-        processed_content = None
-
-        try:
-            with open(file_path, "rb") as f_raw:
-                # Check the opened file, not the path again: it may have been
-                # replaced or grown since preflight. Keep the size guard before
-                # either read() or mmap allocation.
-                f_size = os.fstat(f_raw.fileno()).st_size
-                size_limit_result = _file_size_limit_result(f_size)
-                if size_limit_result:
-                    return size_limit_result
-                # 성능 최적화를 위해 일정 크기 이상의 파일은 mmap(메모리 매핑)을 사용합니다.
-                if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
-                    mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
-                    try:
-                        # Avoid the additional ``mm[:]`` copy. ``read()`` still creates
-                        # the byte buffer required before DOM parsing creates a string.
-                        try:
-                            # JSON loads를 위해 전체 텍스트 변환 (DOM 방식의 한계)
-                            processed_content, encoding = _decode_text_bytes(mm.read())
-                            # 디코딩 성공 시 메모리 절감을 위해 raw_bytes를 유지하지 않습니다.
-                        except UnicodeDecodeError:
-                            processed_content = None
-                            # 디코딩 실패 시 폴백 처리를 위한 데이터를 확보합니다.
-                            # mm.read() 이후이므로 seek(0) 후 전체 읽기
-                            mm.seek(0)
-                            raw_bytes = mm.read()
-                    finally:
-                        mm.close()
-                else:
-                    # 소형 파일은 기존 방식 유지
-                    raw_bytes = f_raw.read()
-                    encoding = detect_encoding_quickly(raw_bytes[:65536])
-        except (IOError, OSError) as e:
-            logger.debug(AppStrings.ERROR_READ_FILE.format(file_path, e))
-            raise
-
-        try:
-            # 손상된 바이트가 무음 치환되는 것을 방지하기 위해 strict 모드로 디코딩합니다.
-            # mmap 분기에서 이미 디코딩을 시도했을 수 있으므로 가드 추가
-            if processed_content is None:
-                # raw_bytes가 None인 경우를 대비한 가드 로직입니다.
-                if raw_bytes is not None:
-                    try:
-                        processed_content, encoding = _decode_text_bytes(raw_bytes)
-                    except UnicodeDecodeError:
-                        # 인코딩 감지가 틀렸거나 데이터가 손상됨. UTF-16 재시도 게이트
-                        processed_content = None
-                else:
-                    processed_content = None
-            missing = object()
-            data = missing
-            if processed_content:
-                try:
-                    data = loads_document(processed_content, _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False))
-                except DuplicateKeyError:
-                    return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
-                except (json.JSONDecodeError, ValueError):
-                    pass
-
-            # JSON 파싱이나 디코딩 실패 시 No-BOM UTF-16으로 재시도를 수행합니다.
-            if data is missing:
-                # 데이터가 확보된 경우에만 재시도를 수행하여 무결성을 유지합니다.
-                # mmap 디코딩 성공 후 파싱이 실패한 경우(raw_bytes=None)는 메시지 왜곡 방지를 위해 즉시 실패 처리
-                if (_get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") == "auto"
-                        and raw_bytes is not None and encoding not in ["utf-16-le", "utf-16-be", "utf-16"]):
-                    for alt_enc in ["utf-16-le", "utf-16-be"]:
-                        try:
-                            alt_content = raw_bytes.decode(alt_enc, errors="strict")
-                            data = loads_document(alt_content, _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False))
-                            encoding = alt_enc
-                            processed_content = alt_content
-                            break
-                        except DuplicateKeyError:
-                            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
-                        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-                            continue
-                
-                if data is missing:
-                    # 모든 재시도 실패 시 SKIPPED 보고 (None 반환 방지)
-                    _log_raw_skip_detail("JSON", "Integrity check failed")
-                    if processed_content is None:
-                        return _structured_decode_failure()
-                    return (
-                        Constants.STATUS_SKIPPED,
-                        AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT),
-                    )
-
-        except UnicodeError as e:
-            _log_raw_skip_detail("JSON decoding", e)
-            return _structured_decode_failure()
-        except Exception as e:
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
-            )
+        loaded, data = _load_json_document(
+            file_path,
+            _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False),
+        )
+        if not loaded:
+            return cast(SkippedResult, data)
         matches: List[SearchMatch] = []
         # 특수 문자(ß, İ 등)의 정규화를 위해 casefold() 사용
         search_string = normalize_unicode(search_string).casefold()
@@ -1905,6 +1943,189 @@ def search_in_json_special(
         return (
             Constants.STATUS_SKIPPED,
             AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
+        )
+
+
+def _archive_fields_from_rust(content: str) -> Optional[List[str]]:
+    """Rust의 ``ARCHIVE_FIELDS|[Namespace, Key, 원문, 번역문]`` 결과를 네 칸으로 나눕니다."""
+    if not content.startswith(RUST_MATCH_MARKER_ARCHIVE_FIELDS):
+        return None
+    import json
+
+    try:
+        fields = json.loads(content[len(RUST_MATCH_MARKER_ARCHIVE_FIELDS):])
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(fields, list) or len(fields) != 4 or not all(isinstance(value, str) for value in fields):
+        return None
+    return fields
+
+
+def _archive_entries(document: Any, stop_event=None):
+    """UE 현지화 archive 구조를 문서 순서대로 펼칩니다.
+
+    각 노드의 ``Children``을 먼저, 그다음 ``Subnamespaces``를 방문하며 Rust 경로와 같은 순서를 씁니다.
+    구조가 맞지 않으면 문제 위치 경로를 담은 ``ValueError``를 발생시킵니다.
+    """
+    if not isinstance(document, dict):
+        raise ValueError("/")
+    if "Children" not in document and "Subnamespaces" not in document:
+        raise ValueError("/Children")
+    stack: List[Tuple[Any, str, str]] = [(document, "", "")]
+    visited = 0
+    while stack:
+        node, parent_namespace, path = stack.pop()
+        visited += 1
+        if visited % 1000 == 0 and stop_event and stop_event.is_set():
+            return
+        if not isinstance(node, dict):
+            raise ValueError(path or "/")
+        own_namespace = node.get("Namespace", "")
+        if not isinstance(own_namespace, str):
+            raise ValueError(f"{path}/Namespace")
+        namespace = ".".join(part for part in (parent_namespace, own_namespace) if part)
+        if "Children" in node:
+            children = node["Children"]
+            if not isinstance(children, list):
+                raise ValueError(f"{path}/Children")
+            for index, child in enumerate(children):
+                child_path = f"{path}/Children/{index}"
+                if not isinstance(child, dict):
+                    raise ValueError(child_path)
+                key = child.get("Key")
+                if not isinstance(key, str):
+                    raise ValueError(f"{child_path}/Key")
+                texts = []
+                for field in ("Source", "Translation"):
+                    holder = child.get(field)
+                    text = holder.get("Text") if isinstance(holder, dict) else None
+                    if not isinstance(text, str):
+                        raise ValueError(f"{child_path}/{field}/Text")
+                    texts.append(text)
+                yield namespace, key, texts[0], texts[1]
+        if "Subnamespaces" in node:
+            subnamespaces = node["Subnamespaces"]
+            if not isinstance(subnamespaces, list):
+                raise ValueError(f"{path}/Subnamespaces")
+            # 스택은 뒤에서 꺼내므로 역순으로 넣어 문서 순서를 유지합니다.
+            for index in range(len(subnamespaces) - 1, -1, -1):
+                stack.append((subnamespaces[index], namespace, f"{path}/Subnamespaces/{index}"))
+
+
+def search_in_archive_special(
+    file_path: str,
+    search_string: str,
+    exact_match: bool = False,
+    use_complex_search: bool = False,
+    stop_event=None,
+) -> Optional[Union[SearchResult, SkippedResult]]:
+    """UE 현지화 archive의 원문·번역문·Key 값을 검색합니다.
+
+    결과 행은 ``(위치, Namespace, Key, 원문, 번역문, offset, length)``입니다.
+    archive의 구조 필드는 하나씩만 있어야 하므로 JSON 중복 키 설정과 관계없이 중복 키를 허용하지 않습니다.
+    """
+    validate_search_query(search_string)
+    initial_engine: Literal["rust", "python"] = (
+        "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
+    )
+    memory_result = _memory_guard_result(file_path, "json", initial_engine)
+    if memory_result:
+        return memory_result
+    max_per_file = _positive_limit(
+        None,
+        Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
+        Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+    )
+    limit_row = (-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", "", "", None, None)
+    if initial_engine == "rust":
+        try:
+            mode_bits = Constants.RUST_MODE_ARCHIVE
+            if exact_match:
+                mode_bits |= Constants.RUST_MODE_EXACT
+            rust_max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
+            results = sf_engine.search_file(  # type: ignore
+                str(file_path),
+                search_string,
+                mode_bits,
+                max_per_file=rust_max_per_file,
+                max_json_depth=max_json_depth,
+                max_json_size=max_json_size,
+                **_rust_policy_kwargs(),
+            )
+        except Exception as e:
+            logger.error(AppStrings.LOG_SCH_RUST_ARCHIVE_FAIL.format(file_path, e))
+            reason = str(e)
+            if reason.startswith((
+                f"{SKIP_CODE_ARCHIVE_FORMAT}|",
+                f"{SKIP_CODE_JSON_PARSE}|",
+                f"{SKIP_CODE_DECODING}|",
+                f"{SKIP_CODE_ENCODING}|",
+            )):
+                return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
+            return (
+                Constants.STATUS_SKIPPED,
+                AppStrings.ERROR_UNEXPECTED_FILE.format(
+                    file_path, _localize_internal_error_detail("UE localization archive", e)
+                ),
+            )
+        if not results:
+            return None
+        skip_reason = _extract_marker_skip_reason(results)
+        if skip_reason:
+            return (Constants.STATUS_SKIPPED, skip_reason)
+        processed: List[Any] = []
+        for m in results:
+            content = str(_rust_match_field(m, 1, "content", ""))
+            line = _rust_match_field(m, 0, "line", 0)
+            if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
+                processed.append(limit_row)
+                continue
+            fields = _archive_fields_from_rust(content)
+            if fields is None:
+                continue
+            processed.append(("", *fields, None, None))
+        if not processed:
+            return None
+        return (file_path, _visible_match_count(processed), processed)
+
+    try:
+        loaded, document = _load_json_document(file_path, False)
+        if not loaded:
+            return cast(SkippedResult, document)
+        query = normalize_unicode(search_string).casefold()
+        query_stripped = query.strip()
+        matches: List[Any] = []
+        total_count = 0
+        try:
+            for namespace, key, source, translation in _archive_entries(document, stop_event):
+                matched = False
+                for value in (key, source, translation):
+                    folded = normalize_unicode(value).casefold()
+                    if (folded.strip() == query_stripped) if exact_match else (query in folded):
+                        matched = True
+                        break
+                if not matched:
+                    continue
+                total_count += 1
+                if total_count <= max_per_file:
+                    matches.append(("", namespace, key, source, translation, None, None))
+                elif total_count == max_per_file + 1:
+                    matches.append(limit_row)
+                # 상한 이후에도 문서 끝까지 구조를 확인해야 잘못된 파일을 결과로 확정하지 않습니다.
+        except ValueError as structure_error:
+            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_ARCHIVE_FORMAT.format(str(structure_error)))
+        if stop_event and stop_event.is_set():
+            return None
+        if total_count:
+            return (file_path, min(total_count, max_per_file + 1), matches)
+        return None
+    except Exception as e:
+        logger.error(AppStrings.LOG_SCH_ARCHIVE_FAIL.format(file_path, e))
+        return (
+            Constants.STATUS_SKIPPED,
+            AppStrings.ERROR_UNEXPECTED_FILE.format(
+                file_path, _localize_internal_error_detail("UE localization archive", e)
+            ),
         )
 
 
@@ -2153,6 +2374,9 @@ def search_in_file(
                 file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event)
         elif Constants.MODE_JSON in special_mode and ext == ".json":
             return search_in_json_special(
+                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event)
+        elif Constants.MODE_ARCHIVE in special_mode and ext == Constants.EXT_ARCHIVE:
+            return search_in_archive_special(
                 file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event)
     if file_size is None:
         try:

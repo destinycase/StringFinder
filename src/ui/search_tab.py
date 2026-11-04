@@ -497,7 +497,7 @@ class SearchTab(QMainWindow):
     @staticmethod
     def _result_mode_code(mode):
         """Persist a language-independent result format, not a UI label."""
-        for code in (Constants.MODE_JSON, Constants.MODE_XML, Constants.MODE_EXCEL):
+        for code in (Constants.MODE_JSON, Constants.MODE_XML, Constants.MODE_EXCEL, Constants.MODE_ARCHIVE):
             if isinstance(mode, str) and code.casefold() in mode.casefold():
                 return code
         return Constants.MODE_NORMAL
@@ -530,7 +530,13 @@ class SearchTab(QMainWindow):
             saved_mode = result_context.get("search_mode")
             if isinstance(saved_text, str):
                 search_text = saved_text
-            if saved_mode in (Constants.MODE_NORMAL, Constants.MODE_JSON, Constants.MODE_XML, Constants.MODE_EXCEL):
+            if saved_mode in (
+                Constants.MODE_NORMAL,
+                Constants.MODE_JSON,
+                Constants.MODE_XML,
+                Constants.MODE_EXCEL,
+                Constants.MODE_ARCHIVE,
+            ):
                 search_mode = saved_mode
                 if result_context.get("exact") is True and saved_mode != Constants.MODE_NORMAL:
                     search_mode = f"{saved_mode} ({Constants.MODE_EXACT})"

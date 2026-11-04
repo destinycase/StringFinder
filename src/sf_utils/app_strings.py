@@ -166,6 +166,7 @@ class AppStrings:
     SPECIAL_SEARCH_COMPACT_ITEMS = [
         "", "XML 값 (부분 일치)", "XML 값 (정확히 일치)",
         "JSON 값 (부분 일치)", "JSON 값 (정확히 일치)", "Excel 값 (부분 일치)", "Excel 값 (정확히 일치)",
+        "ARCHIVE (부분 일치)", "ARCHIVE (정확히 일치)",
     ]
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
@@ -206,6 +207,9 @@ class AppStrings:
         "<p><b>Excel</b></p>"
 		"<p>- 셀 값을 검색하고 시트·셀·값을 나누어 표시합니다.</p>"
         "<p>- Excel 모드를 선택하면 해당 형식만 검색하며, 보관된 확장자 목록은 적용하지 않습니다. 단, 폴더·파일명 조건은 계속 적용됩니다.</p>"
+        "<p><b>UE 현지화 archive</b></p>"
+        "<p>- Unreal Engine 현지화 .archive 파일의 원문·번역문·Key 값을 검색하고 Namespace·Key·원문·번역문을 나누어 표시합니다. Namespace는 표시만 하며 검색하지 않습니다.</p>"
+        "<p>- 이 모드를 선택하면 .archive 파일만 검색하며, 보관된 확장자 목록은 적용하지 않습니다. 단, 폴더·파일명 조건은 계속 적용됩니다.</p>"
         "<p><b>부분 일치</b></p>"
 		"<p>- 값 안에 검색어가 포함되면 찾습니다.</p>"
         "<p><b>정확히 일치</b></p>"
@@ -236,6 +240,8 @@ class AppStrings:
         "JSON (정확히 일치)",
         "Excel (부분 일치)",
         "Excel (정확히 일치)",
+        "UE 현지화 archive (부분 일치)",
+        "UE 현지화 archive (정확히 일치)",
     ]
     # Stable engine/session values above; independently editable menu labels below.
     SPECIAL_SEARCH_MENU_ITEMS = [
@@ -246,6 +252,8 @@ class AppStrings:
         "JSON (정확히 일치)",
         "Excel (부분 일치)",
         "Excel (정확히 일치)",
+        "UE 현지화 archive (부분 일치)",
+        "UE 현지화 archive (정확히 일치)",
     ]
     # =========================================================================
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)
@@ -266,6 +274,10 @@ class AppStrings:
     MATCH_FILTER_EXCEL_SHEET_PLACEHOLDER = "시트 필터..."
     MATCH_FILTER_EXCEL_CELL_PLACEHOLDER = "셀 필터..."
     MATCH_FILTER_EXCEL_VAL_PLACEHOLDER = "값 필터..."
+    MATCH_FILTER_ARCHIVE_NAMESPACE_PLACEHOLDER = "Namespace 필터..."
+    MATCH_FILTER_ARCHIVE_KEY_PLACEHOLDER = "Key 필터..."
+    MATCH_FILTER_ARCHIVE_SOURCE_PLACEHOLDER = "원문 필터..."
+    MATCH_FILTER_ARCHIVE_TRANSLATION_PLACEHOLDER = "번역문 필터..."
     # =========================================================================
     # [5] 테이블 헤더 (Table Headers)
     # =========================================================================
@@ -281,6 +293,10 @@ class AppStrings:
     HEADER_EXCEL_SHEET = "시트"
     HEADER_EXCEL_CELL = "셀"
     HEADER_EXCEL_VALUE = "값"
+    HEADER_ARCHIVE_NAMESPACE = "Namespace"
+    HEADER_ARCHIVE_KEY = "Key"
+    HEADER_ARCHIVE_SOURCE = "원문"
+    HEADER_ARCHIVE_TRANSLATION = "번역문"
     HEADER_LIST = "목록"
     # =========================================================================
     # [6] 상태 및 결과 메시지 (Status & Results)
@@ -322,6 +338,7 @@ class AppStrings:
     CONTEXT_PREVIEW_LOADING = "문맥을 읽는 중..."
     CONTEXT_PREVIEW_SPECIAL_MATCH = "[특수 데이터 검색 결과]\n\n위치: {}\n내용: {}"
     CONTEXT_PREVIEW_EXCEL_MATCH = "[Excel 셀 검색 결과]\n\n시트: {}\n셀: {}\n값: {}"
+    CONTEXT_PREVIEW_ARCHIVE_MATCH = "[UE 현지화 archive 검색 결과]\n\nNamespace: {}\nKey: {}\n원문: {}\n번역문: {}"
     CONTEXT_PREVIEW_EXCEL_VALUE_TRUNCATED = "\n[셀 값이 길어 일부만 표시됩니다]"
     CONTEXT_PREVIEW_READ_FAILED = "[문맥 미리보기 읽기 실패]\n{}"
     CONTEXT_PREVIEW_SCAN_LIMIT = "[문맥 미리보기 생략]\n대상 줄이 너무 멀어 UI 보호를 위해 읽기를 중단했습니다."
@@ -542,6 +559,7 @@ class AppStrings:
     ERROR_UNKNOWN = "알 수 없는 시스템 오류."
     ERROR_UNEXPECTED_FILE = "[오류] 파일 처리 중 예기치 못한 문제 발생 ('{}'): {}"
     ERROR_JSON_PARSE = "[오류] JSON 구문 분석 실패: {}"
+    ERROR_ARCHIVE_FORMAT = "[오류] UE 현지화 archive 형식이 아닙니다 (위치: {})"
     ERROR_EXPORT_FAIL = "[오류] 결과 내보내기 실패: {}"
     EXPORT_SUCCESS = "검색 결과를 저장했습니다:\n{}"
     ERROR_OPEN_DIR_FAILED = "[오류] 폴더 열기 실패: {}"
@@ -603,6 +621,7 @@ class AppStrings:
     LOG_SCH_ERROR = "[오류] 검색 엔진 일반 오류: {}"
     LOG_SCH_RUST_ENGINE_ERROR = "[오류] Rust 코어 엔진 실행 오류 ('{}'): {}"
     LOG_SCH_RUST_JSON_FAIL = "[오류] Rust 기반 JSON 검색 실패 ('{}'): {}"
+    LOG_SCH_RUST_ARCHIVE_FAIL = "[오류] Rust 기반 UE 현지화 archive 검색 실패 ('{}'): {}"
     LOG_SCH_RUST_DIR_SEARCH_ERROR = "[오류] Rust 디렉토리 탐색 오류 ('{}'): {}"
     LOG_SCH_JSON_LIMIT = "[오류] JSON 객체 구조 깊이 제한 초과."
     LOG_SCH_BINARY_CHECK_ERROR = "[오류] 바이너리 무결성 점검 오류: {}"
@@ -611,6 +630,7 @@ class AppStrings:
     LOG_SCH_ERROR_FILE = "[오류] 개별 파일 처리 실패 ('{}'): {}"
     LOG_SCH_RUST_EXCEL_FAIL = "[오류] Rust 기반 Excel 검색 실패 ('{}'): {}"
     LOG_SCH_JSON_FAIL = "[오류] Python 기반 JSON 검색 실패: {}"
+    LOG_SCH_ARCHIVE_FAIL = "[오류] Python 기반 UE 현지화 archive 검색 실패 ('{}'): {}"
     LOG_SCH_XML_FAIL = "[오류] Python 기반 XML 검색 실패: {}"
     LOG_SCH_RUST_XML_FAIL = "[오류] Rust 기반 XML 검색 실패 ('{}'): {}"
     LOG_SCH_STREAM_ERROR = "[오류] 데이터 스트림 처리 흐름 중단: {}"

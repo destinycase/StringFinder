@@ -381,7 +381,8 @@ class SearchWorker(QRunnable):
         """Limit only memory-heavy precise batches; keep small-file throughput intact."""
         mode = str(self.special_mode or "").upper()
         document_kind: Literal["json", "xml", "excel"]
-        if "JSON" in mode:
+        if "JSON" in mode or Constants.MODE_ARCHIVE.upper() in mode:
+            # UE 현지화 archive도 JSON 문서 전체를 읽으므로 같은 메모리 기준을 씁니다.
             document_kind = "json"
         elif "XML" in mode:
             document_kind = "xml"

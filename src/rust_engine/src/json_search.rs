@@ -642,6 +642,29 @@ fn parse_json<'data>(
     }
 }
 
+/// 값 검색 없이 JSON 문서 전체의 문법·중복 키·깊이만 검증합니다.
+/// 중복 키는 항상 오류로 처리하며, 반환값은 설정한 깊이 상한을 넘었는지 여부입니다.
+pub fn validate_json_document(
+    mmap: &[u8],
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    max_json_depth: usize,
+) -> Result<bool, String> {
+    // 패턴이 없는 검색기는 어떤 값과도 일치하지 않으므로 결과를 모으지 않고 검증만 합니다.
+    let no_match = aho_corasick::AhoCorasick::new(std::iter::empty::<&str>())
+        .map_err(|error| error.to_string())?;
+    let state = parse_json(
+        mmap,
+        "",
+        &no_match,
+        false,
+        stop_flag,
+        0,
+        max_json_depth,
+        false,
+    )?;
+    Ok(state.depth_limit_reached)
+}
+
 #[cfg(test)]
 pub fn search_json_file(
     mmap: &[u8],

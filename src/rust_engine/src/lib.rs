@@ -2,6 +2,7 @@ mod excel_date_formats;
 mod excel_search;
 mod json_search;
 mod types;
+mod ue_archive_search;
 mod utils;
 mod xml_search;
 
@@ -23,6 +24,7 @@ use std::time::SystemTime;
 use crate::excel_search::{search_excel_file, ExcelFileError};
 use crate::json_search::search_json_file_with_policy;
 use crate::types::{RawMatch, SearchMatch, SearchOptions};
+use crate::ue_archive_search::{search_archive_file, ArchiveSearchError};
 use crate::utils::{
     build_glob_set, decode_structured_bytes, detect_encoding, generate_search_patterns, is_binary,
     match_filename_glob, parse_search_mode,
@@ -78,6 +80,7 @@ const REASON_ERR_WALK: &str = "ERR_WALK";
 const REASON_ERR_TOO_LARGE: &str = "ERR_TOO_LARGE";
 const REASON_ERR_JSON_SIZE_LIMIT: &str = "ERR_JSON_SIZE_LIMIT";
 const REASON_ERR_JSON_PARSE: &str = "ERR_JSON_PARSE";
+const REASON_ERR_ARCHIVE_FORMAT: &str = "ERR_ARCHIVE_FORMAT";
 const REASON_ERR_XML_PARSE: &str = "ERR_XML_PARSE";
 const REASON_ERR_XML_UNSUPPORTED_DTD: &str = "ERR_XML_UNSUPPORTED_DTD";
 const REASON_ERR_EXCEL_PROCESS: &str = "ERR_EXCEL_PROCESS";
@@ -168,7 +171,13 @@ impl Drop for StructuredMemoryPermit {
     }
 }
 
-fn estimated_structured_memory(path: &Path, is_json: bool, is_xml: bool, is_excel: bool) -> u64 {
+fn estimated_structured_memory(
+    path: &Path,
+    is_json: bool,
+    is_archive: bool,
+    is_xml: bool,
+    is_excel: bool,
+) -> u64 {
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
@@ -178,6 +187,7 @@ fn estimated_structured_memory(path: &Path, is_json: bool, is_xml: bool, is_exce
         if is_excel || ["xlsx", "xlsm", "xlsb", "xls"].contains(&extension.as_str()) {
             Some((8, 128 * 1024 * 1024))
         } else if (is_json && extension == "json")
+            || (is_archive && extension == "archive")
             || (is_xml && ["xml", "sf_xml"].contains(&extension.as_str()))
         {
             Some((5, 64 * 1024 * 1024))
@@ -207,6 +217,7 @@ fn acquire_structured_permit(
     limiter: &Option<Arc<StructuredMemoryLimiter>>,
     path: &Path,
     is_json: bool,
+    is_archive: bool,
     is_xml: bool,
     is_excel: bool,
     stop_flag: &Arc<AtomicBool>,
@@ -214,7 +225,7 @@ fn acquire_structured_permit(
     let Some(limiter) = limiter else {
         return Ok(None);
     };
-    let estimate = estimated_structured_memory(path, is_json, is_xml, is_excel);
+    let estimate = estimated_structured_memory(path, is_json, is_archive, is_xml, is_excel);
     if estimate == 0 {
         return Ok(None);
     }
@@ -582,7 +593,8 @@ fn search_file(
     let _ = include_junctions; // No traversal in the single-file entry point.
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
-    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
+    let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
+    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json || is_archive);
     let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
         .match_kind(MatchKind::LeftmostFirst)
@@ -632,6 +644,7 @@ fn search_file(
             ac: &ac,
             is_exact,
             is_json,
+            is_archive,
             is_xml,
             is_excel,
             exclude_hidden: false,
@@ -985,6 +998,7 @@ struct InternalSearchParams<'a> {
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
     is_json: bool,
+    is_archive: bool,
     allow_duplicate_json_keys: bool,
     is_xml: bool,
     is_excel: bool,
@@ -1006,6 +1020,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         ac,
         is_exact,
         is_json,
+        is_archive,
         allow_duplicate_json_keys,
         is_xml,
         is_excel,
@@ -1095,8 +1110,10 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     };
     let mmap_c = file_snapshot.as_slice();
 
-    let structured_document =
-        (is_json && ext_l == ".json") || (is_xml && (ext_l == ".xml" || ext_l == ".sf_xml"));
+    let is_archive_document = is_archive && ext_l == ".archive";
+    let structured_document = (is_json && ext_l == ".json")
+        || is_archive_document
+        || (is_xml && (ext_l == ".xml" || ext_l == ".sf_xml"));
     let enc = if let Some(encoding) = encoding {
         if !crate::utils::selected_encoding_valid(mmap_c, encoding) {
             return Some(Err(encode_skip_reason(
@@ -1122,7 +1139,23 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     // 일반 Non-UTF8 텍스트는 아래의 청크 디코딩 경로에서 처리하여 파일 전체 String 복사를 피합니다.
     let final_mmap = decoded.as_ref().map(|s| s.as_bytes()).unwrap_or(mmap_c);
 
-    let res: Result<Vec<RawMatch>, String> = if is_json && ext_l == ".json" {
+    let res: Result<Vec<RawMatch>, String> = if is_archive_document {
+        search_archive_file(
+            final_mmap,
+            pattern,
+            ac,
+            is_exact,
+            stop_flag.clone(),
+            max_per_file,
+            max_json_depth,
+        )
+        .map_err(|error| match error {
+            ArchiveSearchError::Json(detail) => encode_skip_reason(REASON_ERR_JSON_PARSE, detail),
+            ArchiveSearchError::Format(detail) => {
+                encode_skip_reason(REASON_ERR_ARCHIVE_FORMAT, detail)
+            }
+        })
+    } else if is_json && ext_l == ".json" {
         {
             search_json_file_with_policy(
                 final_mmap,
@@ -1304,8 +1337,9 @@ pub fn search_dir(
 
     let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
+    let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
     let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
-    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
+    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json || is_archive);
     let ac = Arc::new(
         AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
@@ -1527,7 +1561,12 @@ pub fn search_dir(
                             });
                         let metadata = size_check_metadata(
                             &entry,
-                            include_junctions || is_json || is_xml || is_excel || excel_extension,
+                            include_junctions
+                                || is_json
+                                || is_archive
+                                || is_xml
+                                || is_excel
+                                || excel_extension,
                             common_file_size_limit,
                         );
                         if let Some(metadata) = metadata {
@@ -1552,6 +1591,7 @@ pub fn search_dir(
                             &limiter_ref,
                             path,
                             is_json,
+                            is_archive,
                             is_xml,
                             is_excel,
                             &stop_ref,
@@ -1584,6 +1624,7 @@ pub fn search_dir(
                             ac: &ac_ref,
                             is_exact,
                             is_json,
+                            is_archive,
                             is_xml,
                             is_excel,
                             exclude_hidden,
@@ -1835,8 +1876,9 @@ fn search_files_list(
         let norm_pattern = crate::utils::normalize_unicode(&search_string);
         let pat_upper = norm_pattern.to_lowercase().to_uppercase();
         let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
+        let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
         let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
-        let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json);
+        let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json || is_archive);
 
         let ac = Arc::new(
             AhoCorasickBuilder::new()
@@ -1889,6 +1931,7 @@ fn search_files_list(
                 &structured_limiter,
                 path,
                 is_json,
+                is_archive,
                 is_xml,
                 is_excel,
                 &stop_flag,
@@ -1918,6 +1961,7 @@ fn search_files_list(
                 ac: &ac,
                 is_exact,
                 is_json,
+                is_archive,
                 is_xml,
                 is_excel,
                 exclude_hidden,
@@ -2487,7 +2531,13 @@ mod tests {
     #[test]
     fn plain_files_do_not_require_structured_memory_metadata() {
         assert_eq!(
-            estimated_structured_memory(Path::new("definitely-missing.txt"), false, false, false),
+            estimated_structured_memory(
+                Path::new("definitely-missing.txt"),
+                false,
+                false,
+                false,
+                false
+            ),
             0
         );
     }
@@ -2565,6 +2615,7 @@ mod tests {
             ac: &ac,
             is_exact: false,
             is_json: false,
+            is_archive: false,
             is_xml: false,
             is_excel: false,
             exclude_hidden: false,

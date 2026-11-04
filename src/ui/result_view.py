@@ -848,7 +848,7 @@ class ResultView(QWidget):
         """문맥 미리보기 영역을 초기 상태로 되돌립니다."""
         self._cancel_context_preview()
         self._current_match_item = None
-        self._set_context_line_settings_visible(not self._is_excel_preview())
+        self._set_context_line_settings_visible(not (self._is_excel_preview() or self._is_archive_preview()))
         self.context_highlighter.set_language("text")
         self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_PLACEHOLDER)
         self.context_preview.setExtraSelections([])
@@ -860,6 +860,23 @@ class ResultView(QWidget):
             return True
         file_path = self.selected_file_path or getattr(self.match_model, "current_file_path", "")
         return str(file_path or "").lower().endswith(self.EXCEL_PREVIEW_EXTENSIONS)
+
+    def _is_archive_preview(self):
+        """UE 현지화 archive 결과는 위·아래 문맥 대신 검색한 항목의 네 값을 보여줍니다."""
+        modes = (self.search_mode, getattr(self.match_model, "search_mode", None))
+        return any(Constants.MODE_ARCHIVE in str(mode or "") for mode in modes)
+
+    def _show_archive_context_preview(self, match_item):
+        """검색할 때 확보한 Namespace·Key·원문·번역문만 사용해 파일을 다시 읽지 않고 표시합니다."""
+        values = []
+        for value in (match_item.position, match_item.content, match_item.extra_1, match_item.extra_2):
+            text = "" if value is None else str(value)
+            if len(text) > self.CONTEXT_MAX_LINE_CHARS:
+                text = text[: self.CONTEXT_MAX_LINE_CHARS] + "..."
+            values.append(text.replace("\r\n", "\n").replace("\r", "\n"))
+        self.context_highlighter.set_language("text")
+        self.context_preview.setPlainText(AppStrings.CONTEXT_PREVIEW_ARCHIVE_MATCH.format(*values))
+        self.context_preview.setExtraSelections([])
 
     def _set_context_line_settings_visible(self, visible):
         self.context_line_settings_widget.setVisible(bool(visible))
@@ -984,6 +1001,10 @@ class ResultView(QWidget):
         """선택된 매치의 일반 텍스트 문맥을 안전하게 표시합니다."""
         self._cancel_context_preview()
         self._current_match_item = match_item
+        if self._is_archive_preview():
+            self._set_context_line_settings_visible(False)
+            self._show_archive_context_preview(match_item)
+            return
         if self._is_excel_preview():
             self._set_context_line_settings_visible(False)
             self._show_excel_context_preview(match_item)
@@ -1217,8 +1238,9 @@ class ResultView(QWidget):
             self.search_mode = Constants.MODE_NORMAL
         else:
             self.search_mode = search_mode
-        is_excel_mode = Constants.MODE_EXCEL.upper() in str(self.search_mode or "").upper()
-        self._set_context_line_settings_visible(not is_excel_mode)
+        mode_upper = str(self.search_mode or "").upper()
+        no_context_mode = Constants.MODE_EXCEL.upper() in mode_upper or Constants.MODE_ARCHIVE.upper() in mode_upper
+        self._set_context_line_settings_visible(not no_context_mode)
         self.update_ui_visibility()
 
     def set_results(self, results):
@@ -1287,7 +1309,7 @@ class ResultView(QWidget):
         mode = self.search_mode or Constants.MODE_NORMAL
         
         # Normal 모드와 Excel 모드는 0번 컬럼부터 데이터 필터링 대상
-        if mode == Constants.MODE_NORMAL or Constants.MODE_EXCEL in mode:
+        if mode == Constants.MODE_NORMAL or Constants.MODE_EXCEL in mode or Constants.MODE_ARCHIVE in mode:
             return edit_idx
             
         # XML, JSON 등은 0번이 '라인 번호'이므로 필터 n은 n+1번 컬럼 대응
@@ -1309,6 +1331,15 @@ class ResultView(QWidget):
             self.match_filter_3_edit.setVisible(False)
             self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_KEY_PLACEHOLDER)
             self.match_filter_2_edit.setPlaceholderText(AppStrings.MATCH_FILTER_VALUE_PLACEHOLDER)
+        elif Constants.MODE_ARCHIVE in mode:
+            for edit, placeholder in (
+                (self.match_filter_1_edit, AppStrings.MATCH_FILTER_ARCHIVE_NAMESPACE_PLACEHOLDER),
+                (self.match_filter_2_edit, AppStrings.MATCH_FILTER_ARCHIVE_KEY_PLACEHOLDER),
+                (self.match_filter_3_edit, AppStrings.MATCH_FILTER_ARCHIVE_SOURCE_PLACEHOLDER),
+                (self.match_filter_4_edit, AppStrings.MATCH_FILTER_ARCHIVE_TRANSLATION_PLACEHOLDER),
+            ):
+                edit.setVisible(True)
+                edit.setPlaceholderText(placeholder)
         elif Constants.MODE_EXCEL in mode:
             self.match_filter_1_edit.setVisible(True)
             self.match_filter_2_edit.setVisible(True)
@@ -1518,7 +1549,15 @@ class ResultView(QWidget):
         # 모드별 헤더 설정
         mode = self.search_mode or Constants.MODE_NORMAL
         mode_upper = str(mode).upper()
-        if Constants.MODE_EXCEL.upper() in mode_upper:
+        if Constants.MODE_ARCHIVE.upper() in mode_upper:
+            headers = [
+                AppStrings.HEADER_FILE,
+                AppStrings.HEADER_ARCHIVE_NAMESPACE,
+                AppStrings.HEADER_ARCHIVE_KEY,
+                AppStrings.HEADER_ARCHIVE_SOURCE,
+                AppStrings.HEADER_ARCHIVE_TRANSLATION,
+            ]
+        elif Constants.MODE_EXCEL.upper() in mode_upper:
             headers = [
                 AppStrings.HEADER_FILE,
                 AppStrings.HEADER_EXCEL_SHEET,
@@ -1553,7 +1592,10 @@ class ResultView(QWidget):
             # 시트 2 데이터 추가
             for m in matches:
                 row = [full_path]
-                if Constants.MODE_EXCEL.upper() in mode_upper:
+                if Constants.MODE_ARCHIVE.upper() in mode_upper:
+                    # [위치, Namespace, Key, 원문, 번역문, ...]
+                    row.extend([self._export_value(value) for value in list(m[1:5]) + [""] * (5 - len(m[:5]))])
+                elif Constants.MODE_EXCEL.upper() in mode_upper:
                     # [Line, Sheet, Cell, Val, ...]
                     row.extend([str(m[1]), str(m[2]), str(m[3])])
                 elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
@@ -1621,6 +1663,8 @@ class ResultView(QWidget):
             return ()
         values = [self._export_value(value) for value in item]
         mode = str(self.search_mode or "").upper()
+        if Constants.MODE_ARCHIVE.upper() in mode:
+            return tuple(values[1:5])
         if Constants.MODE_EXCEL.upper() in mode:
             return tuple(values[:4])
         if Constants.MODE_JSON.upper() in mode or Constants.MODE_XML.upper() in mode:

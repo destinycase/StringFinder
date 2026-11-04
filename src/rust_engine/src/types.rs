@@ -5,6 +5,8 @@ use pyo3::prelude::*;
 pub const MODE_NORMAL: u32 = 0;
 pub const MODE_JSON: u32 = 1 << 0;
 pub const MODE_XML: u32 = 1 << 1;
+// UE 현지화 archive 값만 검색입니다. 세션에 저장되지 않는 실행 시 비트입니다.
+pub const MODE_ARCHIVE: u32 = 1 << 2;
 pub const MODE_EXACT: u32 = 1 << 3;
 pub const MODE_EXCEL: u32 = 1 << 4;
 pub const MODE_EXCLUDE_BINARY: u32 = 1 << 5;

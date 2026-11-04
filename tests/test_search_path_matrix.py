@@ -18,14 +18,15 @@ from sf_utils.constants import Constants as C
 
 PROBE = "sf_candidate_probe"
 QUERY = "needle"
-MODES = [None, C.MODE_JSON, C.MODE_XML, C.MODE_EXCEL]
+MODES = [None, C.MODE_JSON, C.MODE_XML, C.MODE_EXCEL, C.MODE_ARCHIVE]
 
 
-@pytest.fixture(scope="module", params=MODES, ids=["text", "json", "xml", "excel"])
+@pytest.fixture(scope="module", params=MODES, ids=["text", "json", "xml", "excel", "archive"])
 def corpus(request, tmp_path_factory):
     mode = request.param
     root = tmp_path_factory.mktemp("path_matrix")
-    suffix = {None: "txt", C.MODE_JSON: "json", C.MODE_XML: "xml", C.MODE_EXCEL: "xlsx"}[mode]
+    suffix = {None: "txt", C.MODE_JSON: "json", C.MODE_XML: "xml", C.MODE_EXCEL: "xlsx",
+              C.MODE_ARCHIVE: "archive"}[mode]
     manifest = {}
 
     def document(relative, hit=True):
@@ -40,6 +41,11 @@ def corpus(request, tmp_path_factory):
             book.close()
         elif mode == C.MODE_JSON:
             path.write_text(json.dumps({"first": values[0], "last": values[1]}), encoding="utf-8")
+        elif mode == C.MODE_ARCHIVE:
+            children = [{"Key": key, "Source": {"Text": value}, "Translation": {"Text": ""}}
+                        for key, value in zip(("first", "last"), values)]
+            archive = {"Subnamespaces": [{"Namespace": "NS", "Children": children}]}
+            path.write_text(json.dumps(archive), encoding="utf-8")
         elif mode == C.MODE_XML:
             path.write_text(f"<root><first>{values[0]}</first><last>{values[1]}</last></root>", encoding="utf-8")
         else:
@@ -100,6 +106,8 @@ def semantic_details(row, mode):
         return [(match[1].strip("/").replace(" > ", "/"), match[2]) for match in row[2]]
     if mode == C.MODE_EXCEL:
         return [(match[1], match[2], match[3]) for match in row[2]]
+    if mode == C.MODE_ARCHIVE:
+        return [(match[1], match[2], match[3]) for match in row[2]]
     return [(match[0], match[1]) for match in row[2]]
 
 
@@ -158,6 +166,7 @@ def test_candidate_and_result_oracles(corpus, precise, exclude_hidden, narrow):
             C.MODE_XML: [("first" if precise else "root/first", values[0]),
                          ("last" if precise else "root/last", values[1])],
             C.MODE_EXCEL: [("Data", "B2", values[0]), ("Data", "D9", values[1])],
+            C.MODE_ARCHIVE: [("NS", "first", values[0]), ("NS", "last", values[1])],
         }[mode]
         # JSON object traversal order is not a cross-backend contract.
         # Counters still catch duplicates and missing positions/values.

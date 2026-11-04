@@ -518,7 +518,8 @@ class MatchDetailModel(QAbstractTableModel):
                 return self._render_highlighted(val)
             return escape(val)
         elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col == 0:
+            # archive의 첫 열은 줄 번호가 아니라 Namespace이므로 왼쪽 정렬합니다.
+            if col == 0 and Constants.MODE_ARCHIVE not in search_mode:
                 return Qt.AlignmentFlag.AlignCenter
             return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         elif role == Qt.ItemDataRole.UserRole:
@@ -621,6 +622,13 @@ class MatchDetailModel(QAbstractTableModel):
             self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_JSON_KEY, AppStrings.HEADER_JSON_VALUE]
         elif Constants.MODE_XML in search_mode:
             self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_XML_NAME, AppStrings.HEADER_XML_VALUE]
+        elif Constants.MODE_ARCHIVE in search_mode:
+            self._headers = [
+                AppStrings.HEADER_ARCHIVE_NAMESPACE,
+                AppStrings.HEADER_ARCHIVE_KEY,
+                AppStrings.HEADER_ARCHIVE_SOURCE,
+                AppStrings.HEADER_ARCHIVE_TRANSLATION,
+            ]
         elif Constants.MODE_EXCEL in search_mode:
             self._headers = [
                 AppStrings.HEADER_EXCEL_SHEET,
@@ -684,6 +692,26 @@ class MatchDetailModel(QAbstractTableModel):
                                     )
                                 )
                                 continue
+
+                # UE 현지화 archive: (위치, Namespace, Key, 원문, 번역문, [Offset, Length])
+                # 위치 열은 표시하지 않으며, 상한 안내 행(-1/-2)은 첫 열에 안내 문구를 둡니다.
+                if Constants.MODE_ARCHIVE.upper() in mode_upper:
+                    if str(m[0]) in {"-1", "-2"}:
+                        normalized_matches.append(
+                            SearchMatchSchema(position=str(m[1]), content="", extra_1="", extra_2="")
+                        )
+                    elif len(m) >= 5:
+                        normalized_matches.append(
+                            SearchMatchSchema(
+                                position=str(m[1] or ""),
+                                content=str(m[2] or ""),
+                                extra_1=str(m[3] or ""),
+                                extra_2=str(m[4] or ""),
+                                offset=m[5] if len(m) > 5 else None,
+                                length=m[6] if len(m) > 6 else None,
+                            )
+                        )
+                    continue
 
                 # Case 1: Excel 모드 (Line, Sheet, Cell, Val, [Offset, Length])
                 if Constants.MODE_EXCEL.upper() in mode_upper and len(m) >= 4 and isinstance(m[1], str):

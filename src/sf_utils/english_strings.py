@@ -156,6 +156,7 @@ ENGLISH_STRINGS = {
     "SPECIAL_SEARCH_COMPACT_ITEMS": [
         "", "XML values (contains)", "XML values (exact)",
         "JSON values (contains)", "JSON values (exact)", "Excel values (contains)", "Excel values (exact)",
+        "ARCHIVE (contains)", "ARCHIVE (exact)",
     ],
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
@@ -193,6 +194,9 @@ ENGLISH_STRINGS = {
         '<p><b>Excel</b></p>'
         '<p>- Searches cell values and separates sheet, cell and value columns.</p>'
         '<p>- Excel modes search only their format and ignore saved extension entries. Folder and filename conditions still apply.</p>'
+        '<p><b>UE localization archive</b></p>'
+        '<p>- Searches source text, translations and keys in Unreal Engine localization .archive files, and shows namespace, key, source and translation columns. Namespaces are shown but not searched.</p>'
+        '<p>- This mode searches only .archive files and ignores saved extension entries. Folder and filename conditions still apply.</p>'
         '<p><b>Contains</b></p><p>- Finds the search text within a value.</p>'
         '<p><b>Exact match</b></p><p>- The entire value must match after trimming surrounding whitespace.</p>'
         '<br><h3>Unexpected results</h3>'
@@ -210,6 +214,8 @@ ENGLISH_STRINGS = {
         "JSON (exact)",
         "Excel (contains)",
         "Excel (exact)",
+        "UE localization archive (contains)",
+        "UE localization archive (exact)",
     ],
     "SPECIAL_SEARCH_MENU_ITEMS": [
         "Off",
@@ -219,6 +225,8 @@ ENGLISH_STRINGS = {
         "JSON (exact)",
         "Excel (contains)",
         "Excel (exact)",
+        "UE localization archive (contains)",
+        "UE localization archive (exact)",
     ],
     "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... Try character variant search only if default search misses expected text.",
     "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm",
@@ -234,6 +242,10 @@ ENGLISH_STRINGS = {
     "MATCH_FILTER_EXCEL_SHEET_PLACEHOLDER": "Filter sheets...",
     "MATCH_FILTER_EXCEL_CELL_PLACEHOLDER": "Filter cells...",
     "MATCH_FILTER_EXCEL_VAL_PLACEHOLDER": "Filter values...",
+    "MATCH_FILTER_ARCHIVE_NAMESPACE_PLACEHOLDER": "Filter namespaces...",
+    "MATCH_FILTER_ARCHIVE_KEY_PLACEHOLDER": "Filter keys...",
+    "MATCH_FILTER_ARCHIVE_SOURCE_PLACEHOLDER": "Filter source text...",
+    "MATCH_FILTER_ARCHIVE_TRANSLATION_PLACEHOLDER": "Filter translations...",
     "HEADER_COUNT": "Count",
     "HEADER_FOLDER": "Folder",
     "HEADER_FILE": "File",
@@ -246,6 +258,8 @@ ENGLISH_STRINGS = {
     "HEADER_EXCEL_SHEET": "Sheet",
     "HEADER_EXCEL_CELL": "Cell",
     "HEADER_EXCEL_VALUE": "Value",
+    "HEADER_ARCHIVE_SOURCE": "Source",
+    "HEADER_ARCHIVE_TRANSLATION": "Translation",
     "HEADER_LIST": "List",
     "STATUS_FOUND_COUNT": "Search completed in {} files",
     "STATUS_ERROR_PREFIX": "[Error] ",
@@ -284,6 +298,7 @@ ENGLISH_STRINGS = {
     "CONTEXT_PREVIEW_LOADING": "Loading context...",
     "CONTEXT_PREVIEW_SPECIAL_MATCH": "[Special data match]\n\nPosition: {}\nContent: {}",
     "CONTEXT_PREVIEW_EXCEL_MATCH": "[Excel cell match]\n\nSheet: {}\nCell: {}\nValue: {}",
+    "CONTEXT_PREVIEW_ARCHIVE_MATCH": "[UE localization archive match]\n\nNamespace: {}\nKey: {}\nSource: {}\nTranslation: {}",
     "CONTEXT_PREVIEW_EXCEL_VALUE_TRUNCATED": "\n[The cell value is long; only part is displayed]",
     "CONTEXT_PREVIEW_READ_FAILED": "[Failed to read context preview]\n{}",
     "CONTEXT_PREVIEW_SCAN_LIMIT": (
@@ -479,6 +494,7 @@ ENGLISH_STRINGS = {
     "ERROR_UNKNOWN": "Unknown system error.",
     "ERROR_UNEXPECTED_FILE": "[Error] Unexpected problem while processing file ('{}'): {}",
     "ERROR_JSON_PARSE": "[Error] Failed to parse JSON: {}",
+    "ERROR_ARCHIVE_FORMAT": "[Error] Not a UE localization archive (location: {})",
     "ERROR_EXPORT_FAIL": "[Error] Failed to export results: {}",
     "EXPORT_SUCCESS": "Search results saved successfully:\n{}",
     "ERROR_OPEN_DIR_FAILED": "[Error] Failed to open folder: {}",
@@ -540,6 +556,7 @@ ENGLISH_STRINGS = {
     "LOG_SCH_ERROR": "[Error] General search engine error: {}",
     "LOG_SCH_RUST_ENGINE_ERROR": "[Error] Rust core engine error ('{}'): {}",
     "LOG_SCH_RUST_JSON_FAIL": "[Error] Rust JSON search failed ('{}'): {}",
+    "LOG_SCH_RUST_ARCHIVE_FAIL": "[Error] Rust UE localization archive search failed ('{}'): {}",
     "LOG_SCH_RUST_DIR_SEARCH_ERROR": "[Error] Rust directory traversal error ('{}'): {}",
     "LOG_SCH_JSON_LIMIT": "[Error] JSON object nesting limit exceeded.",
     "LOG_SCH_BINARY_CHECK_ERROR": "[Error] Binary integrity check failed: {}",
@@ -548,6 +565,7 @@ ENGLISH_STRINGS = {
     "LOG_SCH_ERROR_FILE": "[Error] Failed to process file ('{}'): {}",
     "LOG_SCH_RUST_EXCEL_FAIL": "[Error] Rust Excel search failed ('{}'): {}",
     "LOG_SCH_JSON_FAIL": "[Error] Python JSON search failed: {}",
+    "LOG_SCH_ARCHIVE_FAIL": "[Error] Python UE localization archive search failed ('{}'): {}",
     "LOG_SCH_XML_FAIL": "[Error] Python XML search failed: {}",
     "LOG_SCH_RUST_XML_FAIL": "[Error] Rust XML search failed ('{}'): {}",
     "LOG_SCH_STREAM_ERROR": "[Error] Data stream processing was interrupted: {}",
