@@ -7,7 +7,7 @@ from PySide6.QtTest import QTest
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
-from ui.panels import ExtensionFilterPanel, FolderFilterPanel, FolderGroupHeader
+from ui.panels import ExtensionFilterPanel, FilenameFilterPanel, FolderFilterPanel, FolderGroupHeader
 
 FOLDERS = {"C:/loose": True, "D:/game/a": True, "D:/game/b": False, "D:/work/x": True, "D:/work/y": True}
 GROUPS = [
@@ -233,8 +233,8 @@ def test_group_checkbox_lines_up_with_ungrouped_folder_checkboxes(panel):
     assert game.toggle_btn.x() > game.count_label.x() > game.checkbox.x()
 
 
-@pytest.mark.parametrize("panel_type", [FolderFilterPanel, ExtensionFilterPanel])
-def test_empty_list_guidance_is_a_box_with_margins(qtbot, panel_type):
+@pytest.mark.parametrize("panel_type", [FolderFilterPanel, ExtensionFilterPanel, FilenameFilterPanel])
+def test_empty_list_guidance_box_sits_above_the_list(qtbot, panel_type):
     from ui.styles import UIStyles
 
     widget = panel_type()
@@ -242,19 +242,46 @@ def test_empty_list_guidance_is_a_box_with_margins(qtbot, panel_type):
     widget.resize(340, 300)
     widget.show()
     qtbot.waitExposed(widget)
-    listing = widget.folder_list if panel_type is FolderFilterPanel else widget.ext_list
+    listing = {FolderFilterPanel: "folder_list", ExtensionFilterPanel: "ext_list",
+               FilenameFilterPanel: "filename_list"}[panel_type]
+    listing = getattr(widget, listing)
+    qtbot.wait(10)
     hint = listing.empty_hint
-    listing._position_actions()
-    area = listing.viewport().rect()
-    margin = UIStyles.GUIDE_BOX_MARGIN
-    assert hint.isVisible()
-    assert hint.geometry().left() == margin and hint.geometry().right() == area.width() - margin - 1
-    # 상자는 글자 높이에 맞고 목록 세로 가운데에 놓입니다.
-    assert hint.height() == hint.heightForWidth(hint.width()) < area.height()
-    assert abs(hint.geometry().center().y() - area.center().y()) <= 1
+    assert hint.isVisible() and hint.parent() is widget
+    # 목록 바로 위에 붙고, 목록과 같은 폭입니다.
+    assert hint.geometry().bottom() < listing.geometry().top()
+    assert (hint.x(), hint.width()) == (listing.x(), listing.width())
     # 스타일 테두리(1px)가 안쪽 여백에 더해집니다.
     assert hint.contentsMargins().left() >= UIStyles.GUIDE_BOX_PADDING[0]
     assert "border" in hint.styleSheet()
+
+
+def test_empty_list_guidance_hides_when_items_exist(qtbot):
+    widget = FilenameFilterPanel()
+    qtbot.addWidget(widget)
+    widget.show()
+    widget.add_filename("report")
+    widget.filename_list._position_actions()
+    assert widget.usage_label.isHidden()
+    widget.filename_list.clear()
+    assert widget.usage_label.isVisible()
+
+
+def test_values_only_notice_and_empty_guidance_share_width_without_overlap(qtbot):
+    widget = ExtensionFilterPanel()
+    qtbot.addWidget(widget)
+    widget.resize(340, 300)
+    widget.show()
+    qtbot.waitExposed(widget)
+    empty_geometry = widget.usage_label.geometry()
+    widget.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
+    qtbot.wait(10)
+    # 값만 검색 안내만 보이고, 빈 목록 안내와 같은 폭·같은 위쪽 자리를 씁니다.
+    assert widget.usage_label.isHidden()
+    notice = widget.values_only_notice.geometry()
+    assert (notice.x(), notice.width(), notice.y()) == (empty_geometry.x(), empty_geometry.width(), empty_geometry.y())
+    widget.set_special_mode(AppStrings.SPECIAL_SEARCH_OFF)
+    assert widget.usage_label.isVisible()
 
 
 def test_values_only_notice_uses_notice_box(qtbot):

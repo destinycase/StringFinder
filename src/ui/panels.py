@@ -279,14 +279,16 @@ class FilterListWidget(QListWidget):
         self._action_column.setBackgroundRole(QPalette.ColorRole.Base)
         self.setViewportMargins(0, 0, self.ACTION_WIDTH, 0)
         self.viewport().installEventFilter(self)
-        # 빈 목록 안내는 테두리가 있는 상자로 목록 가운데에 띄워 패널 배경과 구분합니다.
-        self.empty_hint = QLabel(self.viewport())
+        # 빈 목록 안내 상자입니다. 패널이 목록 바로 위 레이아웃에 넣어, 다른 안내 상자와 같은 폭으로 위쪽에 붙습니다.
+        # 목록은 비었는지에 따라 보이기만 정합니다.
+        self.empty_hint = QLabel(self)
         self.empty_hint.setObjectName("filterEmptyHint")
         self.empty_hint.setWordWrap(True)
         self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.empty_hint.setContentsMargins(*UIStyles.GUIDE_BOX_PADDING)
         self.empty_hint.setStyleSheet(UIStyles.STYLE_GUIDE_BOX)
-        self.empty_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        # 값만 검색처럼 다른 안내가 우선할 때는 빈 목록 안내를 감춥니다.
+        self.empty_hint_suppressed = False
 
     def setItemWidget(self, item, widget):
         super().setItemWidget(item, widget)
@@ -307,21 +309,15 @@ class FilterListWidget(QListWidget):
                 self._position_pending = True
                 QTimer.singleShot(0, self, self._position_actions)
 
-    def _position_empty_hint(self):
-        """안내 상자를 좌우 여백을 두고 글자 높이에 맞춰 목록 세로 가운데에 놓습니다."""
-        area = self.viewport().rect()
-        margin = UIStyles.GUIDE_BOX_MARGIN
-        width = max(0, area.width() - margin * 2)
-        height = min(max(0, area.height() - margin * 2), self.empty_hint.heightForWidth(width))
-        self.empty_hint.setGeometry(margin, max(margin, (area.height() - height) // 2), width, height)
+    def refresh_empty_hint(self):
+        self.empty_hint.setVisible(self.count() == 0 and not self.empty_hint_suppressed)
 
     def _position_actions(self):
         self._position_pending = False
         if not hasattr(self, "_action_column"):
             return
         viewport = self.viewport().geometry()
-        self._position_empty_hint()
-        self.empty_hint.setVisible(self.count() == 0)
+        self.refresh_empty_hint()
         self._action_column.setGeometry(viewport.right() + 1, viewport.top(), self.ACTION_WIDTH, viewport.height())
         for item, button in self._actions:
             rect = self.visualItemRect(item)
@@ -845,6 +841,7 @@ class FolderFilterPanel(DenseFilterPanel):
         self.usage_label.setText(AppStrings.FOLDER_FILTER_USAGE)
         # 폴더 목록의 가독성을 위해 적절한 최소 크기를 보장합니다.
         self.folder_list.setMinimumHeight(50)
+        main_layout.addWidget(self.usage_label)
         main_layout.addWidget(self.folder_list, 1)  # 1: Stretch 부여
 
         btn_layout = QHBoxLayout()
@@ -1213,6 +1210,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.values_only_notice.setStyleSheet(UIStyles.STYLE_NOTICE_BOX)
         self.values_only_notice.hide()
         main_layout.addWidget(self.values_only_notice)
+        main_layout.addWidget(self.usage_label)
         main_layout.addWidget(self.ext_list, 1)  # 확장자 목록이 가용한 영역을 최대한 활용하도록 설정합니다.
 
         input_layout = QHBoxLayout()
@@ -1264,6 +1262,9 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.sel_all_btn.setEnabled(is_off)
         self.desel_all_btn.setEnabled(is_off)
         self.usage_label.setEnabled(is_off)
+        # 값만 검색 안내가 보일 때는 같은 자리의 빈 목록 안내를 겹쳐 띄우지 않습니다.
+        self.ext_list.empty_hint_suppressed = not is_off
+        self.ext_list.refresh_empty_hint()
         self.values_only_notice.setVisible(not is_off)
         self._refresh_status()
         self.special_mode_changed.emit(text)
@@ -1409,6 +1410,7 @@ class FilenameFilterPanel(DenseFilterPanel):
         self.usage_label = self.filename_list.empty_hint
         self.usage_label.setText(AppStrings.FILENAME_FILTER_USAGE)
         self.filename_list.setMinimumHeight(50)
+        main_layout.addWidget(self.usage_label)
         main_layout.addWidget(self.filename_list, 1)
 
         add_layout = QHBoxLayout()
