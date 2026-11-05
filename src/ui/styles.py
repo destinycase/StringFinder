@@ -9,6 +9,18 @@ class UIStyles:
     STYLE_DANGER_TEXT = "color: #ff5555;"
     STYLE_SELECTION_INFO = "color: #888; font-size: 14px; margin: 20px;"
     STYLE_EMPTY_LABEL = "color: {}; font-size: 16px; font-weight: bold;"
+    # 필터 목록의 안내 상자입니다. 안쪽 여백은 줄바꿈 높이 계산에 반영되도록 setContentsMargins로 줍니다.
+    GUIDE_BOX_PADDING = (12, 10, 12, 10)
+    GUIDE_BOX_MARGIN = 10  # 목록 테두리와 안내 상자 사이 여백
+    # 밝은·어두운 테마 모두에서 목록 바탕과 살짝 구분되도록 반투명 회색을 씁니다. 글자색은 테마를 따릅니다.
+    STYLE_GUIDE_BOX = (
+        "QLabel#filterEmptyHint { border: 1px solid rgba(128, 128, 128, 120); border-radius: 6px; "
+        "background-color: rgba(128, 128, 128, 32); }"
+    )
+    STYLE_NOTICE_BOX = (
+        "QLabel { color: #d99030; border: 1px solid rgba(217, 144, 48, 150); border-radius: 6px; "
+        "background-color: rgba(217, 144, 48, 28); }"
+    )
 
     @classmethod
     def get_empty_message_style(cls, is_dark_mode: bool) -> str:

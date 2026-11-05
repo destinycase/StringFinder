@@ -231,3 +231,36 @@ def test_group_checkbox_lines_up_with_ungrouped_folder_checkboxes(panel):
     # 펼치기 단추는 그룹 이름 오른쪽에 있어 체크 위치를 밀지 않습니다.
     assert game.checkbox.x() == loose.checkbox.x()
     assert game.toggle_btn.x() > game.count_label.x() > game.checkbox.x()
+
+
+@pytest.mark.parametrize("panel_type", [FolderFilterPanel, ExtensionFilterPanel])
+def test_empty_list_guidance_is_a_box_with_margins(qtbot, panel_type):
+    from ui.styles import UIStyles
+
+    widget = panel_type()
+    qtbot.addWidget(widget)
+    widget.resize(340, 300)
+    widget.show()
+    qtbot.waitExposed(widget)
+    listing = widget.folder_list if panel_type is FolderFilterPanel else widget.ext_list
+    hint = listing.empty_hint
+    listing._position_actions()
+    area = listing.viewport().rect()
+    margin = UIStyles.GUIDE_BOX_MARGIN
+    assert hint.isVisible()
+    assert hint.geometry().left() == margin and hint.geometry().right() == area.width() - margin - 1
+    # 상자는 글자 높이에 맞고 목록 세로 가운데에 놓입니다.
+    assert hint.height() == hint.heightForWidth(hint.width()) < area.height()
+    assert abs(hint.geometry().center().y() - area.center().y()) <= 1
+    # 스타일 테두리(1px)가 안쪽 여백에 더해집니다.
+    assert hint.contentsMargins().left() >= UIStyles.GUIDE_BOX_PADDING[0]
+    assert "border" in hint.styleSheet()
+
+
+def test_values_only_notice_uses_notice_box(qtbot):
+    from ui.styles import UIStyles
+
+    widget = ExtensionFilterPanel()
+    qtbot.addWidget(widget)
+    assert widget.values_only_notice.styleSheet() == UIStyles.STYLE_NOTICE_BOX
+    assert widget.values_only_notice.contentsMargins().top() >= UIStyles.GUIDE_BOX_PADDING[1]

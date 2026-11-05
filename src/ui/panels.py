@@ -279,9 +279,13 @@ class FilterListWidget(QListWidget):
         self._action_column.setBackgroundRole(QPalette.ColorRole.Base)
         self.setViewportMargins(0, 0, self.ACTION_WIDTH, 0)
         self.viewport().installEventFilter(self)
+        # 빈 목록 안내는 테두리가 있는 상자로 목록 가운데에 띄워 패널 배경과 구분합니다.
         self.empty_hint = QLabel(self.viewport())
+        self.empty_hint.setObjectName("filterEmptyHint")
         self.empty_hint.setWordWrap(True)
         self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.empty_hint.setContentsMargins(*UIStyles.GUIDE_BOX_PADDING)
+        self.empty_hint.setStyleSheet(UIStyles.STYLE_GUIDE_BOX)
         self.empty_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
     def setItemWidget(self, item, widget):
@@ -303,12 +307,20 @@ class FilterListWidget(QListWidget):
                 self._position_pending = True
                 QTimer.singleShot(0, self, self._position_actions)
 
+    def _position_empty_hint(self):
+        """안내 상자를 좌우 여백을 두고 글자 높이에 맞춰 목록 세로 가운데에 놓습니다."""
+        area = self.viewport().rect()
+        margin = UIStyles.GUIDE_BOX_MARGIN
+        width = max(0, area.width() - margin * 2)
+        height = min(max(0, area.height() - margin * 2), self.empty_hint.heightForWidth(width))
+        self.empty_hint.setGeometry(margin, max(margin, (area.height() - height) // 2), width, height)
+
     def _position_actions(self):
         self._position_pending = False
         if not hasattr(self, "_action_column"):
             return
         viewport = self.viewport().geometry()
-        self.empty_hint.setGeometry(self.viewport().rect().adjusted(4, 0, -4, 0))
+        self._position_empty_hint()
         self.empty_hint.setVisible(self.count() == 0)
         self._action_column.setGeometry(viewport.right() + 1, viewport.top(), self.ACTION_WIDTH, viewport.height())
         for item, button in self._actions:
@@ -1197,7 +1209,8 @@ class ExtensionFilterPanel(DenseFilterPanel):
         # 값만 검색을 쓰는 동안 확장자 목록이 왜 잠겼는지 알려 줍니다.
         self.values_only_notice = QLabel(AppStrings.EXTENSION_FILTER_VALUES_ONLY_NOTICE)
         self.values_only_notice.setWordWrap(True)
-        self.values_only_notice.setStyleSheet("QLabel { color: #d99030; }")
+        self.values_only_notice.setContentsMargins(*UIStyles.GUIDE_BOX_PADDING)
+        self.values_only_notice.setStyleSheet(UIStyles.STYLE_NOTICE_BOX)
         self.values_only_notice.hide()
         main_layout.addWidget(self.values_only_notice)
         main_layout.addWidget(self.ext_list, 1)  # 확장자 목록이 가용한 영역을 최대한 활용하도록 설정합니다.
