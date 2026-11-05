@@ -223,3 +223,11 @@ def test_values_only_mode_shows_extension_notice(qtbot):
     widget.set_special_mode(AppStrings.SPECIAL_SEARCH_OFF)
     assert widget.values_only_notice.isHidden()
     assert widget.ext_list.isEnabled()
+
+
+def test_group_checkbox_lines_up_with_ungrouped_folder_checkboxes(panel):
+    loose = panel.folder_list.itemWidget(panel.folder_list.item(0))
+    _, game = header(panel, "Game")
+    # 펼치기 단추는 그룹 이름 오른쪽에 있어 체크 위치를 밀지 않습니다.
+    assert game.checkbox.x() == loose.checkbox.x()
+    assert game.toggle_btn.x() > game.count_label.x() > game.checkbox.x()

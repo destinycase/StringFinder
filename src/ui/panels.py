@@ -202,7 +202,8 @@ class FilterItemWidget(QWidget):
 class FolderGroupHeader(FilterItemWidget):
     """검색 폴더 그룹의 머리글 행입니다.
 
-    펼치기/접기 단추, 그룹 안 폴더를 한꺼번에 선택·해제하는 체크(일부만 선택되면 부분 표시), 선택/전체 개수를 보여줍니다.
+    그룹 안 폴더를 한꺼번에 선택·해제하는 체크(일부만 선택되면 부분 표시), 선택/전체 개수, 펼치기/접기 단추를 보여줍니다.
+    체크가 일반 폴더 행의 체크와 같은 세로줄에 오도록 펼치기 단추는 개수 오른쪽에 둡니다.
     """
 
     def __init__(self, name, collapsed=False, on_delete=None, on_toggle=None, on_check=None):
@@ -216,7 +217,6 @@ class FolderGroupHeader(FilterItemWidget):
         self.toggle_btn.setFixedSize(16, 16)
         self.toggle_btn.setToolTip(AppStrings.FOLDER_GROUP_TOGGLE_TOOLTIP)
         self.toggle_btn.clicked.connect(lambda: self._on_toggle(self) if self._on_toggle else None)
-        layout.insertWidget(layout.indexOf(self.checkbox), self.toggle_btn)
         font = self.checkbox.font()
         font.setBold(True)
         self.checkbox.setFont(font)
@@ -227,6 +227,7 @@ class FolderGroupHeader(FilterItemWidget):
         self.count_label = QLabel()
         self.count_label.setStyleSheet("QLabel { color: #888; }")
         layout.insertWidget(layout.indexOf(self.checkbox) + 1, self.count_label)
+        layout.insertWidget(layout.indexOf(self.count_label) + 1, self.toggle_btn)
         self.set_collapsed(collapsed)
 
     def isChecked(self):
