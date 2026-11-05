@@ -311,14 +311,31 @@ def test_display_resources_do_not_use_retired_names(language):
             assert retired not in value
 
 
+def _one_row_width(panel):
+    """검색줄을 한 줄로 배치하는 데 필요한 최소 패널 폭입니다.
+
+    글자 폭은 글꼴에 따라 달라집니다(예: 글꼴이 없는 CI의 offscreen Qt). 고정 폭 대신 이 값을 기준으로 시험합니다.
+    """
+    margins = panel.layout().contentsMargins()
+    labels = panel.search_label.sizeHint().width() + panel.search_settings_label.sizeHint().width()
+    actions = max(panel.search_btn.sizeHint().width(), panel.stop_btn.sizeHint().width())
+    return (margins.left() + margins.right() + labels + 140
+            + panel.search_settings_button.width() + actions + 4 * panel.input_layout.horizontalSpacing())
+
+
 def test_label_widths_follow_layout_after_repeated_resizing(qtbot, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
+    panel.resize(1280, 180)
     panel.show()
-    for width in (1280, 600, 1280, 600, 1280):
+    qtbot.wait(10)
+    boundary = _one_row_width(panel)
+    wide, narrow = boundary + 40, boundary - 40
+    for width in (wide, narrow, wide, narrow, wide):
         panel.resize(width, 180)
         qtbot.wait(10)
-        if width == 1280:
+        assert panel.width() == width
+        if width == wide:
             assert panel._toolbar_mode == 1
             for label in (panel.search_label, panel.search_settings_label):
                 assert label.minimumWidth() == 0
@@ -337,11 +354,7 @@ def test_layout_switch_uses_sum_of_natural_label_widths(qtbot, language):
     panel.resize(1280, 180)
     panel.show()
     qtbot.wait(10)
-    margins = panel.layout().contentsMargins()
-    labels = panel.search_label.sizeHint().width() + panel.search_settings_label.sizeHint().width()
-    actions = max(panel.search_btn.sizeHint().width(), panel.stop_btn.sizeHint().width())
-    boundary = (margins.left() + margins.right() + labels + 140
-                + panel.search_settings_button.width() + actions + 4 * panel.input_layout.horizontalSpacing())
+    boundary = _one_row_width(panel)
     for width, expected in ((boundary, 1), (boundary - 1, 2), (boundary, 1)):
         panel.resize(width, 180)
         qtbot.wait(10)
