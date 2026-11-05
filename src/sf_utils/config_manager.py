@@ -478,11 +478,34 @@ class ConfigManager:
             filters[Constants.CONFIG_KEY_FILENAMES] = self._normalize_filter_container(
                 filters.get(Constants.CONFIG_KEY_FILENAMES), filenames_default
             )
+            if Constants.CONFIG_KEY_FOLDER_GROUPS in filters:
+                filters[Constants.CONFIG_KEY_FOLDER_GROUPS] = self._normalize_folder_groups(
+                    filters.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
+                )
             self._config[Constants.CONFIG_KEY_FILTERS] = filters
         return filters
 
+    @staticmethod
+    def _normalize_folder_groups(value) -> list:
+        """검색 폴더 그룹을 ``[{name, collapsed, folders}]`` 형식으로만 받아들이고 잘못된 항목은 버립니다."""
+        groups = []
+        for group in value if isinstance(value, list) else []:
+            if not isinstance(group, dict):
+                continue
+            name = group.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            folders = group.get("folders")
+            groups.append({
+                "name": name.strip(),
+                "collapsed": group.get("collapsed") is True,
+                "folders": [folder for folder in folders if isinstance(folder, str) and folder.strip()]
+                if isinstance(folders, list) else [],
+            })
+        return groups
 
-    def update_filters(self, folders, extensions, filenames=None):
+
+    def update_filters(self, folders, extensions, filenames=None, folder_groups=None):
         filters = self._ensure_filters_dict()
         filters[Constants.CONFIG_KEY_FOLDERS] = self._normalize_filter_container(
             folders, self._defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_FOLDERS]
@@ -494,6 +517,8 @@ class ConfigManager:
             filters[Constants.CONFIG_KEY_FILENAMES] = self._normalize_filter_container(
             filenames, self._defaults[Constants.CONFIG_KEY_FILTERS][Constants.CONFIG_KEY_FILENAMES]
             )
+        if folder_groups is not None:
+            filters[Constants.CONFIG_KEY_FOLDER_GROUPS] = self._normalize_folder_groups(folder_groups)
         with self._config_lock:
             self._config[Constants.CONFIG_KEY_FILTERS] = filters
         self.save()

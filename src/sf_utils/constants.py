@@ -91,6 +91,7 @@ class Constants:
     CONFIG_KEY_VERSION = "config_version"
     CONFIG_KEY_FILTERS = "filters"
     CONFIG_KEY_FOLDERS = "folders"
+    CONFIG_KEY_FOLDER_GROUPS = "folder_groups"
     CONFIG_KEY_EXTENSIONS = "extensions"
     CONFIG_KEY_FILENAMES = "filenames"
     CONFIG_KEY_HISTORY = "history"

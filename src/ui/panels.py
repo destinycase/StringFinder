@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -141,6 +142,7 @@ class FilterItemWidget(QWidget):
         self._on_delete = on_delete
         self._on_change = on_change
         self._compact = None
+        self._indent = 0
         layout = QHBoxLayout(self)
         layout.setContentsMargins(2, 2, 4, 2)
         layout.setSpacing(8)
@@ -170,14 +172,79 @@ class FilterItemWidget(QWidget):
         self._compact = compact
         layout = self.layout()
         if layout is not None:
-            layout.setContentsMargins(2, 0 if compact else 2, 4, 0 if compact else 2)
+            layout.setContentsMargins(2 + self._indent, 0 if compact else 2, 4, 0 if compact else 2)
             self.setMinimumHeight(20 if compact else 24)
+
+    def set_indent(self, indent: int):
+        """그룹 안 항목처럼 왼쪽을 들여 써서 소속을 보여줍니다."""
+        if indent == self._indent:
+            return
+        self._indent = indent
+        layout = self.layout()
+        if layout is not None:
+            margins = layout.contentsMargins()
+            layout.setContentsMargins(2 + indent, margins.top(), margins.right(), margins.bottom())
 
     def text(self):
         return self.checkbox.text()
 
     def isChecked(self):
         return self.checkbox.isChecked()
+
+    def clone(self):
+        """순서를 옮길 때 다시 붙일, 이름·체크·밀도·콜백이 같은 새 위젯을 만듭니다."""
+        widget = FilterItemWidget(self.text(), self.isChecked(), on_delete=self._on_delete, on_change=self._on_change)
+        if self._compact is not None:
+            widget.set_compact(self._compact)
+        return widget
+
+
+class FolderGroupHeader(FilterItemWidget):
+    """검색 폴더 그룹의 머리글 행입니다.
+
+    펼치기/접기 단추, 그룹 안 폴더를 한꺼번에 선택·해제하는 체크(일부만 선택되면 부분 표시), 선택/전체 개수를 보여줍니다.
+    """
+
+    def __init__(self, name, collapsed=False, on_delete=None, on_toggle=None, on_check=None):
+        super().__init__(name, False, on_delete=on_delete, on_change=None)
+        self._on_toggle = on_toggle
+        self._on_check = on_check
+        self.collapsed = collapsed
+        layout = cast(QHBoxLayout, self.layout())
+        self.toggle_btn = QToolButton()
+        self.toggle_btn.setAutoRaise(True)
+        self.toggle_btn.setFixedSize(16, 16)
+        self.toggle_btn.setToolTip(AppStrings.FOLDER_GROUP_TOGGLE_TOOLTIP)
+        self.toggle_btn.clicked.connect(lambda: self._on_toggle(self) if self._on_toggle else None)
+        layout.insertWidget(layout.indexOf(self.checkbox), self.toggle_btn)
+        font = self.checkbox.font()
+        font.setBold(True)
+        self.checkbox.setFont(font)
+        self.checkbox.setTristate(True)
+        self.checkbox.setToolTip(AppStrings.FOLDER_GROUP_CHECK_TOOLTIP)
+        # Qt의 세 단계 순환 대신 패널이 "모두 선택/모두 해제"로 정합니다.
+        self.checkbox.clicked.connect(lambda _checked=False: self._on_check(self) if self._on_check else None)
+        self.count_label = QLabel()
+        self.count_label.setStyleSheet("QLabel { color: #888; }")
+        layout.insertWidget(layout.indexOf(self.checkbox) + 1, self.count_label)
+        self.set_collapsed(collapsed)
+
+    def isChecked(self):
+        return self.checkbox.checkState() == Qt.CheckState.Checked
+
+    def set_collapsed(self, collapsed: bool):
+        self.collapsed = collapsed
+        self.toggle_btn.setArrowType(Qt.ArrowType.RightArrow if collapsed else Qt.ArrowType.DownArrow)
+
+    def set_counts(self, checked: int, total: int):
+        self.count_label.setText(f"({checked}/{total})")
+
+    def clone(self):
+        widget = FolderGroupHeader(self.text(), self.collapsed, on_delete=self._on_delete,
+                                   on_toggle=self._on_toggle, on_check=self._on_check)
+        if self._compact is not None:
+            widget.set_compact(self._compact)
+        return widget
 
 
 class FilterListWidget(QListWidget):
@@ -203,6 +270,9 @@ class FilterListWidget(QListWidget):
         self._drop_indicator.setStyleSheet("QFrame { background-color: palette(highlight); border: none; }")
         self._drop_indicator.setFixedHeight(2)
         self._drop_indicator.hide()
+        # 함께 옮길 행 수와 놓을 수 있는 자리를 목록을 쓰는 패널이 바꿀 수 있습니다(예: 폴더 그룹).
+        self.block_size = lambda row: 1
+        self.snap_gap = lambda row, gap: gap
         self._action_column = QWidget(self)
         self._action_column.setAutoFillBackground(True)
         self._action_column.setBackgroundRole(QPalette.ColorRole.Base)
@@ -291,32 +361,33 @@ class FilterListWidget(QListWidget):
     def drop_gap_at(self, y: int) -> int:
         """뷰포트 y 위치에 놓았을 때 들어갈 자리(0~행 수)를 돌려줍니다."""
         for row in range(self.count()):
+            if self.item(row).isHidden():
+                continue
             if y < self.visualItemRect(self.item(row)).center().y():
                 return row
         return self.count()
 
     def move_row(self, source: int, target_gap: int) -> bool:
-        """``source`` 행을 ``target_gap`` 자리(그 행 앞)로 옮기고 이름·체크·밀도를 유지합니다."""
+        """``source`` 행(과 함께 옮길 행들)을 ``target_gap`` 자리(그 행 앞)로 옮기고 각 행의 상태를 유지합니다."""
         count = self.count()
         if not self.isEnabled() or not 0 <= source < count:
             return False
-        target_gap = max(0, min(target_gap, count))
-        destination = target_gap - 1 if target_gap > source else target_gap
-        if destination == source:
+        size = max(1, min(self.block_size(source), count - source))
+        target_gap = self.snap_gap(source, max(0, min(target_gap, count)))
+        if source <= target_gap <= source + size:
             return False
-        old_widget = self.itemWidget(self.item(source))
-        if not isinstance(old_widget, FilterItemWidget):
+        destination = target_gap - size if target_gap > source else target_gap
+        widgets = [self.itemWidget(self.item(row)) for row in range(source, source + size)]
+        if not all(isinstance(widget, FilterItemWidget) for widget in widgets):
             return False
-        text, checked = old_widget.text(), old_widget.isChecked()
-        on_delete, on_change, compact = old_widget._on_delete, old_widget._on_change, old_widget._compact
+        # 행을 빼면 Qt가 행 위젯을 지우므로 먼저 같은 상태의 위젯을 만들어 둡니다.
+        clones = [cast(FilterItemWidget, widget).clone() for widget in widgets]
         # 같은 항목 객체를 다시 넣으므로 패널의 삭제 콜백이 가리키는 항목도 그대로 유효합니다.
-        item = self.takeItem(source)
-        self.insertItem(destination, item)
-        widget = FilterItemWidget(text, checked, on_delete=on_delete, on_change=on_change)
-        if compact is not None:
-            widget.set_compact(compact)
-        item.setSizeHint(widget.sizeHint())
-        self.setItemWidget(item, widget)
+        items = [self.takeItem(source) for _ in range(size)]
+        for offset, (item, widget) in enumerate(zip(items, clones)):
+            self.insertItem(destination + offset, item)
+            item.setSizeHint(widget.sizeHint())
+            self.setItemWidget(item, widget)
         self.setCurrentRow(destination)
         self.items_reordered.emit()
         return True
@@ -378,8 +449,9 @@ class FilterListWidget(QListWidget):
         if event.modifiers() == Qt.KeyboardModifier.AltModifier and event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down):
             row = self.currentRow()
             if row >= 0:
-                # 아래로 한 칸은 다음 행 뒤의 자리(row + 2)에 넣는 것과 같습니다.
-                self.move_row(row, row - 1 if event.key() == Qt.Key.Key_Up else row + 2)
+                # 아래로 한 칸은 다음 행(또는 다음 묶음) 뒤의 자리에 넣는 것과 같습니다.
+                below = row + self.block_size(row) + 1
+                self.move_row(row, row - 1 if event.key() == Qt.Key.Key_Up else below)
             event.accept()
             return
         super().keyPressEvent(event)
@@ -733,7 +805,15 @@ class DenseFilterPanel(QWidget):
 
 
 class FolderFilterPanel(DenseFilterPanel):
+    """검색 폴더 목록입니다. 폴더를 그룹으로 묶어 한꺼번에 선택·해제하고 접을 수 있습니다.
+
+    목록은 한 줄로 이어진 행이며, 그룹 머리글 행 아래부터 다음 머리글 전까지가 그 그룹의 폴더입니다.
+    첫 머리글 위의 폴더는 그룹에 속하지 않습니다. 검색은 체크된 폴더를 목록 순서(그룹 순서 → 그룹 안 순서)대로 합니다.
+    """
+
     filter_changed = Signal()
+    # 그룹 안 폴더의 들여쓰기 폭입니다. 머리글의 펼치기 단추 너비와 비슷하게 맞춥니다.
+    GROUP_INDENT = 18
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -743,7 +823,11 @@ class FolderFilterPanel(DenseFilterPanel):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 15, 10, 10)
         self.folder_list = FilterListWidget()
-        self.folder_list.items_reordered.connect(self.filter_changed.emit)
+        self.folder_list.block_size = self._block_size
+        self.folder_list.snap_gap = self._snap_gap
+        self.folder_list.items_reordered.connect(self._after_reorder)
+        self.folder_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.folder_list.customContextMenuRequested.connect(self._show_context_menu)
         self.usage_label = self.folder_list.empty_hint
         self.usage_label.setText(AppStrings.FOLDER_FILTER_USAGE)
         # 폴더 목록의 가독성을 위해 적절한 최소 크기를 보장합니다.
@@ -753,6 +837,8 @@ class FolderFilterPanel(DenseFilterPanel):
         btn_layout = QHBoxLayout()
         add_btn = QPushButton(AppStrings.ADD_FOLDER_BTN)
         add_btn.clicked.connect(self._on_add_clicked)
+        self.add_group_btn = QPushButton(AppStrings.ADD_FOLDER_GROUP_BTN)
+        self.add_group_btn.clicked.connect(self._on_add_group_clicked)
         sel_all_btn = QPushButton(AppStrings.SELECT_ALL_BTN)
         sel_all_btn.setFixedWidth(80)
         sel_all_btn.clicked.connect(lambda: self.toggle_all(True))
@@ -760,6 +846,7 @@ class FolderFilterPanel(DenseFilterPanel):
         desel_all_btn.setFixedWidth(80)
         desel_all_btn.clicked.connect(lambda: self.toggle_all(False))
         btn_layout.addWidget(add_btn)
+        btn_layout.addWidget(self.add_group_btn)
         btn_layout.addWidget(sel_all_btn)
         btn_layout.addWidget(desel_all_btn)
         main_layout.addLayout(btn_layout)
@@ -769,75 +856,324 @@ class FolderFilterPanel(DenseFilterPanel):
         self.filter_changed.connect(self._refresh_status)
         self._refresh_status()
 
+    # ----- 행 구조 -----
+    def _widget(self, row: int):
+        return self.folder_list.itemWidget(self.folder_list.item(row))
+
+    def _is_header_row(self, row: int) -> bool:
+        return isinstance(self._widget(row), FolderGroupHeader)
+
+    def _header_rows(self) -> List[int]:
+        return [row for row in range(self.folder_list.count()) if self._is_header_row(row)]
+
+    def _folder_rows(self) -> List[int]:
+        return [
+            row for row in range(self.folder_list.count())
+            if isinstance(self._widget(row), FilterItemWidget) and not self._is_header_row(row)
+        ]
+
+    def _group_end(self, header_row: int) -> int:
+        """그룹 머리글부터 그룹 마지막 폴더 다음 행까지의 끝(제외)입니다."""
+        row = header_row + 1
+        while row < self.folder_list.count() and not self._is_header_row(row):
+            row += 1
+        return row
+
+    def _ungrouped_end(self) -> int:
+        headers = self._header_rows()
+        return headers[0] if headers else self.folder_list.count()
+
+    def _group_header_of(self, row: int) -> int:
+        """행이 속한 그룹 머리글의 행 번호이며, 그룹이 없으면 -1입니다."""
+        while row >= 0:
+            if self._is_header_row(row):
+                return row
+            row -= 1
+        return -1
+
+    def _row_of_widget(self, widget) -> int:
+        for row in range(self.folder_list.count()):
+            if self._widget(row) is widget:
+                return row
+        return -1
+
+    def _block_size(self, row: int) -> int:
+        # 그룹 머리글을 옮기면 그 그룹의 폴더도 함께 옮깁니다.
+        return self._group_end(row) - row if self._is_header_row(row) else 1
+
+    def _snap_gap(self, row: int, gap: int) -> int:
+        """그룹 머리글은 다른 그룹 사이(또는 목록 끝)에만 놓여 다른 그룹을 쪼개지 않게 합니다."""
+        if not self._is_header_row(row):
+            return gap
+        boundaries = self._header_rows() + [self.folder_list.count()]
+        if gap > row:
+            after = [boundary for boundary in boundaries if boundary >= gap]
+            return min(after) if after else self.folder_list.count()
+        before = [boundary for boundary in boundaries if boundary <= gap]
+        return max(before) if before else row
+
+    # ----- 행 만들기 -----
+    def _insert_folder_row(self, row: int, folder: str, checked: bool):
+        item = QListWidgetItem()
+        self.folder_list.insertItem(row, item)
+        widget = FilterItemWidget(
+            folder, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self._on_folder_toggled()
+        )
+        widget.set_compact(self._compact_rows)
+        item.setSizeHint(widget.sizeHint())
+        self.folder_list.setItemWidget(item, widget)
+
+    def _insert_header_row(self, row: int, name: str, collapsed: bool = False):
+        item = QListWidgetItem()
+        self.folder_list.insertItem(row, item)
+        widget = FolderGroupHeader(
+            name, collapsed, on_delete=lambda: self._delete_item(item),
+            on_toggle=self._on_group_toggled, on_check=self._on_group_checked,
+        )
+        widget.set_compact(self._compact_rows)
+        item.setSizeHint(widget.sizeHint())
+        self.folder_list.setItemWidget(item, widget)
+
+    def _refresh_groups(self):
+        """그룹 머리글의 체크(전체·일부·없음)·개수와 접힌 그룹의 폴더 숨김을 다시 맞춥니다."""
+        for header_row in self._header_rows():
+            header = cast(FolderGroupHeader, self._widget(header_row))
+            children = range(header_row + 1, self._group_end(header_row))
+            checked = sum(1 for row in children if cast(FilterItemWidget, self._widget(row)).isChecked())
+            total = len(children)
+            if total and checked == total:
+                state = Qt.CheckState.Checked
+            elif checked:
+                state = Qt.CheckState.PartiallyChecked
+            else:
+                state = Qt.CheckState.Unchecked
+            with QSignalBlocker(header.checkbox):
+                header.checkbox.setCheckState(state)
+            header.set_counts(checked, total)
+            for row in children:
+                self.folder_list.item(row).setHidden(header.collapsed)
+                cast(FilterItemWidget, self._widget(row)).set_indent(self.GROUP_INDENT)
+        for row in range(self._ungrouped_end()):
+            self.folder_list.item(row).setHidden(False)
+            cast(FilterItemWidget, self._widget(row)).set_indent(0)
+        self.folder_list.doItemsLayout()
+
     def _refresh_status(self):
         count = len(self.get_selected_folders())
         self.status_label.setText(
             AppStrings.FOLDER_FILTER_SELECTED.format(count) if count else AppStrings.FOLDER_FILTER_EMPTY
         )
 
+    # ----- 사용자 동작 -----
     def _on_add_clicked(self):
         folder = QFileDialog.getExistingDirectory(self, AppStrings.SELECT_FOLDER_TITLE)
         if folder:
             self.add_folder(folder)
 
+    def _on_add_group_clicked(self):
+        default = AppStrings.FOLDER_GROUP_DEFAULT_NAME.format(len(self._header_rows()) + 1)
+        name, accepted = QInputDialog.getText(
+            self, AppStrings.FOLDER_GROUP_NAME_TITLE, AppStrings.FOLDER_GROUP_NAME_PROMPT, text=default
+        )
+        if accepted:
+            self.add_group(name)
+
+    def _on_folder_toggled(self):
+        self._refresh_groups()
+        self.filter_changed.emit()
+
+    def _on_group_checked(self, header):
+        """그룹 체크를 누르면 그룹 안 폴더를 모두 선택하고, 이미 모두 선택돼 있으면 모두 해제합니다."""
+        header_row = self._row_of_widget(header)
+        if header_row < 0:
+            return
+        children = [cast(FilterItemWidget, self._widget(row)) for row in range(header_row + 1, self._group_end(header_row))]
+        target = not (children and all(child.isChecked() for child in children))
+        for child in children:
+            with QSignalBlocker(child.checkbox):
+                child.checkbox.setChecked(target)
+        self._refresh_groups()
+        self.filter_changed.emit()
+
+    def _on_group_toggled(self, header):
+        header.set_collapsed(not header.collapsed)
+        self._refresh_groups()
+        self.filter_changed.emit()
+
+    def _after_reorder(self):
+        self._refresh_groups()
+        self.filter_changed.emit()
+
+    def _show_context_menu(self, position: QPoint):
+        if not self.folder_list.isEnabled():
+            return
+        item = self.folder_list.itemAt(position)
+        row = self.folder_list.row(item) if item is not None else -1
+        menu = QMenu(self)
+        if row >= 0 and self._is_header_row(row):
+            menu.addAction(AppStrings.FOLDER_GROUP_RENAME, lambda: self._prompt_rename(row))
+            menu.addAction(AppStrings.FOLDER_GROUP_DELETE, lambda: self._delete_item(self.folder_list.item(row)))
+        elif row >= 0:
+            move_menu = menu.addMenu(AppStrings.FOLDER_GROUP_MOVE_TO)
+            current = self._group_header_of(row)
+            targets = [(-1, AppStrings.FOLDER_GROUP_NONE)] + [
+                (header_row, cast(FolderGroupHeader, self._widget(header_row)).text())
+                for header_row in self._header_rows()
+            ]
+            for header_row, name in targets:
+                action = move_menu.addAction(name, lambda target=header_row: self.move_folder_to_group(row, target))
+                action.setEnabled(header_row != current)
+        menu.addAction(AppStrings.ADD_FOLDER_GROUP_BTN, self._on_add_group_clicked)
+        menu.exec(self.folder_list.viewport().mapToGlobal(position))
+
+    def _prompt_rename(self, header_row: int):
+        header = cast(FolderGroupHeader, self._widget(header_row))
+        name, accepted = QInputDialog.getText(
+            self, AppStrings.FOLDER_GROUP_NAME_TITLE, AppStrings.FOLDER_GROUP_NAME_PROMPT, text=header.text()
+        )
+        if accepted:
+            self.rename_group(header_row, name)
+
+    # ----- 공개 동작 -----
     def add_folder(self, folder: str, checked: bool = True):
+        """폴더를 추가합니다. 그룹 안의 행을 선택한 상태면 그 그룹 끝에, 아니면 그룹 없는 영역 끝에 넣습니다."""
         if not isinstance(folder, str) or not folder.strip() or not isinstance(checked, bool):
             return
-        for i in range(self.folder_list.count()):
-            widget = self.folder_list.itemWidget(self.folder_list.item(i))
-            if isinstance(widget, FilterItemWidget) and widget.text() == folder:
-                return
-        item = QListWidgetItem(self.folder_list)
-        widget = FilterItemWidget(
-            folder, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self.filter_changed.emit()
-        )
-        widget.set_compact(self._compact_rows)
-        item.setSizeHint(widget.sizeHint())
-        self.folder_list.addItem(item)
-        self.folder_list.setItemWidget(item, widget)
+        if any(cast(FilterItemWidget, self._widget(row)).text() == folder for row in self._folder_rows()):
+            return
+        header_row = self._group_header_of(self.folder_list.currentRow()) if self.folder_list.currentRow() >= 0 else -1
+        if header_row >= 0:
+            header = cast(FolderGroupHeader, self._widget(header_row))
+            header.set_collapsed(False)
+            row = self._group_end(header_row)
+        else:
+            row = self._ungrouped_end()
+        self._insert_folder_row(row, folder, checked)
+        self._refresh_groups()
         self.filter_changed.emit()
+
+    def add_group(self, name: str, collapsed: bool = False) -> bool:
+        """빈 그룹을 목록 끝에 추가합니다."""
+        if not isinstance(name, str) or not name.strip():
+            return False
+        self._insert_header_row(self.folder_list.count(), name.strip(), collapsed)
+        self._refresh_groups()
+        self.filter_changed.emit()
+        return True
+
+    def rename_group(self, header_row: int, name: str) -> bool:
+        if not self._is_header_row(header_row) or not isinstance(name, str) or not name.strip():
+            return False
+        header = cast(FolderGroupHeader, self._widget(header_row))
+        header.checkbox.setText(name.strip())
+        self.filter_changed.emit()
+        return True
+
+    def move_folder_to_group(self, row: int, header_row: int) -> bool:
+        """폴더를 다른 그룹 끝으로(``header_row``가 -1이면 그룹 없는 영역 끝으로) 옮깁니다."""
+        if row < 0 or self._is_header_row(row) or row >= self.folder_list.count():
+            return False
+        gap = self._group_end(header_row) if header_row >= 0 else self._ungrouped_end()
+        if header_row >= 0:
+            cast(FolderGroupHeader, self._widget(header_row)).set_collapsed(False)
+        moved = self.folder_list.move_row(row, gap)
+        if not moved:
+            self._refresh_groups()
+        return moved
 
     def _delete_item(self, item):
         row = self.folder_list.row(item)
-        self.folder_list.takeItem(row)
+        if row < 0:
+            return
+        if self._is_header_row(row):
+            # 그룹을 지워도 폴더는 지우지 않고 그룹 없는 영역 끝으로 옮깁니다.
+            children = [
+                (cast(FilterItemWidget, self._widget(child)).text(), cast(FilterItemWidget, self._widget(child)).isChecked())
+                for child in range(row + 1, self._group_end(row))
+            ]
+            for _ in range(len(children)):
+                self.folder_list.takeItem(row + 1)
+            self.folder_list.takeItem(row)
+            insert_at = self._ungrouped_end()
+            for offset, (folder, checked) in enumerate(children):
+                self._insert_folder_row(insert_at + offset, folder, checked)
+        else:
+            self.folder_list.takeItem(row)
+        self._refresh_groups()
         self.filter_changed.emit()
 
     def toggle_all(self, checked: bool):
-        for i in range(self.folder_list.count()):
-            widget = self.folder_list.itemWidget(self.folder_list.item(i))
-            if isinstance(widget, FilterItemWidget):
+        for row in self._folder_rows():
+            widget = cast(FilterItemWidget, self._widget(row))
+            with QSignalBlocker(widget.checkbox):
                 widget.checkbox.setChecked(checked)
+        self._refresh_groups()
         self.filter_changed.emit()
 
     def get_selected_folders(self) -> List[str]:
-        folders = []
-        for i in range(self.folder_list.count()):
-            widget = self.folder_list.itemWidget(self.folder_list.item(i))
-            if isinstance(widget, FilterItemWidget) and widget.isChecked():
-                folders.append(widget.text())
-        return folders
-
-    def restore_state(self, data: Union[List[str], Dict[str, bool]]):
-        self.folder_list.clear()
-        if isinstance(data, list):
-            for f in data:
-                self.add_folder(f, checked=True)
-        elif isinstance(data, dict):
-            for f, checked in data.items():
-                self.add_folder(f, checked=checked)
-        self._refresh_status()
+        # 접힌 그룹의 폴더도 체크돼 있으면 검색합니다. 접기는 표시만 바꿉니다.
+        return [
+            cast(FilterItemWidget, self._widget(row)).text()
+            for row in self._folder_rows()
+            if cast(FilterItemWidget, self._widget(row)).isChecked()
+        ]
 
     def get_state(self) -> dict:
-        folder_states = {}
-        for i in range(self.folder_list.count()):
-            item = self.folder_list.item(i)
-            widget = self.folder_list.itemWidget(item)
-            if isinstance(widget, FilterItemWidget):
-                folder_states[widget.text()] = widget.checkbox.isChecked()
-        return folder_states
+        """폴더 경로 → 체크 여부를 목록 순서대로 돌려줍니다. 그룹 구조는 :meth:`get_group_state`에 따로 담습니다."""
+        return {
+            cast(FilterItemWidget, self._widget(row)).text(): cast(FilterItemWidget, self._widget(row)).isChecked()
+            for row in self._folder_rows()
+        }
 
-    def load_state(self, state: dict):
-        self.restore_state(state)
+    def get_group_state(self) -> List[Dict[str, Any]]:
+        groups: List[Dict[str, Any]] = []
+        for header_row in self._header_rows():
+            header = cast(FolderGroupHeader, self._widget(header_row))
+            groups.append({
+                "name": header.text(),
+                "collapsed": header.collapsed,
+                "folders": [
+                    cast(FilterItemWidget, self._widget(row)).text()
+                    for row in range(header_row + 1, self._group_end(header_row))
+                ],
+            })
+        return groups
+
+    def restore_state(self, data: Union[List[str], Dict[str, bool]], groups: Any = None):
+        """폴더 상태와 그룹 구조를 복원합니다. 그룹 정보가 없거나 잘못되면 모두 그룹 없는 폴더로 둡니다."""
+        self.folder_list.clear()
+        folders: Dict[str, bool] = {}
+        if isinstance(data, list):
+            folders = {folder: True for folder in data if isinstance(folder, str) and folder.strip()}
+        elif isinstance(data, dict):
+            folders = {
+                folder: checked for folder, checked in data.items()
+                if isinstance(folder, str) and folder.strip() and isinstance(checked, bool)
+            }
+        valid_groups = []
+        placed: set = set()
+        for group in groups if isinstance(groups, list) else []:
+            if not isinstance(group, dict) or not isinstance(group.get("name"), str) or not group["name"].strip():
+                continue
+            members = []
+            listed = group.get("folders")
+            for folder in listed if isinstance(listed, list) else []:
+                if isinstance(folder, str) and folder in folders and folder not in placed:
+                    members.append(folder)
+                    placed.add(folder)
+            valid_groups.append((group["name"].strip(), group.get("collapsed") is True, members))
+        for folder, checked in folders.items():
+            if folder not in placed:
+                self._insert_folder_row(self.folder_list.count(), folder, checked)
+        for name, collapsed, members in valid_groups:
+            self._insert_header_row(self.folder_list.count(), name, collapsed)
+            for folder in members:
+                self._insert_folder_row(self.folder_list.count(), folder, folders[folder])
+        self._refresh_groups()
+        self._refresh_status()
+
+    def load_state(self, state: dict, groups: Any = None):
+        self.restore_state(state, groups)
 
 
 class ExtensionFilterPanel(DenseFilterPanel):
@@ -857,6 +1193,12 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.usage_label = self.ext_list.empty_hint
         self.usage_label.setText(AppStrings.EXTENSION_FILTER_USAGE)
         self.ext_list.setMinimumHeight(50)
+        # 값만 검색을 쓰는 동안 확장자 목록이 왜 잠겼는지 알려 줍니다.
+        self.values_only_notice = QLabel(AppStrings.EXTENSION_FILTER_VALUES_ONLY_NOTICE)
+        self.values_only_notice.setWordWrap(True)
+        self.values_only_notice.setStyleSheet("QLabel { color: #d99030; }")
+        self.values_only_notice.hide()
+        main_layout.addWidget(self.values_only_notice)
         main_layout.addWidget(self.ext_list, 1)  # 확장자 목록이 가용한 영역을 최대한 활용하도록 설정합니다.
 
         input_layout = QHBoxLayout()
@@ -908,6 +1250,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.sel_all_btn.setEnabled(is_off)
         self.desel_all_btn.setEnabled(is_off)
         self.usage_label.setEnabled(is_off)
+        self.values_only_notice.setVisible(not is_off)
         self._refresh_status()
         self.special_mode_changed.emit(text)
         self.filter_changed.emit()

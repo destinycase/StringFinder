@@ -179,7 +179,9 @@ class SearchTab(QMainWindow):
         self.filename_panel.blockSignals(True)
         try:
             filters = self.config_manager.get_filters()
-            self.folder_panel.restore_state(filters.get(Constants.CONFIG_KEY_FOLDERS, {}))
+            self.folder_panel.restore_state(
+                filters.get(Constants.CONFIG_KEY_FOLDERS, {}), filters.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
+            )
             self.ext_panel.restore_state(filters.get(Constants.CONFIG_KEY_EXTENSIONS, {}))
             self.filename_panel.restore_state(filters.get(Constants.CONFIG_KEY_FILENAMES, {}))
         finally:
@@ -436,6 +438,7 @@ class SearchTab(QMainWindow):
         inputs.update(self.ext_panel.get_state())
         inputs.update(self.filename_panel.get_state())
         inputs[Constants.CONFIG_KEY_FOLDERS] = self.folder_panel.get_state()
+        inputs[Constants.CONFIG_KEY_FOLDER_GROUPS] = self.folder_panel.get_group_state()
         if Constants.PAYLOAD_FILENAME_FILTER in inputs:
             inputs[Constants.STATE_KEY_FILENAME] = inputs[Constants.PAYLOAD_FILENAME_FILTER]
         total_skipped = self.skipped_count
@@ -519,7 +522,9 @@ class SearchTab(QMainWindow):
             self.ext_panel.load_state(inputs)
             self.filename_panel.load_state(inputs)
             if Constants.CONFIG_KEY_FOLDERS in inputs:
-                self.folder_panel.load_state(inputs[Constants.CONFIG_KEY_FOLDERS])
+                self.folder_panel.load_state(
+                    inputs[Constants.CONFIG_KEY_FOLDERS], inputs.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
+                )
 
         # Restore result-producing conditions separately from editable drafts.
         search_text = self.search_panel.search_combo.currentText()
@@ -604,7 +609,9 @@ class SearchTab(QMainWindow):
         folders = self.folder_panel.get_state()
         extensions = self.ext_panel.get_state()
         filenames = self.filename_panel.get_state()
-        self.config_manager.update_filters(folders, extensions, filenames)
+        self.config_manager.update_filters(
+            folders, extensions, filenames, folder_groups=self.folder_panel.get_group_state()
+        )
         self._refresh_filter_ui()
 
     def _stop_existing_search(self):
