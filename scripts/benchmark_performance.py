@@ -33,13 +33,18 @@ HISTORY_COLUMNS = [
     "Latency",
     "Jitter",
     "Peak RSS",
+    "Peak Private",
     "Hits",
     "Skipped",
     "Skip Reasons",
 ]
 # Rust engine hard limit (src/rust_engine/src/lib.rs: MAX_FILE_SIZE)
 RUST_MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024
-# Keep Set H below operational limits (memory guard / RSS threshold).
+# Keep Set H below operational limits (memory guard / memory threshold).
+# Memory thresholds use the process's private memory. RSS (working set) also
+# counts memory-mapped file pages, so a full scan of a 500MiB file raises RSS by
+# the file size even though those pages are reclaimable file cache, not heap.
+# RSS is still recorded for reference.
 SET_H_TARGET_FILE_SIZE_BYTES = 96 * 1024 * 1024
 SET_H_KEYWORD_BYTES = b"target_keyword_h\n"
 SET_J_KEYWORD = "target_keyword_j"
@@ -327,15 +332,18 @@ def run_benchmark(
 
     process = psutil.Process()
     peak_rss: float = 0.0
+    peak_private: float = 0.0
 
     def check_memory() -> None:
-        nonlocal peak_rss
+        nonlocal peak_rss, peak_private
         try:
-            current_rss = process.memory_info().rss / (1024 * 1024)
-            if current_rss > peak_rss:
-                peak_rss = current_rss
+            info = process.memory_info()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+            return
+        peak_rss = max(peak_rss, info.rss / (1024 * 1024))
+        # Windows reports committed private bytes; elsewhere fall back to RSS.
+        private = getattr(info, "private", info.rss)
+        peak_private = max(peak_private, private / (1024 * 1024))
 
     mem_timer = QTimer()
     mem_timer.timeout.connect(check_memory)
@@ -379,27 +387,28 @@ def run_benchmark(
         "skipped_count": skipped_count,
         "skipped_reasons": skip_reason_counts,
         "peak_rss": peak_rss,
+        "peak_private": peak_private,
     }
 
 
 def print_result_table(bench_results: List[Dict[str, Any]]) -> None:
-    print("\n" + "=" * 104)
+    print("\n" + "=" * 119)
     print(" PERFORMANCE BENCHMARK REPORT (PERF-07)")
-    print("=" * 104)
+    print("=" * 119)
     print(
         f"| {'Dataset':<25} | {'Total Time':<12} | {'Latency':<12} | {'Jitter':<12} | "
-        f"{'Peak RSS':<12} | {'Hits':<8} | {'Skipped':<8} |"
+        f"{'Peak RSS':<12} | {'Peak Private':<12} | {'Hits':<8} | {'Skipped':<8} |"
     )
     print(
-        f"| {'-' * 25} | {'-' * 12} | {'-' * 12} | {'-' * 12} | {'-' * 12} | {'-' * 8} | {'-' * 8} |"
+        f"| {'-' * 25} | {'-' * 12} | {'-' * 12} | {'-' * 12} | {'-' * 12} | {'-' * 12} | {'-' * 8} | {'-' * 8} |"
     )
     for res in bench_results:
         print(
             f"| {res['dataset']:<25} | {res['total_time']:>10.3f}s | {res['latency']:>10.3f}s | "
-            f"{res['jitter']:>10.4f} | {res['peak_rss']:>9.1f} MB | {res['results_count']:>8} | "
-            f"{res.get('skipped_count', 0):>8} |"
+            f"{res['jitter']:>10.4f} | {res['peak_rss']:>9.1f} MB | {res.get('peak_private', 0.0):>9.1f} MB | "
+            f"{res['results_count']:>8} | {res.get('skipped_count', 0):>8} |"
         )
-    print("=" * 104)
+    print("=" * 119)
 
 
 def _parse_history_line(line: str) -> Optional[Dict[str, str]]:
@@ -425,6 +434,7 @@ def _parse_history_line(line: str) -> Optional[Dict[str, str]]:
         "Latency": parts[4] if len(parts) > 4 else "",
         "Jitter": parts[5] if len(parts) > 5 else "",
         "Peak RSS": "",
+        "Peak Private": "",
         "Hits": "",
         "Skipped": "0",
         "Skip Reasons": "",
@@ -434,11 +444,18 @@ def _parse_history_line(line: str) -> Optional[Dict[str, str]]:
     elif len(parts) == 8:
         row["Peak RSS"] = parts[6]
         row["Hits"] = parts[7]
-    else:
+    elif len(parts) <= 10:
         row["Peak RSS"] = parts[6]
         row["Hits"] = parts[7]
         row["Skipped"] = parts[8] if len(parts) > 8 and parts[8] else "0"
         row["Skip Reasons"] = parts[9] if len(parts) > 9 else ""
+    else:
+        # 11 columns: Peak Private was added after Peak RSS.
+        row["Peak RSS"] = parts[6]
+        row["Peak Private"] = parts[7]
+        row["Hits"] = parts[8]
+        row["Skipped"] = parts[9] if parts[9] else "0"
+        row["Skip Reasons"] = parts[10]
     return row
 
 
@@ -538,6 +555,9 @@ def save_benchmark_history(bench_results: List[Dict[str, Any]], tag: str = "Curr
                 "Latency": f"{res['latency']:.3f}s",
                 "Jitter": f"{res['jitter']:.4f}",
                 "Peak RSS": f"{res['peak_rss']:.1f} MB",
+                "Peak Private": (
+                    f"{res['peak_private']:.1f} MB" if res.get("peak_private") is not None else ""
+                ),
                 "Hits": str(res["results_count"]),
                 "Skipped": str(res.get("skipped_count", 0)),
                 "Skip Reasons": _summarize_skip_reasons(res.get("skipped_reasons", {})),
@@ -549,18 +569,22 @@ def save_benchmark_history(bench_results: List[Dict[str, Any]], tag: str = "Curr
 
 
 def check_thresholds(results: List[Dict[str, Any]]) -> None:
-    """Performance thresholds check - [REF-PERF-07]."""
+    """Performance thresholds check - [REF-PERF-07].
+
+    peak_private is checked against private memory, not RSS (see the note at
+    the top of this file).
+    """
     THRESHOLDS = {
-        "Set A: Small/Many": {"total_time": 3.0, "latency": 1.5, "jitter": 0.2, "peak_rss": 200.0},
-        "Set B: Mixed/Large": {"total_time": 1.5, "latency": 0.8, "jitter": 0.2, "peak_rss": 200.0},
-        "Set C: Binary Mixed": {"total_time": 1.0, "latency": 0.8, "jitter": 0.2, "peak_rss": 150.0},
-        "Set D: Large Full Scan": {"total_time": 1.5, "latency": 1.5, "jitter": 0.2, "peak_rss": 150.0},
-        "Set E: ASCII Fast": {"total_time": 1.0, "latency": 0.8, "jitter": 0.2, "peak_rss": 200.0},
-        "Set F: Monster JSON": {"total_time": 5.0, "latency": 2.0, "jitter": 0.3, "peak_rss": 600.0},
-        "Set G: Deep XML": {"total_time": 3.0, "latency": 2.0, "jitter": 0.3, "peak_rss": 300.0},
-        "Set H: Sparse Stress": {"total_time": 1.5, "latency": 1.5, "jitter": 0.3, "peak_rss": 200.0},
-        "Set I: No-Newline": {"total_time": 5.0, "latency": 2.0, "jitter": 0.5, "peak_rss": 500.0},
-        "Set J: Excel Mixed": {"total_time": 3.0, "latency": 2.0, "jitter": 0.3, "peak_rss": 300.0},
+        "Set A: Small/Many": {"total_time": 3.0, "latency": 1.5, "jitter": 0.2, "peak_private": 200.0},
+        "Set B: Mixed/Large": {"total_time": 1.5, "latency": 0.8, "jitter": 0.2, "peak_private": 200.0},
+        "Set C: Binary Mixed": {"total_time": 1.0, "latency": 0.8, "jitter": 0.2, "peak_private": 150.0},
+        "Set D: Large Full Scan": {"total_time": 1.5, "latency": 1.5, "jitter": 0.2, "peak_private": 150.0},
+        "Set E: ASCII Fast": {"total_time": 1.0, "latency": 0.8, "jitter": 0.2, "peak_private": 200.0},
+        "Set F: Monster JSON": {"total_time": 5.0, "latency": 2.0, "jitter": 0.3, "peak_private": 600.0},
+        "Set G: Deep XML": {"total_time": 3.0, "latency": 2.0, "jitter": 0.3, "peak_private": 300.0},
+        "Set H: Sparse Stress": {"total_time": 1.5, "latency": 1.5, "jitter": 0.3, "peak_private": 200.0},
+        "Set I: No-Newline": {"total_time": 5.0, "latency": 2.0, "jitter": 0.5, "peak_private": 500.0},
+        "Set J: Excel Mixed": {"total_time": 3.0, "latency": 2.0, "jitter": 0.3, "peak_private": 300.0},
     }
     EXPECTED_MIN_HITS = {
         "Set A: Small/Many": 100,
@@ -587,8 +611,10 @@ def check_thresholds(results: List[Dict[str, Any]]) -> None:
         if res["latency"] > t["latency"]:
             print(f"[FAIL] {res['dataset']}: Latency {res['latency']:.3f}s > {t['latency']}s")
             failed = True
-        if res["peak_rss"] > t["peak_rss"]:
-            print(f"[FAIL] {res['dataset']}: Peak RSS {res['peak_rss']:.1f} MB > {t['peak_rss']} MB")
+        if res["peak_private"] > t["peak_private"]:
+            print(
+                f"[FAIL] {res['dataset']}: Peak Private {res['peak_private']:.1f} MB > {t['peak_private']} MB"
+            )
             failed = True
         if res["jitter"] > t["jitter"]:
             print(f"[WARN] {res['dataset']}: Jitter {res['jitter']:.3f} > {t['jitter']}")
