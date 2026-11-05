@@ -7,7 +7,7 @@ from PySide6.QtTest import QTest
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
-from ui.panels import ExtensionFilterPanel, FilenameFilterPanel, FilterItemWidget, FolderFilterPanel
+from ui.panels import DragHandle, ExtensionFilterPanel, FilenameFilterPanel, FilterItemWidget, FolderFilterPanel
 
 
 def make_panel(qtbot, kind):
@@ -79,7 +79,9 @@ def test_moved_row_keeps_working_check_and_delete_actions(qtbot, kind):
 def test_drag_from_handle_moves_row_and_shows_drop_indicator(qtbot, kind):
     _, listing = make_panel(qtbot, kind)
     handle = listing.itemWidget(listing.item(0)).drag_handle
-    assert handle.text() == C.SYMBOL_DRAG_HANDLE
+    # 손잡이는 좁은 점 무늬로, 체크박스 앞 공간을 적게 차지해야 합니다.
+    assert isinstance(handle, DragHandle) and handle.width() <= 8
+    assert listing.itemWidget(listing.item(0)).checkbox.x() <= 16
     assert handle.toolTip() == AppStrings.FILTER_ITEM_REORDER_TOOLTIP
     viewport = listing.viewport()
     start = handle.mapTo(viewport, handle.rect().center())

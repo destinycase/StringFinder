@@ -254,23 +254,49 @@ def test_target_extension_follows_archive_mode(qtbot, mock_config_manager):
     tab.close()
 
 
-def test_detail_model_shows_four_archive_columns():
+def test_detail_model_shows_line_and_four_archive_columns():
     model = MatchDetailModel()
     model.set_matches(
         "Game.archive",
-        [("", "System_UI", "ID_BTN_CONFIRM", "Confirm and Proceed", "확인 후 진행", None, None),
+        [(7, "System_UI", "ID_BTN_CONFIRM", "Confirm and Proceed", "확인 후 진행", None, None),
          (-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(1), "", "", "", None, None)],
         "proceed",
         AppStrings.SPECIAL_SEARCH_ITEMS[7],
     )
     assert [model.headerData(index, Qt.Orientation.Horizontal) for index in range(model.columnCount())] == [
-        AppStrings.HEADER_ARCHIVE_NAMESPACE, AppStrings.HEADER_ARCHIVE_KEY,
+        AppStrings.HEADER_LINE_NUMBER, AppStrings.HEADER_ARCHIVE_NAMESPACE, AppStrings.HEADER_ARCHIVE_KEY,
         AppStrings.HEADER_ARCHIVE_SOURCE, AppStrings.HEADER_ARCHIVE_TRANSLATION,
     ]
     first = model.get_match(0)
-    assert (first.position, first.content, first.extra_1, first.extra_2) == (
-        "System_UI", "ID_BTN_CONFIRM", "Confirm and Proceed", "확인 후 진행")
-    model.set_column_filter(3, "확인")
+    assert (first.position, first.content, first.extra_1, first.extra_2, first.extra_3) == (
+        "7", "System_UI", "ID_BTN_CONFIRM", "Confirm and Proceed", "확인 후 진행")
+    model.set_column_filter(4, "확인")
     assert model.rowCount() == 1
-    model.set_column_filter(3, "없음")
+    model.set_column_filter(4, "없음")
     assert model.rowCount() == 0
+
+
+@ENGINES
+def test_result_line_is_the_key_line_in_both_engines(tmp_path, precise):
+    lines = [
+        "{",
+        '  "Subnamespaces": [',
+        "    {",
+        '      "Namespace": "NS",',
+        '      "Children": [',
+        "        {",
+        '          "Source": {"Text": "needle \\u00e9 first"},',
+        '          "Translation": {"Text": ""},',
+        '          "Key": "K_FIRST"',
+        "        },",
+        '        {"Key": "K_SECOND", "Source": {"Text": "needle"}, "Translation": {"Text": "번역"}}',
+        "      ]",
+        "    }",
+        "  ]",
+        "}",
+    ]
+    for encoding in ("utf-8", "utf-16"):
+        path = write_archive(tmp_path, "\r\n".join(lines), name=f"lines_{encoding}.archive", encoding=encoding)
+        result = search(path, "needle", precise)
+        assert [(match[0], match[2]) for match in result[2]] == [(9, "K_FIRST"), (11, "K_SECOND")]
+        assert result[2][0][3] == "needle é first"

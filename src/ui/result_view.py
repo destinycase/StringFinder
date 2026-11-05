@@ -862,14 +862,15 @@ class ResultView(QWidget):
         return str(file_path or "").lower().endswith(self.EXCEL_PREVIEW_EXTENSIONS)
 
     def _is_archive_preview(self):
-        """UE 현지화 archive 결과는 위·아래 문맥 대신 검색한 항목의 네 값을 보여줍니다."""
+        """UE 현지화 archive 결과는 위·아래 문맥 대신 검색한 항목의 값을 보여줍니다."""
         modes = (self.search_mode, getattr(self.match_model, "search_mode", None))
         return any(Constants.MODE_ARCHIVE in str(mode or "") for mode in modes)
 
     def _show_archive_context_preview(self, match_item):
-        """검색할 때 확보한 Namespace·Key·원문·번역문만 사용해 파일을 다시 읽지 않고 표시합니다."""
+        """검색할 때 확보한 줄 번호·Namespace·Key·원문·번역문만 사용해 파일을 다시 읽지 않고 표시합니다."""
         values = []
-        for value in (match_item.position, match_item.content, match_item.extra_1, match_item.extra_2):
+        for value in (match_item.position, match_item.content, match_item.extra_1, match_item.extra_2,
+                      match_item.extra_3):
             text = "" if value is None else str(value)
             if len(text) > self.CONTEXT_MAX_LINE_CHARS:
                 text = text[: self.CONTEXT_MAX_LINE_CHARS] + "..."
@@ -1309,7 +1310,7 @@ class ResultView(QWidget):
         mode = self.search_mode or Constants.MODE_NORMAL
         
         # Normal 모드와 Excel 모드는 0번 컬럼부터 데이터 필터링 대상
-        if mode == Constants.MODE_NORMAL or Constants.MODE_EXCEL in mode or Constants.MODE_ARCHIVE in mode:
+        if mode == Constants.MODE_NORMAL or Constants.MODE_EXCEL in mode:
             return edit_idx
             
         # XML, JSON 등은 0번이 '라인 번호'이므로 필터 n은 n+1번 컬럼 대응
@@ -1552,6 +1553,7 @@ class ResultView(QWidget):
         if Constants.MODE_ARCHIVE.upper() in mode_upper:
             headers = [
                 AppStrings.HEADER_FILE,
+                AppStrings.HEADER_LINE_NUMBER,
                 AppStrings.HEADER_ARCHIVE_NAMESPACE,
                 AppStrings.HEADER_ARCHIVE_KEY,
                 AppStrings.HEADER_ARCHIVE_SOURCE,
@@ -1593,8 +1595,8 @@ class ResultView(QWidget):
             for m in matches:
                 row = [full_path]
                 if Constants.MODE_ARCHIVE.upper() in mode_upper:
-                    # [위치, Namespace, Key, 원문, 번역문, ...]
-                    row.extend([self._export_value(value) for value in list(m[1:5]) + [""] * (5 - len(m[:5]))])
+                    # [Key 줄 번호, Namespace, Key, 원문, 번역문, ...]
+                    row.extend([self._export_value(value) for value in list(m[:5]) + [""] * (5 - len(m[:5]))])
                 elif Constants.MODE_EXCEL.upper() in mode_upper:
                     # [Line, Sheet, Cell, Val, ...]
                     row.extend([str(m[1]), str(m[2]), str(m[3])])
@@ -1664,7 +1666,7 @@ class ResultView(QWidget):
         values = [self._export_value(value) for value in item]
         mode = str(self.search_mode or "").upper()
         if Constants.MODE_ARCHIVE.upper() in mode:
-            return tuple(values[1:5])
+            return tuple(values[:5])
         if Constants.MODE_EXCEL.upper() in mode:
             return tuple(values[:4])
         if Constants.MODE_JSON.upper() in mode or Constants.MODE_XML.upper() in mode:

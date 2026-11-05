@@ -259,6 +259,7 @@ ENGLISH_STRINGS = {
     "HEADER_EXCEL_SHEET": "Sheet",
     "HEADER_EXCEL_CELL": "Cell",
     "HEADER_EXCEL_VALUE": "Value",
+    "HEADER_LINE_NUMBER": "Line",
     "HEADER_ARCHIVE_SOURCE": "Source",
     "HEADER_ARCHIVE_TRANSLATION": "Translation",
     "HEADER_LIST": "List",
@@ -299,7 +300,7 @@ ENGLISH_STRINGS = {
     "CONTEXT_PREVIEW_LOADING": "Loading context...",
     "CONTEXT_PREVIEW_SPECIAL_MATCH": "[Special data match]\n\nPosition: {}\nContent: {}",
     "CONTEXT_PREVIEW_EXCEL_MATCH": "[Excel cell match]\n\nSheet: {}\nCell: {}\nValue: {}",
-    "CONTEXT_PREVIEW_ARCHIVE_MATCH": "[UE localization archive match]\n\nNamespace: {}\nKey: {}\nSource: {}\nTranslation: {}",
+    "CONTEXT_PREVIEW_ARCHIVE_MATCH": "[UE localization archive match]\n\nLine: {}\nNamespace: {}\nKey: {}\nSource: {}\nTranslation: {}",
     "CONTEXT_PREVIEW_EXCEL_VALUE_TRUNCATED": "\n[The cell value is long; only part is displayed]",
     "CONTEXT_PREVIEW_READ_FAILED": "[Failed to read context preview]\n{}",
     "CONTEXT_PREVIEW_SCAN_LIMIT": (

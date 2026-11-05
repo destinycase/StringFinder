@@ -2,8 +2,9 @@
 //!
 //! 문서 전체의 JSON 문법·중복 키·깊이는 JSON 값만 검색과 같은 파서로 먼저 검증합니다.
 //! 그다음 구조를 해석하므로, 앞부분에서 찾은 결과가 있어도 문서가 잘못되면 결과를 확정하지 않습니다.
+//! 결과에 Key의 줄 번호를 표시하기 위해, 검증을 마친 문서를 줄 위치를 기억하는 작은 해석기로 다시 읽습니다.
 
-use serde_json::{Map, Value};
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -47,7 +48,14 @@ impl ArchiveSearch<'_> {
         }
     }
 
-    fn record(&mut self, namespace: &str, key: &str, source: &str, translation: &str) {
+    fn record(
+        &mut self,
+        key_line: usize,
+        namespace: &str,
+        key: &str,
+        source: &str,
+        translation: &str,
+    ) {
         // 상한보다 하나 더 모아 두면 호출자가 잘림 표식을 붙일 수 있습니다.
         if self.results.len() > self.max_per_file {
             return;
@@ -63,8 +71,8 @@ impl ArchiveSearch<'_> {
             Ok(encoded) => format!("{ARCHIVE_FIELDS_PREFIX}{encoded}"),
             Err(_) => return,
         };
-        // DOM에서는 원본 위치를 알 수 없으므로 줄·위치를 추정하지 않습니다.
-        self.results.push((0, content, None, None));
+        // 줄 번호는 항목의 `Key` 줄입니다. 바이트 위치는 인코딩 변환 뒤라 원본과 다를 수 있어 넘기지 않습니다.
+        self.results.push((key_line, content, None, None));
     }
 }
 
@@ -76,17 +84,193 @@ fn format_error(path: &str) -> ArchiveSearchError {
     })
 }
 
-fn text_field<'v>(
-    entry: &'v Map<String, Value>,
+/// 검증을 마친 JSON의 구조와 문자열만 담습니다. 객체 멤버는 이름이 시작한 줄 번호를 함께 기억합니다.
+enum Node<'a> {
+    Object(Vec<(Cow<'a, str>, usize, Node<'a>)>),
+    Array(Vec<Node<'a>>),
+    Str(Cow<'a, str>),
+    Other,
+}
+
+impl<'a> Node<'a> {
+    fn member(&self, name: &str) -> Option<(&Node<'a>, usize)> {
+        match self {
+            Node::Object(members) => members
+                .iter()
+                .find(|(key, _, _)| key == name)
+                .map(|(_, line, value)| (value, *line)),
+            _ => None,
+        }
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Node::Str(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn is_object(&self) -> bool {
+        matches!(self, Node::Object(_))
+    }
+}
+
+/// 기본 재귀 한도와 같은 128단계까지만 읽어 스택 고갈을 막습니다. UE archive 구조는 이보다 훨씬 얕습니다.
+const MAX_NESTING: usize = 128;
+
+struct PositionedParser<'a> {
+    text: &'a str,
+    bytes: &'a [u8],
+    pos: usize,
+    line: usize,
+}
+
+impl<'a> PositionedParser<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            bytes: text.as_bytes(),
+            pos: 0,
+            line: 1,
+        }
+    }
+
+    fn unexpected(&self) -> ArchiveSearchError {
+        ArchiveSearchError::Json(format!("unexpected input at line {}", self.line))
+    }
+
+    fn skip_whitespace(&mut self) {
+        while let Some(&byte) = self.bytes.get(self.pos) {
+            match byte {
+                b'\n' => self.line += 1,
+                b' ' | b'\t' | b'\r' => {}
+                _ => return,
+            }
+            self.pos += 1;
+        }
+    }
+
+    fn expect(&mut self, byte: u8) -> Result<(), ArchiveSearchError> {
+        self.skip_whitespace();
+        if self.bytes.get(self.pos) == Some(&byte) {
+            self.pos += 1;
+            Ok(())
+        } else {
+            Err(self.unexpected())
+        }
+    }
+
+    fn string(&mut self) -> Result<Cow<'a, str>, ArchiveSearchError> {
+        let start = self.pos;
+        self.pos += 1;
+        let mut escaped = false;
+        while let Some(&byte) = self.bytes.get(self.pos) {
+            match byte {
+                b'\\' => {
+                    escaped = true;
+                    self.pos += 2;
+                }
+                b'"' => {
+                    self.pos += 1;
+                    let raw = &self.text[start..self.pos];
+                    return if escaped {
+                        // 이스케이프 해석은 검증에 쓴 serde_json과 같은 규칙을 따릅니다.
+                        serde_json::from_str::<String>(raw)
+                            .map(Cow::Owned)
+                            .map_err(|error| ArchiveSearchError::Json(error.to_string()))
+                    } else {
+                        Ok(Cow::Borrowed(&raw[1..raw.len() - 1]))
+                    };
+                }
+                _ => self.pos += 1,
+            }
+        }
+        Err(self.unexpected())
+    }
+
+    fn value(&mut self, depth: usize) -> Result<Node<'a>, ArchiveSearchError> {
+        if depth > MAX_NESTING {
+            return Err(ArchiveSearchError::Format(format!("depth>{MAX_NESTING}")));
+        }
+        self.skip_whitespace();
+        match self.bytes.get(self.pos) {
+            Some(b'{') => {
+                self.pos += 1;
+                let mut members = Vec::new();
+                self.skip_whitespace();
+                if self.bytes.get(self.pos) == Some(&b'}') {
+                    self.pos += 1;
+                    return Ok(Node::Object(members));
+                }
+                loop {
+                    self.skip_whitespace();
+                    if self.bytes.get(self.pos) != Some(&b'"') {
+                        return Err(self.unexpected());
+                    }
+                    let line = self.line;
+                    let key = self.string()?;
+                    self.expect(b':')?;
+                    let value = self.value(depth + 1)?;
+                    members.push((key, line, value));
+                    self.skip_whitespace();
+                    match self.bytes.get(self.pos) {
+                        Some(b',') => self.pos += 1,
+                        Some(b'}') => {
+                            self.pos += 1;
+                            return Ok(Node::Object(members));
+                        }
+                        _ => return Err(self.unexpected()),
+                    }
+                }
+            }
+            Some(b'[') => {
+                self.pos += 1;
+                let mut items = Vec::new();
+                self.skip_whitespace();
+                if self.bytes.get(self.pos) == Some(&b']') {
+                    self.pos += 1;
+                    return Ok(Node::Array(items));
+                }
+                loop {
+                    items.push(self.value(depth + 1)?);
+                    self.skip_whitespace();
+                    match self.bytes.get(self.pos) {
+                        Some(b',') => self.pos += 1,
+                        Some(b']') => {
+                            self.pos += 1;
+                            return Ok(Node::Array(items));
+                        }
+                        _ => return Err(self.unexpected()),
+                    }
+                }
+            }
+            Some(b'"') => self.string().map(Node::Str),
+            Some(_) => {
+                // 숫자·true·false·null은 검색 대상이 아니므로 끝까지 건너뜁니다.
+                while let Some(&byte) = self.bytes.get(self.pos) {
+                    if matches!(byte, b',' | b'}' | b']' | b' ' | b'\t' | b'\r' | b'\n') {
+                        break;
+                    }
+                    self.pos += 1;
+                }
+                Ok(Node::Other)
+            }
+            None => Err(self.unexpected()),
+        }
+    }
+}
+
+fn text_field<'n>(
+    entry: &'n Node<'_>,
     field: &str,
     path: &str,
-) -> Result<&'v str, ArchiveSearchError> {
+) -> Result<&'n str, ArchiveSearchError> {
     let text_path = format!("{path}/{field}/Text");
     entry
-        .get(field)
-        .and_then(Value::as_object)
-        .and_then(|object| object.get("Text"))
-        .and_then(Value::as_str)
+        .member(field)
+        .filter(|(holder, _)| holder.is_object())
+        .and_then(|(holder, _)| holder.member("Text"))
+        .and_then(|(text, _)| text.as_str())
         .ok_or_else(|| format_error(&text_path))
 }
 
@@ -100,48 +284,54 @@ fn join_namespace(parent: &str, own: &str) -> String {
 
 /// 노드의 `Children`을 먼저, 그다음 `Subnamespaces`를 문서 순서대로 방문합니다.
 /// Python 경로도 같은 순서를 사용하므로 두 경로의 결과 순서가 같습니다.
-fn walk(root: &Value, search: &mut ArchiveSearch<'_>) -> Result<(), ArchiveSearchError> {
-    let root_object = root.as_object().ok_or_else(|| format_error(""))?;
-    if !root_object.contains_key("Children") && !root_object.contains_key("Subnamespaces") {
+fn walk(root: &Node<'_>, search: &mut ArchiveSearch<'_>) -> Result<(), ArchiveSearchError> {
+    if !root.is_object() {
+        return Err(format_error(""));
+    }
+    if root.member("Children").is_none() && root.member("Subnamespaces").is_none() {
         return Err(format_error("/Children"));
     }
 
     // (노드, 상위 Namespace, 노드 경로). 깊은 중첩에서도 재귀 호출을 쓰지 않습니다.
-    let mut stack: Vec<(&Value, String, String)> = vec![(root, String::new(), String::new())];
+    let mut stack: Vec<(&Node<'_>, String, String)> = vec![(root, String::new(), String::new())];
     while let Some((node, parent_namespace, path)) = stack.pop() {
         if search.stop_flag.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let object = node.as_object().ok_or_else(|| format_error(&path))?;
-        let own_namespace = match object.get("Namespace") {
+        if !node.is_object() {
+            return Err(format_error(&path));
+        }
+        let own_namespace = match node.member("Namespace") {
             None => "",
-            Some(value) => value
+            Some((value, _)) => value
                 .as_str()
                 .ok_or_else(|| format_error(&format!("{path}/Namespace")))?,
         };
         let namespace = join_namespace(&parent_namespace, own_namespace);
 
-        if let Some(children) = object.get("Children") {
-            let children = children
-                .as_array()
-                .ok_or_else(|| format_error(&format!("{path}/Children")))?;
-            for (index, child) in children.iter().enumerate() {
+        if let Some((children, _)) = node.member("Children") {
+            let Node::Array(children) = children else {
+                return Err(format_error(&format!("{path}/Children")));
+            };
+            for (index, entry) in children.iter().enumerate() {
                 let child_path = format!("{path}/Children/{index}");
-                let entry = child.as_object().ok_or_else(|| format_error(&child_path))?;
-                let key = entry
-                    .get("Key")
-                    .and_then(Value::as_str)
+                if !entry.is_object() {
+                    return Err(format_error(&child_path));
+                }
+                let (key, key_line) = entry
+                    .member("Key")
+                    .and_then(|(value, line)| value.as_str().map(|key| (key, line)))
                     .ok_or_else(|| format_error(&format!("{child_path}/Key")))?;
                 let source = text_field(entry, "Source", &child_path)?;
                 let translation = text_field(entry, "Translation", &child_path)?;
-                search.record(&namespace, key, source, translation);
+                search.record(key_line, &namespace, key, source, translation);
             }
         }
 
-        if let Some(subnamespaces) = object.get("Subnamespaces") {
-            let subnamespaces = subnamespaces
-                .as_array()
-                .ok_or_else(|| format_error(&format!("{path}/Subnamespaces")))?;
+        if let Some((subnamespaces, _)) = node.member("Subnamespaces") {
+            let Node::Array(subnamespaces) = subnamespaces else {
+                return Err(format_error(&format!("{path}/Subnamespaces")));
+            };
             // 스택은 뒤에서 꺼내므로 역순으로 넣어 문서 순서를 유지합니다.
             for (index, child) in subnamespaces.iter().enumerate().rev() {
                 stack.push((
@@ -179,14 +369,9 @@ pub fn search_archive_file(
     }
 
     let body = mmap.strip_prefix(b"\xef\xbb\xbf").unwrap_or(mmap);
-    // 기본 재귀 한도(128단계)를 유지해 스택 고갈을 막습니다. UE archive 구조는 이보다 훨씬 얕습니다.
-    let document: Value = serde_json::from_slice(body).map_err(|error| {
-        if error.to_string().contains("recursion limit") {
-            ArchiveSearchError::Format("depth>128".to_owned())
-        } else {
-            ArchiveSearchError::Json(error.to_string())
-        }
-    })?;
+    let text =
+        std::str::from_utf8(body).map_err(|error| ArchiveSearchError::Json(error.to_string()))?;
+    let document = PositionedParser::new(text).value(0)?;
 
     let mut search = ArchiveSearch {
         pattern_upper: pattern.to_lowercase().to_uppercase(),
@@ -314,6 +499,26 @@ mod tests {
             .unwrap_err(),
             "format:/Children/0/Translation/Text"
         );
+    }
+
+    #[test]
+    fn results_carry_the_line_of_each_key_member() {
+        let document = "{\n  \"Subnamespaces\": [\n    {\n      \"Namespace\": \"NS\",\n      \"Children\": [\n        {\n          \"Source\": {\"Text\": \"needle \\u00e9\"},\n          \"Translation\": {\"Text\": \"\"},\n          \"Key\": \"K1\"\n        },\n        {\"Key\": \"K2\", \"Source\": {\"Text\": \"needle\"}, \"Translation\": {\"Text\": \"\"}}\n      ]\n    }\n  ]\n}";
+        let ac = ac_for("needle");
+        let results = search_archive_file(
+            document.as_bytes(),
+            "needle",
+            &ac,
+            false,
+            Arc::new(AtomicBool::new(false)),
+            100,
+            20_000,
+        )
+        .ok()
+        .unwrap();
+        let lines: Vec<usize> = results.iter().map(|result| result.0).collect();
+        assert_eq!(lines, [9, 11]);
+        assert!(results[0].1.contains("needle é"));
     }
 
     #[test]

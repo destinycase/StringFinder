@@ -1,7 +1,16 @@
 from typing import Any, Dict, List, Union, cast
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QRegularExpression, QSignalBlocker, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QPainter, QPalette, QRegularExpressionValidator
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QBrush,
+    QIcon,
+    QPainter,
+    QPalette,
+    QPolygon,
+    QRegularExpressionValidator,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -67,6 +76,59 @@ class SearchInputComboBox(QComboBox):
         self.setCurrentText(text)
 
 
+class SearchSettingsButton(QPushButton):
+    """검색 설정 선택 버튼입니다. 글자는 왼쪽에, 눌러서 고르는 버튼임을 알리는 ▼는 오른쪽 끝에 그립니다."""
+
+    ARROW_WIDTH = 8
+    ARROW_HEIGHT = 5
+    ARROW_MARGIN = 9
+    # 글자가 ▼와 겹치지 않도록 오른쪽에 비워 두는 폭입니다.
+    RESERVED_RIGHT = ARROW_WIDTH + ARROW_MARGIN * 2
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        group = QPalette.ColorGroup.Active if self.isEnabled() else QPalette.ColorGroup.Disabled
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(self.palette().color(group, QPalette.ColorRole.ButtonText)))
+        right = self.width() - self.ARROW_MARGIN
+        top = (self.height() - self.ARROW_HEIGHT) // 2
+        painter.drawPolygon(QPolygon([
+            QPoint(right - self.ARROW_WIDTH, top),
+            QPoint(right, top),
+            QPoint(right - self.ARROW_WIDTH // 2, top + self.ARROW_HEIGHT),
+        ]))
+        painter.end()
+
+
+class DragHandle(QWidget):
+    """목록 항목을 끌어서 옮길 수 있음을 알리는 좁은 점 무늬 손잡이입니다.
+
+    마우스 입력은 받지 않고 목록으로 넘겨, 목록이 끌어서 옮기기를 처리합니다.
+    """
+
+    WIDTH = 6
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(self.WIDTH)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setToolTip(AppStrings.FILTER_ITEM_REORDER_TOOLTIP)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(Qt.PenStyle.NoPen)
+        group = QPalette.ColorGroup.Active if self.isEnabled() else QPalette.ColorGroup.Disabled
+        painter.setBrush(QBrush(self.palette().color(group, QPalette.ColorRole.PlaceholderText)))
+        # 2열 × 3행의 작은 점으로 손잡이를 표시합니다.
+        top = (self.height() - 10) // 2
+        for row in range(3):
+            for column in range(2):
+                painter.drawRect(column * 4, top + row * 4, 2, 2)
+        painter.end()
+
+
 class FilterItemWidget(QWidget):
     """
     리스트 위젯 내에서 개별 필터 항목(폴더 또는 확장자)을 표시하는 커스텀 위젯입니다.
@@ -80,14 +142,13 @@ class FilterItemWidget(QWidget):
         self._on_change = on_change
         self._compact = None
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(2, 2, 4, 2)
         layout.setSpacing(8)
         # 손잡이와 빈 공간의 마우스 입력은 목록으로 전달되어 끌어서 옮기기를 시작합니다.
-        self.drag_handle = QLabel(Constants.SYMBOL_DRAG_HANDLE)
-        self.drag_handle.setCursor(Qt.CursorShape.OpenHandCursor)
-        self.drag_handle.setToolTip(AppStrings.FILTER_ITEM_REORDER_TOOLTIP)
-        self.drag_handle.setStyleSheet("QLabel { color: #888; }")
+        self.drag_handle = DragHandle()
         layout.addWidget(self.drag_handle)
+        # 손잡이와 체크박스 사이는 다른 간격보다 좁게 둡니다.
+        layout.addSpacing(3 - layout.spacing())
         self.checkbox = QCheckBox(text)
         self.checkbox.setChecked(checked)
         if on_change:
@@ -109,7 +170,7 @@ class FilterItemWidget(QWidget):
         self._compact = compact
         layout = self.layout()
         if layout is not None:
-            layout.setContentsMargins(4, 0 if compact else 2, 4, 0 if compact else 2)
+            layout.setContentsMargins(2, 0 if compact else 2, 4, 0 if compact else 2)
             self.setMinimumHeight(20 if compact else 24)
 
     def text(self):
@@ -398,9 +459,12 @@ class SearchOptionsPanel(QWidget):
         input_layout = QGridLayout()
         self.input_layout = input_layout
         self.search_settings_label = QLabel(AppStrings.SEARCH_SETTINGS_LABEL)
-        self.search_settings_button = QPushButton()
+        self.search_settings_button = SearchSettingsButton()
         self.search_settings_label.setBuddy(self.search_settings_button)
-        self.search_settings_button.setStyleSheet("QPushButton { text-align: left; padding-left: 8px; }")
+        self.search_settings_button.setStyleSheet(
+            f"QPushButton {{ text-align: left; padding-left: 8px; "
+            f"padding-right: {SearchSettingsButton.RESERVED_RIGHT}px; }}"
+        )
         self.search_settings_menu = QMenu(self.search_settings_button)
         self.profile_menu = SearchProfileMenu(AppStrings.SEARCH_PROFILE_LABEL, self.search_settings_menu)
         self.profile_menu.aboutToHide.connect(QToolTip.hideText)
@@ -492,7 +556,9 @@ class SearchOptionsPanel(QWidget):
             for profile in (AppStrings.SEARCH_PROFILE_NORMAL_COMPACT, AppStrings.SEARCH_PROFILE_PRECISE_COMPACT)
             for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS
         ]
-        self.search_settings_button.setFixedWidth(max(metrics.horizontalAdvance(text) for text in selections) + 48)
+        self.search_settings_button.setFixedWidth(
+            max(metrics.horizontalAdvance(text) for text in selections) + 48 + SearchSettingsButton.RESERVED_RIGHT
+        )
         labels = (self.search_label, self.search_settings_label)
         # Clear narrow-layout constraints before measuring the natural widths.
         for label in labels:

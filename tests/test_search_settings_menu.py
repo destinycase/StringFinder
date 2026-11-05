@@ -368,3 +368,33 @@ def test_no_result_encoding_guidance_is_a_separate_paragraph(language):
     assert "needle" in paragraphs[0]
     assert "NFD" in paragraphs[1] and "ß" in paragraphs[1]
     assert ("인코딩" if language == "ko" else "encoding") in paragraphs[2]
+
+
+def test_settings_button_shows_right_arrow_without_overlapping_text(qtbot, language):
+    from PySide6.QtGui import QColor
+    from ui.panels import SearchSettingsButton
+
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    panel.profile_actions[1].trigger()
+    panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[6]].trigger()
+    panel.resize(1280, 180)
+    panel.show()
+    qtbot.wait(10)
+    button = panel.search_settings_button
+    assert isinstance(button, SearchSettingsButton)
+    assert button.menu() is None
+    assert f"padding-right: {SearchSettingsButton.RESERVED_RIGHT}px" in button.styleSheet()
+    # 가장 긴 문구에 경고 아이콘·여백과 ▼ 자리까지 더한 고정 폭이어야 글자가 ▼와 겹치지 않습니다.
+    longest = max(
+        button.fontMetrics().horizontalAdvance(text)
+        for text in (AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(AppStrings.SEARCH_PROFILE_PRECISE_COMPACT, value)
+                     for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS if value)
+    )
+    assert button.width() >= longest + 48 + SearchSettingsButton.RESERVED_RIGHT
+    image = button.grab().toImage()
+    center_x = button.width() - SearchSettingsButton.ARROW_MARGIN - SearchSettingsButton.ARROW_WIDTH // 2
+    arrow_y = button.height() // 2 - 1
+    above = QColor(image.pixel(center_x, arrow_y - 6)).lightness()
+    inside = QColor(image.pixel(center_x, arrow_y)).lightness()
+    assert abs(inside - above) > 40, "오른쪽 끝에 ▼가 그려져야 합니다"

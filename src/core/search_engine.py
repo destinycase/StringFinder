@@ -823,7 +823,7 @@ def _normalize_rust_matches(
                     # 예) 'ARCHIVE_FIELDS|["NS","Key","원문","번역문"]' -> (위치, NS, Key, 원문, 번역문, offset, length)
                     archive_fields = _archive_fields_from_rust(c)
                     if archive_fields is not None:
-                        res.append(("", *archive_fields, offset, length))
+                        res.append((line, *archive_fields, offset, length))
                         continue
 
                 if "EXCEL" in mode_up:
@@ -1646,7 +1646,7 @@ def search_in_excel_special(
     return None
 
 
-def _load_json_document(file_path: str, allow_duplicate_keys: bool) -> Tuple[bool, Any]:
+def _load_json_document(file_path: str, allow_duplicate_keys: bool, keep_text: bool = False) -> Tuple[bool, Any]:
     """JSON 문서 전체를 엄격하게 읽고 검증합니다.
 
     성공하면 ``(True, 문서)``, 건너뛸 파일이면 ``(False, 건너뜀 결과)``를 돌려줍니다.
@@ -1772,7 +1772,8 @@ def _load_json_document(file_path: str, allow_duplicate_keys: bool) -> Tuple[boo
             Constants.STATUS_SKIPPED,
             AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
         )
-    return True, data
+    # keep_text를 쓰면 줄 위치 계산에 쓸 수 있도록 디코딩한 본문도 함께 돌려줍니다.
+    return True, ((data, processed_content) if keep_text else data)
 
 
 def search_in_json_special(
@@ -1961,15 +1962,129 @@ def _archive_fields_from_rust(content: str) -> Optional[List[str]]:
     return fields
 
 
+class _ArchiveObject:
+    """줄 위치를 기억하는 JSON 객체입니다. 멤버는 ``(이름, 이름이 시작한 줄, 값)``입니다."""
+
+    __slots__ = ("members",)
+
+    def __init__(self, members: List[Tuple[str, int, Any]]):
+        self.members = members
+
+    def member(self, name: str) -> Optional[Tuple[Any, int]]:
+        for key, line, value in self.members:
+            if key == name:
+                return value, line
+        return None
+
+
+_ARCHIVE_SCALAR = object()  # 숫자·true·false·null처럼 검색하지 않는 값
+_ARCHIVE_MAX_NESTING = 128  # Rust 경로와 같은 중첩 한도입니다.
+
+
+def _parse_archive_positions(text: str) -> Any:
+    """검증을 마친 archive 문서를 다시 읽어 객체 멤버의 줄 번호를 기억합니다.
+
+    문자열 해석은 ``json`` 모듈의 ``scanstring``을 사용해 검증과 같은 규칙을 따릅니다.
+    중첩이 128단계를 넘으면 문제 위치 대신 ``depth>128``을 담은 ``ValueError``를 발생시킵니다.
+    """
+    import bisect
+    from json import decoder as json_decoder
+
+    # 표준 라이브러리에 있지만 타입 정보에는 빠져 있는 문자열 해석 함수입니다.
+    scanstring = cast(Callable[[str, int, bool], Tuple[str, int]], getattr(json_decoder, "scanstring"))
+
+    newlines = [match.start() for match in re.finditer("\n", text)]
+    whitespace = re.compile(r"[ \t\r\n]*")
+    scalar = re.compile(r"[^,}\]\s]*")
+    length = len(text)
+
+    def line_of(position: int) -> int:
+        return bisect.bisect_left(newlines, position) + 1
+
+    def skip(position: int) -> int:
+        match = whitespace.match(text, position)
+        return match.end() if match else position
+
+    def expect(position: int, char: str) -> int:
+        position = skip(position)
+        if text[position:position + 1] != char:
+            raise json_error(position)
+        return position + 1
+
+    def json_error(position: int) -> Exception:
+        return RuntimeError(f"unexpected input at line {line_of(position)}")
+
+    def value(position: int, depth: int) -> Tuple[Any, int]:
+        if depth > _ARCHIVE_MAX_NESTING:
+            raise ValueError(f"depth>{_ARCHIVE_MAX_NESTING}")
+        position = skip(position)
+        char = text[position:position + 1]
+        if char == "{":
+            members: List[Tuple[str, int, Any]] = []
+            position = skip(position + 1)
+            if text[position:position + 1] == "}":
+                return _ArchiveObject(members), position + 1
+            while True:
+                position = skip(position)
+                if text[position:position + 1] != '"':
+                    raise json_error(position)
+                key_line = line_of(position)
+                key, position = scanstring(text, position + 1, True)
+                position = expect(position, ":")
+                item, position = value(position, depth + 1)
+                members.append((key, key_line, item))
+                position = skip(position)
+                char = text[position:position + 1]
+                if char == ",":
+                    position += 1
+                elif char == "}":
+                    return _ArchiveObject(members), position + 1
+                else:
+                    raise json_error(position)
+        if char == "[":
+            items: List[Any] = []
+            position = skip(position + 1)
+            if text[position:position + 1] == "]":
+                return items, position + 1
+            while True:
+                item, position = value(position, depth + 1)
+                items.append(item)
+                position = skip(position)
+                char = text[position:position + 1]
+                if char == ",":
+                    position += 1
+                elif char == "]":
+                    return items, position + 1
+                else:
+                    raise json_error(position)
+        if char == '"':
+            return scanstring(text, position + 1, True)
+        if position >= length:
+            raise json_error(position)
+        match = scalar.match(text, position)
+        return _ARCHIVE_SCALAR, (match.end() if match else position + 1)
+
+    document, _ = value(0, 0)
+    return document
+
+
+def _archive_text_field(entry: _ArchiveObject, field: str, path: str) -> str:
+    holder = entry.member(field)
+    text = holder[0].member("Text") if holder and isinstance(holder[0], _ArchiveObject) else None
+    if not text or not isinstance(text[0], str):
+        raise ValueError(f"{path}/{field}/Text")
+    return text[0]
+
+
 def _archive_entries(document: Any, stop_event=None):
-    """UE 현지화 archive 구조를 문서 순서대로 펼칩니다.
+    """UE 현지화 archive 구조를 문서 순서대로 펼쳐 ``(Key 줄, Namespace, Key, 원문, 번역문)``을 냅니다.
 
     각 노드의 ``Children``을 먼저, 그다음 ``Subnamespaces``를 방문하며 Rust 경로와 같은 순서를 씁니다.
     구조가 맞지 않으면 문제 위치 경로를 담은 ``ValueError``를 발생시킵니다.
     """
-    if not isinstance(document, dict):
+    if not isinstance(document, _ArchiveObject):
         raise ValueError("/")
-    if "Children" not in document and "Subnamespaces" not in document:
+    if document.member("Children") is None and document.member("Subnamespaces") is None:
         raise ValueError("/Children")
     stack: List[Tuple[Any, str, str]] = [(document, "", "")]
     visited = 0
@@ -1978,33 +2093,31 @@ def _archive_entries(document: Any, stop_event=None):
         visited += 1
         if visited % 1000 == 0 and stop_event and stop_event.is_set():
             return
-        if not isinstance(node, dict):
+        if not isinstance(node, _ArchiveObject):
             raise ValueError(path or "/")
-        own_namespace = node.get("Namespace", "")
+        own = node.member("Namespace")
+        own_namespace = "" if own is None else own[0]
         if not isinstance(own_namespace, str):
             raise ValueError(f"{path}/Namespace")
         namespace = ".".join(part for part in (parent_namespace, own_namespace) if part)
-        if "Children" in node:
-            children = node["Children"]
+        children_member = node.member("Children")
+        if children_member is not None:
+            children = children_member[0]
             if not isinstance(children, list):
                 raise ValueError(f"{path}/Children")
             for index, child in enumerate(children):
                 child_path = f"{path}/Children/{index}"
-                if not isinstance(child, dict):
+                if not isinstance(child, _ArchiveObject):
                     raise ValueError(child_path)
-                key = child.get("Key")
-                if not isinstance(key, str):
+                key_member = child.member("Key")
+                if key_member is None or not isinstance(key_member[0], str):
                     raise ValueError(f"{child_path}/Key")
-                texts = []
-                for field in ("Source", "Translation"):
-                    holder = child.get(field)
-                    text = holder.get("Text") if isinstance(holder, dict) else None
-                    if not isinstance(text, str):
-                        raise ValueError(f"{child_path}/{field}/Text")
-                    texts.append(text)
-                yield namespace, key, texts[0], texts[1]
-        if "Subnamespaces" in node:
-            subnamespaces = node["Subnamespaces"]
+                source = _archive_text_field(child, "Source", child_path)
+                translation = _archive_text_field(child, "Translation", child_path)
+                yield key_member[1], namespace, key_member[0], source, translation
+        sub_member = node.member("Subnamespaces")
+        if sub_member is not None:
+            subnamespaces = sub_member[0]
             if not isinstance(subnamespaces, list):
                 raise ValueError(f"{path}/Subnamespaces")
             # 스택은 뒤에서 꺼내므로 역순으로 넣어 문서 순서를 유지합니다.
@@ -2083,21 +2196,24 @@ def search_in_archive_special(
             fields = _archive_fields_from_rust(content)
             if fields is None:
                 continue
-            processed.append(("", *fields, None, None))
+            processed.append((line, *fields, None, None))
         if not processed:
             return None
         return (file_path, _visible_match_count(processed), processed)
 
     try:
-        loaded, document = _load_json_document(file_path, False)
+        loaded, loaded_value = _load_json_document(file_path, False, keep_text=True)
         if not loaded:
-            return cast(SkippedResult, document)
+            return cast(SkippedResult, loaded_value)
+        _, text = loaded_value
         query = normalize_unicode(search_string).casefold()
         query_stripped = query.strip()
         matches: List[Any] = []
         total_count = 0
         try:
-            for namespace, key, source, translation in _archive_entries(document, stop_event):
+            # 검증은 json 모듈로 마쳤고, 줄 번호를 얻기 위해 같은 본문을 위치를 기억하며 다시 읽습니다.
+            document = _parse_archive_positions(str(text).lstrip("﻿"))
+            for key_line, namespace, key, source, translation in _archive_entries(document, stop_event):
                 matched = False
                 for value in (key, source, translation):
                     folded = normalize_unicode(value).casefold()
@@ -2108,7 +2224,7 @@ def search_in_archive_special(
                     continue
                 total_count += 1
                 if total_count <= max_per_file:
-                    matches.append(("", namespace, key, source, translation, None, None))
+                    matches.append((key_line, namespace, key, source, translation, None, None))
                 elif total_count == max_per_file + 1:
                     matches.append(limit_row)
                 # 상한 이후에도 문서 끝까지 구조를 확인해야 잘못된 파일을 결과로 확정하지 않습니다.

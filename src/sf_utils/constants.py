@@ -68,7 +68,6 @@ class Constants:
     RUST_MODE_EXACT = 1 << 3
     RUST_MODE_EXCEL = 1 << 4
     RUST_MODE_EXCLUDE_BINARY = 1 << 5
-    SYMBOL_DRAG_HANDLE = "⋮⋮"
     SYMBOL_CLOSE = "×"
     YIELD_SLEEP_TIME = 0.001
     STATUS_SKIPPED = "SKIPPED"
