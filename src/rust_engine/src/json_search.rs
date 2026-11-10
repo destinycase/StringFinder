@@ -107,7 +107,7 @@ impl<'de> Deserialize<'de> for JsonKey<'de> {
 }
 
 struct JsonSearchState<'data> {
-    pattern_upper: String,
+    matcher: &'data crate::textkey::Matcher,
     ac: &'data aho_corasick::AhoCorasick,
     is_exact: bool,
     mmap: &'data [u8],
@@ -135,7 +135,7 @@ impl<'data> JsonSearchState<'data> {
     #[allow(clippy::too_many_arguments)]
     fn new(
         mmap: &'data [u8],
-        pattern: &str,
+        matcher: &'data crate::textkey::Matcher,
         ac: &'data aho_corasick::AhoCorasick,
         is_exact: bool,
         stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -145,7 +145,7 @@ impl<'data> JsonSearchState<'data> {
         allow_duplicate_keys: bool,
     ) -> Self {
         Self {
-            pattern_upper: pattern.to_lowercase().to_uppercase(),
+            matcher,
             ac,
             is_exact,
             mmap,
@@ -191,7 +191,14 @@ impl<'data> JsonSearchState<'data> {
         let mut cursor = self.scan_offset;
         while cursor < self.mmap.len() {
             match self.mmap[cursor] {
-                b' ' | b'\t' | b'\r' | b'{' | b'}' | b'[' | b']' | b',' | b':' => {
+                b' ' | b'\t' | b'{' | b'}' | b'[' | b']' | b',' | b':' => {
+                    cursor += 1;
+                }
+                // 줄바꿈은 LF, CRLF, CR입니다. CRLF는 LF에서 한 번만 셉니다.
+                b'\r' => {
+                    if self.mmap.get(cursor + 1) != Some(&b'\n') {
+                        self.scan_line += 1;
+                    }
                     cursor += 1;
                 }
                 b'\n' => {
@@ -267,20 +274,22 @@ impl<'data> JsonSearchState<'data> {
         // serde visitor와 같은 순서로 원본 토큰 커서를 한 번만 전진시킨다.
         let token_location = self.next_token();
 
+        // 모든 형식이 같은 비교 기준(textkey)을 씁니다.
         let is_match = if self.is_exact {
-            crate::utils::normalize_unicode(value)
-                .trim()
-                .to_lowercase()
-                .to_uppercase()
-                == self.pattern_upper
+            self.matcher.equals_trimmed(value)
         } else {
-            self.ac.find(value).is_some()
+            self.matcher.contains(value)
         };
         if !is_match {
             return;
         }
+        // 변환해야 비교되는 값은 원본 위치를 알 수 없으므로 위치를 생략합니다(틀린 위치 금지).
+        let raw_position_valid = self.matcher.raw_search_valid(value);
 
         let (line, found_pos, found_len) = token_location.map_or((0, None, None), |location| {
+            if !raw_position_valid {
+                return (location.line, None, None);
+            }
             self.ac
                 .find(&self.mmap[location.start..location.end])
                 .map_or((0, None, None), |matched| {
@@ -554,7 +563,7 @@ impl<'de: 'data, 'state, 'data> Visitor<'de> for JsonVisitor<'state, 'data> {
 #[allow(clippy::too_many_arguments)]
 fn parse_json_once<'data>(
     mmap: &'data [u8],
-    pattern: &'data str,
+    matcher: &'data crate::textkey::Matcher,
     ac: &'data aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -572,7 +581,7 @@ fn parse_json_once<'data>(
 
     let mut state = JsonSearchState::new(
         parse_mmap,
-        pattern,
+        matcher,
         ac,
         is_exact,
         stop_flag,
@@ -606,7 +615,7 @@ fn parse_json_once<'data>(
 #[allow(clippy::too_many_arguments)]
 fn parse_json<'data>(
     mmap: &'data [u8],
-    pattern: &'data str,
+    matcher: &'data crate::textkey::Matcher,
     ac: &'data aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -617,7 +626,7 @@ fn parse_json<'data>(
 ) -> Result<JsonSearchState<'data>, String> {
     let first_attempt = parse_json_once(
         mmap,
-        pattern,
+        matcher,
         ac,
         is_exact,
         stop_flag.clone(),
@@ -629,7 +638,7 @@ fn parse_json<'data>(
     match first_attempt {
         Err(error) if error.contains("recursion limit exceeded") => parse_json_once(
             mmap,
-            pattern,
+            matcher,
             ac,
             is_exact,
             stop_flag,
@@ -652,9 +661,10 @@ pub fn validate_json_document(
     // 패턴이 없는 검색기는 어떤 값과도 일치하지 않으므로 결과를 모으지 않고 검증만 합니다.
     let no_match = aho_corasick::AhoCorasick::new(std::iter::empty::<&str>())
         .map_err(|error| error.to_string())?;
+    let never = crate::textkey::Matcher::never();
     let state = parse_json(
         mmap,
-        "",
+        &never,
         &no_match,
         false,
         stop_flag,
@@ -668,7 +678,7 @@ pub fn validate_json_document(
 #[cfg(test)]
 pub fn search_json_file(
     mmap: &[u8],
-    pattern: &str,
+    matcher: &crate::textkey::Matcher,
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -677,7 +687,7 @@ pub fn search_json_file(
 ) -> Result<Vec<RawMatch>, String> {
     search_json_file_with_policy(
         mmap,
-        pattern,
+        matcher,
         ac,
         is_exact,
         stop_flag,
@@ -690,7 +700,7 @@ pub fn search_json_file(
 #[allow(clippy::too_many_arguments)]
 pub fn search_json_file_with_policy(
     mmap: &[u8],
-    pattern: &str,
+    matcher: &crate::textkey::Matcher,
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -700,7 +710,7 @@ pub fn search_json_file_with_policy(
 ) -> Result<Vec<RawMatch>, String> {
     let mut state = parse_json(
         mmap,
-        pattern,
+        matcher,
         ac,
         is_exact,
         stop_flag,
@@ -761,12 +771,30 @@ mod tests {
         let ac = test_ac("needle");
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"{"v":"needle","\u0076":"needle"}"#;
-        assert!(search_json_file(json, "needle", &ac, false, stop.clone(), 1, 20).is_err());
+        assert!(search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop.clone(),
+            1,
+            20
+        )
+        .is_err());
 
         assert_eq!(
-            search_json_file_with_policy(json, "needle", &ac, false, stop.clone(), 10, 20, true)
-                .unwrap()
-                .len(),
+            search_json_file_with_policy(
+                json,
+                &crate::textkey::Matcher::new("needle").unwrap(),
+                &ac,
+                false,
+                stop.clone(),
+                10,
+                20,
+                true
+            )
+            .unwrap()
+            .len(),
             2
         );
     }
@@ -778,13 +806,29 @@ mod tests {
         let json = br#"{"outer":{"key":"needle"}}"#;
 
         assert_eq!(
-            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 2)
-                .unwrap()
-                .len(),
+            search_json_file(
+                json,
+                &crate::textkey::Matcher::new("needle").unwrap(),
+                &ac,
+                false,
+                stop_flag.clone(),
+                10,
+                2
+            )
+            .unwrap()
+            .len(),
             1
         );
-        let limited =
-            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 1).unwrap();
+        let limited = search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag.clone(),
+            10,
+            1,
+        )
+        .unwrap();
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].1, "__SF_JSON_DEPTH_LIMIT__|1");
     }
@@ -795,7 +839,16 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"{"items":[{"value":"needle"},{"value":"other"}]}"#;
 
-        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000).unwrap();
+        let result = search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10,
+            20_000,
+        )
+        .unwrap();
 
         assert_eq!(result.len(), 1);
         assert!(result[0].1.contains("/items/0/value\tneedle"));
@@ -810,8 +863,16 @@ mod tests {
         let ac = test_ac("needle");
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-        let matches = search_json_file(json.as_bytes(), "needle", &ac, false, stop_flag, 10, depth)
-            .expect("deep JSON should be parsed with stack growth");
+        let matches = search_json_file(
+            json.as_bytes(),
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10,
+            depth,
+        )
+        .expect("deep JSON should be parsed with stack growth");
 
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.ends_with("\tneedle"));
@@ -823,9 +884,16 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"{"value":"needle","#;
 
-        assert!(
-            search_json_file(json, "needle", &ac, false, stop_flag.clone(), 10, 20_000).is_err()
-        );
+        assert!(search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag.clone(),
+            10,
+            20_000
+        )
+        .is_err());
     }
 
     #[test]
@@ -834,14 +902,30 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let true_ac = test_ac("true");
-        let true_result =
-            search_json_file(json, "true", &true_ac, true, stop_flag.clone(), 10, 20_000).unwrap();
+        let true_result = search_json_file(
+            json,
+            &crate::textkey::Matcher::new("true").unwrap(),
+            &true_ac,
+            true,
+            stop_flag.clone(),
+            10,
+            20_000,
+        )
+        .unwrap();
         assert_eq!(true_result[0].0, 2);
         assert!(true_result[0].1.ends_with("\ttrue"));
 
         let null_ac = test_ac("null");
-        let null_result =
-            search_json_file(json, "null", &null_ac, true, stop_flag, 10, 20_000).unwrap();
+        let null_result = search_json_file(
+            json,
+            &crate::textkey::Matcher::new("null").unwrap(),
+            &null_ac,
+            true,
+            stop_flag,
+            10,
+            20_000,
+        )
+        .unwrap();
         assert_eq!(null_result[0].0, 3);
         assert!(null_result[0].1.ends_with("\tnull"));
     }
@@ -852,7 +936,16 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = b"{\n  \"needle\": \"other\",\n  \"value\": \"needle\"\n}";
 
-        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000).unwrap();
+        let result = search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10,
+            20_000,
+        )
+        .unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, 3);
@@ -865,7 +958,16 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"{"escaped":"\u006e\u0065\u0065\u0064\u006c\u0065","plain":"needle"}"#;
 
-        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000).unwrap();
+        let result = search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10,
+            20_000,
+        )
+        .unwrap();
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].0, 0);
@@ -882,7 +984,16 @@ mod tests {
         let json =
             b"{\n  \"empty\": {},\n  \"items\": [[], {\"value\": \"quoted \\\" needle\"}]\n}";
 
-        let result = search_json_file(json, "needle", &ac, false, stop_flag, 10, 20_000).unwrap();
+        let result = search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10,
+            20_000,
+        )
+        .unwrap();
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, 3);
@@ -896,6 +1007,15 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let json = br#"["needle", "needle", "needle", malformed]"#;
 
-        assert!(search_json_file(json, "needle", &ac, false, stop_flag, 1, 20_000).is_err());
+        assert!(search_json_file(
+            json,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            1,
+            20_000
+        )
+        .is_err());
     }
 }

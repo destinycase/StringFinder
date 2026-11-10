@@ -29,7 +29,7 @@ htmlcov/
 
 # Local data
 /AGENTS.md
-data/
+/data/
 /samples/
 /diagnostic/
 /docs_dev/

@@ -4,7 +4,6 @@ use chrono::{Datelike, Timelike};
 use std::borrow::Cow;
 use std::fmt::Write;
 use std::path::Path;
-use unicode_normalization::UnicodeNormalization;
 
 const EXCEL_MARKER_SHEET_ERROR_PREFIX: &str = "__SF_EXCEL_SHEET_ERR__|";
 
@@ -116,12 +115,10 @@ impl SparseExcelWorkbook {
                     .iter()
                     .map(Cell::get_position)
                     .reduce(|a, b| (a.0.max(b.0), a.1.max(b.1)));
-                let ac = aho_corasick::AhoCorasick::new([""]).expect("empty literal is valid");
                 let ctx = ExcelCtx {
                     path: &self.path,
                     date_cells: Default::default(),
-                    pat_upper: "",
-                    ac: &ac,
+                    matcher: None,
                     is_exact: false,
                     stop_flag: Default::default(),
                     max_per_file: usize::MAX,
@@ -183,8 +180,8 @@ struct ExcelCtx<'a> {
     date_cells: std::cell::RefCell<
         std::collections::HashMap<String, Result<crate::excel_date_formats::DateCells, String>>,
     >,
-    pat_upper: &'a str,
-    ac: &'a aho_corasick::AhoCorasick,
+    /// 값 읽기 전용(시트 읽기 API)일 때는 비교기가 없습니다.
+    matcher: Option<&'a crate::textkey::Matcher>,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
@@ -262,8 +259,7 @@ where
 /// 공개 검색 함수
 pub fn search_excel_file(
     path: &Path,
-    pattern: &str,
-    ac: &aho_corasick::AhoCorasick,
+    matcher: &crate::textkey::Matcher,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
@@ -273,13 +269,10 @@ pub fn search_excel_file(
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_lowercase();
-    let pat_nfc: String = pattern.chars().nfc().collect();
-    let pat_upper = pat_nfc.to_lowercase().to_uppercase();
     let ctx = ExcelCtx {
         path,
         date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
-        pat_upper: &pat_upper,
-        ac,
+        matcher: Some(matcher),
         is_exact,
         stop_flag: stop_flag.clone(),
         max_per_file,
@@ -521,19 +514,14 @@ fn join_python_datetime(date: &str, time: &str) -> String {
 
 /// 문자열 값의 패턴 매치 여부 확인 공통 로직
 fn cell_matches_val(val: &str, ctx: &ExcelCtx<'_>) -> bool {
-    if val.is_ascii() {
-        if ctx.is_exact {
-            val.trim().eq_ignore_ascii_case(ctx.pat_upper)
-        } else {
-            ctx.ac.find(val).is_some()
-        }
+    // 모든 형식이 같은 비교 기준(textkey)을 씁니다.
+    let Some(matcher) = ctx.matcher else {
+        return false;
+    };
+    if ctx.is_exact {
+        matcher.equals_trimmed(val)
     } else {
-        let nfc: String = val.chars().nfc().collect();
-        if ctx.is_exact {
-            nfc.trim().to_lowercase().to_uppercase() == ctx.pat_upper
-        } else {
-            ctx.ac.find(&nfc).is_some()
-        }
+        matcher.contains(val)
     }
 }
 
@@ -652,18 +640,11 @@ mod tests {
     use super::*;
 
     fn assert_cell_match(cell: Data, pattern: &str, exact: bool, expected: bool) {
-        let pat_nfc: String = pattern.chars().nfc().collect();
-        let pat_upper = pat_nfc.to_lowercase().to_uppercase();
-        let ac = aho_corasick::AhoCorasickBuilder::new()
-            .ascii_case_insensitive(true)
-            .match_kind(aho_corasick::MatchKind::LeftmostFirst)
-            .build([pat_nfc])
-            .expect("valid test pattern");
+        let matcher = crate::textkey::Matcher::new(pattern).expect("valid test pattern");
         let ctx = ExcelCtx {
             path: Path::new("test.xlsx"),
             date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
-            pat_upper: &pat_upper,
-            ac: &ac,
+            matcher: Some(&matcher),
             is_exact: exact,
             stop_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             max_per_file: 5_000,
@@ -766,12 +747,11 @@ mod tests {
 
     #[test]
     fn fractional_buffer_matches_existing_float_representation() {
-        let ac = aho_corasick::AhoCorasick::new(["needle"]).unwrap();
+        let matcher = crate::textkey::Matcher::new("needle").unwrap();
         let ctx = ExcelCtx {
             path: Path::new("test.xlsx"),
             date_cells: Default::default(),
-            pat_upper: "NEEDLE",
-            ac: &ac,
+            matcher: Some(&matcher),
             is_exact: false,
             stop_flag: Default::default(),
             max_per_file: 10_000,
@@ -814,7 +794,9 @@ mod tests {
         for (value, query, expected) in [
             ("SS", "ß", true),
             ("S", "ſ", true),
-            ("I", "ı", true),
+            // Unicode 대소문자 접기(C+F)에서 ı(U+0131)는 i로 접히지 않습니다(터키어 T 제외).
+            // 예전 대문자화 비교와 다른 의도한 차이입니다.
+            ("I", "ı", false),
             ("I", "İ", false),
             ("K", "K", true),
             (" \tNeedle\r\n", "needle", true),

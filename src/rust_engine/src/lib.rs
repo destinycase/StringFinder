@@ -1,6 +1,8 @@
+mod casefold_table;
 mod excel_date_formats;
 mod excel_search;
 mod json_search;
+mod textkey;
 mod types;
 mod ue_archive_search;
 mod utils;
@@ -591,15 +593,9 @@ fn search_file(
     }
 
     let _ = include_junctions; // No traversal in the single-file entry point.
-    let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
     let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
-    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json || is_archive);
-    let ac = AhoCorasickBuilder::new()
-        .ascii_case_insensitive(true)
-        .match_kind(MatchKind::LeftmostFirst)
-        .build(&patterns)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+    let (matcher, ac) = build_search_matchers(&pattern, is_xml, is_json || is_archive)?;
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     // 검색 중에는 100ms 간격의 취소 확인을 유지하되, 정상 완료 시 채널로 즉시 깨워
@@ -633,14 +629,11 @@ fn search_file(
         (None, None)
     };
 
-    let pat_upper = norm_pattern.to_lowercase().to_uppercase();
-
     let res = py.allow_threads(|| {
         search_file_internal(InternalSearchParams {
             encoding,
             path: Path::new(&path),
-            pattern: &pattern,
-            pat_upper: &pat_upper,
+            matcher: &matcher,
             ac: &ac,
             is_exact,
             is_json,
@@ -688,12 +681,15 @@ fn search_file(
     }
 }
 
+/// 일반 텍스트를 이 크기의 조각(줄 경계에 맞춤)으로 나눠, 조각이 CPU 캐시에 있는 동안
+/// 변환 필요 여부 검사와 검색을 이어서 합니다.
+const TEXT_CHUNK_SIZE: usize = 256 * 1024;
+
 #[allow(clippy::too_many_arguments)]
 fn do_search_with_mmap(
     mmap: &[u8],
     encoding: &'static Encoding,
-    pat_upper: &str,
-    ac: &aho_corasick::AhoCorasick,
+    matcher: &textkey::Matcher,
     is_exact: bool,
 
     stop_flag: &Arc<AtomicBool>,
@@ -701,95 +697,20 @@ fn do_search_with_mmap(
 ) -> Vec<RawMatch> {
     let mut results = Vec::new();
     if encoding == UTF_8 {
-        if ac.find(mmap).is_none() {
-            return results;
-        }
-
-        if is_exact {
-            let mut line_number = 1usize;
-            let mut last_start = 0usize;
-            for nl_pos in memchr::memchr_iter(b'\n', mmap) {
-                if results.len() > max_per_file {
-                    break;
-                }
-                if line_number.is_multiple_of(1000) && stop_flag.load(Ordering::Relaxed) {
-                    return results;
-                }
-                let mut line_bytes = &mmap[last_start..nl_pos];
-                if !line_bytes.is_empty() && line_bytes[line_bytes.len() - 1] == b'\r' {
-                    line_bytes = &line_bytes[..line_bytes.len() - 1];
-                }
-
-                let is_match = exact_line_matches(line_bytes, pat_upper);
-
-                if is_match {
-                    let content = extract_line_content_bytes(mmap, last_start, nl_pos, None, None);
-                    results.push((line_number, content, None, None));
-                }
-                last_start = nl_pos + 1;
-                line_number += 1;
-            }
-            if last_start < mmap.len() && results.len() < max_per_file + 1 {
-                let mut line_bytes = &mmap[last_start..];
-                if line_bytes.last() == Some(&b'\r') {
-                    line_bytes = &line_bytes[..line_bytes.len() - 1];
-                }
-                let is_match = exact_line_matches(line_bytes, pat_upper);
-                if is_match {
-                    let content =
-                        extract_line_content_bytes(mmap, last_start, mmap.len(), None, None);
-                    results.push((line_number, content, None, None));
-                }
-            }
-            return results;
-        }
-
-        let mut current_line = 1usize;
-        let mut last_nl_pos = 0usize;
-        let mut next_nl_pos = memchr::memchr(b'\n', mmap).unwrap_or(mmap.len());
-
-        for mat in ac.find_iter(mmap) {
-            if results.len() > max_per_file {
-                break;
-            }
-            if results.len() % 1000 == 0 && stop_flag.load(Ordering::Relaxed) {
-                return results;
-            }
-            let m_start = mat.start();
-            while m_start > next_nl_pos {
-                current_line += 1;
-                last_nl_pos = next_nl_pos + 1;
-                if last_nl_pos >= mmap.len() {
-                    next_nl_pos = mmap.len();
-                    break;
-                }
-                next_nl_pos = memchr::memchr(b'\n', &mmap[last_nl_pos..])
-                    .map(|p| last_nl_pos + p)
-                    .unwrap_or(mmap.len());
-            }
-
-            // Each hit retains its line preview and byte range.
-            let content = extract_line_content_bytes(
-                mmap,
-                last_nl_pos,
-                next_nl_pos,
-                Some(m_start),
-                Some(mat.len()),
-            );
-            let (offset, length) = if content.starts_with(MATCH_META_LONG_LINE_PREFIX) {
-                (None, None)
-            } else {
-                (Some(m_start), Some(mat.len()))
-            };
-            results.push((current_line, content, offset, length));
-        }
+        search_utf8_text(
+            mmap,
+            matcher,
+            is_exact,
+            stop_flag,
+            max_per_file,
+            &mut results,
+        );
     } else {
         // Non-UTF8 일반 텍스트는 파일 전체를 String으로 복사하지 않고 청크 단위로 디코딩합니다.
         search_non_utf8_chunks(
             mmap,
             encoding,
-            pat_upper,
-            ac,
+            matcher,
             is_exact,
             stop_flag,
             max_per_file,
@@ -797,6 +718,276 @@ fn do_search_with_mmap(
         );
     }
     results
+}
+
+#[inline]
+fn is_ascii_chunk(bytes: &[u8]) -> bool {
+    // 표준 구현은 한 번에 여러 바이트를 보고, 비ASCII를 만나면 바로 멈춥니다(한글 조각은 즉시 끝남).
+    bytes.is_ascii()
+}
+
+/// UTF-8 일반 텍스트 검색 상태입니다.
+///
+/// 파일을 줄로 나누지 않습니다. 변환이 필요한 글자가 있는 줄만 `key()`로 바꿔 비교하고,
+/// 나머지는 원본 그대로 `key(검색어)`를 ASCII 대소문자 무시로 찾습니다(결과가 같음이 증명된 경로).
+struct Utf8TextSearch<'a> {
+    buf: &'a [u8],
+    matcher: &'a textkey::Matcher,
+    is_exact: bool,
+    max_per_file: usize,
+    stop_flag: &'a Arc<AtomicBool>,
+    counter: textkey::LineCounter,
+    // 같은 줄의 여러 일치에서 줄 경계를 다시 찾지 않도록 마지막 줄을 기억합니다.
+    line: Option<(usize, usize)>,
+    last_exact_line_start: Option<usize>,
+    results: &'a mut Vec<RawMatch>,
+}
+
+impl Utf8TextSearch<'_> {
+    fn full(&self) -> bool {
+        self.results.len() > self.max_per_file
+    }
+
+    fn bounds(&mut self, position: usize) -> (usize, usize) {
+        if let Some((start, end)) = self.line {
+            if start <= position && position < end {
+                return (start, end);
+            }
+        }
+        let bounds = textkey::line_bounds(self.buf, position);
+        self.line = Some(bounds);
+        bounds
+    }
+
+    /// 원본 그대로 찾아도 되는 구간입니다. 중지되었거나 상한을 넘으면 참을 돌려줍니다.
+    fn raw_region(&mut self, start: usize, end: usize) -> bool {
+        if start >= end {
+            return false;
+        }
+        let finder = self.matcher.raw_finder();
+        for hit in finder.find_iter(&self.buf[start..end]) {
+            if self.full() {
+                return true;
+            }
+            if self.results.len().is_multiple_of(1000) && self.stop_flag.load(Ordering::Relaxed) {
+                return true;
+            }
+            self.raw_hit(start + hit.start(), hit.len());
+        }
+        false
+    }
+
+    /// 원본에서 찾은 일치 하나를 기록합니다(줄에 변환 대상이 없음이 확인된 경우).
+    fn raw_hit(&mut self, match_start: usize, match_len: usize) {
+        let (line_start, line_end) = self.bounds(match_start);
+        if self.is_exact {
+            if self.last_exact_line_start == Some(line_start) {
+                return;
+            }
+            self.last_exact_line_start = Some(line_start);
+            let text = String::from_utf8_lossy(&self.buf[line_start..line_end]);
+            if self.matcher.equals_trimmed(&text) {
+                let line = self.counter.line_at(self.buf, line_start);
+                let content =
+                    extract_line_content_bytes(self.buf, line_start, line_end, None, None);
+                self.results.push((line, content, None, None));
+            }
+            return;
+        }
+        let line = self.counter.line_at(self.buf, match_start);
+        // Each hit retains its line preview and byte range.
+        let content = extract_line_content_bytes(
+            self.buf,
+            line_start,
+            line_end,
+            Some(match_start),
+            Some(match_len),
+        );
+        let (offset, length) = if content.starts_with(MATCH_META_LONG_LINE_PREFIX) {
+            (None, None)
+        } else {
+            (Some(match_start), Some(match_len))
+        };
+        self.results.push((line, content, offset, length));
+    }
+
+    /// 변환이 필요한 줄입니다. 원본 위치를 알 수 없으므로 위치는 생략합니다(틀린 위치 금지).
+    fn converted_line(&mut self, line_start: usize, line_end: usize) {
+        let text = String::from_utf8_lossy(&self.buf[line_start..line_end]);
+        let line = self.counter.line_at(self.buf, line_start);
+        if self.is_exact {
+            if self.matcher.equals_trimmed(&text) {
+                let content =
+                    extract_line_content_bytes(self.buf, line_start, line_end, None, None);
+                self.results.push((line, content, None, None));
+            }
+            return;
+        }
+        let hits = self.matcher.hits(&text).len();
+        if hits == 0 {
+            return;
+        }
+        let content = extract_line_content_bytes(self.buf, line_start, line_end, None, None);
+        for _ in 0..hits {
+            if self.full() {
+                return;
+            }
+            self.results.push((line, content.clone(), None, None));
+        }
+    }
+}
+
+fn search_utf8_text(
+    buf: &[u8],
+    matcher: &textkey::Matcher,
+    is_exact: bool,
+    stop_flag: &Arc<AtomicBool>,
+    max_per_file: usize,
+    results: &mut Vec<RawMatch>,
+) {
+    let ascii_pattern = matcher.pat_ascii();
+    let mut search = Utf8TextSearch {
+        buf,
+        matcher,
+        is_exact,
+        max_per_file,
+        stop_flag,
+        counter: textkey::LineCounter::new(),
+        line: None,
+        last_exact_line_start: None,
+        results,
+    };
+    if let Some(triggers) = matcher.triggers() {
+        search_utf8_with_triggers(&mut search, triggers);
+        return;
+    }
+    let mut chunk_start = 0usize;
+    while chunk_start < buf.len() {
+        if search.full() || stop_flag.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut chunk_end = (chunk_start + TEXT_CHUNK_SIZE).min(buf.len());
+        if chunk_end < buf.len() {
+            // 조각 끝을 줄바꿈 위치에 맞춥니다. 검색어에는 줄바꿈이 없으므로 일치가 조각에 걸치지 않습니다.
+            chunk_end = memchr::memchr2(b'\n', b'\r', &buf[chunk_end..])
+                .map_or(buf.len(), |index| chunk_end + index);
+        }
+        if is_ascii_chunk(&buf[chunk_start..chunk_end]) {
+            // ASCII 본문의 key는 ASCII뿐이므로 비ASCII 검색어는 일치할 수 없습니다.
+            if ascii_pattern && search.raw_region(chunk_start, chunk_end) {
+                return;
+            }
+        } else {
+            let mut cursor = chunk_start;
+            loop {
+                let flagged = textkey::next_flagged(&buf[..chunk_end], cursor, ascii_pattern);
+                let raw_end = flagged.map_or(chunk_end, |position| {
+                    textkey::line_bounds(buf, position).0.max(cursor)
+                });
+                if search.raw_region(cursor, raw_end) {
+                    return;
+                }
+                let Some(position) = flagged else {
+                    break;
+                };
+                let (line_start, line_end) = textkey::line_bounds(buf, position);
+                search.converted_line(line_start, line_end);
+                if search.full() {
+                    return;
+                }
+                cursor = line_end;
+                if cursor >= chunk_end {
+                    break;
+                }
+            }
+        }
+        chunk_start = chunk_end;
+    }
+}
+
+/// 유발 글자 경로: 원본에서 `key(검색어)`를 찾고(단일 검색어라 빠른 사전 거르기가 유지됨),
+/// ASCII가 아닌 조각에서만 유발 글자의 첫 바이트를 SIMD로 따로 찾습니다.
+///
+/// 유발 글자가 있는 줄과, 일치 바로 뒤에 변환 대상 글자가 붙은 줄만 `key()`로 바꿔 비교합니다.
+fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey::Triggers) {
+    let buf = search.buf;
+    let finder = search.matcher.raw_finder();
+    let mut convert_lines: Vec<(usize, usize)> = Vec::new();
+    let mut chunk_start = 0usize;
+    while chunk_start < buf.len() {
+        if search.full() || search.stop_flag.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut chunk_end = (chunk_start + TEXT_CHUNK_SIZE).min(buf.len());
+        if chunk_end < buf.len() {
+            // 조각 끝을 줄바꿈 위치에 맞춥니다. 검색어에는 줄바꿈이 없으므로 일치가 조각에 걸치지 않습니다.
+            chunk_end = memchr::memchr2(b'\n', b'\r', &buf[chunk_end..])
+                .map_or(buf.len(), |index| chunk_end + index);
+        }
+        convert_lines.clear();
+        if !is_ascii_chunk(&buf[chunk_start..chunk_end]) {
+            triggers.scan(buf, chunk_start, chunk_end, |position| {
+                convert_lines.push(textkey::line_bounds(buf, position));
+            });
+            convert_lines.sort_unstable();
+            convert_lines.dedup();
+        }
+        let mut next_convert = 0usize;
+        let mut converted_until = chunk_start;
+        // 같은 줄의 원본 일치는 줄이 끝날 때까지 모았다가, 줄이 변환되지 않았을 때만 기록합니다.
+        let mut pending: Vec<(usize, usize)> = Vec::new();
+        let mut pending_line: Option<(usize, usize)> = None;
+        for hit in finder.find_iter(&buf[chunk_start..chunk_end]) {
+            let start = chunk_start + hit.start();
+            if start < converted_until {
+                continue;
+            }
+            let bounds = search.bounds(start);
+            if pending_line != Some(bounds) {
+                for (hit_start, hit_len) in pending.drain(..) {
+                    search.raw_hit(hit_start, hit_len);
+                }
+                pending_line = Some(bounds);
+            }
+            // 이 일치보다 앞에 있는 변환 대상 줄을 먼저 처리합니다.
+            while next_convert < convert_lines.len() && convert_lines[next_convert].0 < bounds.0 {
+                let (line_start, line_end) = convert_lines[next_convert];
+                search.converted_line(line_start, line_end);
+                next_convert += 1;
+            }
+            let in_trigger_line =
+                next_convert < convert_lines.len() && convert_lines[next_convert].0 == bounds.0;
+            if in_trigger_line || textkey::variant_at(buf, start + hit.len()) {
+                if in_trigger_line {
+                    next_convert += 1;
+                }
+                // 이미 모은 같은 줄의 원본 일치는 버리고 줄 전체를 변환해 다시 셉니다.
+                pending.clear();
+                pending_line = None;
+                search.converted_line(bounds.0, bounds.1);
+                converted_until = bounds.1.max(start + 1);
+            } else {
+                pending.push((start, hit.len()));
+            }
+            if search.full() {
+                return;
+            }
+            if search.results.len().is_multiple_of(1000) && search.stop_flag.load(Ordering::Relaxed)
+            {
+                return;
+            }
+        }
+        for (hit_start, hit_len) in pending.drain(..) {
+            search.raw_hit(hit_start, hit_len);
+        }
+        for &(line_start, line_end) in &convert_lines[next_convert..] {
+            search.converted_line(line_start, line_end);
+            if search.full() {
+                return;
+            }
+        }
+        chunk_start = chunk_end;
+    }
 }
 
 fn apply_match_limit(matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatch> {
@@ -815,32 +1006,6 @@ fn apply_match_limit(matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatc
     }
     visible_matches.extend(metadata);
     visible_matches
-}
-
-fn exact_line_matches(line: &[u8], pat_upper: &str) -> bool {
-    let Ok(s) = simdutf8::basic::from_utf8(line) else {
-        return false;
-    };
-    if s.is_ascii() {
-        // str::trim includes vertical tabs, unlike trim_ascii.
-        return s.trim().eq_ignore_ascii_case(pat_upper);
-    }
-    let s_norm = crate::utils::normalize_unicode(s);
-    s_norm.trim().to_lowercase().to_uppercase() == pat_upper
-}
-
-fn decoded_line_matches(
-    line: &str,
-    pat_upper: &str,
-    ac: &aho_corasick::AhoCorasick,
-    is_exact: bool,
-) -> bool {
-    if is_exact {
-        let normalized = crate::utils::normalize_unicode(line);
-        normalized.trim().to_lowercase().to_uppercase() == pat_upper
-    } else {
-        ac.find(line).is_some()
-    }
 }
 
 fn detect_text_search_encoding(data: &[u8], pattern: &str, is_exact: bool) -> &'static Encoding {
@@ -864,49 +1029,47 @@ fn detect_text_search_encoding(data: &[u8], pattern: &str, is_exact: bool) -> &'
     detect_encoding(data)
 }
 
-#[allow(clippy::too_many_arguments)]
+/// 디코딩한 줄 하나를 비교합니다. 디코딩한 위치는 원본 인코딩의 위치가 아니므로 위치는 보고하지 않습니다.
 fn collect_decoded_line(
     line: &str,
     line_number: usize,
-    pat_upper: &str,
-    ac: &aho_corasick::AhoCorasick,
+    matcher: &textkey::Matcher,
     is_exact: bool,
 
     max_per_file: usize,
     results: &mut Vec<RawMatch>,
 ) -> bool {
     if is_exact {
-        if decoded_line_matches(line, pat_upper, ac, is_exact) {
-            let content =
-                { extract_line_content_bytes(line.as_bytes(), 0, line.len(), None, None) };
+        if matcher.equals_trimmed(line) {
+            let content = extract_line_content_bytes(line.as_bytes(), 0, line.len(), None, None);
             results.push((line_number, content, None, None));
             return results.len() > max_per_file;
         }
-    } else {
-        for hit in ac.find_iter(line) {
-            let content = extract_line_content_bytes(
-                line.as_bytes(),
-                0,
-                line.len(),
-                Some(hit.start()),
-                Some(hit.len()),
-            );
-            // Decoded byte positions are not offsets in the source encoding.
-            results.push((line_number, content, None, None));
-            if results.len() > max_per_file {
-                return true;
-            }
+        return false;
+    }
+    for hit in matcher.hits(line) {
+        let content = extract_line_content_bytes(
+            line.as_bytes(),
+            0,
+            line.len(),
+            hit.map(|(start, _)| start),
+            hit.map(|(_, length)| length),
+        );
+        results.push((line_number, content, None, None));
+        if results.len() > max_per_file {
+            return true;
         }
     }
     false
 }
 
+/// 디코딩이 필요한 텍스트(UTF-16·CP949 등)를 청크 단위로 검색합니다.
+/// 줄바꿈은 LF, CRLF, CR이며, 청크 끝의 CR은 다음 청크의 LF와 합쳐질 수 있으므로 기다립니다.
 #[allow(clippy::too_many_arguments)]
 fn search_non_utf8_chunks(
     mmap: &[u8],
     encoding: &'static Encoding,
-    pat_upper: &str,
-    ac: &aho_corasick::AhoCorasick,
+    matcher: &textkey::Matcher,
     is_exact: bool,
 
     stop_flag: &Arc<AtomicBool>,
@@ -918,7 +1081,6 @@ fn search_non_utf8_chunks(
     let mut pending = String::new();
     let mut input_offset = 0usize;
     let mut line_number = 1usize;
-    let mut next_search = 0usize;
 
     while input_offset < mmap.len() {
         if stop_flag.load(Ordering::Relaxed) {
@@ -936,37 +1098,46 @@ fn search_non_utf8_chunks(
             break;
         }
         input_offset += consumed;
+        let finished = input_offset >= mmap.len();
         pending.push_str(&decoded);
 
+        let bytes = pending.as_bytes();
         let mut line_start = 0usize;
-        while let Some(relative_newline) = pending[next_search..].find('\n') {
-            let newline = next_search + relative_newline;
+        while let Some(relative) = memchr::memchr2(b'\n', b'\r', &bytes[line_start..]) {
+            let terminator = line_start + relative;
+            let terminator_len = if bytes[terminator] == b'\n' {
+                1
+            } else if terminator + 1 < bytes.len() {
+                if bytes[terminator + 1] == b'\n' {
+                    2
+                } else {
+                    1
+                }
+            } else if finished {
+                1
+            } else {
+                // 청크 끝의 CR: 다음 청크가 LF로 시작하면 CRLF 한 번입니다.
+                break;
+            };
             if results.len() > max_per_file {
                 return;
             }
             if line_number.is_multiple_of(1000) && stop_flag.load(Ordering::Relaxed) {
                 return;
             }
-            let line = pending[line_start..newline]
-                .strip_suffix('\r')
-                .unwrap_or(&pending[line_start..newline]);
             if collect_decoded_line(
-                line,
+                &pending[line_start..terminator],
                 line_number,
-                pat_upper,
-                ac,
+                matcher,
                 is_exact,
                 max_per_file,
                 results,
             ) {
                 return;
             }
-            line_start = newline + 1;
-            next_search = line_start;
             line_number += 1;
+            line_start = terminator + terminator_len;
         }
-        // Only new bytes can contain the next newline. Compact once per chunk.
-        next_search = pending.len() - line_start;
         if line_start > 0 {
             pending.drain(..line_start);
         }
@@ -978,23 +1149,14 @@ fn search_non_utf8_chunks(
 
     if !pending.is_empty() && results.len() <= max_per_file && !stop_flag.load(Ordering::Relaxed) {
         let line = pending.strip_suffix('\r').unwrap_or(&pending);
-        collect_decoded_line(
-            line,
-            line_number,
-            pat_upper,
-            ac,
-            is_exact,
-            max_per_file,
-            results,
-        );
+        collect_decoded_line(line, line_number, matcher, is_exact, max_per_file, results);
     }
 }
 
 struct InternalSearchParams<'a> {
     encoding: Option<&'static encoding_rs::Encoding>,
     path: &'a Path,
-    pattern: &'a str,
-    pat_upper: &'a str,
+    matcher: &'a textkey::Matcher,
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
     is_json: bool,
@@ -1015,8 +1177,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     let InternalSearchParams {
         encoding,
         path,
-        pattern,
-        pat_upper,
+        matcher,
         ac,
         is_exact,
         is_json,
@@ -1064,7 +1225,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 }
             }
         }
-        let r_raw = match search_excel_file(path, pattern, ac, is_exact, stop_flag, max_per_file) {
+        let r_raw = match search_excel_file(path, matcher, is_exact, stop_flag, max_per_file) {
             Ok(matches) => matches,
             Err(error) => return Some(Err(encode_excel_skip_reason(error))),
         };
@@ -1125,7 +1286,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     } else if structured_document {
         detect_encoding(mmap_c)
     } else {
-        detect_text_search_encoding(mmap_c, pattern, is_exact)
+        detect_text_search_encoding(mmap_c, matcher.pat_key(), is_exact)
     };
     let decoded = if structured_document {
         match decode_structured_bytes(mmap_c, enc) {
@@ -1142,8 +1303,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     let res: Result<Vec<RawMatch>, String> = if is_archive_document {
         search_archive_file(
             final_mmap,
-            pattern,
-            ac,
+            matcher,
             is_exact,
             stop_flag.clone(),
             max_per_file,
@@ -1159,7 +1319,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         {
             search_json_file_with_policy(
                 final_mmap,
-                pattern,
+                matcher,
                 ac,
                 is_exact,
                 stop_flag.clone(),
@@ -1173,7 +1333,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         {
             search_xml_file(
                 final_mmap,
-                pattern,
+                matcher,
                 ac,
                 is_exact,
                 stop_flag.clone(),
@@ -1216,8 +1376,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             let mut matches = do_search_with_mmap(
                 searchable_mmap,
                 enc,
-                pat_upper,
-                ac,
+                matcher,
                 is_exact,
                 &stop_flag,
                 max_per_file,
@@ -1228,8 +1387,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                     matches = do_search_with_mmap(
                         mmap_c,
                         verified_encoding,
-                        pat_upper,
-                        ac,
+                        matcher,
                         is_exact,
                         &stop_flag,
                         max_per_file,
@@ -1335,20 +1493,12 @@ pub fn search_dir(
         structured_memory_budget = config.structured_memory_budget;
     }
 
-    let norm_pattern = crate::utils::normalize_unicode(&pattern);
     let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
     let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
     let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
-    let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json || is_archive);
-    let ac = Arc::new(
-        AhoCorasickBuilder::new()
-            .ascii_case_insensitive(true)
-            .match_kind(MatchKind::LeftmostFirst)
-            .build(&patterns)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?,
-    );
-
-    let pat_upper = norm_pattern.to_lowercase().to_uppercase();
+    let (matcher, ac) = build_search_matchers(&pattern, is_xml, is_json || is_archive)?;
+    let matcher = Arc::new(matcher);
+    let ac = Arc::new(ac);
 
     let extensions_set = extensions.map(|exts| {
         exts.into_iter()
@@ -1490,8 +1640,7 @@ pub fn search_dir(
                     let skip_ref = skipped.clone();
                     let ac_ref = ac.clone();
                     let stop_ref = stop_flag.clone();
-                    let p_upper = pat_upper.clone();
-                    let pat_orig = pattern.clone();
+                    let matcher = matcher.clone();
                     let tx_worker = tx_main.clone();
                     let ext_s = extensions_set.as_ref();
                     let glob_s = filename_glob_set.clone();
@@ -1619,8 +1768,7 @@ pub fn search_dir(
                                 & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
                                 != 0,
                             path,
-                            pattern: &pat_orig,
-                            pat_upper: &p_upper,
+                            matcher: &matcher,
                             ac: &ac_ref,
                             is_exact,
                             is_json,
@@ -1873,20 +2021,11 @@ fn search_files_list(
     });
 
     py.allow_threads(|| {
-        let norm_pattern = crate::utils::normalize_unicode(&search_string);
-        let pat_upper = norm_pattern.to_lowercase().to_uppercase();
         let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
         let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
         let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
-        let patterns = generate_search_patterns(&norm_pattern, is_xml, is_json || is_archive);
-
-        let ac = Arc::new(
-            AhoCorasickBuilder::new()
-                .ascii_case_insensitive(true)
-                .match_kind(MatchKind::LeftmostFirst)
-                .build(&patterns)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?,
-        );
+        let (matcher, ac) = build_search_matchers(&search_string, is_xml, is_json || is_archive)?;
+        let ac = Arc::new(ac);
 
         let results = Arc::new(Mutex::new(Vec::new()));
         let skipped = Arc::new(Mutex::new(Vec::new()));
@@ -1956,8 +2095,7 @@ fn search_files_list(
                     & types::MODE_ALLOW_DUPLICATE_JSON_KEYS
                     != 0,
                 path,
-                pattern: &search_string,
-                pat_upper: &pat_upper,
+                matcher: &matcher,
                 ac: &ac,
                 is_exact,
                 is_json,
@@ -2033,6 +2171,35 @@ fn validate_query_length(query: &str) -> PyResult<()> {
         )));
     }
     Ok(())
+}
+
+/// 검색어 하나로 공통 비교기와, 원본 위치 찾기·바이너리 개수용 자동자를 만듭니다.
+///
+/// 비교(일치 여부)는 항상 비교기(`key()` 기준)가 정합니다. 자동자는 원본 바이트에서 위치를 찾거나
+/// 바이너리 파일의 일치 개수를 셀 때만 쓰며, `key(검색어)`와 정규화한 검색어의 표기
+/// (대소문자·XML 엔티티·JSON 이스케이프 변형)를 모두 담습니다.
+fn build_search_matchers(
+    pattern: &str,
+    is_xml: bool,
+    is_json_like: bool,
+) -> PyResult<(textkey::Matcher, aho_corasick::AhoCorasick)> {
+    let matcher =
+        textkey::Matcher::new(pattern).map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    let norm_pattern = crate::utils::normalize_unicode(pattern);
+    let mut patterns = generate_search_patterns(matcher.pat_key(), is_xml, is_json_like);
+    patterns.extend(generate_search_patterns(
+        &norm_pattern,
+        is_xml,
+        is_json_like,
+    ));
+    let mut seen = HashSet::new();
+    patterns.retain(|pattern| seen.insert(pattern.clone()));
+    let ac = AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .match_kind(MatchKind::LeftmostFirst)
+        .build(&patterns)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+    Ok((matcher, ac))
 }
 
 #[pymodule]
@@ -2286,7 +2453,6 @@ mod tests {
 
     #[test]
     fn non_utf8_chunk_boundaries_preserve_lines_and_matches() {
-        let ac = build_test_ac("needle");
         for encoding in [UTF_16LE, UTF_16BE, encoding_rs::EUC_KR] {
             // Include a split CRLF, a split hit, short lines, and a final long line.
             let text = format!(
@@ -2339,8 +2505,7 @@ mod tests {
                 search_non_utf8_chunks(
                     &bytes,
                     encoding,
-                    "NEEDLE",
-                    &ac,
+                    &textkey::Matcher::new("needle").unwrap(),
                     exact,
                     &Arc::new(AtomicBool::new(false)),
                     5000,
@@ -2371,7 +2536,6 @@ mod tests {
 
     #[test]
     fn decoded_lines_count_each_occurrence_and_obey_limit() {
-        let ac = build_test_ac("needle");
         let text = "needle needle needle 한글";
         for encoding in [UTF_16LE, UTF_16BE, encoding_rs::EUC_KR] {
             let bytes = if encoding == encoding_rs::EUC_KR {
@@ -2392,8 +2556,7 @@ mod tests {
                 search_non_utf8_chunks(
                     &bytes,
                     encoding,
-                    "NEEDLE",
-                    &ac,
+                    &textkey::Matcher::new("needle").unwrap(),
                     false,
                     &Arc::new(AtomicBool::new(false)),
                     limit,
@@ -2407,7 +2570,6 @@ mod tests {
 
     #[test]
     fn non_utf8_cancelled_search_preserves_previously_collected_results() {
-        let ac = build_test_ac("needle");
         let bytes = "needle\n"
             .repeat(20000)
             .encode_utf16()
@@ -2418,8 +2580,7 @@ mod tests {
         search_non_utf8_chunks(
             &bytes,
             UTF_16LE,
-            "NEEDLE",
-            &ac,
+            &textkey::Matcher::new("needle").unwrap(),
             false,
             &Arc::new(AtomicBool::new(true)),
             5000,
@@ -2438,11 +2599,17 @@ mod tests {
 
     #[test]
     fn long_line_preview_includes_match_region() {
-        let ac = build_test_ac("needle");
         let stop_flag = Arc::new(AtomicBool::new(false));
         let mut data = vec![b'A'; 12_000];
         data[8_000..8_006].copy_from_slice(b"needle");
-        let matches = do_search_with_mmap(&data, UTF_8, "needle", &ac, false, &stop_flag, 5000);
+        let matches = do_search_with_mmap(
+            &data,
+            UTF_8,
+            &textkey::Matcher::new("needle").unwrap(),
+            false,
+            &stop_flag,
+            5000,
+        );
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.contains("needle"));
     }
@@ -2563,18 +2730,25 @@ mod tests {
 
     #[test]
     fn exact_match_handles_final_carriage_return() {
-        let ac = build_test_ac("needle");
         let stop_flag = Arc::new(AtomicBool::new(false));
         let data = b"prefix\nneedle\r";
-        let matches = do_search_with_mmap(data, UTF_8, "NEEDLE", &ac, true, &stop_flag, 5000);
+        let matches = do_search_with_mmap(
+            data,
+            UTF_8,
+            &textkey::Matcher::new("needle").unwrap(),
+            true,
+            &stop_flag,
+            5000,
+        );
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, 2);
     }
 
     #[test]
     fn invalid_utf8_is_not_a_synthetic_exact_match() {
-        assert!(!exact_line_matches(b"\xff", "INVALID_UTF8"));
-        assert!(exact_line_matches(b"invalid_utf8", "INVALID_UTF8"));
+        let matcher = textkey::Matcher::new("INVALID_UTF8").unwrap();
+        assert!(!matcher.equals_trimmed(&String::from_utf8_lossy(b"\xff")));
+        assert!(matcher.equals_trimmed("invalid_utf8"));
     }
 
     #[test]
@@ -2610,8 +2784,7 @@ mod tests {
             encoding: None,
             allow_duplicate_json_keys: false,
             path: &path,
-            pattern: "needle",
-            pat_upper: "NEEDLE",
+            matcher: &textkey::Matcher::new("needle").unwrap(),
             ac: &ac,
             is_exact: false,
             is_json: false,
@@ -2630,11 +2803,11 @@ mod tests {
     }
 
     #[test]
-    fn ascii_exact_comparison_preserves_unicode_pattern_and_whitespace_contract() {
-        for query in ["s", "ſ", "K", "\u{212a}", "ss", "ß", "needle", "가", ""] {
-            let pattern = crate::utils::normalize_unicode(query)
-                .to_lowercase()
-                .to_uppercase();
+    fn ascii_exact_comparison_follows_the_key_contract_and_white_space() {
+        // 정확히 일치 = key(줄)의 앞뒤 White_Space를 지운 결과가 key(검색어)와 같음.
+        for query in ["s", "ſ", "K", "\u{212a}", "ss", "ß", "needle", "가"] {
+            let matcher = textkey::Matcher::new(query).unwrap();
+            let pattern = textkey::key_reference(query);
             for byte in 0..=127u8 {
                 for text in [
                     vec![byte],
@@ -2643,17 +2816,101 @@ mod tests {
                     vec![byte, b'n', b'e', b'e', b'd', b'l', b'e', byte],
                 ] {
                     let line = std::str::from_utf8(&text).unwrap();
-                    let reference = crate::utils::normalize_unicode(line)
-                        .trim()
-                        .to_lowercase()
-                        .to_uppercase()
-                        == pattern;
+                    let reference = textkey::key_reference(line).trim() == pattern;
                     assert_eq!(
-                        exact_line_matches(&text, &pattern),
+                        matcher.equals_trimmed(line),
                         reference,
                         "byte={byte}, query={query:?}, text={text:?}"
                     );
                 }
+            }
+        }
+    }
+
+    /// 기준 구현: B안으로 줄을 나눠 줄마다 key를 적용하고, 겹치지 않는 일치 개수를 셉니다.
+    fn reference_text_results(text: &str, pattern: &str, exact: bool) -> Vec<(usize, usize)> {
+        let pattern_key = textkey::key_reference(pattern);
+        let mut expected = Vec::new();
+        for (index, line) in textkey::split_lines(text).enumerate() {
+            let line_key = textkey::key_reference(line);
+            let count = if exact {
+                usize::from(line_key.trim() == pattern_key)
+            } else {
+                line_key.matches(pattern_key.as_str()).count()
+            };
+            if count > 0 {
+                expected.push((index + 1, count));
+            }
+        }
+        expected
+    }
+
+    #[test]
+    fn utf8_text_search_matches_the_line_by_line_reference() {
+        let alphabet: Vec<char> = "aAeEkKsStT \n\r\r\n-\u{DF}\u{1E9E}\u{17F}\u{212A}\u{FB06}\u{130}\u{301}\u{308}\u{30C}\u{316}\u{1F0}\u{C9}\u{E9}\u{410}\u{430}\u{3A3}\u{3C3}\u{AC00}\u{AC01}\u{AC1C}\u{1100}\u{1161}\u{11A8}\u{3B9}\u{390}"
+            .chars()
+            .collect();
+        let patterns = [
+            "ka",
+            "ss",
+            "st",
+            "e",
+            "k",
+            "te",
+            "\u{E9}",
+            "\u{AC00}",
+            "\u{AC01}",
+            "\u{430}\u{430}",
+            "\u{3C3}",
+            "\u{1F0}",
+            "\u{1100}\u{1161}",
+            "a\u{AC00}",
+            "E\u{301}",
+            "\u{3B9}",
+        ];
+        let mut state = 0x1234_5678_9ABC_DEF1u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % bound as u64) as usize
+        };
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        for round in 0..30_000 {
+            let text: String = (0..next(40))
+                .map(|_| alphabet[next(alphabet.len())])
+                .collect();
+            let pattern = patterns[round % patterns.len()];
+            let matcher = textkey::Matcher::new(pattern).unwrap();
+            for exact in [false, true] {
+                let results = do_search_with_mmap(
+                    text.as_bytes(),
+                    UTF_8,
+                    &matcher,
+                    exact,
+                    &stop_flag,
+                    10_000,
+                );
+                let mut actual: Vec<(usize, usize)> = Vec::new();
+                for (line, _content, offset, length) in &results {
+                    if let (Some(offset), Some(length)) = (offset, length) {
+                        let piece = &text.as_bytes()[*offset..offset + length];
+                        assert_eq!(
+                            textkey::key_reference(std::str::from_utf8(piece).unwrap()),
+                            textkey::key_reference(pattern),
+                            "wrong position text={text:?} pattern={pattern:?}"
+                        );
+                    }
+                    match actual.last_mut() {
+                        Some((last, count)) if last == line => *count += 1,
+                        _ => actual.push((*line, 1)),
+                    }
+                }
+                assert_eq!(
+                    actual,
+                    reference_text_results(&text, pattern, exact),
+                    "text={text:?} pattern={pattern:?} exact={exact}"
+                );
             }
         }
     }
@@ -2671,7 +2928,9 @@ mod tests {
 
         let ac = build_test_ac("needle");
         let stop_flag = Arc::new(AtomicBool::new(false));
-        let matches = do_search_with_mmap(&data, encoding, "NEEDLE", &ac, false, &stop_flag, 5000);
+        let _ = ac;
+        let matcher = textkey::Matcher::new("needle").unwrap();
+        let matches = do_search_with_mmap(&data, encoding, &matcher, false, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.contains("needle"));
     }

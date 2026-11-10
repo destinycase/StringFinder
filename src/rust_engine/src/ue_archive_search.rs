@@ -22,8 +22,7 @@ pub enum ArchiveSearchError {
 }
 
 struct ArchiveSearch<'a> {
-    pattern_upper: String,
-    ac: &'a aho_corasick::AhoCorasick,
+    matcher: &'a crate::textkey::Matcher,
     is_exact: bool,
     max_per_file: usize,
     stop_flag: Arc<AtomicBool>,
@@ -32,19 +31,11 @@ struct ArchiveSearch<'a> {
 
 impl ArchiveSearch<'_> {
     fn value_matches(&self, value: &str) -> bool {
+        // 모든 형식이 같은 비교 기준(textkey)을 씁니다.
         if self.is_exact {
-            // ASCII 값은 정규화해도 그대로이므로 중간 문자열 없이 비교합니다(일반 텍스트 정확히 일치와 같은 방식).
-            if value.is_ascii() {
-                return value.trim().eq_ignore_ascii_case(&self.pattern_upper);
-            }
-            // JSON 값만 검색의 정확히 일치와 같은 정규화·공백·대소문자 규칙입니다.
-            crate::utils::normalize_unicode(value)
-                .trim()
-                .to_lowercase()
-                .to_uppercase()
-                == self.pattern_upper
+            self.matcher.equals_trimmed(value)
         } else {
-            self.ac.find(value).is_some()
+            self.matcher.contains(value)
         }
     }
 
@@ -142,8 +133,14 @@ impl<'a> PositionedParser<'a> {
     fn skip_whitespace(&mut self) {
         while let Some(&byte) = self.bytes.get(self.pos) {
             match byte {
+                // 줄바꿈은 LF, CRLF, CR입니다. CRLF는 LF에서 한 번만 셉니다.
                 b'\n' => self.line += 1,
-                b' ' | b'\t' | b'\r' => {}
+                b'\r' => {
+                    if self.bytes.get(self.pos + 1) != Some(&b'\n') {
+                        self.line += 1;
+                    }
+                }
+                b' ' | b'\t' => {}
                 _ => return,
             }
             self.pos += 1;
@@ -348,8 +345,7 @@ fn walk(root: &Node<'_>, search: &mut ArchiveSearch<'_>) -> Result<(), ArchiveSe
 #[allow(clippy::too_many_arguments)]
 pub fn search_archive_file(
     mmap: &[u8],
-    pattern: &str,
-    ac: &aho_corasick::AhoCorasick,
+    matcher: &crate::textkey::Matcher,
     is_exact: bool,
     stop_flag: Arc<AtomicBool>,
     max_per_file: usize,
@@ -374,8 +370,7 @@ pub fn search_archive_file(
     let document = PositionedParser::new(text).value(0)?;
 
     let mut search = ArchiveSearch {
-        pattern_upper: pattern.to_lowercase().to_uppercase(),
-        ac,
+        matcher,
         is_exact,
         max_per_file,
         stop_flag,
@@ -391,22 +386,12 @@ pub fn search_archive_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aho_corasick::{AhoCorasickBuilder, MatchKind};
-
-    fn ac_for(pattern: &str) -> aho_corasick::AhoCorasick {
-        AhoCorasickBuilder::new()
-            .ascii_case_insensitive(true)
-            .match_kind(MatchKind::LeftmostFirst)
-            .build([pattern])
-            .unwrap()
-    }
 
     fn run(document: &str, pattern: &str, exact: bool) -> Result<Vec<Vec<String>>, String> {
-        let ac = ac_for(pattern);
+        let matcher = crate::textkey::Matcher::new(pattern).unwrap();
         search_archive_file(
             document.as_bytes(),
-            pattern,
-            &ac,
+            &matcher,
             exact,
             Arc::new(AtomicBool::new(false)),
             100,
@@ -504,11 +489,10 @@ mod tests {
     #[test]
     fn results_carry_the_line_of_each_key_member() {
         let document = "{\n  \"Subnamespaces\": [\n    {\n      \"Namespace\": \"NS\",\n      \"Children\": [\n        {\n          \"Source\": {\"Text\": \"needle \\u00e9\"},\n          \"Translation\": {\"Text\": \"\"},\n          \"Key\": \"K1\"\n        },\n        {\"Key\": \"K2\", \"Source\": {\"Text\": \"needle\"}, \"Translation\": {\"Text\": \"\"}}\n      ]\n    }\n  ]\n}";
-        let ac = ac_for("needle");
+        let matcher = crate::textkey::Matcher::new("needle").unwrap();
         let results = search_archive_file(
             document.as_bytes(),
-            "needle",
-            &ac,
+            &matcher,
             false,
             Arc::new(AtomicBool::new(false)),
             100,
@@ -539,11 +523,10 @@ mod tests {
             })
             .collect();
         let document = format!(r#"{{"Children":[{}]}}"#, children.join(","));
-        let ac = ac_for("needle");
+        let matcher = crate::textkey::Matcher::new("needle").unwrap();
         let results = search_archive_file(
             document.as_bytes(),
-            "needle",
-            &ac,
+            &matcher,
             false,
             Arc::new(AtomicBool::new(false)),
             2,

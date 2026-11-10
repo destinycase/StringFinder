@@ -42,8 +42,11 @@ def complex_file(tmp_path):
 
 
 def test_search_in_file_complex_off(complex_file):
-    result = search_in_file(complex_file, "Masse", use_complex_search=False)
-    assert result is None
+    # 6.4.2부터 기본 검색도 Unicode 전체 대소문자 접기(ß = ss)로 비교합니다.
+    result = _require_search_result(search_in_file(complex_file, "Masse", use_complex_search=False))
+    _file_path, count, matches = result
+    assert count == 1
+    assert matches[0][1] == "Hier ist das Ma\u00dfe aller Dinge."
 
 
 def test_search_in_file_complex_on(complex_file):
@@ -57,7 +60,7 @@ def test_batch_search_complex(complex_file):
     file_batch = [(complex_file, os.path.getsize(complex_file))]
 
     res_off = search_in_files_batch(file_batch, "Masse", use_complex_search=False)
-    assert len(res_off["results"]) == 0
+    assert len(res_off["results"]) == 1
 
     res_on = search_in_files_batch(file_batch, "Masse", use_complex_search=True)
     assert len(res_on["results"]) == 1

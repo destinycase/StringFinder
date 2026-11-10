@@ -137,15 +137,15 @@ impl XmlDocumentState {
 }
 
 struct XmlSearchContext<'a> {
-    pat_upper: &'a str,
+    matcher: &'a crate::textkey::Matcher,
     ac: &'a aho_corasick::AhoCorasick,
     is_exact: bool,
     mmap: &'a [u8],
     results: &'a mut Vec<RawMatch>,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     offset_bonus: usize,
-    last_offset: usize,
-    last_line: usize,
+    // 원본 기준 줄 번호(LF·CRLF·CR)입니다. 파서가 CR을 LF로 바꾼 텍스트로 세지 않습니다.
+    line_counter: crate::textkey::LineCounter,
     // Append/truncate at UTF-8 boundaries instead of joining the full ancestry.
     tag_path_cache: String,
     path_lengths: Vec<usize>,
@@ -194,7 +194,7 @@ impl<'a> XmlSearchContext<'a> {
 
 pub fn search_xml_file(
     mmap: &[u8],
-    pattern: &str,
+    matcher: &crate::textkey::Matcher,
     ac: &aho_corasick::AhoCorasick,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -215,17 +215,15 @@ pub fn search_xml_file(
     reader.trim_text(false);
     let mut document = XmlDocumentState::new();
 
-    let pat_upper = pattern.to_lowercase().to_uppercase();
     let mut ctx = XmlSearchContext {
-        pat_upper: &pat_upper,
+        matcher,
         ac,
         is_exact,
         mmap,
         results: &mut results,
         stop_flag,
         offset_bonus,
-        last_offset: 0,
-        last_line: 1,
+        line_counter: crate::textkey::LineCounter::new(),
         tag_path_cache: String::new(),
         path_lengths: Vec::new(),
         max_per_file,
@@ -303,54 +301,47 @@ fn process_xml_text_item(
 ) {
     let trimmed = unescaped_text.trim();
     if !trimmed.is_empty() {
+        // 모든 형식이 같은 비교 기준(textkey)을 씁니다. 정확히 일치도 NFC를 적용합니다.
         let is_match = if ctx.is_exact {
-            trimmed.to_lowercase().to_uppercase() == ctx.pat_upper
+            ctx.matcher.equals_trimmed(unescaped_text)
         } else {
-            ctx.ac.find(unescaped_text).is_some()
+            ctx.matcher.contains(unescaped_text)
         };
 
         if is_match {
             if ctx.results.len() > ctx.max_per_file {
                 return;
             }
-            let mut match_offset = start_pos + ctx.offset_bonus;
-            let mut match_len = raw_bytes.len();
-
             let range_end = (end_pos + ctx.offset_bonus).min(ctx.mmap.len());
-            let search_start = start_pos + ctx.offset_bonus;
-            if search_start < range_end {
-                if let Some(m) = ctx.ac.find(&ctx.mmap[search_start..range_end]) {
-                    match_offset = search_start + m.start();
-                    match_len = m.len();
-                }
-            }
+            let search_start = (start_pos + ctx.offset_bonus).min(range_end);
+            let raw_range = &ctx.mmap[search_start..range_end];
+
+            // 원본과 같은 바이트이고 변환 없이 비교되는 값만 위치를 보고합니다(틀린 위치 금지).
+            let location = if raw_bytes == unescaped_text.as_bytes()
+                && ctx.matcher.raw_search_valid(unescaped_text)
+            {
+                ctx.ac
+                    .find(raw_range)
+                    .map(|m| (search_start + m.start(), m.len()))
+            } else {
+                None
+            };
+
+            // 여러 줄에 걸친 값은 값이 시작하는 줄(앞 공백을 뺀 첫 글자)을 보고합니다.
+            let value_start = search_start
+                + raw_range
+                    .iter()
+                    .position(|b| !matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+                    .unwrap_or(0);
+            let line = ctx.line_counter.line_at(ctx.mmap, value_start);
 
             // B5: 태그 경로는 이벤트 시 갱신된 캐시를 그대로 사용합니다.
             let tag_path = &ctx.tag_path_cache;
-
-            // O(N*M) 방지: last_offset 이후부터 현재 매치 위치까지만 뉴라인 카운트
-            if match_offset > ctx.last_offset {
-                let count = ctx.mmap[ctx.last_offset..match_offset]
-                    .iter()
-                    .filter(|&&b| b == b'\n')
-                    .count();
-                ctx.last_line += count;
-                ctx.last_offset = match_offset;
-            }
-
             ctx.results.push((
-                ctx.last_line,
+                line,
                 format!("/{}\t{}", tag_path, trimmed),
-                if raw_bytes == unescaped_text.as_bytes() {
-                    Some(match_offset)
-                } else {
-                    None
-                },
-                if raw_bytes == unescaped_text.as_bytes() {
-                    Some(match_len)
-                } else {
-                    None
-                },
+                location.map(|(offset, _)| offset),
+                location.map(|(_, length)| length),
             ));
         }
     }
@@ -403,9 +394,9 @@ fn process_xml_attributes(
         }
 
         let is_match = if ctx.is_exact {
-            val.trim().to_lowercase().to_uppercase() == ctx.pat_upper
+            ctx.matcher.equals_trimmed(&val)
         } else {
-            ctx.ac.find(&val).is_some()
+            ctx.matcher.contains(&val)
         };
 
         if is_match {
@@ -424,31 +415,20 @@ fn process_xml_attributes(
                 });
             let location = value_start.and_then(|offset| {
                 // Entity expansion can make raw and decoded matches unrelated.
-                if raw_value != val.as_bytes() {
+                // 변환해야 비교되는 값도 원본 위치를 알 수 없으므로 생략합니다.
+                if raw_value != val.as_bytes() || !ctx.matcher.raw_search_valid(&val) {
                     return None;
                 }
                 ctx.ac
                     .find(raw_value)
                     .map(|matched| (offset + matched.start(), matched.len()))
             });
-            let line_offset = location.map(|(offset, _)| offset).or(value_start);
-
-            // O(N*M) 방지: last_offset 이후부터 현재 매치 위치까지만 뉴라인 카운트
-            if let Some(offset) = line_offset.filter(|offset| *offset > ctx.last_offset) {
-                let count = ctx.mmap[ctx.last_offset..offset]
-                    .iter()
-                    .filter(|&&b| b == b'\n')
-                    .count();
-                ctx.last_line += count;
-                ctx.last_offset = offset;
-            }
+            // 속성 값은 값이 시작하는 줄을 보고합니다.
+            let line_offset = value_start.or(location.map(|(offset, _)| offset));
+            let line = line_offset.map(|offset| ctx.line_counter.line_at(ctx.mmap, offset));
 
             ctx.results.push((
-                if line_offset.is_some() {
-                    ctx.last_line
-                } else {
-                    0
-                },
+                line.unwrap_or(0),
                 format!("/{}/@{}\t{}", ctx.tag_path_cache, key, val),
                 location.map(|(offset, _)| offset),
                 location.map(|(_, length)| length),
@@ -477,14 +457,27 @@ mod tests {
             let xml = format!("<r v=\"needle{whitespace}value\"/>");
             let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let expected = usize::from(whitespace != "&#xA;");
-            let rows =
-                search_xml_file(xml.as_bytes(), "needle value", &ac, false, stop.clone(), 10)
-                    .unwrap();
+            let rows = search_xml_file(
+                xml.as_bytes(),
+                &crate::textkey::Matcher::new("needle value").unwrap(),
+                &ac,
+                false,
+                stop.clone(),
+                10,
+            )
+            .unwrap();
             assert_eq!(rows.len(), expected);
             assert_eq!(
-                !search_xml_file(xml.as_bytes(), "needle value", &ac, false, stop, 10)
-                    .unwrap()
-                    .is_empty(),
+                !search_xml_file(
+                    xml.as_bytes(),
+                    &crate::textkey::Matcher::new("needle value").unwrap(),
+                    &ac,
+                    false,
+                    stop,
+                    10
+                )
+                .unwrap()
+                .is_empty(),
                 expected == 1
             );
             if expected == 1 {
@@ -498,15 +491,27 @@ mod tests {
         let ac = test_ac("needle");
         for xml in ["<r>nee<![CDATA[dle]]></r>", "<r>nee<!--note-->dle</r>"] {
             let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let rows =
-                search_xml_file(xml.as_bytes(), "needle", &ac, false, stop.clone(), 10).unwrap();
+            let rows = search_xml_file(
+                xml.as_bytes(),
+                &crate::textkey::Matcher::new("needle").unwrap(),
+                &ac,
+                false,
+                stop.clone(),
+                10,
+            )
+            .unwrap();
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].2, None);
-            assert!(
-                !search_xml_file(xml.as_bytes(), "needle", &ac, false, stop, 10)
-                    .unwrap()
-                    .is_empty()
-            );
+            assert!(!search_xml_file(
+                xml.as_bytes(),
+                &crate::textkey::Matcher::new("needle").unwrap(),
+                &ac,
+                false,
+                stop,
+                10
+            )
+            .unwrap()
+            .is_empty());
         }
     }
 
@@ -521,12 +526,25 @@ mod tests {
             let xml = format!("<root><a>needle</a><b>needle</b>{tail}</root>");
             let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             for limit in [1, 10] {
-                assert!(
-                    search_xml_file(xml.as_bytes(), "needle", &ac, false, stop.clone(), limit)
-                        .is_err()
-                );
+                assert!(search_xml_file(
+                    xml.as_bytes(),
+                    &crate::textkey::Matcher::new("needle").unwrap(),
+                    &ac,
+                    false,
+                    stop.clone(),
+                    limit
+                )
+                .is_err());
             }
-            assert!(search_xml_file(xml.as_bytes(), "needle", &ac, false, stop, 10).is_err());
+            assert!(search_xml_file(
+                xml.as_bytes(),
+                &crate::textkey::Matcher::new("needle").unwrap(),
+                &ac,
+                false,
+                stop,
+                10
+            )
+            .is_err());
         }
     }
 
@@ -536,7 +554,7 @@ mod tests {
         let xml = r#"<data><a x="needle"/><data x="needle"/>needle<끝 x="needle"/></data>"#;
         let matches = search_xml_file(
             xml.as_bytes(),
-            "needle",
+            &crate::textkey::Matcher::new("needle").unwrap(),
             &ac,
             false,
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -564,7 +582,7 @@ mod tests {
             );
             let matches = search_xml_file(
                 xml.as_bytes(),
-                "needle",
+                &crate::textkey::Matcher::new("needle").unwrap(),
                 &ac,
                 false,
                 std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -585,8 +603,24 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let xml = b"<root><value>needle</root>";
 
-        assert!(search_xml_file(xml, "needle", &ac, false, stop_flag.clone(), 10).is_err());
-        assert!(search_xml_file(xml, "needle", &ac, false, stop_flag, 10).is_err());
+        assert!(search_xml_file(
+            xml,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag.clone(),
+            10
+        )
+        .is_err());
+        assert!(search_xml_file(
+            xml,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10
+        )
+        .is_err());
     }
 
     #[test]
@@ -595,7 +629,15 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let xml = b"<root><value>needle</value></root><extra/>";
 
-        assert!(search_xml_file(xml, "needle", &ac, false, stop_flag, 10).is_err());
+        assert!(search_xml_file(
+            xml,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10
+        )
+        .is_err());
     }
 
     #[test]
@@ -604,13 +646,28 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let xml = b"<root>\n  <value>needle</value>\n</root>";
 
-        let matches = search_xml_file(xml, "needle", &ac, false, stop_flag.clone(), 10).unwrap();
+        let matches = search_xml_file(
+            xml,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag.clone(),
+            10,
+        )
+        .unwrap();
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, 2);
-        assert!(!search_xml_file(xml, "needle", &ac, false, stop_flag, 10)
-            .unwrap()
-            .is_empty());
+        assert!(!search_xml_file(
+            xml,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10
+        )
+        .unwrap()
+        .is_empty());
     }
 
     #[test]
@@ -624,7 +681,14 @@ mod tests {
         for xml in malformed_documents {
             let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             assert!(matches!(
-                search_xml_file(xml, "needle", &ac, false, stop_flag, 10),
+                search_xml_file(
+                    xml,
+                    &crate::textkey::Matcher::new("needle").unwrap(),
+                    &ac,
+                    false,
+                    stop_flag,
+                    10
+                ),
                 Err(XmlSearchError::Parse(_))
             ));
         }
@@ -637,11 +701,25 @@ mod tests {
         let xml = b"<!DOCTYPE root [<!ENTITY company 'ACME'>]><root>&company;</root>";
 
         assert!(matches!(
-            search_xml_file(xml, "ACME", &ac, false, stop_flag.clone(), 10),
+            search_xml_file(
+                xml,
+                &crate::textkey::Matcher::new("ACME").unwrap(),
+                &ac,
+                false,
+                stop_flag.clone(),
+                10
+            ),
             Err(XmlSearchError::UnsupportedDtd(_))
         ));
         assert!(matches!(
-            search_xml_file(xml, "ACME", &ac, false, stop_flag, 10),
+            search_xml_file(
+                xml,
+                &crate::textkey::Matcher::new("ACME").unwrap(),
+                &ac,
+                false,
+                stop_flag,
+                10
+            ),
             Err(XmlSearchError::UnsupportedDtd(_))
         ));
     }
@@ -653,7 +731,14 @@ mod tests {
         let xml = b"<root>needle</root><!DOCTYPE root>";
 
         assert!(matches!(
-            search_xml_file(xml, "needle", &ac, false, stop_flag, 10),
+            search_xml_file(
+                xml,
+                &crate::textkey::Matcher::new("needle").unwrap(),
+                &ac,
+                false,
+                stop_flag,
+                10
+            ),
             Err(XmlSearchError::Parse(_))
         ));
     }
@@ -664,11 +749,26 @@ mod tests {
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let xml = b"<?xml version='1.0'?><!--before--><?check ok?><root>needle &amp; hay</root><!--after-->";
 
-        let matches = search_xml_file(xml, "needle", &ac, false, stop_flag.clone(), 10).unwrap();
+        let matches = search_xml_file(
+            xml,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag.clone(),
+            10,
+        )
+        .unwrap();
 
         assert_eq!(matches.len(), 1);
-        assert!(!search_xml_file(xml, "needle", &ac, false, stop_flag, 10)
-            .unwrap()
-            .is_empty());
+        assert!(!search_xml_file(
+            xml,
+            &crate::textkey::Matcher::new("needle").unwrap(),
+            &ac,
+            false,
+            stop_flag,
+            10
+        )
+        .unwrap()
+        .is_empty());
     }
 }
