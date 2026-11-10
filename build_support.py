@@ -25,6 +25,47 @@ def checked_cleanup_path(path, root):
     return str(candidate.resolve())
 
 
+RELEASE_DIR_NAME = "release"
+
+
+def release_artifact_path(project_root, version):
+    """버전별 배포 파일 경로(release/StringFinder-vX.Y.Z.exe)를 돌려줍니다."""
+    if not version or version == "unknown" or any(ch in version for ch in '\\/:*?"<>|'):
+        raise ValueError(f"Invalid release version: {version!r}")
+    return Path(project_root) / RELEASE_DIR_NAME / f"StringFinder-v{version}.exe"
+
+
+def ensure_release_absent(path):
+    """같은 버전 배포 파일을 덮어쓰지 않도록, 이미 있으면 빌드 전에 멈춥니다."""
+    if Path(path).exists():
+        raise FileExistsError(f"Refusing to overwrite existing release artifact: {path}")
+
+
+def publish_release_artifact(source, destination):
+    """검증을 마친 실행 파일을 배포 위치로 복사하고 (크기, SHA-256)을 돌려줍니다.
+
+    복사는 임시 이름으로 한 뒤 바꿔 달아, 중간에 실패해도 반쪽 파일이 배포 이름으로 남지 않습니다.
+    """
+    import hashlib
+    import shutil
+
+    destination = Path(destination)
+    ensure_release_absent(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.with_name(destination.name + ".partial")
+    shutil.copy2(source, partial)
+    try:
+        os.rename(partial, destination)  # 대상이 있으면 Windows에서 실패하므로 덮어쓰지 않습니다.
+    except OSError:
+        partial.unlink(missing_ok=True)
+        raise
+    digest = hashlib.sha256()
+    with open(destination, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return destination.stat().st_size, digest.hexdigest()
+
+
 def walk_project_tree(directory, project_root, excluded=()):
     """Walk only real project directories; prune links before descending."""
     start = Path(directory)

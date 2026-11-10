@@ -20,7 +20,8 @@ target/
 
 # Distribution / packaging
 build/
-/dist/*.zip
+/dist/
+/release/
 *.egg-info/
 coverage.xml
 .coverage
@@ -32,6 +33,7 @@ data/
 /samples/
 /diagnostic/
 /docs_dev/
+/scratch/
 
 # Logs and History
 *.log

@@ -398,11 +398,11 @@ python tools/check_dev_environment.py
 
 ### 6.6 Windows 배포본 빌드
 
-`build.py`는 `pyproject.toml`의 버전을 읽고 Rust 엔진을 다시 빌드한 뒤 PyInstaller 단일 실행 파일을 생성합니다. 결과물은 `dist/StringFinder.exe`입니다. 현재 이 절차는 Windows 배포를 기준으로 합니다.
+`build.py`는 `pyproject.toml`의 버전을 읽고 Rust 엔진을 다시 빌드한 뒤 PyInstaller 단일 실행 파일을 생성합니다. 결과물은 버전 이름이 붙은 `release/StringFinder-vX.Y.Z.exe`이며, `release/` 폴더는 Git에 올리지 않습니다. 현재 이 절차는 Windows 배포를 기준으로 합니다.
 
-실행 파일은 먼저 `build/release`에 생성한 뒤 성공 시 `dist/StringFinder.exe`를 교체합니다. 빌드·복사·교체 실패 시 기존 배포 실행 파일을 먼저 삭제하지 않습니다. Rust 개발용 `.pyd`는 앞 단계에서 갱신될 수 있으므로 EXE 빌드 실패가 소스와 개발 엔진까지 되돌린다는 의미는 아닙니다.
+같은 버전의 배포 파일이 이미 있으면 빌드를 시작하기 전에 멈추며, 기존 파일을 덮어쓰지 않습니다. 실행 파일은 먼저 `build/release`에 생성하고 검사를 통과하면 임시 이름으로 복사한 뒤 배포 이름으로 바꿔 답니다. 끝나면 파일 크기와 SHA-256을 출력합니다. 버전마다 파일 이름이 다르므로, 실행 중인 이전 버전 때문에 빌드가 막히지 않습니다. Rust 개발용 `.pyd`는 앞 단계에서 갱신될 수 있으므로 EXE 빌드 실패가 소스와 개발 엔진까지 되돌린다는 의미는 아닙니다.
 
-패키징 단계의 PATH는 Windows 및 현재 Python 경로로 제한합니다. 외부 도구(예: Poppler)의 동명 ICU DLL이 Qt 의존성으로 포함되는 것을 방지하기 위한 조치입니다. 배포 교체 전 `build_support.py`가 포함된 ICU의 Qt 요구 심볼을 검사하고, 완성된 EXE의 `--smoke-test`를 실행합니다. 이 모드는 사용자 세션을 열지 않고 Qt 플랫폼·테마·UI 모듈 로드 및 Python/Rust 버전 일치를 확인한 뒤 종료합니다. 실패 또는 45초 초과 시 배포 파일을 교체하지 않습니다. 이는 수동 UI 흐름이나 Python 미설치 장비 검증을 대체하지 않습니다.
+패키징 단계의 PATH는 Windows 및 현재 Python 경로로 제한합니다. 외부 도구(예: Poppler)의 동명 ICU DLL이 Qt 의존성으로 포함되는 것을 방지하기 위한 조치입니다. 배포 교체 전 `build_support.py`가 포함된 ICU의 Qt 요구 심볼을 검사하고, 완성된 EXE의 `--smoke-test`를 실행합니다. 이 모드는 사용자 세션을 열지 않고 Qt 플랫폼·테마·UI 모듈 로드 및 Python/Rust 버전 일치를 확인한 뒤 종료합니다. 실패 또는 45초 초과 시 배포 파일을 만들지 않습니다. 이는 수동 UI 흐름이나 Python 미설치 장비 검증을 대체하지 않습니다.
 
 ```powershell
 python build.py
@@ -494,7 +494,7 @@ Set A–J 통합 benchmark와 이력 누적은 다음 명령으로 수행합니�
 python scripts/benchmark_performance.py
 ```
 
-릴리스 전에는 Python/Rust 테스트와 정적 검사를 수행하고 **6.6절**의 `python build.py`로 배포본을 생성합니다. `dist/StringFinder.exe`와 `src/rust_engine/sf_engine.pyd`의 버전·포함 코드 일치를 확인합니다. 빌드가 엔진을 다시 생성하므로 최종 엔진을 사용하는 회귀 테스트도 확인합니다.
+릴리스 전에는 Python/Rust 테스트와 정적 검사를 수행하고 **6.6절**의 `python build.py`로 배포본을 생성합니다. `release/StringFinder-vX.Y.Z.exe`와 `src/rust_engine/sf_engine.pyd`의 버전·포함 코드 일치를 확인합니다. 안정 버전은 태그 `vX.Y.Z`와 고정 문서 `docs/master-baseline-vX.Y.Z.md`(기준 커밋, 실행 파일 크기·SHA-256, 직전 안정 버전 이후 기능)로 선언합니다. 빌드가 엔진을 다시 생성하므로 최종 엔진을 사용하는 회귀 테스트도 확인합니다.
 
 ```powershell
 cargo fmt --manifest-path src/rust_engine/Cargo.toml -- --check

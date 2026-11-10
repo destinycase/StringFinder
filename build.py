@@ -2,7 +2,15 @@ import os
 import shutil
 import sys
 import argparse
-from build_support import checked_cleanup_path, is_path_within, walk_project_tree
+from build_support import (
+    RELEASE_DIR_NAME,
+    checked_cleanup_path,
+    ensure_release_absent,
+    is_path_within,
+    publish_release_artifact,
+    release_artifact_path,
+    walk_project_tree,
+)
 
 # [격리 강화] 프로젝트 루트를 스크립트 위치 기준으로 고정하여 작업 디렉토리 영향을 차단
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -113,13 +121,22 @@ def build(clean_first=False):
     if clean_first:
         cleanup()
 
-    for path in ("src", "src/assets", "build", "dist"):
+    for path in ("src", "src/assets", "build", RELEASE_DIR_NAME):
         if not is_path_within(os.path.join(PROJECT_ROOT, path), PROJECT_ROOT):
             raise ValueError(f"Build path outside project: {path}")
 
     # pyproject.toml에서 버전 획득
     app_version = get_project_version()
     print(f"Build Version: {app_version}")
+
+    # 같은 버전 배포 파일이 이미 있으면 오래 걸리는 빌드를 시작하기 전에 멈춥니다.
+    try:
+        release_path = release_artifact_path(PROJECT_ROOT, app_version)
+        ensure_release_absent(release_path)
+    except (ValueError, FileExistsError) as e:
+        print(f"Error: {e}")
+        print("Bump the version, or move the existing file aside yourself if a rebuild is intended.")
+        sys.exit(1)
 
     # 임시 _version.py 파일 생성 (Constants에서 로드됨)
     version_file_content = f'VERSION = "{app_version}"\n'
@@ -266,21 +283,18 @@ def build(clean_first=False):
         # PyInstaller API 호출
         PyInstaller.__main__.run(pyi_args)
 
-        from build_rust import install_binary
-
         candidate = os.path.join(dist_dir, "StringFinder.exe")
         verify_project_payload(candidate, PROJECT_ROOT)
         verify_qt_icu(candidate)
         smoke_test_executable(candidate)
         print("Frozen Qt/theme/engine smoke test passed.")
 
-        install_binary(
-            os.path.join(dist_dir, "StringFinder.exe"),
-            os.path.join(PROJECT_ROOT, "dist", "StringFinder.exe"),
-        )
+        size, sha256 = publish_release_artifact(candidate, release_path)
 
         print("\n--- Build Successful! ---")
-        print(f"Executable location: {os.path.abspath(os.path.join('dist', 'StringFinder.exe'))}")
+        print(f"Executable location: {release_path}")
+        print(f"Size: {size:,} bytes")
+        print(f"SHA-256: {sha256}")
     except Exception as e:
         print(f"\n--- Build Failed! --- \n{e}")
         sys.exit(1)
