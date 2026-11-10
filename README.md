@@ -16,7 +16,7 @@ StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색�
 
 ## 실행
 
-배포본은 `dist/StringFinder.exe`입니다. 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
+배포본은 `python build.py`로 만드는 `release/StringFinder-vX.Y.Z.exe`입니다. 안정 버전 목록과 각 실행 파일의 SHA-256은 `docs/master-baseline-v*.md`에 있습니다(현재 1차 안정 버전: [v6.4.1](docs/master-baseline-v6.4.1.md)). 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
 
 ```powershell
 python run.py
