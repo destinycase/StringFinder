@@ -55,3 +55,11 @@ def test_existing_release_is_never_overwritten(tmp_path) -> None:
 def test_release_folder_is_not_tracked_by_git() -> None:
     gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "/release/" in gitignore
+
+
+def test_stable_dist_executable_stays_tracked_and_untouched_by_build() -> None:
+    # dist/StringFinder.exe는 사용자 바로가기가 가리키는 마지막 안정 버전입니다.
+    gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert not any(line.strip() in ("/dist/", "dist/", "/dist/*", "dist/StringFinder.exe") for line in gitignore)
+    build_source = (PROJECT_ROOT / "build.py").read_text(encoding="utf-8")
+    assert '"dist"' not in build_source and "'dist'" not in build_source

@@ -398,7 +398,7 @@ python tools/check_dev_environment.py
 
 ### 6.6 Windows 배포본 빌드
 
-`build.py`는 `pyproject.toml`의 버전을 읽고 Rust 엔진을 다시 빌드한 뒤 PyInstaller 단일 실행 파일을 생성합니다. 결과물은 버전 이름이 붙은 `release/StringFinder-vX.Y.Z.exe`이며, `release/` 폴더는 Git에 올리지 않습니다. 현재 이 절차는 Windows 배포를 기준으로 합니다.
+`build.py`는 `pyproject.toml`의 버전을 읽고 Rust 엔진을 다시 빌드한 뒤 PyInstaller 단일 실행 파일을 생성합니다. 결과물은 버전 이름이 붙은 `release/StringFinder-vX.Y.Z.exe`이며, `release/` 폴더는 Git에 올리지 않습니다. `dist/StringFinder.exe`는 마지막 안정 버전의 실행 파일로 Git에 포함되며, 사용자 바로가기가 가리키는 고정 경로입니다. 빌드는 `dist/`를 바꾸지 않고, 안정 버전을 선언할 때만 해당 `release/` 파일을 그대로 복사해 교체합니다. 현재 이 절차는 Windows 배포를 기준으로 합니다.
 
 같은 버전의 배포 파일이 이미 있으면 빌드를 시작하기 전에 멈추며, 기존 파일을 덮어쓰지 않습니다. 실행 파일은 먼저 `build/release`에 생성하고 검사를 통과하면 임시 이름으로 복사한 뒤 배포 이름으로 바꿔 답니다. 끝나면 파일 크기와 SHA-256을 출력합니다. 버전마다 파일 이름이 다르므로, 실행 중인 이전 버전 때문에 빌드가 막히지 않습니다. Rust 개발용 `.pyd`는 앞 단계에서 갱신될 수 있으므로 EXE 빌드 실패가 소스와 개발 엔진까지 되돌린다는 의미는 아닙니다.
 
