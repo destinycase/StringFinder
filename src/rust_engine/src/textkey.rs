@@ -60,14 +60,40 @@ pub fn key_reference(text: &str) -> String {
 }
 
 const CLASS_INVARIANT: u8 = 1;
-const CLASS_AFFECTS_ASCII: u8 = 2;
+/// 대소문자 접기 결과가 불변 글자·ASCII로만 되어 있고, 자기도 앞 글자와 합쳐지지 않는 글자입니다
+/// (예: 키릴·그리스 대문자, `É`, `ß`→`ss`). `key`에서 접기 결과로 바로 바꿀 수 있습니다.
+const CLASS_SIMPLE: u8 = 4;
+
+/// 불변 글자인지(분류표 계산 중에도 쓸 수 있도록 표 없이) 판정합니다.
+fn invariant_by_definition(c: char) -> bool {
+    canonical_combining_class(c) == 0
+        && is_nfc_quick(std::iter::once(c)) == IsNormalized::Yes
+        && fold_char(c).is_none()
+}
 
 /// 모든 코드포인트의 분류표(첫 사용 때 한 번 계산)입니다.
+/// 분류표가 덮는 범위입니다. 이보다 큰 코드포인트(U+30000 이상)는 채택한 Unicode 버전에서 모두
+/// 불변 글자입니다(결합 등급 0, NFC_QC=Yes, 대소문자 접기 없음). 테스트
+/// `scalars_beyond_the_class_table_are_invariant`가 모든 값을 확인합니다. 표를 줄여 첫 검색 때
+/// 드는 계산 시간을 줄입니다.
+const CLASS_TABLE_LIMIT: u32 = 0x3_0000;
+
+/// 코드포인트의 분류입니다(표 밖은 불변).
+#[inline]
+fn class_code(code: u32) -> u8 {
+    let table = classes();
+    if code < CLASS_TABLE_LIMIT {
+        table[code as usize]
+    } else {
+        CLASS_INVARIANT
+    }
+}
+
 fn classes() -> &'static [u8] {
     static TABLE: OnceLock<Vec<u8>> = OnceLock::new();
     TABLE.get_or_init(|| {
-        let mut table = vec![0u8; 0x11_0000];
-        for code in 0x80u32..0x11_0000 {
+        let mut table = vec![0u8; CLASS_TABLE_LIMIT as usize];
+        for code in 0x80u32..CLASS_TABLE_LIMIT {
             let Some(c) = char::from_u32(code) else {
                 continue;
             };
@@ -79,6 +105,36 @@ fn classes() -> &'static [u8] {
                 table[code as usize] = CLASS_INVARIANT;
                 continue;
             }
+            let simple = starter
+                && quick_yes
+                && folded.is_some_and(|text| {
+                    text.chars()
+                        .all(|part| part.is_ascii() || invariant_by_definition(part))
+                });
+            if simple {
+                table[code as usize] = CLASS_SIMPLE;
+            }
+        }
+        table
+    })
+}
+
+/// ASCII 검색어의 일치 여부를 바꿀 수 있는 글자표입니다. 계산이 비싸고(결합 부호마다 ASCII 글자와
+/// 짝지어 정의대로 계산) 검색의 주 경로에서는 쓰지 않으므로, 처음 필요할 때 따로 계산합니다.
+fn affects_table() -> &'static [bool] {
+    static TABLE: OnceLock<Vec<bool>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let classes = classes();
+        let mut table = vec![false; CLASS_TABLE_LIMIT as usize];
+        for code in 0x80u32..CLASS_TABLE_LIMIT {
+            if classes[code as usize] & CLASS_INVARIANT != 0 {
+                continue;
+            }
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let starter = canonical_combining_class(c) == 0;
+            let quick_yes = is_nfc_quick(std::iter::once(c)) == IsNormalized::Yes;
             let own_key = key_reference(c.encode_utf8(&mut [0; 4]));
             let mut affects = own_key.bytes().any(|b| b.is_ascii());
             if !(affects || starter && quick_yes) {
@@ -99,7 +155,7 @@ fn classes() -> &'static [u8] {
                     }
                 }
             }
-            table[code as usize] = if affects { CLASS_AFFECTS_ASCII } else { 0 };
+            table[code as usize] = affects;
         }
         table
     })
@@ -107,7 +163,7 @@ fn classes() -> &'static [u8] {
 
 #[inline]
 fn class_of(c: char) -> u8 {
-    classes()[c as usize]
+    class_code(c as u32)
 }
 
 /// 변환해도 바뀌지 않고 앞 글자와 합쳐지지 않는 비ASCII 글자인지 알려 줍니다.
@@ -119,7 +175,8 @@ pub fn is_invariant(c: char) -> bool {
 /// ASCII 검색어의 일치 여부를 바꿀 수 있는 비ASCII 글자인지 알려 줍니다.
 #[inline]
 pub fn affects_ascii(c: char) -> bool {
-    class_of(c) & CLASS_AFFECTS_ASCII != 0
+    let code = c as u32;
+    code < CLASS_TABLE_LIMIT && affects_table()[code as usize]
 }
 
 /// 불변이 아닌 비ASCII 글자마다 (글자, 관련 글자 목록, key의 ASCII 바이트)입니다.
@@ -135,7 +192,7 @@ fn noninvariant_profiles() -> &'static [Profile] {
     PROFILES.get_or_init(|| {
         let table = classes();
         let mut profiles = Vec::new();
-        for code in 0x80u32..0x11_0000 {
+        for code in 0x80u32..CLASS_TABLE_LIMIT {
             if table[code as usize] & CLASS_INVARIANT != 0 {
                 continue;
             }
@@ -163,7 +220,7 @@ pub fn variant_at(buf: &[u8], position: usize) -> bool {
         return false;
     }
     match decode_utf8(&buf[position..]) {
-        Some((code, _)) => classes()[code as usize] & CLASS_INVARIANT == 0,
+        Some((code, _)) => class_code(code) & CLASS_INVARIANT == 0,
         None => true,
     }
 }
@@ -175,10 +232,175 @@ pub fn is_key_trivial(text: &str) -> bool {
 
 /// 비교 함수 `key`입니다. 결과는 `key_reference`와 항상 같습니다.
 pub fn key(text: &str) -> String {
-    if is_key_trivial(text) {
+    if text.is_ascii() {
         return text.to_ascii_lowercase();
     }
-    key_reference(text)
+    let mut output = String::with_capacity(text.len());
+    key_into(text, &mut output);
+    output
+}
+
+const HANGUL_L: std::ops::RangeInclusive<u32> = 0x1100..=0x1112;
+const HANGUL_V: std::ops::RangeInclusive<u32> = 0x1161..=0x1175;
+const HANGUL_T: std::ops::RangeInclusive<u32> = 0x11A8..=0x11C2;
+
+/// `key(text)`를 `output`에 씁니다(기존 내용은 지움). 결과는 `key_reference`와 항상 같습니다.
+///
+/// 글자를 앞에서부터 보며 ASCII·불변 글자는 그대로(ASCII는 소문자로), 접기 결과가 불변 글자
+/// 하나인 글자는 그 결과로 바꿉니다. 이 세 종류는 모두 결합 등급 0이고 NFC_QC=Yes라 앞 글자와
+/// 합쳐지지 않으므로, 그 앞에서 문자열을 나눠 따로 변환해도 결과가 같습니다. 그 밖의 글자가
+/// 나오면 바로 앞 글자(합쳐질 수 있는 유일한 글자)부터 다음 나눌 수 있는 글자 직전까지만
+/// 정의대로 계산합니다. 분해형 한글 음절(첫소리+가운뎃소리[+끝소리])은 산술로 합칩니다.
+pub fn key_into(text: &str, output: &mut String) {
+    let mut out = std::mem::take(output).into_bytes();
+    out.clear();
+    out.reserve(text.len() + text.len() / 4);
+    let two_byte = two_byte_table();
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    // 바로 앞 글자의 입력 시작 위치와, 그 글자를 쓰기 전의 출력 길이입니다.
+    let mut previous: Option<(usize, usize)> = None;
+    let mut index = 0usize;
+    while index < len {
+        let byte = bytes[index];
+        if byte < 0x80 {
+            previous = Some((index, out.len()));
+            out.push(byte.to_ascii_lowercase());
+            index += 1;
+            continue;
+        }
+        if (0xC2..=0xDF).contains(&byte) {
+            // 2바이트 글자(라틴 악센트·그리스·키릴 등)는 표에서 바로 결과 바이트를 씁니다.
+            let code = ((byte as usize & 0x1F) << 6) | (bytes[index + 1] as usize & 0x3F);
+            let entry = two_byte[code];
+            if entry != 0 {
+                previous = Some((index, out.len()));
+                let encoded = entry.to_le_bytes();
+                out.extend_from_slice(&encoded[1..1 + (encoded[0] as usize)]);
+                index += 2;
+                continue;
+            }
+        } else if (0xEA..=0xED).contains(&byte) {
+            // 한글 음절(U+AC00~U+D7A3)은 불변이므로 그대로 복사합니다.
+            let code = ((byte as u32 & 0x0F) << 12)
+                | ((bytes[index + 1] as u32 & 0x3F) << 6)
+                | (bytes[index + 2] as u32 & 0x3F);
+            if (0xAC00..=0xD7A3).contains(&code) {
+                previous = Some((index, out.len()));
+                out.extend_from_slice(&bytes[index..index + 3]);
+                index += 3;
+                continue;
+            }
+        }
+        let c = text[index..].chars().next().unwrap();
+        let width = c.len_utf8();
+        let class = class_code(c as u32);
+        if class & CLASS_INVARIANT != 0 {
+            let code = c as u32;
+            if HANGUL_L.contains(&code) {
+                if let Some((syllable, used)) = compose_hangul(&text[index..]) {
+                    previous = Some((index, out.len()));
+                    push_char(&mut out, syllable);
+                    index += used;
+                    continue;
+                }
+            }
+            previous = Some((index, out.len()));
+            out.extend_from_slice(&bytes[index..index + width]);
+            index += width;
+            continue;
+        }
+        if class & CLASS_SIMPLE != 0 {
+            previous = Some((index, out.len()));
+            out.extend_from_slice(fold_char(c).unwrap().as_bytes());
+            index += width;
+            continue;
+        }
+        let (region_start, output_start) = previous.unwrap_or((index, out.len()));
+        let mut end = index + width;
+        while end < len {
+            let next_byte = bytes[end];
+            if next_byte < 0x80 {
+                break;
+            }
+            let next = text[end..].chars().next().unwrap();
+            if class_code(next as u32) & (CLASS_INVARIANT | CLASS_SIMPLE) != 0 {
+                break;
+            }
+            end += next.len_utf8();
+        }
+        out.truncate(output_start);
+        out.extend_from_slice(key_reference(&text[region_start..end]).as_bytes());
+        // 다음 글자는 나눌 수 있는 글자이므로, 그 앞 구간은 다시 계산할 필요가 없습니다.
+        previous = None;
+        index = end;
+    }
+    // 위에서 쓴 바이트는 모두 완전한 UTF-8 글자입니다. 검증은 안전장치입니다.
+    *output = String::from_utf8(out).expect("key output is valid UTF-8");
+}
+
+#[inline]
+fn push_char(out: &mut Vec<u8>, c: char) {
+    out.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
+}
+
+/// 2바이트 UTF-8 글자(U+0080~U+07FF)의 `key` 결과 바이트입니다(그대로이거나 접기 결과).
+/// 첫 바이트는 결과 길이(1~2), 그 뒤가 결과 바이트입니다. 0이면 일반 경로로 처리합니다.
+fn two_byte_table() -> &'static [u32] {
+    static TABLE: OnceLock<Vec<u32>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let classes = classes();
+        let mut table = vec![0u32; 0x800];
+        for code in 0x80u32..0x800 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let class = classes[code as usize];
+            let mut own = [0u8; 4];
+            let encoded: &[u8] = if class & CLASS_INVARIANT != 0 {
+                c.encode_utf8(&mut own).as_bytes()
+            } else if class & CLASS_SIMPLE != 0 {
+                fold_char(c).unwrap().as_bytes()
+            } else {
+                continue;
+            };
+            if encoded.len() <= 2 {
+                let mut entry = [0u8; 4];
+                entry[0] = encoded.len() as u8;
+                entry[1..1 + encoded.len()].copy_from_slice(encoded);
+                table[code as usize] = u32::from_le_bytes(entry);
+            }
+        }
+        table
+    })
+}
+
+/// `text`가 첫소리+가운뎃소리[+끝소리] 자모로 시작하고 그 뒤 글자가 나눌 수 있는 글자이면
+/// (합친 음절, 사용한 바이트 수)를 돌려줍니다. 뒤에 다른 결합 글자가 오면 None(정의대로 계산).
+fn compose_hangul(text: &str) -> Option<(char, usize)> {
+    let mut chars = text.chars();
+    let lead = chars.next()? as u32;
+    let vowel = chars.next()? as u32;
+    if !HANGUL_V.contains(&vowel) {
+        return None;
+    }
+    let mut code = 0xAC00 + ((lead - 0x1100) * 21 + (vowel - 0x1161)) * 28;
+    let mut used = 6;
+    let mut rest = chars.clone();
+    if let Some(tail) = rest.next() {
+        if HANGUL_T.contains(&(tail as u32)) {
+            code += tail as u32 - 0x11A7;
+            used += 3;
+            chars = rest;
+        }
+    }
+    match chars.next() {
+        None => {}
+        Some(next) if next.is_ascii() => {}
+        Some(next) if class_code(next as u32) & (CLASS_INVARIANT | CLASS_SIMPLE) != 0 => {}
+        Some(_) => return None,
+    }
+    char::from_u32(code).map(|syllable| (syllable, used))
 }
 
 /// 원본 바이트에서 다음 "변환이 필요한 글자"의 시작 위치를 찾습니다.
@@ -186,7 +408,6 @@ pub fn key(text: &str) -> String {
 /// `ascii_pattern`이 참이면 ASCII 검색어 결과를 바꿀 수 있는 글자만, 거짓이면 불변이 아닌
 /// 비ASCII 글자를 모두 찾습니다. 잘못된 UTF-8 바이트는 변환 대상으로 봅니다.
 pub fn next_flagged(buf: &[u8], from: usize, ascii_pattern: bool) -> Option<usize> {
-    let table = classes();
     let mut index = from;
     let len = buf.len();
     while index < len {
@@ -216,11 +437,10 @@ pub fn next_flagged(buf: &[u8], from: usize, ascii_pattern: bool) -> Option<usiz
                 return Some(index);
             }
         };
-        let class = table[code as usize];
         let flagged = if ascii_pattern {
-            class & CLASS_AFFECTS_ASCII != 0
+            code < CLASS_TABLE_LIMIT && affects_table()[code as usize]
         } else {
-            class & CLASS_INVARIANT == 0
+            class_code(code) & CLASS_INVARIANT == 0
         };
         if flagged {
             return Some(index);
@@ -265,6 +485,9 @@ pub struct Matcher {
     pat_ascii: bool,
     /// `key(검색어)`를 ASCII 대소문자 무시로 찾는 자동자입니다(원본에서 쓸 수 있는 경우 전용).
     raw: AhoCorasick,
+    /// `key(검색어)`에 ASCII 영문자가 없으면 대소문자 무시가 아무 영향이 없으므로, 원본 일치도
+    /// 바이트 그대로 찾습니다(`folded`와 같은 탐색기, 짧은 값에서 훨씬 빠름).
+    raw_exact: bool,
     /// 변환된 문자열에서 `key(검색어)`를 찾습니다.
     folded: memchr::memmem::Finder<'static>,
     /// 일반 텍스트용 유발 글자: 이 검색어의 일치에 끼어들 수 있는 글자입니다.
@@ -272,10 +495,29 @@ pub struct Matcher {
     triggers: Option<Triggers>,
 }
 
+/// 원본 일치 탐색 결과(시작, 길이)를 차례로 돌려줍니다.
+pub enum RawHits<'a> {
+    Exact(Box<memchr::memmem::FindIter<'a, 'a>>, usize),
+    Automaton(aho_corasick::FindIter<'a, 'a>),
+}
+
+impl Iterator for RawHits<'_> {
+    type Item = (usize, usize);
+
+    #[inline]
+    fn next(&mut self) -> Option<(usize, usize)> {
+        match self {
+            RawHits::Exact(iter, length) => iter.next().map(|start| (start, *length)),
+            RawHits::Automaton(iter) => iter.next().map(|hit| (hit.start(), hit.len())),
+        }
+    }
+}
+
 /// 유발 글자 목록과 그 UTF-8 첫 바이트입니다. 첫 바이트를 SIMD(memchr)로 찾은 뒤 글자를 확인합니다.
 pub struct Triggers {
     chars: Vec<char>,
     leads: Vec<u8>,
+    lead_table: [bool; 256],
 }
 
 impl Triggers {
@@ -288,32 +530,76 @@ impl Triggers {
             .collect();
         leads.sort_unstable();
         leads.dedup();
-        Self { chars, leads }
+        let mut lead_table = [false; 256];
+        for &lead in &leads {
+            lead_table[lead as usize] = true;
+        }
+        Self {
+            chars,
+            leads,
+            lead_table,
+        }
     }
 
-    /// `[start, end)` 안에서 유발 글자가 있는 위치를 차례로 `found`에 넘깁니다.
-    pub fn scan(&self, buf: &[u8], start: usize, end: usize, mut found: impl FnMut(usize)) {
+    /// `bytes` 안에 유발 글자가 하나라도 있는지 알려 줍니다.
+    pub fn any_in(&self, bytes: &[u8]) -> bool {
+        if bytes.is_ascii() {
+            // 유발 글자는 모두 비ASCII입니다.
+            return false;
+        }
+        if bytes.len() <= 64 {
+            // 짧은 값은 SIMD 탐색을 시작하는 비용보다 바이트를 직접 보는 편이 빠릅니다.
+            return bytes.iter().enumerate().any(|(index, &byte)| {
+                self.lead_table[byte as usize]
+                    && decode_utf8(&bytes[index..])
+                        .and_then(|(code, _)| char::from_u32(code))
+                        .is_some_and(|c| self.chars.binary_search(&c).is_ok())
+            });
+        }
+        let mut found = false;
+        self.scan(bytes, 0, bytes.len(), |_| {
+            found = true;
+            bytes.len()
+        });
+        found
+    }
+
+    /// `[start, end)` 안에서 유발 글자가 있는 위치를 `found`에 넘깁니다. `found`는 다음에 찾기
+    /// 시작할 위치(보통 그 줄의 끝)를 돌려주므로, 한 줄에 유발 글자가 많아도 줄마다 한 번만 넘깁니다.
+    /// 첫 바이트 묶음(세 개씩)마다 따로 훑으므로 위치 순서와 중복은 호출자가 정리합니다.
+    pub fn scan(
+        &self,
+        buf: &[u8],
+        start: usize,
+        end: usize,
+        mut found: impl FnMut(usize) -> usize,
+    ) {
         if self.chars.is_empty() {
             return;
         }
-        let region = &buf[start..end];
-        let mut check = |offset: usize| {
-            if let Some((code, _)) = decode_utf8(&region[offset..]) {
-                if let Some(c) = char::from_u32(code) {
-                    if self.chars.binary_search(&c).is_ok() {
-                        found(start + offset);
-                    }
-                }
-            }
-        };
-        // 첫 바이트를 세 개씩 묶어 찾습니다. 같은 위치를 두 번 넘기지 않도록 묶음마다 따로 훑고
-        // 결과는 위치 순서와 관계없이 호출자가 정렬합니다.
         for group in self.leads.chunks(3) {
-            match *group {
-                [a] => memchr::memchr_iter(a, region).for_each(&mut check),
-                [a, b] => memchr::memchr2_iter(a, b, region).for_each(&mut check),
-                [a, b, c] => memchr::memchr3_iter(a, b, c, region).for_each(&mut check),
-                _ => unreachable!(),
+            let mut cursor = start;
+            while cursor < end {
+                let region = &buf[cursor..end];
+                let next = match *group {
+                    [a] => memchr::memchr(a, region),
+                    [a, b] => memchr::memchr2(a, b, region),
+                    [a, b, c] => memchr::memchr3(a, b, c, region),
+                    _ => unreachable!(),
+                };
+                let Some(offset) = next else {
+                    break;
+                };
+                let position = cursor + offset;
+                // 글자는 구간 끝을 넘어서도 읽습니다(긴 줄을 창 단위로 나누면 글자가 창 경계에 걸칠 수 있음).
+                let is_trigger = decode_utf8(&buf[position..])
+                    .and_then(|(code, _)| char::from_u32(code))
+                    .is_some_and(|c| self.chars.binary_search(&c).is_ok());
+                cursor = if is_trigger {
+                    found(position).max(position + 1)
+                } else {
+                    position + 1
+                };
             }
         }
     }
@@ -341,6 +627,7 @@ impl Matcher {
         Ok(Self {
             never: false,
             pat_ascii: pat_key.is_ascii(),
+            raw_exact: !pat_key.bytes().any(|byte| byte.is_ascii_alphabetic()),
             pat_key,
             raw,
             folded,
@@ -360,6 +647,7 @@ impl Matcher {
             pat_key: String::new(),
             pat_ascii: true,
             raw: AhoCorasick::new(std::iter::empty::<&str>()).expect("empty automaton"),
+            raw_exact: false,
             folded: memchr::memmem::Finder::new(b"\xff").into_owned(),
             triggers: None,
         }
@@ -373,8 +661,41 @@ impl Matcher {
         self.pat_ascii
     }
 
-    pub fn raw_finder(&self) -> &AhoCorasick {
-        &self.raw
+    /// 원본에서 `key(검색어)`를 ASCII 대소문자 무시로 찾은 (시작, 길이)들입니다(겹치지 않음, 앞에서부터).
+    pub fn raw_hits_in<'a>(&'a self, haystack: &'a [u8]) -> RawHits<'a> {
+        if self.raw_exact {
+            RawHits::Exact(
+                Box::new(self.folded.find_iter(haystack)),
+                self.pat_key.len(),
+            )
+        } else {
+            RawHits::Automaton(self.raw.find_iter(haystack))
+        }
+    }
+
+    fn raw_find(&self, haystack: &[u8]) -> Option<(usize, usize)> {
+        if self.never {
+            return None;
+        }
+        if self.raw_exact {
+            self.folded
+                .find(haystack)
+                .map(|start| (start, self.pat_key.len()))
+        } else {
+            self.raw.find(haystack).map(|hit| (hit.start(), hit.len()))
+        }
+    }
+
+    /// 이 값(일치가 확인된 값)에서 원본 바이트로 찾은 일치 위치가 `key` 비교의 일치와 같은지
+    /// 알려 줍니다. JSON·XML이 하이라이트 위치를 보고할지 정할 때 씁니다.
+    pub fn raw_positions_valid(&self, value: &str) -> bool {
+        if value.is_ascii() {
+            return true;
+        }
+        if self.triggers.is_some() {
+            return self.raw_hits_if_valid(value).is_some();
+        }
+        self.raw_search_valid(value)
     }
 
     /// 원본 그대로(ASCII 대소문자 무시) 찾아도 `key` 비교와 결과가 같은 문자열인지 알려 줍니다.
@@ -394,13 +715,53 @@ impl Matcher {
         if self.never {
             return false;
         }
+        if let Some(triggers) = &self.triggers {
+            // 검색어가 ASCII·불변 글자로만 된 경우입니다. 원본 일치 바로 뒤가 변환 대상 글자가 아니면
+            // 그 일치는 `key(값)`에서도 그대로 일치입니다(일치의 첫 글자는 앞 글자와 합쳐지지 않고,
+            // 바로 뒤 글자도 앞과 합쳐지지 않으므로 양쪽이 변환 경계). 원본 일치가 없을 때는 유발 글자가
+            // 없어야 "일치 없음"으로 판정할 수 있습니다. ASCII 값도 같은 규칙으로 맞게 처리됩니다.
+            let bytes = value.as_bytes();
+            match self.raw_find(bytes) {
+                Some((start, length)) if !variant_at(bytes, start + length) => return true,
+                Some(_) => {}
+                None if !triggers.any_in(bytes) => return false,
+                None => {}
+            }
+            return self.folded.find(key(value).as_bytes()).is_some();
+        }
         if value.is_ascii() {
-            return self.pat_ascii && self.raw.find(value).is_some();
+            return self.pat_ascii && self.raw_find(value.as_bytes()).is_some();
+        }
+        match self.raw_hits_if_valid(value) {
+            Some(hits) => !hits.is_empty(),
+            None => self.folded.find(key(value).as_bytes()).is_some(),
+        }
+    }
+
+    /// 원본에서 찾은 일치가 `key` 비교와 같은 결과임을 보장할 수 있으면 그 일치들을 돌려줍니다.
+    ///
+    /// 검색어가 ASCII·불변 글자로만 되어 있으면(유발 글자가 있는 경우) 일반 텍스트 경로와 같은
+    /// 규칙을 씁니다: 값에 유발 글자가 없고 어떤 원본 일치 바로 뒤에도 변환 대상 글자가 없으면
+    /// 원본 일치가 곧 결과입니다. 그 밖의 검색어는 값 전체가 ASCII·불변 글자일 때만 보장합니다.
+    fn raw_hits_if_valid(&self, value: &str) -> Option<Vec<(usize, usize)>> {
+        let bytes = value.as_bytes();
+        if let Some(triggers) = &self.triggers {
+            if triggers.any_in(bytes) {
+                return None;
+            }
+            let mut hits = Vec::new();
+            for (start, length) in self.raw_hits_in(bytes) {
+                if variant_at(bytes, start + length) {
+                    return None;
+                }
+                hits.push((start, length));
+            }
+            return Some(hits);
         }
         if self.raw_search_valid(value) {
-            return self.raw.find(value).is_some();
+            return Some(self.raw_hits_in(bytes).collect());
         }
-        self.folded.find(key_reference(value).as_bytes()).is_some()
+        None
     }
 
     /// 부분 일치 개수와, 원본에서 찾은 경우 그 위치(바이트)입니다. 변환한 경우 위치는 없습니다.
@@ -408,23 +769,29 @@ impl Matcher {
         if self.never {
             return Vec::new();
         }
-        if (value.is_ascii() && self.pat_ascii)
-            || (!value.is_ascii() && self.raw_search_valid(value))
-        {
-            return self
-                .raw
-                .find_iter(value)
-                .map(|hit| Some((hit.start(), hit.len())))
-                .collect();
-        }
         if value.is_ascii() {
-            return Vec::new();
+            if !self.pat_ascii {
+                return Vec::new();
+            }
+            return self.raw_hits_in(value.as_bytes()).map(Some).collect();
         }
-        let converted = key_reference(value);
+        if let Some(hits) = self.raw_hits_if_valid(value) {
+            return hits.into_iter().map(Some).collect();
+        }
+        let converted = key(value);
         self.folded
             .find_iter(converted.as_bytes())
             .map(|_| None)
             .collect()
+    }
+
+    /// `text`를 `key`로 바꿔 `converted`에 쓰고, 그 안에서 `key(검색어)`가 시작하는 위치들을 돌려줍니다.
+    pub fn find_in_converted(&self, text: &str, converted: &mut String) -> Vec<usize> {
+        if self.never {
+            return Vec::new();
+        }
+        key_into(text, converted);
+        self.folded.find_iter(converted.as_bytes()).collect()
     }
 
     /// 정확히 일치: `key(값)`의 앞뒤 공백(Unicode White_Space)을 지운 결과가 `key(검색어)`와 같으면 참입니다.
@@ -477,6 +844,10 @@ fn trigger_chars(pat_key: &str) -> Vec<char> {
 pub struct LineCounter {
     position: usize,
     line: usize,
+    // `position`이 속한 줄의 시작 위치(`line_bounds`와 같은 정의)입니다.
+    start: usize,
+    // 줄바꿈이 없다고 이미 확인된 구간입니다(다시 세지 않음).
+    break_free: Option<(usize, usize)>,
 }
 
 impl Default for LineCounter {
@@ -490,22 +861,95 @@ impl LineCounter {
         Self {
             position: 0,
             line: 1,
+            start: 0,
+            break_free: None,
+        }
+    }
+
+    /// `[from, to)`에 CR·LF가 없음을 알려 줍니다. 이 구간을 지나는 줄 번호 계산에서 건너뜁니다.
+    pub fn note_break_free(&mut self, from: usize, to: usize) {
+        if from < to && self.position <= from {
+            self.break_free = Some((from, to));
+        }
+    }
+
+    /// `position` 위치가 속한 줄의 시작입니다(`line_bounds(buf, position).0`과 같음).
+    /// 카운터가 이미 지나온 구간은 다시 훑지 않습니다.
+    pub fn line_start(&self, buf: &[u8], position: usize) -> usize {
+        if position < self.position {
+            return memchr::memrchr2(b'\n', b'\r', &buf[..position]).map_or(0, |index| index + 1);
+        }
+        match memchr::memrchr2(b'\n', b'\r', &buf[self.position..position]) {
+            Some(index) => self.position + index + 1,
+            None => self.start,
         }
     }
 
     /// `target` 위치(앞으로만 이동)의 줄 번호를 돌려줍니다.
     pub fn line_at(&mut self, buf: &[u8], target: usize) -> usize {
+        if let Some((from, to)) = self.break_free {
+            if target > from && self.position <= from {
+                self.break_free = None;
+                self.line_at(buf, from);
+                // [from, to)에는 줄바꿈이 없으므로 줄 번호와 줄 시작이 그대로입니다.
+                self.position = target.min(to);
+                if target < to {
+                    self.break_free = Some((target, to));
+                }
+            } else if self.position >= to {
+                self.break_free = None;
+            }
+        }
         if target > self.position {
-            let (line_feeds, carriage_returns) = count_lf_cr(&buf[self.position..target]);
             // CRLF 쌍: CR이 [position, target) 안에 있고 바로 뒤가 LF인 쌍입니다(LF가 target 뒤여도
             // 셉니다). CR마다 자기 구간에서 한 번만 세므로, CR 바로 뒤 위치의 줄 번호도 맞습니다.
-            let pair_end = (target + 1).min(buf.len());
-            let pairs = count_crlf(&buf[self.position..pair_end]);
-            self.line += line_feeds + carriage_returns - pairs;
+            let (breaks, last_break) = if sparse_line_breaks(&buf[self.position..target]) {
+                count_breaks_sparse(buf, self.position, target)
+            } else {
+                let (line_feeds, carriage_returns) = count_lf_cr(&buf[self.position..target]);
+                let pair_end = (target + 1).min(buf.len());
+                let breaks =
+                    line_feeds + carriage_returns - count_crlf(&buf[self.position..pair_end]);
+                let last = memchr::memrchr2(b'\n', b'\r', &buf[self.position..target])
+                    .map(|index| self.position + index);
+                (breaks, last)
+            };
+            self.line += breaks;
+            if let Some(index) = last_break {
+                self.start = index + 1;
+            }
             self.position = target;
         }
         self.line
     }
+}
+
+/// 앞부분(최대 4KiB)의 평균 줄 길이가 256바이트보다 길면 참입니다. 두 방식의 결과는 같고,
+/// 줄이 긴 파일은 줄바꿈 사이를 SIMD 탐색으로 건너뛰는 편이 빠릅니다(제안서 2.3.2).
+fn sparse_line_breaks(region: &[u8]) -> bool {
+    let sample = &region[..region.len().min(4096)];
+    let breaks = sample
+        .iter()
+        .filter(|&&byte| byte == b'\n' || byte == b'\r')
+        .count();
+    breaks * 256 < sample.len()
+}
+
+/// `[start, end)`의 줄바꿈 수(LF + CR − CRLF, CR 뒤 LF는 `end` 뒤여도 봄)를 SIMD 탐색으로 셉니다.
+/// 마지막 줄바꿈 바이트의 위치도 함께 돌려줍니다.
+fn count_breaks_sparse(buf: &[u8], start: usize, end: usize) -> (usize, Option<usize>) {
+    let mut breaks = 0usize;
+    let mut last = None;
+    for index in memchr::memchr2_iter(b'\n', b'\r', &buf[start..end]) {
+        let position = start + index;
+        last = Some(position);
+        // CRLF는 LF에서 한 번 셉니다(CR 바로 뒤가 LF이면 CR은 세지 않음. LF가 구간 밖이어도 같음).
+        if buf[position] == b'\r' && buf.get(position + 1) == Some(&b'\n') {
+            continue;
+        }
+        breaks += 1;
+    }
+    (breaks, last)
 }
 
 /// 한 블록에서 바이트별 카운터가 넘치지 않는 최대 반복 수(255)만큼씩 32바이트 단위로 셉니다.
@@ -580,6 +1024,28 @@ mod count_tests {
             let pairs = data.windows(2).filter(|w| w == b"\r\n").count();
             assert_eq!(super::count_lf_cr(&data), (lf, cr));
             assert_eq!(super::count_crlf(&data), pairs);
+            // 두 줄 세기 방식(블록·SIMD 탐색)이 여러 구간에서 같은 값을 내는지 확인합니다.
+            for start in [0usize, 1, length / 3, length / 2] {
+                for end in [
+                    start,
+                    start + 1,
+                    length / 2 + 7,
+                    length.saturating_sub(1),
+                    length,
+                ] {
+                    if start > end || end > length {
+                        continue;
+                    }
+                    let (lf, cr) = super::count_lf_cr(&data[start..end]);
+                    let pair_end = (end + 1).min(length);
+                    let dense = lf + cr - super::count_crlf(&data[start..pair_end]);
+                    assert_eq!(
+                        super::count_breaks_sparse(&data, start, end).0,
+                        dense,
+                        "{start}..{end}"
+                    );
+                }
+            }
         }
     }
 }
@@ -633,6 +1099,60 @@ impl<'a> Iterator for LineSplit<'a> {
 }
 
 #[cfg(test)]
+mod key_into_tests {
+    use super::*;
+
+    /// 결합 부호·자모·접기 대상이 섞인 무작위 문자열에서 `key_into`가 정의와 같은지 확인합니다.
+    #[test]
+    fn key_into_matches_reference_on_random_mixes() {
+        let pool: Vec<char> = "aZ \u{e9}\u{c9}\u{df}\u{130}\u{131}\u{212A}\u{fb00}\u{1f0}\u{390}\u{3a3}\u{3c2}\u{38a}\u{41f}\u{439}\u{419}\u{1100}\u{1112}\u{1161}\u{1175}\u{11a8}\u{11c2}\u{ac00}\u{ac01}\u{d7a3}\u{300}\u{301}\u{308}\u{30c}\u{316}\u{327}\u{345}\u{1e9e}\u{1f80}\u{1fbc}\u{2126}\u{f900}\u{1d15e}\u{10400}\u{fffd}가목"
+            .chars()
+            .collect();
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut output = String::new();
+        for _ in 0..200_000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let length = (state % 9) as usize;
+            let mut text = String::new();
+            for step in 0..length {
+                let pick = (state.rotate_left(step as u32 * 7) % pool.len() as u64) as usize;
+                text.push(pool[pick]);
+            }
+            key_into(&text, &mut output);
+            assert_eq!(output, key_reference(&text), "{:?}", text);
+        }
+    }
+
+    /// 모든 스칼라값을 앞뒤 문맥(결합 부호, 자모, 접기 대상)과 붙여 확인합니다.
+    #[test]
+    fn key_into_matches_reference_for_every_scalar_in_context() {
+        let mut output = String::new();
+        let mut text = String::new();
+        let contexts = [
+            ("A", "\u{301}"),
+            ("\u{1100}", "\u{11A8}"),
+            ("\u{3a3}", "b"),
+            ("", "\u{1161}"),
+        ];
+        for code in 0x80u32..0x11_0000 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            for (before, after) in contexts {
+                text.clear();
+                text.push_str(before);
+                text.push(c);
+                text.push_str(after);
+                key_into(&text, &mut output);
+                assert_eq!(output, key_reference(&text), "U+{code:04X} in {:?}", text);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -667,6 +1187,16 @@ mod tests {
         for ((code, mapped), (table_code, table_mapped)) in expected.iter().zip(CASEFOLD) {
             assert_eq!(code, table_code);
             assert_eq!(mapped, table_mapped);
+        }
+    }
+
+    #[test]
+    fn scalars_beyond_the_class_table_are_invariant() {
+        for code in CLASS_TABLE_LIMIT..0x11_0000 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            assert!(invariant_by_definition(c), "U+{code:04X}");
         }
     }
 
@@ -713,6 +1243,11 @@ mod tests {
         let matcher = Matcher::new("\u{3B9}").unwrap();
         assert!(!matcher.contains("\u{390}"));
         assert_eq!(key("\u{1F0}"), key("J\u{30C}"));
+        assert_eq!(key("\u{1100}\u{1161}\u{11A8}\u{11A8}"), "\u{AC01}\u{11A8}");
+        assert_eq!(
+            key("\u{1100}\u{1161}\u{301}"),
+            key_reference("\u{1100}\u{1161}\u{301}")
+        );
     }
 
     #[test]
@@ -799,23 +1334,52 @@ mod tests {
     #[test]
     fn line_counter_matches_reference_on_random_line_breaks() {
         let mut state = 0x9E37_79B9_7F4A_7C15u64;
-        for _ in 0..300 {
-            let len = (state % 300) as usize;
+        for round in 0..600 {
+            // 짝수 회차는 줄바꿈이 많은 입력, 홀수 회차는 줄이 긴 입력(SIMD 탐색 방식)입니다.
+            let len = if round % 2 == 0 {
+                (state % 300) as usize
+            } else {
+                (state % 6000) as usize
+            };
             let mut buf = Vec::with_capacity(len);
             for _ in 0..len {
                 state ^= state << 13;
                 state ^= state >> 7;
                 state ^= state << 17;
-                buf.push([b'a', b'\r', b'\n', b'x'][(state % 4) as usize]);
+                let byte = if round % 2 == 0 || state.is_multiple_of(400) {
+                    [b'a', b'\r', b'\n', b'x'][((state >> 9) % 4) as usize]
+                } else {
+                    b'a'
+                };
+                buf.push(byte);
             }
             let expected = reference_lines(&buf);
             let mut counter = LineCounter::new();
             let mut position = 0;
+            let mut noted_up_to = 0usize;
             while position <= buf.len() {
+                // 줄바꿈 없는 구간 알림을 섞어도 결과가 같은지 확인합니다.
+                if noted_up_to <= position && position + 2 < buf.len() {
+                    let from = position + 1;
+                    let to =
+                        memchr::memchr2(b'\n', b'\r', &buf[from..]).map_or(buf.len(), |i| from + i);
+                    counter.note_break_free(from, to);
+                    noted_up_to = to;
+                }
+                assert_eq!(
+                    counter.line_start(&buf, position),
+                    line_bounds(&buf, position).0,
+                    "line start {buf:?} at {position}"
+                );
                 assert_eq!(
                     counter.line_at(&buf, position),
                     expected[position],
                     "{buf:?} at {position}"
+                );
+                assert_eq!(
+                    counter.line_start(&buf, position),
+                    line_bounds(&buf, position).0,
+                    "line start after count {buf:?} at {position}"
                 );
                 state ^= state << 13;
                 state ^= state >> 7;

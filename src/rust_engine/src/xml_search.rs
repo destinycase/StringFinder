@@ -318,7 +318,7 @@ fn process_xml_text_item(
 
             // 원본과 같은 바이트이고 변환 없이 비교되는 값만 위치를 보고합니다(틀린 위치 금지).
             let location = if raw_bytes == unescaped_text.as_bytes()
-                && ctx.matcher.raw_search_valid(unescaped_text)
+                && ctx.matcher.raw_positions_valid(unescaped_text)
             {
                 ctx.ac
                     .find(raw_range)
@@ -416,7 +416,7 @@ fn process_xml_attributes(
             let location = value_start.and_then(|offset| {
                 // Entity expansion can make raw and decoded matches unrelated.
                 // 변환해야 비교되는 값도 원본 위치를 알 수 없으므로 생략합니다.
-                if raw_value != val.as_bytes() || !ctx.matcher.raw_search_valid(&val) {
+                if raw_value != val.as_bytes() || !ctx.matcher.raw_positions_valid(&val) {
                     return None;
                 }
                 ctx.ac

@@ -452,6 +452,12 @@ fn search_walk_builder(
     builder.git_ignore(false);
     builder.git_exclude(false);
     builder.git_global(false);
+    // 검색 대상이 파일 하나이면 순회 스레드를 여러 개 띄울 필요가 없습니다(띄우는 비용만 듦).
+    // 폴더는 라이브러리 기본값(CPU 수, 최대 12개)을 씁니다. 이 장비(논리 CPU 20개)에서 20개로
+    // 늘려 봤지만 작은 파일이 많은 표본(A)에서 이득이 없고 조금 느려져 기본값을 유지합니다.
+    if root_path.is_file() {
+        builder.threads(1);
+    }
     builder
 }
 
@@ -630,6 +636,9 @@ fn search_file(
     };
 
     let res = py.allow_threads(|| {
+        if should_exclude_recycle_path(Path::new(&path)) {
+            return None;
+        }
         search_file_internal(InternalSearchParams {
             encoding,
             path: Path::new(&path),
@@ -722,8 +731,11 @@ fn do_search_with_mmap(
 
 #[inline]
 fn is_ascii_chunk(bytes: &[u8]) -> bool {
-    // 표준 구현은 한 번에 여러 바이트를 보고, 비ASCII를 만나면 바로 멈춥니다(한글 조각은 즉시 끝남).
-    bytes.is_ascii()
+    // 4KiB 블록마다 모든 바이트를 OR로 모아 최상위 비트를 봅니다. 컴파일러가 SIMD로 바꾸므로
+    // 표준 `is_ascii`(8바이트 단위)보다 빠르고, 비ASCII 블록을 만나면 바로 멈춥니다.
+    bytes
+        .chunks(4096)
+        .all(|block| block.iter().fold(0u8, |acc, &byte| acc | byte) < 0x80)
 }
 
 /// UTF-8 일반 텍스트 검색 상태입니다.
@@ -754,7 +766,11 @@ impl Utf8TextSearch<'_> {
                 return (start, end);
             }
         }
-        let bounds = textkey::line_bounds(self.buf, position);
+        // 줄 시작은 줄 번호 카운터가 지나온 곳까지만 거꾸로 찾습니다(긴 줄에서 파일 처음까지 훑지 않음).
+        let start = self.counter.line_start(self.buf, position);
+        let end = memchr::memchr2(b'\n', b'\r', &self.buf[position..])
+            .map_or(self.buf.len(), |index| position + index);
+        let bounds = (start, end);
         self.line = Some(bounds);
         bounds
     }
@@ -764,21 +780,23 @@ impl Utf8TextSearch<'_> {
         if start >= end {
             return false;
         }
-        let finder = self.matcher.raw_finder();
-        for hit in finder.find_iter(&self.buf[start..end]) {
+        let matcher = self.matcher;
+        for (hit_start, hit_len) in matcher.raw_hits_in(&self.buf[start..end]) {
             if self.full() {
                 return true;
             }
             if self.results.len().is_multiple_of(1000) && self.stop_flag.load(Ordering::Relaxed) {
                 return true;
             }
-            self.raw_hit(start + hit.start(), hit.len());
+            self.raw_hit(start + hit_start, hit_len);
         }
         false
     }
 
     /// 원본에서 찾은 일치 하나를 기록합니다(줄에 변환 대상이 없음이 확인된 경우).
     fn raw_hit(&mut self, match_start: usize, match_len: usize) {
+        // 줄 번호를 먼저 세면 줄 시작을 찾을 때 지나온 구간을 다시 훑지 않습니다.
+        let line = self.counter.line_at(self.buf, match_start);
         let (line_start, line_end) = self.bounds(match_start);
         if self.is_exact {
             if self.last_exact_line_start == Some(line_start) {
@@ -787,14 +805,12 @@ impl Utf8TextSearch<'_> {
             self.last_exact_line_start = Some(line_start);
             let text = String::from_utf8_lossy(&self.buf[line_start..line_end]);
             if self.matcher.equals_trimmed(&text) {
-                let line = self.counter.line_at(self.buf, line_start);
                 let content =
                     extract_line_content_bytes(self.buf, line_start, line_end, None, None);
                 self.results.push((line, content, None, None));
             }
             return;
         }
-        let line = self.counter.line_at(self.buf, match_start);
         // Each hit retains its line preview and byte range.
         let content = extract_line_content_bytes(
             self.buf,
@@ -809,6 +825,70 @@ impl Utf8TextSearch<'_> {
             (Some(match_start), Some(match_len))
         };
         self.results.push((line, content, offset, length));
+    }
+
+    /// 변환할 줄 목록(위치 순)을 처리합니다. 바로 이어진 줄들은 한 번에 변환해 검색합니다.
+    fn converted_lines(&mut self, lines: &[(usize, usize)]) {
+        let mut index = 0usize;
+        while index < lines.len() {
+            if self.full() {
+                return;
+            }
+            let mut last = index;
+            while last + 1 < lines.len()
+                && lines[last + 1].0 == skip_line_break(self.buf, lines[last].1)
+            {
+                last += 1;
+            }
+            if self.is_exact || last == index {
+                for &(line_start, line_end) in &lines[index..=last] {
+                    self.converted_line(line_start, line_end);
+                    if self.full() {
+                        return;
+                    }
+                }
+            } else {
+                self.converted_run(&lines[index..=last]);
+            }
+            index = last + 1;
+        }
+    }
+
+    /// 바로 이어진 줄들(부분 일치)을 한 번에 변환해 찾습니다. `key`는 CR·LF를 그대로 두고 새로
+    /// 만들지도 않으므로, 변환 결과의 k번째 줄이 원본의 k번째 줄입니다.
+    fn converted_run(&mut self, lines: &[(usize, usize)]) {
+        let region_start = lines[0].0;
+        let region_end = lines[lines.len() - 1].1;
+        let text = String::from_utf8_lossy(&self.buf[region_start..region_end]);
+        let mut converted = String::new();
+        let hits = self.matcher.find_in_converted(&text, &mut converted);
+        if hits.is_empty() {
+            return;
+        }
+        let converted = converted.as_bytes();
+        let mut line_index = 0usize;
+        let mut converted_line_start = 0usize;
+        let mut converted_line_end = next_line_break(converted, 0);
+        let mut last_reported: Option<(usize, String)> = None;
+        for hit in hits {
+            while hit >= converted_line_end {
+                converted_line_start = skip_line_break(converted, converted_line_end);
+                converted_line_end = next_line_break(converted, converted_line_start);
+                line_index += 1;
+            }
+            debug_assert!(hit >= converted_line_start);
+            let (line_start, line_end) = lines[line_index];
+            let line = self.counter.line_at(self.buf, line_start);
+            let content = match &last_reported {
+                Some((reported, content)) if *reported == line_start => content.clone(),
+                _ => extract_line_content_bytes(self.buf, line_start, line_end, None, None),
+            };
+            if self.full() {
+                return;
+            }
+            self.results.push((line, content.clone(), None, None));
+            last_reported = Some((line_start, content));
+        }
     }
 
     /// 변환이 필요한 줄입니다. 원본 위치를 알 수 없으므로 위치는 생략합니다(틀린 위치 금지).
@@ -835,6 +915,139 @@ impl Utf8TextSearch<'_> {
             self.results.push((line, content.clone(), None, None));
         }
     }
+}
+
+/// 한 조각보다 긴 줄을 창(조각 크기) 단위로 처리합니다. 창마다 줄바꿈 찾기·ASCII 검사·원본 검색을
+/// 캐시에 있는 동안 이어서 하므로 긴 줄을 여러 번 훑지 않습니다. 줄 전체의 변환 여부는 일반 경로와
+/// 같은 규칙(유발 글자가 있거나 원본 일치 바로 뒤가 변환 대상 글자이면 변환)으로 정하고, 원본 일치는
+/// 줄이 끝날 때까지 모았다가 변환하지 않는 경우에만 기록합니다. 줄 끝 위치를 돌려주며, 상한에
+/// 도달하거나 중지되면 None입니다.
+fn search_long_line(
+    search: &mut Utf8TextSearch<'_>,
+    triggers: &textkey::Triggers,
+    line_start: usize,
+) -> Option<usize> {
+    let buf = search.buf;
+    let len = buf.len();
+    let matcher = search.matcher;
+    // 창 경계에 걸친 일치를 놓치지 않도록 검색어 길이만큼 겹쳐 찾습니다.
+    let overlap = search.matcher.pat_key().len().saturating_sub(1);
+    let mut pending: Vec<(usize, usize)> = Vec::new();
+    let mut convert = false;
+    let mut window_start = line_start;
+    let mut search_from = line_start;
+    // 보고할 것이 없어 줄 경계를 찾지 않고 건너뛴 구간의 시작입니다.
+    let mut skipped_from: Option<usize> = None;
+    loop {
+        if search.stop_flag.load(Ordering::Relaxed) {
+            return None;
+        }
+        let window_end = (window_start + TEXT_CHUNK_SIZE).min(len);
+        if pending.is_empty() && !convert {
+            // ASCII뿐이고(유발 글자·변환 대상 글자 없음) 원본 일치도 없는 창은 어느 줄에 속하든
+            // 보고할 것이 없으므로 줄바꿈을 찾지 않고 건너뜁니다.
+            let window = &buf[window_start..window_end];
+            if is_ascii_chunk(window) {
+                let search_end = (window_end + overlap).min(len);
+                let has_hit = matcher
+                    .raw_hits_in(&buf[search_from..search_end])
+                    .next()
+                    .is_some_and(|(start, _)| search_from + start < window_end);
+                if !has_hit {
+                    if window_end == len {
+                        return Some(len);
+                    }
+                    skipped_from.get_or_insert(window_start);
+                    window_start = window_end;
+                    search_from = search_from.max(window_end);
+                    continue;
+                }
+            }
+            if let Some(from) = skipped_from.take() {
+                // 건너뛴 구간에 줄바꿈이 있었다면 마지막 줄바꿈부터 일반 경로로 다시 처리합니다.
+                // 없었다면 같은 긴 줄이 이어지는 것이므로 그대로 계속합니다.
+                if let Some(index) = memchr::memrchr2(b'\n', b'\r', &buf[from..window_start]) {
+                    return Some(from + index);
+                }
+            }
+        }
+        let line_break = memchr::memchr2(b'\n', b'\r', &buf[window_start..window_end]);
+        let segment_end = line_break.map_or(window_end, |index| window_start + index);
+        let line_ends = line_break.is_some() || window_end == len;
+        if !convert && !is_ascii_chunk(&buf[window_start..segment_end]) {
+            triggers.scan(buf, window_start, segment_end, |_| {
+                convert = true;
+                segment_end
+            });
+        }
+        if !convert {
+            let region_end = if line_ends {
+                segment_end
+            } else {
+                (segment_end + overlap).min(len)
+            };
+            for (hit_start, hit_len) in matcher.raw_hits_in(&buf[search_from..region_end]) {
+                let start = search_from + hit_start;
+                if !line_ends && start >= segment_end {
+                    break;
+                }
+                if textkey::variant_at(buf, start + hit_len) {
+                    convert = true;
+                    break;
+                }
+                pending.push((start, hit_len));
+            }
+            // 다음 창은 마지막 일치의 끝과 이 창의 끝 중 뒤쪽부터 찾습니다(같은 일치를 두 번 세지 않음).
+            search_from = pending
+                .last()
+                .map_or(0, |&(start, length)| start + length)
+                .max(segment_end);
+        }
+        if convert {
+            // 줄 전체를 변환해 다시 셉니다(모은 원본 일치는 버림).
+            let line_end = if line_ends {
+                segment_end
+            } else {
+                memchr::memchr2(b'\n', b'\r', &buf[segment_end..])
+                    .map_or(len, |index| segment_end + index)
+            };
+            search.counter.note_break_free(line_start, line_end);
+            search.converted_line(line_start, line_end);
+            return if search.full() { None } else { Some(line_end) };
+        }
+        if line_ends {
+            // 줄 경계를 이미 알고 있으므로 줄 번호 계산과 줄 경계 찾기에서 줄을 다시 훑지 않습니다.
+            search.counter.note_break_free(line_start, segment_end);
+            search.line = Some((line_start, segment_end));
+            for (hit_start, hit_len) in pending.drain(..) {
+                if search.full() {
+                    return None;
+                }
+                search.raw_hit(hit_start, hit_len);
+            }
+            return if search.full() {
+                None
+            } else {
+                Some(segment_end)
+            };
+        }
+        window_start = segment_end;
+    }
+}
+
+/// `position`의 줄바꿈(LF·CRLF·CR)을 건너뛴 위치입니다. 줄바꿈이 없으면 그대로 돌려줍니다.
+fn skip_line_break(buf: &[u8], position: usize) -> usize {
+    match buf.get(position) {
+        Some(b'\r') if buf.get(position + 1) == Some(&b'\n') => position + 2,
+        Some(b'\r') | Some(b'\n') => position + 1,
+        _ => position,
+    }
+}
+
+/// `from`부터 다음 줄바꿈(CR 또는 LF)의 위치입니다. 없으면 끝 위치입니다.
+fn next_line_break(buf: &[u8], from: usize) -> usize {
+    memchr::memchr2(b'\n', b'\r', &buf[from.min(buf.len())..])
+        .map_or(buf.len(), |index| from + index)
 }
 
 fn search_utf8_text(
@@ -869,8 +1082,13 @@ fn search_utf8_text(
         let mut chunk_end = (chunk_start + TEXT_CHUNK_SIZE).min(buf.len());
         if chunk_end < buf.len() {
             // 조각 끝을 줄바꿈 위치에 맞춥니다. 검색어에는 줄바꿈이 없으므로 일치가 조각에 걸치지 않습니다.
-            chunk_end = memchr::memchr2(b'\n', b'\r', &buf[chunk_end..])
+            let aligned = memchr::memchr2(b'\n', b'\r', &buf[chunk_end..])
                 .map_or(buf.len(), |index| chunk_end + index);
+            // 긴 줄에서는 그 사이에 줄바꿈이 없다는 것을 줄 번호 카운터에 알려 다시 세지 않게 합니다.
+            if aligned - chunk_end > TEXT_CHUNK_SIZE {
+                search.counter.note_break_free(chunk_end, aligned);
+            }
+            chunk_end = aligned;
         }
         if is_ascii_chunk(&buf[chunk_start..chunk_end]) {
             // ASCII 본문의 key는 ASCII뿐이므로 비ASCII 검색어는 일치할 수 없습니다.
@@ -911,7 +1129,7 @@ fn search_utf8_text(
 /// 유발 글자가 있는 줄과, 일치 바로 뒤에 변환 대상 글자가 붙은 줄만 `key()`로 바꿔 비교합니다.
 fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey::Triggers) {
     let buf = search.buf;
-    let finder = search.matcher.raw_finder();
+    let matcher = search.matcher;
     let mut convert_lines: Vec<(usize, usize)> = Vec::new();
     let mut chunk_start = 0usize;
     while chunk_start < buf.len() {
@@ -921,13 +1139,39 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
         let mut chunk_end = (chunk_start + TEXT_CHUNK_SIZE).min(buf.len());
         if chunk_end < buf.len() {
             // 조각 끝을 줄바꿈 위치에 맞춥니다. 검색어에는 줄바꿈이 없으므로 일치가 조각에 걸치지 않습니다.
-            chunk_end = memchr::memchr2(b'\n', b'\r', &buf[chunk_end..])
-                .map_or(buf.len(), |index| chunk_end + index);
+            // 다음 줄바꿈은 한 조각 크기 안에서만 찾고, 없으면 긴 줄로 따로 처리합니다.
+            let window_end = (chunk_end + TEXT_CHUNK_SIZE).min(buf.len());
+            match memchr::memchr2(b'\n', b'\r', &buf[chunk_end..window_end]) {
+                Some(index) => chunk_end += index,
+                None if window_end == buf.len() => chunk_end = buf.len(),
+                None => {
+                    // 조각 안의 마지막 줄바꿈까지는 보통 조각으로 처리하고, 그 뒤의 긴 줄은 창 단위로 처리합니다.
+                    match memchr::memrchr2(b'\n', b'\r', &buf[chunk_start + 1..chunk_end]) {
+                        Some(index) => chunk_end = chunk_start + 1 + index,
+                        None => {
+                            let line_start = if matches!(buf[chunk_start], b'\n' | b'\r') {
+                                skip_line_break(buf, chunk_start)
+                            } else {
+                                chunk_start
+                            };
+                            match search_long_line(search, triggers, line_start) {
+                                Some(line_end) => {
+                                    chunk_start = line_end;
+                                    continue;
+                                }
+                                None => return,
+                            }
+                        }
+                    }
+                }
+            }
         }
         convert_lines.clear();
         if !is_ascii_chunk(&buf[chunk_start..chunk_end]) {
             triggers.scan(buf, chunk_start, chunk_end, |position| {
-                convert_lines.push(textkey::line_bounds(buf, position));
+                let bounds = textkey::line_bounds(buf, position);
+                convert_lines.push(bounds);
+                bounds.1
             });
             convert_lines.sort_unstable();
             convert_lines.dedup();
@@ -937,27 +1181,37 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
         // 같은 줄의 원본 일치는 줄이 끝날 때까지 모았다가, 줄이 변환되지 않았을 때만 기록합니다.
         let mut pending: Vec<(usize, usize)> = Vec::new();
         let mut pending_line: Option<(usize, usize)> = None;
-        for hit in finder.find_iter(&buf[chunk_start..chunk_end]) {
-            let start = chunk_start + hit.start();
+        for (hit_start, hit_len) in matcher.raw_hits_in(&buf[chunk_start..chunk_end]) {
+            let start = chunk_start + hit_start;
             if start < converted_until {
                 continue;
             }
-            let bounds = search.bounds(start);
-            if pending_line != Some(bounds) {
+            // 앞 줄에 모아 둔 원본 일치를 기록합니다(이 일치는 그 줄 뒤에 있음).
+            if pending_line.is_some_and(|line| start > line.1) {
                 for (hit_start, hit_len) in pending.drain(..) {
+                    if search.full() {
+                        return;
+                    }
                     search.raw_hit(hit_start, hit_len);
                 }
-                pending_line = Some(bounds);
+                pending_line = None;
             }
-            // 이 일치보다 앞에 있는 변환 대상 줄을 먼저 처리합니다.
-            while next_convert < convert_lines.len() && convert_lines[next_convert].0 < bounds.0 {
-                let (line_start, line_end) = convert_lines[next_convert];
-                search.converted_line(line_start, line_end);
-                next_convert += 1;
+            // 이 일치보다 앞에서 끝나는 변환 대상 줄을 먼저 처리합니다(결과는 위치 순서).
+            let before = convert_lines[next_convert..].partition_point(|line| line.1 < start);
+            search.converted_lines(&convert_lines[next_convert..next_convert + before]);
+            next_convert += before;
+            if search.full() {
+                return;
+            }
+            // 줄 번호 카운터를 먼저 옮겨, 줄 시작을 찾을 때 지나온 구간을 다시 훑지 않게 합니다.
+            search.counter.line_at(buf, start);
+            let bounds = search.bounds(start);
+            if pending_line.is_none() {
+                pending_line = Some(bounds);
             }
             let in_trigger_line =
                 next_convert < convert_lines.len() && convert_lines[next_convert].0 == bounds.0;
-            if in_trigger_line || textkey::variant_at(buf, start + hit.len()) {
+            if in_trigger_line || textkey::variant_at(buf, start + hit_len) {
                 if in_trigger_line {
                     next_convert += 1;
                 }
@@ -967,7 +1221,7 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
                 search.converted_line(bounds.0, bounds.1);
                 converted_until = bounds.1.max(start + 1);
             } else {
-                pending.push((start, hit.len()));
+                pending.push((start, hit_len));
             }
             if search.full() {
                 return;
@@ -978,13 +1232,14 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
             }
         }
         for (hit_start, hit_len) in pending.drain(..) {
-            search.raw_hit(hit_start, hit_len);
-        }
-        for &(line_start, line_end) in &convert_lines[next_convert..] {
-            search.converted_line(line_start, line_end);
             if search.full() {
                 return;
             }
+            search.raw_hit(hit_start, hit_len);
+        }
+        search.converted_lines(&convert_lines[next_convert..]);
+        if search.full() {
+            return;
         }
         chunk_start = chunk_end;
     }
@@ -1029,40 +1284,6 @@ fn detect_text_search_encoding(data: &[u8], pattern: &str, is_exact: bool) -> &'
     detect_encoding(data)
 }
 
-/// 디코딩한 줄 하나를 비교합니다. 디코딩한 위치는 원본 인코딩의 위치가 아니므로 위치는 보고하지 않습니다.
-fn collect_decoded_line(
-    line: &str,
-    line_number: usize,
-    matcher: &textkey::Matcher,
-    is_exact: bool,
-
-    max_per_file: usize,
-    results: &mut Vec<RawMatch>,
-) -> bool {
-    if is_exact {
-        if matcher.equals_trimmed(line) {
-            let content = extract_line_content_bytes(line.as_bytes(), 0, line.len(), None, None);
-            results.push((line_number, content, None, None));
-            return results.len() > max_per_file;
-        }
-        return false;
-    }
-    for hit in matcher.hits(line) {
-        let content = extract_line_content_bytes(
-            line.as_bytes(),
-            0,
-            line.len(),
-            hit.map(|(start, _)| start),
-            hit.map(|(_, length)| length),
-        );
-        results.push((line_number, content, None, None));
-        if results.len() > max_per_file {
-            return true;
-        }
-    }
-    false
-}
-
 /// 디코딩이 필요한 텍스트(UTF-16·CP949 등)를 청크 단위로 검색합니다.
 /// 줄바꿈은 LF, CRLF, CR이며, 청크 끝의 CR은 다음 청크의 LF와 합쳐질 수 있으므로 기다립니다.
 #[allow(clippy::too_many_arguments)]
@@ -1101,45 +1322,38 @@ fn search_non_utf8_chunks(
         let finished = input_offset >= mmap.len();
         pending.push_str(&decoded);
 
+        // 완전한 줄까지만 검색합니다. 마지막 줄바꿈(CRLF는 CR부터)은 다음 조각으로 넘겨,
+        // 조각 경계에 걸친 CRLF를 한 번만 세게 합니다.
         let bytes = pending.as_bytes();
-        let mut line_start = 0usize;
-        while let Some(relative) = memchr::memchr2(b'\n', b'\r', &bytes[line_start..]) {
-            let terminator = line_start + relative;
-            let terminator_len = if bytes[terminator] == b'\n' {
-                1
-            } else if terminator + 1 < bytes.len() {
-                if bytes[terminator + 1] == b'\n' {
-                    2
-                } else {
-                    1
+        let mut cut = if finished {
+            bytes.len()
+        } else {
+            match memchr::memrchr2(b'\n', b'\r', bytes) {
+                Some(position)
+                    if bytes[position] == b'\n' && position > 0 && bytes[position - 1] == b'\r' =>
+                {
+                    position - 1
                 }
-            } else if finished {
-                1
-            } else {
-                // 청크 끝의 CR: 다음 청크가 LF로 시작하면 CRLF 한 번입니다.
-                break;
-            };
-            if results.len() > max_per_file {
-                return;
+                Some(position) => position,
+                None => 0,
             }
-            if line_number.is_multiple_of(1000) && stop_flag.load(Ordering::Relaxed) {
-                return;
-            }
-            if collect_decoded_line(
-                &pending[line_start..terminator],
-                line_number,
+        };
+        if cut > bytes.len() {
+            cut = bytes.len();
+        }
+        if cut > 0 {
+            if search_decoded_region(
+                &bytes[..cut],
+                &mut line_number,
                 matcher,
                 is_exact,
+                stop_flag,
                 max_per_file,
                 results,
             ) {
                 return;
             }
-            line_number += 1;
-            line_start = terminator + terminator_len;
-        }
-        if line_start > 0 {
-            pending.drain(..line_start);
+            pending.drain(..cut);
         }
 
         if consumed == 0 {
@@ -1148,9 +1362,40 @@ fn search_non_utf8_chunks(
     }
 
     if !pending.is_empty() && results.len() <= max_per_file && !stop_flag.load(Ordering::Relaxed) {
-        let line = pending.strip_suffix('\r').unwrap_or(&pending);
-        collect_decoded_line(line, line_number, matcher, is_exact, max_per_file, results);
+        let bytes = pending.as_bytes();
+        search_decoded_region(
+            bytes,
+            &mut line_number,
+            matcher,
+            is_exact,
+            stop_flag,
+            max_per_file,
+            results,
+        );
     }
+}
+
+/// 디코딩한 텍스트 구간을 UTF-8 경로로 검색합니다. `line_number`는 구간 첫 줄의 번호이며,
+/// 끝나면 구간 뒤 첫 줄의 번호로 바뀝니다. 디코딩한 위치는 원본 바이트 위치가 아니므로
+/// 위치는 보고하지 않습니다(미리보기의 강조 위치는 유지). 상한을 넘거나 중지되면 참입니다.
+fn search_decoded_region(
+    region: &[u8],
+    line_number: &mut usize,
+    matcher: &textkey::Matcher,
+    is_exact: bool,
+    stop_flag: &Arc<AtomicBool>,
+    max_per_file: usize,
+    results: &mut Vec<RawMatch>,
+) -> bool {
+    let mut found: Vec<RawMatch> = Vec::new();
+    let budget = max_per_file.saturating_sub(results.len());
+    search_utf8_text(region, matcher, is_exact, stop_flag, budget, &mut found);
+    let base = *line_number - 1;
+    for (line, content, _, _) in found {
+        results.push((base + line, content, None, None));
+    }
+    *line_number += textkey::LineCounter::new().line_at(region, region.len()) - 1;
+    results.len() > max_per_file || stop_flag.load(Ordering::Relaxed)
 }
 
 struct InternalSearchParams<'a> {
@@ -1193,9 +1438,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
         max_json_size,
     } = params;
 
-    if should_exclude_recycle_path(path) {
-        return None;
-    }
+    // 휴지통 경로 제외는 호출하는 쪽(디렉터리 순회·파일 목록·단일 파일)에서 파일마다 한 번만 확인합니다.
 
     let ext = path
         .extension()
@@ -2912,6 +3155,78 @@ mod tests {
                     "text={text:?} pattern={pattern:?} exact={exact}"
                 );
             }
+        }
+    }
+
+    /// 조각 크기보다 긴 줄(창 단위 처리)에서 창 경계 근처에 검색어·유발 글자·결합 부호를 넣어도
+    /// 기준 구현과 결과가 같은지 확인합니다.
+    #[test]
+    fn long_lines_match_the_line_by_line_reference() {
+        let inserts = [
+            "ka",
+            "KA",
+            "st",
+            "\u{FB06}",
+            "\u{212A}a",
+            "k\u{301}",
+            "e",
+            "\u{E9}",
+            "\u{AC00}",
+            "\u{1100}\u{1161}",
+            "\u{430}",
+            "\n",
+            "\r\n",
+            "\r",
+            "\u{DF}",
+        ];
+        let patterns = ["ka", "st", "k", "e", "\u{AC00}", "\u{430}"];
+        let mut state = 0x0BAD_C0DE_1234_5678u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % bound as u64) as usize
+        };
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        for round in 0..240 {
+            let total = TEXT_CHUNK_SIZE * 3 + next(TEXT_CHUNK_SIZE);
+            let mut bytes = vec![b'x'; total];
+            let mut places: Vec<(usize, &str)> = Vec::new();
+            for _ in 0..(4 + next(12)) {
+                // 창 경계(조각 크기의 배수) 근처에 주로 넣습니다.
+                let boundary = TEXT_CHUNK_SIZE * (1 + next(3));
+                let position = (boundary + next(9)).saturating_sub(4).min(total - 8);
+                places.push((position, inserts[next(inserts.len())]));
+            }
+            places.sort_by_key(|place| std::cmp::Reverse(place.0));
+            for (position, piece) in places {
+                bytes.splice(position..position, piece.bytes());
+            }
+            let text = String::from_utf8(bytes).unwrap();
+            let pattern = patterns[round % patterns.len()];
+            let matcher = textkey::Matcher::new(pattern).unwrap();
+            let results =
+                do_search_with_mmap(text.as_bytes(), UTF_8, &matcher, false, &stop_flag, 10_000);
+            let mut actual: Vec<(usize, usize)> = Vec::new();
+            for (line, _content, offset, length) in &results {
+                if let (Some(offset), Some(length)) = (offset, length) {
+                    let piece = &text.as_bytes()[*offset..offset + length];
+                    assert_eq!(
+                        textkey::key_reference(std::str::from_utf8(piece).unwrap()),
+                        textkey::key_reference(pattern),
+                        "wrong position round={round} pattern={pattern:?}"
+                    );
+                }
+                match actual.last_mut() {
+                    Some((last, count)) if last == line => *count += 1,
+                    _ => actual.push((*line, 1)),
+                }
+            }
+            assert_eq!(
+                actual,
+                reference_text_results(&text, pattern, false),
+                "round={round} pattern={pattern:?}"
+            );
         }
     }
 

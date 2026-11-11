@@ -208,12 +208,18 @@ impl<'data> JsonSearchState<'data> {
                 b'"' => {
                     let token_start = cursor;
                     cursor += 1;
+                    // 문자열 안은 따옴표와 역슬래시만 의미가 있으므로 SIMD 탐색으로 건너뜁니다.
                     while cursor < self.mmap.len() {
+                        let Some(offset) = memchr::memchr2(b'"', b'\\', &self.mmap[cursor..])
+                        else {
+                            break;
+                        };
+                        cursor += offset;
                         match self.mmap[cursor] {
                             b'\\' => {
                                 cursor = cursor.saturating_add(2);
                             }
-                            b'"' => {
+                            _ => {
                                 let token_end = cursor + 1;
                                 self.scan_offset = token_end;
                                 return Some(JsonTokenLocation {
@@ -222,7 +228,6 @@ impl<'data> JsonSearchState<'data> {
                                     end: token_end,
                                 });
                             }
-                            _ => cursor += 1,
                         }
                     }
                     self.locations_reliable = false;
@@ -284,7 +289,7 @@ impl<'data> JsonSearchState<'data> {
             return;
         }
         // 변환해야 비교되는 값은 원본 위치를 알 수 없으므로 위치를 생략합니다(틀린 위치 금지).
-        let raw_position_valid = self.matcher.raw_search_valid(value);
+        let raw_position_valid = self.matcher.raw_positions_valid(value);
 
         let (line, found_pos, found_len) = token_location.map_or((0, None, None), |location| {
             if !raw_position_valid {
