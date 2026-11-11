@@ -134,6 +134,21 @@ class SettingsDialog(QDialog):
         compact_rows_row.addStretch()
         compact_rows_row.addWidget(self.compact_rows_combo)
         appearance_layout.addLayout(compact_rows_row)
+        filter_layout_row = QHBoxLayout()
+        filter_layout_label = QLabel(AppStrings.FILTER_LAYOUT_LABEL)
+        self.filter_layout_combo = QComboBox()
+        self.filter_layout_combo.addItem(AppStrings.FILTER_LAYOUT_STACKED, Constants.FILTER_LAYOUT_STACKED)
+        self.filter_layout_combo.addItem(AppStrings.FILTER_LAYOUT_TABS, Constants.FILTER_LAYOUT_TABS)
+        current_layout = self.config_manager.get(Constants.CONFIG_KEY_FILTER_LAYOUT, Constants.DEFAULT_FILTER_LAYOUT)
+        layout_index = self.filter_layout_combo.findData(current_layout)
+        self.filter_layout_combo.setCurrentIndex(max(0, layout_index))
+        self.filter_layout_combo.setFixedWidth(INPUT_WIDTH)
+        self.filter_layout_combo.currentIndexChanged.connect(self._on_filter_layout_changed)
+        filter_layout_label.setBuddy(self.filter_layout_combo)
+        filter_layout_row.addWidget(filter_layout_label)
+        filter_layout_row.addStretch()
+        filter_layout_row.addWidget(self.filter_layout_combo)
+        appearance_layout.addLayout(filter_layout_row)
         layout_lock_row = QHBoxLayout()
         layout_lock_label = QLabel(AppStrings.MENU_LOCK_LAYOUT)
         self.lock_layout_combo = QComboBox()
@@ -601,6 +616,14 @@ class SettingsDialog(QDialog):
         if not isinstance(compact, bool):
             return
         self.config_manager.set(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, compact)
+        self.display_density_changed.emit()
+
+    def _on_filter_layout_changed(self, index):
+        layout = self.filter_layout_combo.itemData(index)
+        if layout not in (Constants.FILTER_LAYOUT_TABS, Constants.FILTER_LAYOUT_STACKED):
+            return
+        self.config_manager.set(Constants.CONFIG_KEY_FILTER_LAYOUT, layout)
+        # 표시 설정 변경 신호를 함께 써서 열린 모든 검색 탭에 바로 반영합니다.
         self.display_density_changed.emit()
 
     def _on_theme_changed(self, index):

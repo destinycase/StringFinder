@@ -77,6 +77,7 @@ class ConfigManager:
             Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS: [60, 400, 400],
             Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES: Constants.DEFAULT_CONTEXT_PREVIEW_LINES,
             Constants.CONFIG_KEY_COMPACT_RESULT_ROWS: True,
+            Constants.CONFIG_KEY_FILTER_LAYOUT: Constants.DEFAULT_FILTER_LAYOUT,
             Constants.CONFIG_KEY_EXCLUDE_HIDDEN: True,
             Constants.CONFIG_KEY_CONTEXT_AFTER_LINES: Constants.DEFAULT_CONTEXT_PREVIEW_LINES,
             Constants.CONFIG_KEY_EXTERNAL_EDITOR: {
@@ -191,6 +192,11 @@ class ConfigManager:
                         merged[Constants.CONFIG_KEY_THEME] = self._defaults.get(
                             Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME
                         )
+                    if merged.get(Constants.CONFIG_KEY_FILTER_LAYOUT) not in (
+                        Constants.FILTER_LAYOUT_TABS,
+                        Constants.FILTER_LAYOUT_STACKED,
+                    ):
+                        merged[Constants.CONFIG_KEY_FILTER_LAYOUT] = Constants.DEFAULT_FILTER_LAYOUT
                     for key in (
                         Constants.CONFIG_KEY_COMPACT_RESULT_ROWS,
                         Constants.CONFIG_KEY_EXCLUDE_HIDDEN,

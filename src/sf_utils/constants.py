@@ -104,6 +104,11 @@ class Constants:
     CONFIG_KEY_MATCH_COLUMN_WIDTHS = "match_column_widths"
     CONFIG_KEY_CONTEXT_BEFORE_LINES = "context_before_lines"
     CONFIG_KEY_COMPACT_RESULT_ROWS = "compact_result_rows"
+    # 확장자·파일명 필터 표시 방식: 탭(하나씩) 또는 위아래 패널(동시에)
+    CONFIG_KEY_FILTER_LAYOUT = "filter_layout"
+    FILTER_LAYOUT_TABS = "tabs"
+    FILTER_LAYOUT_STACKED = "stacked"
+    DEFAULT_FILTER_LAYOUT = FILTER_LAYOUT_STACKED
     CONFIG_KEY_EXCLUDE_HIDDEN = "exclude_hidden"
     CONFIG_KEY_CONTEXT_AFTER_LINES = "context_after_lines"
     CONFIG_KEY_EXTERNAL_EDITOR = "external_editor"

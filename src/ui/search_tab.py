@@ -11,12 +11,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
     QFileIconProvider,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSplitter,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -109,16 +111,32 @@ class SearchTab(QMainWindow):
         # File selection stays separate from document interpretation controls.
         self.filter_dock = QDockWidget(AppStrings.DOCK_FILTER_TITLE, self)
         self.filter_dock.setObjectName("filtersDockV2")
-        self.filter_tabs = QTabWidget()
         self.ext_panel = ExtensionFilterPanel()
         self.search_panel.special_mode_changed.connect(self.ext_panel.set_special_mode)
         self.ext_panel.special_mode_changed.connect(self.search_panel.set_special_mode)
-        self.filter_tabs.addTab(self.ext_panel, "")
         self.ext_panel.filter_changed.connect(self._sync_filters_to_config)
-        # 파일명 필터 도크
         self.filename_panel = FilenameFilterPanel()
-        self.filter_tabs.addTab(self.filename_panel, "")
-        self.filter_dock.setWidget(self.filter_tabs)
+        # 확장자·파일명 필터는 설정에 따라 탭(하나씩) 또는 위아래 패널(동시에 보임)로 표시합니다.
+        # 두 방식의 그릇을 모두 만들어 두고, 설정이 바뀌면 두 패널만 옮겨 담습니다.
+        self.filter_tabs = QTabWidget()
+        self.filter_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.filter_splitter.setChildrenCollapsible(False)
+        self.ext_group = QGroupBox()
+        self.filename_group = QGroupBox()
+        self._filter_group_layouts = []
+        for group in (self.ext_group, self.filename_group):
+            group_layout = QVBoxLayout(group)
+            group_layout.setContentsMargins(4, 4, 4, 4)
+            self._filter_group_layouts.append(group_layout)
+            self.filter_splitter.addWidget(group)
+        self.filter_container = QWidget()
+        container_layout = QVBoxLayout(self.filter_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.addWidget(self.filter_tabs)
+        container_layout.addWidget(self.filter_splitter)
+        self.filter_dock.setWidget(self.filter_container)
+        self._filter_layout = None
+        self.apply_filter_layout()
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.filter_dock)
         self.filename_panel.filter_changed.connect(self._sync_filters_to_config)
         self.filename_panel.search_triggered.connect(self.start_search)
@@ -204,9 +222,43 @@ class SearchTab(QMainWindow):
 
     def _refresh_filter_ui(self):
         self.search_panel.set_special_mode(self.ext_panel.get_special_mode())
-        self.filter_tabs.setTabText(0, AppStrings.FILTER_EXTENSION_TAB.format(len(self.ext_panel.get_checked_extensions())))
-        self.filter_tabs.setTabText(1, AppStrings.FILTER_FILENAME_TAB.format(len(self.filename_panel.get_selected_filenames())))
+        self._refresh_filter_titles()
         self.filter_status_changed.emit()
+
+    def filter_titles(self):
+        """확장자·파일명 필터 제목(선택 개수 포함)입니다. 탭 이름과 패널 제목에 같이 씁니다."""
+        return (
+            AppStrings.FILTER_EXTENSION_TAB.format(len(self.ext_panel.get_checked_extensions())),
+            AppStrings.FILTER_FILENAME_TAB.format(len(self.filename_panel.get_selected_filenames())),
+        )
+
+    def _refresh_filter_titles(self):
+        ext_title, filename_title = self.filter_titles()
+        self.ext_group.setTitle(ext_title)
+        self.filename_group.setTitle(filename_title)
+        for index, title in enumerate((ext_title, filename_title)):
+            if index < self.filter_tabs.count():
+                self.filter_tabs.setTabText(index, title)
+
+    def apply_filter_layout(self):
+        """설정의 필터 표시 방식(탭 / 위아래 패널)을 적용합니다. 선택 상태는 그대로 유지됩니다."""
+        layout = self.config_manager.get(Constants.CONFIG_KEY_FILTER_LAYOUT, Constants.DEFAULT_FILTER_LAYOUT)
+        if layout not in (Constants.FILTER_LAYOUT_TABS, Constants.FILTER_LAYOUT_STACKED):
+            layout = Constants.DEFAULT_FILTER_LAYOUT
+        if layout == self._filter_layout:
+            return
+        self._filter_layout = layout
+        if layout == Constants.FILTER_LAYOUT_TABS:
+            self.filter_tabs.addTab(self.ext_panel, "")
+            self.filter_tabs.addTab(self.filename_panel, "")
+        else:
+            while self.filter_tabs.count():
+                self.filter_tabs.removeTab(0)
+            self._filter_group_layouts[0].addWidget(self.ext_panel)
+            self._filter_group_layouts[1].addWidget(self.filename_panel)
+        self.filter_tabs.setVisible(layout == Constants.FILTER_LAYOUT_TABS)
+        self.filter_splitter.setVisible(layout == Constants.FILTER_LAYOUT_STACKED)
+        self._refresh_filter_titles()
 
     def get_filter_status_text(self):
         selections = [self.search_panel.search_mode_combo.currentText()]
@@ -221,6 +273,7 @@ class SearchTab(QMainWindow):
         self.log_dialog.activateWindow()
 
     def apply_display_density(self):
+        self.apply_filter_layout()
         compact = self.config_manager.get(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, True) is True
         self.result_view_panel.apply_display_density()
         for panel in (self.folder_panel, self.ext_panel, self.filename_panel):

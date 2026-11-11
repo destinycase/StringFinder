@@ -1,4 +1,6 @@
 """Combined filter tabs and selection-only status must preserve search inputs."""
+import os
+
 import pytest
 from PySide6.QtWidgets import QDockWidget
 
@@ -30,9 +32,10 @@ def window(qtbot, mock_config_manager, request):
 
 def test_single_filter_dock_and_distinct_extension_count(window):
     tab = window.tab_widget.currentWidget()
-    assert tab.filter_tabs.count() == 2
-    assert tab.filter_tabs.widget(0) is tab.ext_panel
-    assert tab.filter_tabs.widget(1) is tab.filename_panel
+    # 기본은 위아래 패널: 확장자·파일명 필터가 한 도크 안에 동시에 보입니다.
+    assert tab.filter_tabs.count() == 0 and tab.filter_tabs.isHidden()
+    assert tab.ext_group.isAncestorOf(tab.ext_panel)
+    assert tab.filename_group.isAncestorOf(tab.filename_panel)
     assert {d.objectName() for d in tab.findChildren(QDockWidget)} == {
         C.OBJ_NAME_SEARCH_DOCK, C.OBJ_NAME_FOLDER_DOCK, "filtersDockV2", "resultsDock"
     }
@@ -41,16 +44,16 @@ def test_single_filter_dock_and_distinct_extension_count(window):
     tab._refresh_filter_ui()
     tab.ext_panel.add_extension("xlsx,xlsm,xls,xlsb")
     tab.ext_panel.add_extension("xlsx,txt")
-    assert tab.filter_tabs.tabText(0) == AppStrings.FILTER_EXTENSION_TAB.format(5)
+    assert tab.filter_titles()[0] == AppStrings.FILTER_EXTENSION_TAB.format(5)
     tab.ext_panel.ext_list.itemWidget(tab.ext_panel.ext_list.item(1)).checkbox.setChecked(False)
-    assert tab.filter_tabs.tabText(0) == AppStrings.FILTER_EXTENSION_TAB.format(4)
+    assert tab.filter_titles()[0] == AppStrings.FILTER_EXTENSION_TAB.format(4)
     tab.filename_panel.add_filename("report", checked=False)
-    assert tab.filter_tabs.tabText(1) == AppStrings.FILTER_FILENAME_TAB.format(0)
+    assert tab.filter_titles()[1] == AppStrings.FILTER_FILENAME_TAB.format(0)
     tab.filename_panel.toggle_all(True)
-    assert tab.filter_tabs.tabText(1) == AppStrings.FILTER_FILENAME_TAB.format(1)
+    assert tab.filter_titles()[1] == AppStrings.FILTER_FILENAME_TAB.format(1)
     tab.ext_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
     assert tab.ext_panel.get_selected_extensions() == [C.EXT_JSON]
-    assert tab.filter_tabs.tabText(0) == AppStrings.FILTER_EXTENSION_TAB.format(4)
+    assert tab.filter_titles()[0] == AppStrings.FILTER_EXTENSION_TAB.format(4)
     assert ".." not in window.filter_status_label.text()
     for panel in (tab.folder_panel, tab.ext_panel, tab.filename_panel):
         assert panel.status_label.isHidden()
@@ -102,11 +105,11 @@ def test_restoration_lock_and_layout_fallback(window):
     tab.filename_panel.add_filename("report")
     saved = tab.get_state()
     restored = window.add_new_tab(state=saved)
-    assert restored.filter_tabs.tabText(0) == AppStrings.FILTER_EXTENSION_TAB.format(4)
-    assert restored.filter_tabs.tabText(1) == AppStrings.FILTER_FILENAME_TAB.format(1)
+    assert restored.filter_titles()[0] == AppStrings.FILTER_EXTENSION_TAB.format(4)
+    assert restored.filter_titles()[1] == AppStrings.FILTER_FILENAME_TAB.format(1)
     assert window.filter_status_label.text() == restored.get_filter_status_text()
     restored._set_inputs_enabled(False)
-    assert not restored.filter_tabs.isEnabled()
+    assert not restored.filter_dock.isEnabled()
     assert not restored.search_panel.search_mode_combo.isEnabled()
     restored._set_inputs_enabled(True)
     restored.reset_layout()
@@ -119,7 +122,7 @@ def test_restoration_lock_and_layout_fallback(window):
     window.config_manager.set(C.CONFIG_KEY_DOCK_LAYOUT_STATE, old_state)
     new = window.add_new_tab()
     assert not new.filter_dock.isHidden()
-    assert new.filter_tabs.count() == 2
+    assert new.filter_splitter.count() == 2 and not new.filter_splitter.isHidden()
 
 
 def test_errors_remain_visible_without_replacing_filter_status(window):
@@ -140,3 +143,55 @@ def test_session_save_failure_does_not_hide_filters_or_block(window, monkeypatch
     assert window._notice_dialog.isVisible() and not window._notice_dialog.isModal()
     assert window._notice_dialog.text() == AppStrings.ERROR_SESSION_SAVE.format(window.tab_widget.tabText(0))
     window._notice_dialog.close()
+
+
+def test_filter_layout_option_switches_between_stacked_panels_and_tabs(window):
+    from ui.settings_dialog import SettingsDialog
+
+    tab = window.tab_widget.currentWidget()
+    second = window.add_new_tab()
+    window.tab_widget.setCurrentWidget(tab)
+    assert window.config_manager.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_STACKED
+    tab.ext_panel.restore_state({"txt": True, "log": False})
+    tab.filename_panel.restore_state({})
+    tab.filename_panel.add_filename("report")
+    tab._refresh_filter_ui()
+    assert tab.ext_group.title() == AppStrings.FILTER_EXTENSION_TAB.format(1)
+    assert tab.filename_group.title() == AppStrings.FILTER_FILENAME_TAB.format(1)
+    dialog = SettingsDialog(window.config_manager, window)
+    dialog.display_density_changed.connect(window._apply_display_density)
+    combo = dialog.filter_layout_combo
+    assert [combo.itemData(i) for i in range(combo.count())] == [C.FILTER_LAYOUT_STACKED, C.FILTER_LAYOUT_TABS]
+    combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_TABS))
+    assert window.config_manager.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_TABS
+    for current in (tab, second):
+        # 열린 모든 탭에 바로 반영되고 선택 상태는 그대로입니다.
+        assert current.filter_tabs.count() == 2 and current.filter_splitter.isHidden()
+        assert current.filter_tabs.widget(0) is current.ext_panel
+        assert current.filter_tabs.widget(1) is current.filename_panel
+    assert tab.filter_tabs.tabText(0) == AppStrings.FILTER_EXTENSION_TAB.format(1)
+    assert tab.filter_tabs.tabText(1) == AppStrings.FILTER_FILENAME_TAB.format(1)
+    assert tab.ext_panel.get_selected_extensions() == ["txt"]
+    assert tab.filename_panel.get_selected_filenames() == ["report"]
+    combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_STACKED))
+    assert tab.filter_tabs.count() == 0 and not tab.filter_splitter.isHidden()
+    assert tab.filename_panel.get_selected_filenames() == ["report"]
+    dialog.close()
+
+
+def test_invalid_saved_filter_layout_falls_back_to_stacked(mock_config_manager):
+    import json
+    from sf_utils.config_manager import ConfigManager
+
+    path = mock_config_manager.config_path
+    data = json.loads(open(path, encoding="utf-8").read()) if os.path.exists(path) else {}
+    data[C.CONFIG_KEY_FILTER_LAYOUT] = "sideways"
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(data, handle)
+    mock_config_manager.stop()
+    ConfigManager._instance = None
+    reloaded = ConfigManager()
+    try:
+        assert reloaded.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_STACKED
+    finally:
+        reloaded.stop()
