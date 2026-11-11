@@ -25,7 +25,7 @@ def test_mode_order(qtbot, mock_config_manager, language):
     qtbot.addWidget(tab)
     panel = tab.search_panel
     row = panel.input_layout
-    assert row.indexOf(tab.search_panel.search_settings_button) < row.indexOf(panel.search_btn)
+    assert row.indexOf(tab.search_panel.search_mode_combo) < row.indexOf(panel.search_btn)
     tab.resize(1280, 640)
     tab.show()
     qtbot.waitUntil(tab.isVisible)
@@ -83,7 +83,7 @@ def test_help_button_order_localized_content_and_reuse(qtbot, mock_config_manage
     assert dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Close).text() == AppStrings.BTN_CLOSE
     text = dialog.findChild(QTextBrowser).toPlainText()
     assert "xlsx,xlsm,xls,xlsb" in text
-    assert AppStrings.SPECIAL_SEARCH_LABEL in text
+    assert AppStrings.SEARCH_MODE_LABEL in text and AppStrings.SPECIAL_SEARCH_OFF_DISPLAY in text
     assert window.help_button.geometry().left() < window.log_button.geometry().left()
     assert window.log_button.geometry().left() < window.settings_button.geometry().left()
     bar = window.statusBar()

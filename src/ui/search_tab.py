@@ -209,7 +209,7 @@ class SearchTab(QMainWindow):
         self.filter_status_changed.emit()
 
     def get_filter_status_text(self):
-        selections = [self.search_panel.search_settings_button.text()]
+        selections = [self.search_panel.search_mode_combo.currentText()]
         selections.extend(panel.status_label.text().replace("\n", " · ") for panel in
                           (self.folder_panel, self.ext_panel, self.filename_panel))
         return " | ".join(selections)

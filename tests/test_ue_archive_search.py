@@ -39,6 +39,14 @@ SAMPLE = {
 }
 ENGINES = pytest.mark.parametrize("precise", [False, True], ids=["rust", "python"])
 
+def choose_search_mode(panel, mode):
+    """사용자가 검색 모드 콤보 박스에서 ``mode``(저장 값)를 고른 것과 같이 처리합니다."""
+    index = panel.search_mode_combo.findData(mode)
+    assert index >= 0
+    panel.search_mode_combo.setCurrentIndex(index)
+    panel.search_mode_combo.activated.emit(index)
+
+
 
 @pytest.fixture(autouse=True)
 def fixed_policy():
@@ -224,19 +232,17 @@ def language(request):
     set_language(previous)
 
 
-def test_menu_titles_and_compact_button_text(qtbot, language):
+def test_archive_mode_titles_in_combo(qtbot, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    titles = [action.text() for action in panel.value_menu.actions()][-2:]
-    compact = AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[7:]
+    combo = panel.search_mode_combo
+    titles = [combo.itemText(index) for index in range(combo.count())][-2:]
     if language == "ko":
         assert titles == ["UE 현지화 archive (부분 일치)", "UE 현지화 archive (정확히 일치)"]
-        assert compact == ["ARCHIVE (부분 일치)", "ARCHIVE (정확히 일치)"]
     else:
         assert titles == ["UE localization archive (contains)", "UE localization archive (exact)"]
-        assert compact == ["ARCHIVE (contains)", "ARCHIVE (exact)"]
-    panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[8]].trigger()
-    assert panel.search_settings_button.text() == compact[1]
+    choose_search_mode(panel, AppStrings.SPECIAL_SEARCH_ITEMS[8])
+    assert combo.currentText() == titles[1]
     for value in AppStrings.SPECIAL_SEARCH_ITEMS[7:]:
         # 다른 형식의 판별 글자가 섞이면 엉뚱한 파서로 연결됩니다.
         assert not any(code.casefold() in value.casefold()
@@ -249,7 +255,7 @@ def test_target_extension_follows_archive_mode(qtbot, mock_config_manager):
 
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
-    tab.search_panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[7]].trigger()
+    choose_search_mode(tab.search_panel, AppStrings.SPECIAL_SEARCH_ITEMS[7])
     assert tab.ext_panel.get_selected_extensions() == [C.EXT_ARCHIVE]
     tab.close()
 

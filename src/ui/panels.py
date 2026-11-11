@@ -2,12 +2,9 @@ from typing import Any, Dict, List, Union, cast
 
 from PySide6.QtCore import QEvent, QPoint, QRegularExpression, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import (
-    QAction,
-    QActionGroup,
     QBrush,
     QPainter,
     QPalette,
-    QPolygon,
     QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
@@ -72,32 +69,6 @@ class SearchInputComboBox(QComboBox):
 
     def set_current_text(self, text: str):
         self.setCurrentText(text)
-
-
-class SearchSettingsButton(QPushButton):
-    """검색 설정 선택 버튼입니다. 글자는 왼쪽에, 눌러서 고르는 버튼임을 알리는 ▼는 오른쪽 끝에 그립니다."""
-
-    ARROW_WIDTH = 8
-    ARROW_HEIGHT = 5
-    ARROW_MARGIN = 9
-    # 글자가 ▼와 겹치지 않도록 오른쪽에 비워 두는 폭입니다.
-    RESERVED_RIGHT = ARROW_WIDTH + ARROW_MARGIN * 2
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        group = QPalette.ColorGroup.Active if self.isEnabled() else QPalette.ColorGroup.Disabled
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(self.palette().color(group, QPalette.ColorRole.ButtonText)))
-        right = self.width() - self.ARROW_MARGIN
-        top = (self.height() - self.ARROW_HEIGHT) // 2
-        painter.drawPolygon(QPolygon([
-            QPoint(right - self.ARROW_WIDTH, top),
-            QPoint(right, top),
-            QPoint(right - self.ARROW_WIDTH // 2, top + self.ARROW_HEIGHT),
-        ]))
-        painter.end()
 
 
 class DragHandle(QWidget):
@@ -503,33 +474,17 @@ class SearchOptionsPanel(QWidget):
         layout = QVBoxLayout(self)
         input_layout = QGridLayout()
         self.input_layout = input_layout
-        self.search_settings_label = QLabel(AppStrings.SEARCH_SETTINGS_LABEL)
-        self.search_settings_button = SearchSettingsButton()
-        self.search_settings_label.setBuddy(self.search_settings_button)
-        self.search_settings_button.setStyleSheet(
-            f"QPushButton {{ text-align: left; padding-left: 8px; "
-            f"padding-right: {SearchSettingsButton.RESERVED_RIGHT}px; }}"
-        )
-        self.search_settings_menu = QMenu(self.search_settings_button)
-        # 검색 방식은 하나로 통합되어, 설정 메뉴에는 값만 검색 선택만 둡니다.
-        self.value_menu = self.search_settings_menu
-        self.value_menu.addSection(AppStrings.SPECIAL_SEARCH_LABEL)
-        self.value_action_group = QActionGroup(self)
-        self.value_action_group.setExclusive(True)
-        self.special_mode_actions = {}
-        # Preserve stored mode labels while presenting JSON before XML.
+        self.search_mode_label = QLabel(AppStrings.SEARCH_MODE_LABEL)
+        # 검색 방식이 하나로 통합되어 선택지는 검색 모드 하나뿐이므로 일반 콤보 박스로 고릅니다.
+        self.search_mode_combo = QComboBox()
+        self.search_mode_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.search_mode_label.setBuddy(self.search_mode_combo)
+        # 저장·엔진 값(SPECIAL_SEARCH_ITEMS)은 항목 데이터로 두고, 표시 문구와 순서(JSON 먼저)는 따로 정합니다.
         for index in (0, 3, 4, 1, 2, 5, 6, 7, 8):
-            label_text = AppStrings.SPECIAL_SEARCH_ITEMS[index]
-            # Presentation changes must not change saved modes or engine inputs.
-            action = QAction(AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index], self)
-            action.setCheckable(True)
-            action.setData(label_text)
-            self.value_action_group.addAction(action)
-            self.value_menu.addAction(action)
-            self.special_mode_actions[label_text] = action
-        self.value_action_group.triggered.connect(self._on_special_action_triggered)
-        self.search_settings_button.clicked.connect(self._open_search_settings)
-        self._refresh_search_settings()
+            self.search_mode_combo.addItem(AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index],
+                                           AppStrings.SPECIAL_SEARCH_ITEMS[index])
+        self._refresh_search_mode()
+        self.search_mode_combo.activated.connect(self._on_search_mode_activated)
         self.search_label = QLabel(AppStrings.SEARCH_LABEL)
         self.search_combo = SearchInputComboBox(
             history_provider=self.config_manager.get_history if self.config_manager is not None else None
@@ -541,7 +496,7 @@ class SearchOptionsPanel(QWidget):
         le = self.search_combo.lineEdit()
         if le:
             le.returnPressed.connect(self.search_started.emit)
-        input_layout.addWidget(self.search_settings_button, 0, 0)
+        input_layout.addWidget(self.search_mode_combo, 0, 0)
         input_layout.addWidget(self.search_label, 0, 1)
         input_layout.addWidget(self.search_combo, 0, 2)
         layout.addLayout(input_layout)
@@ -563,28 +518,18 @@ class SearchOptionsPanel(QWidget):
         input_layout.addWidget(self.stop_btn, 0, 3)
         self._layout_search_controls()
 
-    def _open_search_settings(self):
-        self.search_settings_menu.popup(
-            self.search_settings_button.mapToGlobal(QPoint(0, self.search_settings_button.height()))
-        )
-
     def _layout_search_controls(self):
         if not hasattr(self, "stop_btn"):
             return
-        controls = (self.search_combo, self.search_settings_button, self.search_btn, self.stop_btn)
+        controls = (self.search_combo, self.search_mode_combo, self.search_btn, self.stop_btn)
         for control in controls:
             control.ensurePolished()
         height = max(32, *(control.sizeHint().height() for control in controls))
         for control in controls:
             control.setFixedHeight(height)
-        metrics = self.search_settings_button.fontMetrics()
-        # Reserve the longest selection, independent of the current choice.
-        selections = [value or AppStrings.SEARCH_SETTINGS_TEXT_COMPACT
-                      for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS]
-        self.search_settings_button.setFixedWidth(
-            max(metrics.horizontalAdvance(text) for text in selections) + 48 + SearchSettingsButton.RESERVED_RIGHT
-        )
-        labels = (self.search_label, self.search_settings_label)
+        # 가장 긴 선택지에 맞춘 폭으로 고정해, 선택을 바꿔도 검색줄 배치가 흔들리지 않게 합니다.
+        self.search_mode_combo.setFixedWidth(self.search_mode_combo.sizeHint().width())
+        labels = (self.search_label, self.search_mode_label)
         # Clear narrow-layout constraints before measuring the natural widths.
         for label in labels:
             label.setMinimumWidth(0)
@@ -594,7 +539,7 @@ class SearchOptionsPanel(QWidget):
         available = self.width() - margins.left() - margins.right()
         spacing = max(0, self.input_layout.horizontalSpacing())
         action_width = max(self.search_btn.sizeHint().width(), self.stop_btn.sizeHint().width())
-        settings_width = self.search_settings_button.width()
+        settings_width = self.search_mode_combo.width()
         full_width = sum(label_widths) + 140 + settings_width + action_width + 4 * spacing
         mode = 1 if available >= full_width else 2
         if mode == 2:
@@ -603,13 +548,13 @@ class SearchOptionsPanel(QWidget):
         if mode == self._toolbar_mode:
             return
         self._toolbar_mode = mode
-        for widget in (self.search_settings_label, self.search_settings_button, self.search_label,
+        for widget in (self.search_mode_label, self.search_mode_combo, self.search_label,
                        self.search_combo, self.search_btn, self.stop_btn):
             self.input_layout.removeWidget(widget)
         for column in range(5):
             self.input_layout.setColumnStretch(column, 0)
-        self.input_layout.addWidget(self.search_settings_label, 0, 0)
-        self.input_layout.addWidget(self.search_settings_button, 0, 1, 1, 1 if mode == 1 else 2,
+        self.input_layout.addWidget(self.search_mode_label, 0, 0)
+        self.input_layout.addWidget(self.search_mode_combo, 0, 1, 1, 1 if mode == 1 else 2,
                                     Qt.AlignmentFlag.AlignLeft)
         query_row = 0 if mode == 1 else 1
         self.input_layout.addWidget(self.search_label, query_row, 2 if mode == 1 else 0)
@@ -622,25 +567,22 @@ class SearchOptionsPanel(QWidget):
         super().resizeEvent(event)
         self._layout_search_controls()
 
-    def _refresh_search_settings(self):
-        for label, action in self.special_mode_actions.items():
-            action.setChecked(label == self._special_mode)
-        value = AppStrings.SPECIAL_SEARCH_MENU_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
-        self.search_settings_button.setAccessibleName(AppStrings.SEARCH_SETTINGS_SELECTION.format(value))
-        compact_value = AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
-        self.search_settings_button.setText(compact_value or AppStrings.SEARCH_SETTINGS_TEXT_COMPACT)
+    def _refresh_search_mode(self):
+        index = self.search_mode_combo.findData(self._special_mode)
+        if index >= 0 and index != self.search_mode_combo.currentIndex():
+            self.search_mode_combo.setCurrentIndex(index)
         self._layout_search_controls()
 
     def set_special_mode(self, mode: str):
         normalized = normalize_special_search_mode(mode)
         changed = self._special_mode != normalized
         self._special_mode = normalized
-        self._refresh_search_settings()
+        self._refresh_search_mode()
         if changed:
             self.settings_changed.emit()
 
-    def _on_special_action_triggered(self, action):
-        self.set_special_mode(action.data())
+    def _on_search_mode_activated(self, index: int):
+        self.set_special_mode(self.search_mode_combo.itemData(index))
         self.special_mode_changed.emit(self._special_mode)
 
     def _update_query_length_notice(self, text: str):
@@ -658,11 +600,9 @@ class SearchOptionsPanel(QWidget):
         self.search_btn.setVisible(not searching)
         self.stop_btn.setVisible(searching)
         self.search_combo.setEnabled(not searching)
-        self.search_settings_button.setEnabled(not searching)
-        self.value_action_group.setEnabled(not searching)
+        self.search_mode_combo.setEnabled(not searching)
         if searching:
-            self.search_settings_menu.close()
-            self.value_menu.close()
+            self.search_mode_combo.hidePopup()
         self.search_btn.setEnabled(True)
         self.search_btn.setText(AppStrings.SEARCH_BTN)
         self.search_btn.setStyleSheet(UIStyles.STYLE_SEARCH_BTN_PRIMARY)

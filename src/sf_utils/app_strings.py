@@ -133,18 +133,10 @@ class AppStrings:
     # =========================================================================
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_BINARY_LABEL = "바이너리 파일 제외"
-    SEARCH_SETTINGS_LABEL = "검색 설정"
-    SPECIAL_SEARCH_OFF_DISPLAY = "사용 안 함"
+    SEARCH_MODE_LABEL = "검색 모드"
+    SPECIAL_SEARCH_OFF_DISPLAY = "기본"
     FILENAME_FILTER_INVALID_GROUP = "쉼표 사이에 파일명 조건을 입력하세요."
     SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
-    SPECIAL_SEARCH_LABEL = "값만 검색"
-    SEARCH_SETTINGS_SELECTION = "값만 검색: {}"
-    SEARCH_SETTINGS_TEXT_COMPACT = "전체 텍스트"
-    SPECIAL_SEARCH_COMPACT_ITEMS = [
-        "", "XML 값 (부분 일치)", "XML 값 (정확히 일치)",
-        "JSON 값 (부분 일치)", "JSON 값 (정확히 일치)", "Excel 값 (부분 일치)", "Excel 값 (정확히 일치)",
-        "ARCHIVE (부분 일치)", "ARCHIVE (정확히 일치)",
-    ]
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
     FILTER_FILENAME_TAB = "파일명({})"
@@ -158,7 +150,7 @@ class AppStrings:
     FOLDER_GROUP_NONE = "그룹 없음"
     FOLDER_GROUP_TOGGLE_TOOLTIP = "그룹을 펼치거나 접습니다."
     FOLDER_GROUP_CHECK_TOOLTIP = "그룹 안 폴더를 모두 선택하거나 모두 해제합니다."
-    EXTENSION_FILTER_VALUES_ONLY_NOTICE = "'값만 검색' 사용 시에는 확장자 필터를 사용할 수 없습니다."
+    EXTENSION_FILTER_VALUES_ONLY_NOTICE = "검색 모드가 '기본'이 아닐 때는 확장자 필터를 사용할 수 없습니다."
     FILTER_ITEM_REORDER_TOOLTIP = "끌어서 순서를 바꿉니다. 키보드: Alt+↑/↓"
     SEARCH_HELP_BUTTON = "도움말"
     SEARCH_HELP_TITLE = "검색 도움말"
@@ -177,12 +169,11 @@ class AppStrings:
 		"<p>- 여러 조건은 그중 하나라도 포함되면 대상이며, 체크한 항목이 없으면 파일명을 제한하지 않습니다.</p>"
 		"<p>- 파일명 필터에는 와일드카드를 사용할 수 없습니다.</p>"
         "<br>"
-        "<h3>검색 설정</h3>"
-		"<p>- 검색할 문자열 입력 칸 왼쪽 버튼을 눌러 <b>값만 검색</b>을 선택할 수 있습니다.</p>"
+        "<h3>검색 모드</h3>"
+		"<p>- 검색할 문자열 입력 칸 왼쪽의 <b>검색 모드</b>에서 JSON·XML·Excel·UE 현지화 archive의 값만 검색하도록 고를 수 있습니다.</p>"
 		"<p>- 검색은 대소문자(다국어 포함)와 같은 글자의 다른 표현을 맞춰 비교합니다. 예: macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열, 독일어 ß↔ss.</p>"
 		"<p>- 인코딩 문제는 설정의 문자 인코딩을 확인하세요.</p>"
-		"<h4>값만 검색</h4>"
-        "<p><b>사용 안 함</b></p>"
+        "<p><b>기본</b></p>"
 		"<p>- 확장자 필터 조건을 사용합니다. 검색 전체를 끄는 설정이 아닙니다.(기본)</p>"
         "<p><b>JSON/XML</b></p>"
 		"<p>- 항목·태그·속성 이름을 제외하고 값을 검색합니다.</p>"

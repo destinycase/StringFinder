@@ -165,7 +165,7 @@ def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture
     assert search_panel.search_combo.toolTip() == ""
     assert search_panel.search_btn.toolTip() == ""
     assert search_panel.stop_btn.toolTip() == ""
-    assert search_panel.search_settings_button.toolTip() == ""
+    assert search_panel.search_mode_combo.toolTip() == ""
     assert result_panel.result_view.toolTip() == ""
     assert result_panel.match_view.toolTip() == ""
     assert result_panel.context_preview.toolTip() == ""
@@ -179,7 +179,7 @@ def test_search_options_use_user_facing_label_and_requested_order(search_tab_fix
 
     # Search profile, text input, and action button share the first row.
     input_layout = search_panel.layout().itemAt(0).layout()
-    assert search_panel.search_settings_button in [input_layout.itemAt(i).widget() for i in range(input_layout.count())]
+    assert search_panel.search_mode_combo in [input_layout.itemAt(i).widget() for i in range(input_layout.count())]
 
 
 def test_search_settings_has_no_retired_profile_guidance(qtbot):
@@ -187,8 +187,8 @@ def test_search_settings_has_no_retired_profile_guidance(qtbot):
     from ui.panels import SearchOptionsPanel
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    assert panel.search_settings_button.toolTip() == ""
-    assert panel.search_settings_button.icon().isNull()
+    assert panel.search_mode_combo.toolTip() == ""
+    assert not panel.search_mode_combo.isEditable()
     assert not hasattr(AppStrings, "COMPLEX_SEARCH_TOOLTIP")
 
 

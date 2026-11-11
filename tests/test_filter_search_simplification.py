@@ -68,7 +68,7 @@ def test_status_conditions_and_warning_icon(qtbot, mock_config_manager, language
     assert window.filter_status_warning.isHidden()
     assert tab.filter_tabs.tabText(1) == AppStrings.FILTER_FILENAME_TAB.format(2)
     assert window.filter_status_label.text() == " | ".join([
-        tab.search_panel.search_settings_button.text(),
+        tab.search_panel.search_mode_combo.currentText(),
         AppStrings.FOLDER_FILTER_SELECTED.format(1),
         AppStrings.EXTENSION_FILTER_SELECTED.format(2, "xls, xlsm"),
         AppStrings.FILENAME_FILTER_SELECTED.format(2, "report, invoice"),

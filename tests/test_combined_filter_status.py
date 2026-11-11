@@ -8,6 +8,14 @@ from sf_utils.localization import get_language, set_language
 from ui.main_window import MainWindow
 from ui.search_tab import SearchTab
 
+def choose_search_mode(panel, mode):
+    """사용자가 검색 모드 콤보 박스에서 ``mode``(저장 값)를 고른 것과 같이 처리합니다."""
+    index = panel.search_mode_combo.findData(mode)
+    assert index >= 0
+    panel.search_mode_combo.setCurrentIndex(index)
+    panel.search_mode_combo.activated.emit(index)
+
+
 
 @pytest.fixture(params=["ko", "en"])
 def window(qtbot, mock_config_manager, request):
@@ -74,10 +82,10 @@ def test_search_settings_prefix_refreshes_immediately_and_follows_active_tab(win
     second = window.add_new_tab()
     window.tab_widget.setCurrentWidget(first)
     for index in (0, 4, 6):
-        first.search_panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[index]].trigger()
+        choose_search_mode(first.search_panel, AppStrings.SPECIAL_SEARCH_ITEMS[index])
         parts = window.filter_status_label.text().split(" | ")
         assert len(parts) == 4
-        assert parts[0] == first.search_panel.search_settings_button.text()
+        assert parts[0] == first.search_panel.search_mode_combo.currentText()
         assert parts[1] == first.folder_panel.status_label.text()
     original = window.filter_status_label.text()
     second.search_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
@@ -99,7 +107,7 @@ def test_restoration_lock_and_layout_fallback(window):
     assert window.filter_status_label.text() == restored.get_filter_status_text()
     restored._set_inputs_enabled(False)
     assert not restored.filter_tabs.isEnabled()
-    assert not restored.search_panel.search_settings_button.isEnabled()
+    assert not restored.search_panel.search_mode_combo.isEnabled()
     restored._set_inputs_enabled(True)
     restored.reset_layout()
     assert not restored.filter_dock.isHidden()

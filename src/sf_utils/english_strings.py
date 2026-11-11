@@ -125,18 +125,10 @@ ENGLISH_STRINGS = {
     "COMBO_UNLOCKED": "Unlocked",
     "EXCLUDE_HIDDEN_LABEL": "Exclude hidden files/folders",
     "EXCLUDE_BINARY_LABEL": "Exclude binary files",
-    "SEARCH_SETTINGS_LABEL": "Search settings",
-    "SPECIAL_SEARCH_OFF_DISPLAY": "Off",
+    "SEARCH_MODE_LABEL": "Search mode",
+    "SPECIAL_SEARCH_OFF_DISPLAY": "Default",
     "FILENAME_FILTER_INVALID_GROUP": "Enter a filename term between each comma.",
     "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
-    "SPECIAL_SEARCH_LABEL": "Values only",
-    "SEARCH_SETTINGS_SELECTION": "Values only: {}",
-    "SEARCH_SETTINGS_TEXT_COMPACT": "Full text",
-    "SPECIAL_SEARCH_COMPACT_ITEMS": [
-        "", "XML values (contains)", "XML values (exact)",
-        "JSON values (contains)", "JSON values (exact)", "Excel values (contains)", "Excel values (exact)",
-        "ARCHIVE (contains)", "ARCHIVE (exact)",
-    ],
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
     "FILTER_FILENAME_TAB": "Filenames ({})",
@@ -150,7 +142,7 @@ ENGLISH_STRINGS = {
     "FOLDER_GROUP_NONE": "No group",
     "FOLDER_GROUP_TOGGLE_TOOLTIP": "Expand or collapse the group.",
     "FOLDER_GROUP_CHECK_TOOLTIP": "Select or clear all folders in the group.",
-    "EXTENSION_FILTER_VALUES_ONLY_NOTICE": "Extension filters are unavailable while 'Values only' is in use.",
+    "EXTENSION_FILTER_VALUES_ONLY_NOTICE": "Extension filters are unavailable unless the search mode is 'Default'.",
     "FILTER_ITEM_REORDER_TOOLTIP": "Drag to reorder. Keyboard: Alt+Up/Down",
     "SEARCH_HELP_BUTTON": "Help",
     "SEARCH_HELP_TITLE": "Search help",
@@ -168,11 +160,11 @@ ENGLISH_STRINGS = {
         '<p>- Add report to find files whose names contain report. Group terms using commas, e.g. report,invoice.</p>'
         '<p>- Any checked term may match. With no checked terms, filenames are unrestricted.</p>'
         '<p>- Filename filters do not support wildcards.</p>'
-        '<br><h3>Search settings</h3>'
-        '<p>- Click the button to the left of the search input to choose <b>Values only</b>.</p>'
+        '<br><h3>Search mode</h3>'
+        '<p>- Use <b>Search mode</b> to the left of the search input to search only the values of JSON, XML, Excel or UE localization archive files.</p>'
         '<p>- Searches compare case (in all languages) and different forms of the same character, e.g. decomposed Korean (NFD) text from macOS files, or German ß ↔ ss.</p>'
         '<p>- For encoding issues, check the text encoding setting.</p>'
-        '<h4>Values only</h4><p><b>Off</b></p>'
+        '<p><b>Default</b></p>'
         '<p>- Uses your extension filter. This does not turn off searching. (Default)</p>'
         '<p><b>JSON/XML</b></p>'
         '<p>- Searches values, excluding field, tag and attribute names.</p>'
@@ -204,7 +196,7 @@ ENGLISH_STRINGS = {
         "UE localization archive (exact)",
     ],
     "SPECIAL_SEARCH_MENU_ITEMS": [
-        "Off",
+        "Default",
         "XML (contains)",
         "XML (exact)",
         "JSON (contains)",

@@ -90,11 +90,11 @@ def test_special_mode_targets_and_saved_extensions_are_preserved(qtbot, language
 def test_document_selector_is_in_search_settings_and_locked(qtbot, mock_config_manager, language):
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
-    controls = tab.search_panel.search_settings_button
+    controls = tab.search_panel.search_mode_combo
     assert tab.search_panel.isAncestorOf(controls)
     assert not tab.ext_panel.isAncestorOf(controls)
     tab.search_panel.set_searching(True)
-    assert not tab.search_panel.search_settings_button.isEnabled()
+    assert not tab.search_panel.search_mode_combo.isEnabled()
     tab.search_panel.set_searching(False)
-    assert tab.search_panel.search_settings_button.isEnabled()
+    assert tab.search_panel.search_mode_combo.isEnabled()
     tab.close()
