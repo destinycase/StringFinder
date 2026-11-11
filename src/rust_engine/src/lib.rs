@@ -1095,6 +1095,8 @@ fn search_long_line(
                 memchr::memchr2(b'\n', b'\r', &buf[segment_end..])
                     .map_or(len, |index| segment_end + index)
             };
+            // 변환한 줄 전체가 검색한 부분이므로 줄 끝까지 UTF-8 유효성을 확인합니다.
+            search.check_utf8(window_end.min(line_end), line_end, false);
             search.counter.note_break_free(line_start, line_end);
             search.converted_line(line_start, line_end);
             return if search.full() { None } else { Some(line_end) };
@@ -1822,9 +1824,13 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             };
             if enc == UTF_8
                 && encoding.is_none()
-                && matches.iter().any(|m| m.1.contains('\u{fffd}'))
+                && matches.iter().any(|m| {
+                    m.1.contains('\u{fffd}')
+                        || (m.0 == 0 && m.1.starts_with(MATCH_META_DECODE_PARTIAL_PREFIX))
+                })
             {
-                // 앞부분만 보고 UTF-8로 정했는데 깨진 글자가 보이면 파일 전체로 다시 판정합니다.
+                // 앞부분만 보고 UTF-8로 정했는데 깨진 글자가 보이거나 해석하지 못한 바이트를 만났으면
+                // 파일 전체로 다시 판정합니다(일치가 없어도 다시 판정해 잘못된 안내를 막음).
                 // CP949 확인이 필요하면 확인과 재검색을 한 번의 디코딩으로 합니다.
                 match crate::utils::detect_until_korean(mmap_c) {
                     crate::utils::Detection::Encoding(verified) if verified != UTF_8 => {
@@ -2643,11 +2649,6 @@ fn validate_query_length(query: &str) -> PyResult<()> {
     Ok(())
 }
 
-/// 검색어 하나로 공통 비교기와, 원본 위치 찾기·바이너리 개수용 자동자를 만듭니다.
-///
-/// 비교(일치 여부)는 항상 비교기(`key()` 기준)가 정합니다. 자동자는 원본 바이트에서 위치를 찾거나
-/// 바이너리 파일의 일치 개수를 셀 때만 쓰며, `key(검색어)`와 정규화한 검색어의 표기
-/// (대소문자·XML 엔티티·JSON 이스케이프 변형)를 모두 담습니다.
 /// 미리보기용: 검색과 같은 비교 기준으로 `text`의 `start_char`번째 글자 이후 첫 일치 위치(글자 번호)를 찾습니다.
 #[pyfunction]
 #[pyo3(signature = (text, pattern, start_char=0))]
@@ -2671,22 +2672,21 @@ fn detect_file_encoding(
 ) -> PyResult<String> {
     let file = std::fs::File::open(&path)?;
     let length = file.metadata()?.len();
+    // 파일을 메모리에 복사하지 않고 매핑해 판정합니다(검색과 같은 방식). BOM도 같은 매핑에서 봅니다.
+    let mapped = if length == 0 {
+        None
+    } else {
+        Some(unsafe { Mmap::map(&file) }?)
+    };
+    let data: &[u8] = mapped.as_deref().unwrap_or(&[]);
     let detected = if let Some(selected) = crate::utils::requested_encoding(encoding.as_deref()) {
         selected
-    } else if length == 0 {
+    } else if data.is_empty() {
         UTF_8
     } else {
-        // 파일을 메모리에 복사하지 않고 매핑해 판정합니다(검색과 같은 방식).
-        let mapped = unsafe { Mmap::map(&file) }?;
-        py.allow_threads(|| detect_encoding(&mapped))
+        py.allow_threads(|| detect_encoding(data))
     };
-    let mut head = [0u8; 3];
-    let read = {
-        use std::io::Read;
-        let mut reader = std::fs::File::open(&path)?;
-        reader.read(&mut head)?
-    };
-    let has_bom = |bom: &[u8]| read >= bom.len() && head.starts_with(bom);
+    let has_bom = |bom: &[u8]| data.starts_with(bom);
     Ok(if detected == UTF_8 {
         if has_bom(b"\xef\xbb\xbf") {
             "utf-8-sig"
@@ -2713,6 +2713,11 @@ fn detect_file_encoding(
     .to_string())
 }
 
+/// 검색어 하나로 공통 비교기와, 원본 위치 찾기·바이너리 개수용 자동자를 만듭니다.
+///
+/// 비교(일치 여부)는 항상 비교기(`key()` 기준)가 정합니다. 자동자는 원본 바이트에서 위치를 찾거나
+/// 바이너리 파일의 일치 개수를 셀 때만 쓰며, `key(검색어)`와 정규화한 검색어의 표기
+/// (대소문자·XML 엔티티·JSON 이스케이프 변형)를 모두 담습니다.
 fn build_search_matchers(
     pattern: &str,
     is_xml: bool,

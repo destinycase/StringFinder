@@ -188,3 +188,28 @@ def test_real_replacement_characters_and_binary_files_are_not_decode_failures(tm
     result = se.search_directory_fast([str(root)], "target", [], exclude_binary=False)
     assert result["skipped"] == []
     assert len(result["results"]) == 4
+
+
+@pytest.mark.parametrize("query", ["needle", "nomatch", "ascii"])
+def test_valid_cp949_after_ascii_prefix_is_not_a_decode_failure(tmp_path, query):
+    # 앞 64KiB가 영문뿐인 정상 CP949 파일(검수 재현): 앞부분만 보고 UTF-8로 정해도
+    # 해석하지 못한 바이트를 만나면 파일 전체로 다시 판정하므로 안내가 붙지 않습니다.
+    path = tmp_path / "cp949_ascii_head.txt"
+    path.write_bytes(b"ascii only line\n" * 5000 + "한글 줄 needle\n다른 줄\n".encode("cp949"))
+    result = se.search_directory_fast([str(tmp_path)], query, ["txt"])
+    assert result["skipped"] == []
+    single = se.search_in_file(str(path), query)
+    assert single is None or single[0] != C.STATUS_SKIPPED
+    if query == "needle":
+        rows = result["results"][0][2]
+        assert [row[0] for row in rows] == [5001]
+        assert "한글 줄 needle" in rows[0][1]
+
+
+def test_long_converted_last_line_reports_undecodable_tail(tmp_path):
+    # 64KiB보다 긴 마지막 줄을 변환 경로로 검색하면 줄 끝까지 해석 여부를 판정합니다.
+    path = tmp_path / "long_tail.txt"
+    path.write_bytes("K target ".encode() + b"x" * 200_000 + b"\xff tail")
+    result = se.search_directory_fast([str(tmp_path)], "target", ["txt"])
+    assert [os.path.basename(p) for p, _ in result["skipped"]] == ["long_tail.txt"]
+    assert _decode_notice(result["skipped"][0][1])

@@ -4,6 +4,7 @@ from contextvars import ContextVar
 import logging
 import os
 import re
+import threading
 import time
 import unicodedata
 from os.path import splitext
@@ -969,8 +970,25 @@ def find_key_match_char(text: str, query: str, start_char: int = 0) -> Optional[
 def detect_preview_encoding(file_path: str) -> str:
     """미리보기용: 검색 엔진과 같은 인코딩 판정(설정의 지정 인코딩, 없으면 파일 전체 기준 자동 판정)입니다."""
     selected = _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto")
-    return cast(str, sf_engine.detect_file_encoding(  # type: ignore
+    # 같은 파일의 결과 행을 연달아 볼 때 파일 전체 판정을 반복하지 않도록, 경로·크기·수정 시각·
+    # 설정이 같으면 이전 판정을 다시 씁니다(파일이 바뀌면 크기나 수정 시각이 달라져 새로 판정).
+    stat = os.stat(file_path)
+    cache_key = (os.path.normcase(os.path.abspath(file_path)), stat.st_size, stat.st_mtime_ns, selected)
+    with _PREVIEW_ENCODING_LOCK:
+        cached = _PREVIEW_ENCODING_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    detected = cast(str, sf_engine.detect_file_encoding(  # type: ignore
         str(file_path), None if selected == "auto" else selected))
+    with _PREVIEW_ENCODING_LOCK:
+        if len(_PREVIEW_ENCODING_CACHE) >= 256:
+            _PREVIEW_ENCODING_CACHE.clear()
+        _PREVIEW_ENCODING_CACHE[cache_key] = detected
+    return detected
+
+
+_PREVIEW_ENCODING_CACHE: Dict[Tuple[str, int, int, str], str] = {}
+_PREVIEW_ENCODING_LOCK = threading.Lock()
 
 
 def normalize_unicode(text: Any) -> str:

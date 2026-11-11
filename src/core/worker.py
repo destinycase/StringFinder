@@ -114,14 +114,9 @@ class SearchWorker(QRunnable):
         if allowed_count <= 0:
             return []
 
-        visible_rows = [
-            match
-            for match in matches
-            if isinstance(match, (tuple, list))
-            and match
-            and str(match[0]) not in {"-1", "-2"}
-        ]
-        if len(visible_rows) <= allowed_count:
+        from core.search_engine import _visible_match_count
+
+        if _visible_match_count(matches) <= allowed_count:
             return list(matches)
 
         retained = []
@@ -163,13 +158,9 @@ class SearchWorker(QRunnable):
             if remaining <= 0:
                 break
 
-            visible_count = sum(
-                1
-                for match in matches
-                if isinstance(match, (tuple, list))
-                and match
-                and str(match[0]) not in {"-1", "-2"}
-            )
+            from core.search_engine import _visible_match_count
+
+            visible_count = _visible_match_count(matches)
             if visible_count == 1 and count > 1:
                 trimmed_matches = [
                     (1, AppStrings.MSG_BINARY_MATCH.format(remaining), None, None)
