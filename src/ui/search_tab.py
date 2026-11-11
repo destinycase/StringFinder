@@ -256,6 +256,9 @@ class SearchTab(QMainWindow):
                 self.filter_tabs.removeTab(0)
             self._filter_group_layouts[0].addWidget(self.ext_panel)
             self._filter_group_layouts[1].addWidget(self.filename_panel)
+            # 탭에서 빼낸 패널은 탭 위젯이 숨겨 둔 상태이므로 다시 보이게 합니다.
+            self.ext_panel.show()
+            self.filename_panel.show()
         self.filter_tabs.setVisible(layout == Constants.FILTER_LAYOUT_TABS)
         self.filter_splitter.setVisible(layout == Constants.FILTER_LAYOUT_STACKED)
         self._refresh_filter_titles()

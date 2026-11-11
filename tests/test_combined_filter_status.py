@@ -175,6 +175,17 @@ def test_filter_layout_option_switches_between_stacked_panels_and_tabs(window):
     assert tab.filename_panel.get_selected_filenames() == ["report"]
     combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_STACKED))
     assert tab.filter_tabs.count() == 0 and not tab.filter_splitter.isHidden()
+    # 탭에서 돌아온 패널의 내용이 숨겨진 채로 남지 않아야 합니다(6.4.12 오류).
+    window.show()
+    for current in (tab, second):
+        window.tab_widget.setCurrentWidget(current)
+        assert current.ext_panel.isVisible() and current.filename_panel.isVisible()
+    window.tab_widget.setCurrentWidget(tab)
+    for _ in range(2):
+        combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_TABS))
+        assert tab.filter_tabs.currentWidget().isVisible()
+        combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_STACKED))
+        assert tab.ext_panel.isVisible() and tab.filename_panel.isVisible()
     assert tab.filename_panel.get_selected_filenames() == ["report"]
     dialog.close()
 
