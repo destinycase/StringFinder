@@ -1,7 +1,6 @@
 """Compare JSON duplicate-key policies and native binaries on fixed samples.
 
-The default isolates Rust; --backend normal includes the Python wrapper and
-no-match fallback. --backend precise measures the Python structured path.
+The default isolates Rust; --backend normal includes the Python result wrapper.
 Use --compare-engine to interleave a saved binary with the current one.
 Output includes individual samples and content/location fingerprints as JSON.
 """
@@ -61,8 +60,7 @@ def run_search(engine, case, allow, backend):
         search_engine.sf_engine = engine
 
         with search_engine.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
-            return search_engine.search_in_json_special(str(path), query,
-                use_complex_search=backend == "precise")
+            return search_engine.search_in_json_special(str(path), query)
     bits = Constants.RUST_MODE_JSON
     if allow:
         bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS
@@ -146,7 +144,7 @@ def main():
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--compare-engine", type=Path, help="interleave this saved baseline with --engine-path")
     parser.add_argument("--repeats", type=int, default=18)
-    parser.add_argument("--backend", choices=("native", "normal", "precise"), default="native")
+    parser.add_argument("--backend", choices=("native", "normal"), default="native")
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")

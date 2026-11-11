@@ -36,9 +36,9 @@ ONE_GIB_BYTES = 1024**3
 DEFAULT_MAX_SECONDS = 7200
 RESOURCE_SAMPLE_INTERVAL_SECONDS = 30
 MAX_RESOURCE_SAMPLES_PER_SCENARIO = 600
+# 검색 방식은 하나입니다(6.4.6에서 Python 글자 변형 검색 경로 제거).
 SCENARIOS = (
     ("normal_no_match", False),
-    ("miss_prevention_no_match", True),
 )
 
 SCENARIO_LABELS = {
@@ -425,7 +425,7 @@ def _runtime_environment() -> RuntimeEnvironment:
     try:
         from importlib.metadata import PackageNotFoundError, version
 
-        for package in ("python-calamine", "psutil", "PySide6"):
+        for package in ("psutil", "PySide6"):
             try:
                 info.setdefault("dependencies", {})[package] = version(package)
             except PackageNotFoundError:
@@ -603,7 +603,6 @@ def run(
                             str(path),
                             diagnostic_query,
                             file_size=file_size,
-                            use_complex_search=precise,
                             exclude_binary=bool(search_policy["exclude_binary"]),
                         )
                     if isinstance(result, tuple) and result and result[0] == Constants.STATUS_SKIPPED:
@@ -887,7 +886,7 @@ def run(
     wall_seconds = time.perf_counter() - wall_started
     benchmark_seconds = time.perf_counter() - benchmark_started
     return {
-        "diagnostic_version": 6,
+        "diagnostic_version": 7,
         "app_version": get_app_version(),
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "status": overall_status,

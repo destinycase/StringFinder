@@ -123,7 +123,7 @@ def create_fixtures(directory: Path, rows: int, columns: int) -> list[ExcelFixtu
 
 def cases_for(fixture: ExcelFixture) -> list[ExcelCase]:
     cases = []
-    for precise in (False, True):
+    for precise in (False,):  # 검색 방식은 하나입니다(6.4.6에서 글자 변형 검색 제거).
         for name, query, cells in (
             ("first", fixture.first_query, [fixture.first_cell]),
             ("last", fixture.last_query, [fixture.last_cell]),
@@ -140,7 +140,7 @@ def cases_for(fixture: ExcelFixture) -> list[ExcelCase]:
 def _run(path: Path, case: ExcelCase):
     from core.search_engine import search_in_excel_special
 
-    return search_in_excel_special(str(path), case.query, use_complex_search=case.precise)
+    return search_in_excel_special(str(path), case.query)
 
 
 def validate_result(result, case: ExcelCase) -> None:

@@ -58,7 +58,6 @@ def _measure(
             str(path),
             query,
             special_mode=special_mode,
-            use_complex_search=False,
             stop_event=stop_event,
         )
 
