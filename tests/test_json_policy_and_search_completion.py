@@ -5,7 +5,6 @@ import zipfile
 
 import pytest
 from core import search_engine as se
-from core.json_policy import DuplicateKeyError, ObjectPairs, loads_document
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
@@ -20,7 +19,7 @@ def search_policy():
 def test_precise_json_existence_matches_decoded_values(tmp_path, content, query):
     path = tmp_path / "sample.json"
     path.write_text(content, encoding="utf-8")
-    result = se.search_in_json_special(str(path), query, use_complex_search=True)
+    result = se.search_in_json_special(str(path), query)
     assert result and result[0] == str(path) and result[1] == 1
 
 
@@ -30,7 +29,7 @@ def test_duplicate_json_keys_policy(tmp_path, precise, allow):
     path = tmp_path / "duplicate.json"
     path.write_text('{"v":"needle","\\u0076":"needle"}', encoding="utf-8")
     with se.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
-        result = se.search_in_json_special(str(path), "needle", use_complex_search=precise)
+        result = se.search_in_json_special(str(path), "needle")
     assert result
     if allow:
         assert result[0] == str(path) and result[1] == 2
@@ -39,27 +38,10 @@ def test_duplicate_json_keys_policy(tmp_path, precise, allow):
         assert AppStrings.JSON_DETAIL_DUPLICATE_KEYS in result[1]
 
 
-def test_precise_deep_json_keeps_unicode_and_duplicates():
-    content = '[' * 3000 + '{"v":"ß","v":"needle"}' + ']' * 3000
-    with pytest.raises(DuplicateKeyError):
-        loads_document(content)
-    data = loads_document(content, True)
-    for _ in range(3000):
-        data = data[0]
-    assert isinstance(data, ObjectPairs) and data == [("v", "ß"), ("v", "needle")]
-
-
 def test_precise_deep_json_search_keeps_unicode(tmp_path):
     path = tmp_path / "deep.json"
     path.write_text('[' * 3000 + '"ß"' + ']' * 3000, encoding="utf-8")
-    assert se.search_in_json_special(str(path), "ss", use_complex_search=True)[1] == 1
-
-
-def test_utf16_is_not_excluded_as_binary(tmp_path):
-    path = tmp_path / "utf16.txt"
-    path.write_bytes("needle 한글".encode("utf-16"))
-    assert not se.is_binary_file(str(path))
-    assert se.search_in_file(str(path), "needle", use_complex_search=True, exclude_binary=True)[1] == 1
+    assert se.search_in_json_special(str(path), "ss")[1] == 1
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
@@ -68,22 +50,7 @@ def test_short_no_bom_utf16_is_text_in_all_paths(tmp_path, encoding, query):
     path = tmp_path / "short.txt"
     path.write_bytes(query.encode(encoding))
     for precise in (False, True):
-        assert se.search_in_file(str(path), query, use_complex_search=precise, exclude_binary=True)
-
-
-def test_scanner_reports_inaccessible_and_missing_roots(tmp_path):
-    scanner = se.FileScanner([str(tmp_path)], [])
-    with patch.object(se.os, "scandir", side_effect=PermissionError("denied")):
-        assert scanner.scan() == []
-    assert scanner.skipped and scanner.skipped[0][0] == str(tmp_path)
-    missing = se.FileScanner([str(tmp_path / "missing")], [])
-    assert missing.scan() == [] and missing.skipped
-
-
-def test_long_line_detail_includes_match_after_whitespace_and_casefold():
-    for prefix in [" " * 5000, "ß" * 5000, "가" * 5000]:
-        rows, count, _ = se._search_text_stream([prefix + "needle" + "x" * 5000], "needle", exact_match=False, stop_event=None, max_per_file=10)
-        assert count == 1 and "needle" in rows[0][1]
+        assert se.search_in_file(str(path), query, exclude_binary=True)
 
 
 @pytest.mark.parametrize("fragment", ["nee<![CDATA[dle]]>", "nee<!--comment-->dle", "nee<?test abc?>dle"])
@@ -117,7 +84,7 @@ def test_excel_coordinates_and_sheet_failure(tmp_path):
     book.active["D5"] = "needle"
     book.create_sheet("broken")["A1"] = "needle"
     book.save(path)
-    result = se.search_in_excel_special(str(path), "needle", use_complex_search=True)
+    result = se.search_in_excel_special(str(path), "needle")
     assert result and result[1] == 2
     assert ("Sheet", "D5") in [(row[1], row[2]) for row in result[2]]
     corrupt = tmp_path / "corrupt.xlsx"
@@ -125,7 +92,7 @@ def test_excel_coordinates_and_sheet_failure(tmp_path):
         for name in source.namelist():
             if name != "xl/worksheets/sheet1.xml":
                 destination.writestr(name, source.read(name))
-    result = se.search_in_excel_special(str(corrupt), "needle", use_complex_search=True)
+    result = se.search_in_excel_special(str(corrupt), "needle")
     assert result and (result[0] == Constants.STATUS_SKIPPED or any(row[0] == -2 for row in result[2]))
 
 
@@ -133,7 +100,7 @@ def test_excel_coordinates_and_sheet_failure(tmp_path):
 def test_json_exact_trims_only_outer_whitespace(tmp_path, precise):
     path = tmp_path / "exact.json"
     path.write_text(json.dumps({"value": " needle "}))
-    assert se.search_in_json_special(str(path), "needle", exact_match=True, use_complex_search=precise)
+    assert se.search_in_json_special(str(path), "needle", exact_match=True)
 
 
 @pytest.mark.parametrize("precise", [False, True])
@@ -143,8 +110,8 @@ def test_excel_exact_keeps_internal_whitespace(tmp_path, precise):
     book = Workbook()
     book.active["A1"] = "a b"
     book.save(path)
-    assert se.search_in_excel_special(str(path), "ab", exact_match=True, use_complex_search=precise) is None
-    assert se.search_in_excel_special(str(path), "a b", exact_match=True, use_complex_search=precise)
+    assert se.search_in_excel_special(str(path), "ab", exact_match=True) is None
+    assert se.search_in_excel_special(str(path), "a b", exact_match=True)
 
 
 def test_native_git_exclude_is_not_a_search_filter(tmp_path):
@@ -192,24 +159,6 @@ def test_failed_search_final_summary_is_not_complete(qtbot, mock_config_manager)
     assert AppStrings.SUMMARY_PREFIX_FINISHED not in tab.result_view_panel.summary_label.text()
 
 
-def test_python_worker_reports_scanner_errors(tmp_path):
-    from core.worker import SearchWorker
-    worker = SearchWorker({Constants.PAYLOAD_SEARCH_PATHS: [str(tmp_path)], Constants.PAYLOAD_SEARCH_STRING: "needle", Constants.PAYLOAD_USE_COMPLEX_SEARCH: True})
-    skipped, finished = [], []
-    worker.signals.skipped_found.connect(skipped.extend)
-    worker.signals.search_finished.connect(lambda *counts: finished.append(counts))
-    with patch.object(se.os, "scandir", side_effect=PermissionError("denied")):
-        worker._run_python_search(force_python=True)
-    assert skipped and finished == [(0, 0, 1)]
-
-
-@pytest.mark.parametrize("content", ['{"a":1,}', '[1,]', '{"a" 1}', '[true false]', 'null null', '[', '{"a":NaN}'])
-def test_stack_safe_decoder_rejects_invalid_grammar(content):
-    with patch("core.json_policy.json.loads", side_effect=RecursionError):
-        with pytest.raises(ValueError):
-            loads_document(content)
-
-
 @pytest.mark.parametrize("value", [None, 1, "true", [], {}])
 def test_duplicate_setting_invalid_type_uses_default(mock_config_manager, value):
     normalized = mock_config_manager._normalize_advanced_settings({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: value})
@@ -247,35 +196,11 @@ def test_duplicate_setting_combo_persists_and_resets(qtbot, mock_config_manager)
     assert mock_config_manager.get_advanced_settings()[Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS] is False
 
 
-@pytest.mark.parametrize("allow", [False, True])
-def test_stack_safe_decoder_matches_standard_decoder(allow):
-    """Exercise both decoder implementations with a reproducible varied corpus."""
-    import random
-    rng = random.Random(5924)
-
-    def value(depth):
-        scalar = rng.choice([None, True, False, -42, 1.25, "", "ß needle", "a\n\"b", "가"])
-        if depth == 0:
-            return scalar
-        choice = rng.randrange(3)
-        if choice == 0:
-            return [value(depth - 1) for _ in range(rng.randrange(5))]
-        if choice == 1:
-            return {f"key{index}": value(depth - 1) for index in range(rng.randrange(5))}
-        return scalar
-
-    for _ in range(200):
-        content = json.dumps(value(4), ensure_ascii=rng.choice([True, False]))
-        expected = loads_document(content, allow)
-        with patch("core.json_policy.json.loads", side_effect=RecursionError):
-            assert loads_document(content, allow) == expected
-
-
 @pytest.mark.parametrize("precise", [False, True])
 def test_duplicate_keys_in_separate_objects_are_not_duplicates(tmp_path, precise):
     path = tmp_path / "separate.json"
     path.write_text('[{"v":"needle"},{"v":"needle"}]', encoding="utf-8")
-    result = se.search_in_json_special(str(path), "needle", use_complex_search=precise)
+    result = se.search_in_json_special(str(path), "needle")
     assert result and result[0] == str(path) and result[1] == 2
 
 
@@ -283,34 +208,8 @@ def test_duplicate_keys_in_separate_objects_are_not_duplicates(tmp_path, precise
 def test_duplicate_policy_does_not_restrict_plain_text_search(tmp_path, precise):
     path = tmp_path / "plain.json"
     path.write_text('{"v":"needle","v":"needle"}', encoding="utf-8")
-    result = se.search_in_file(str(path), "needle", use_complex_search=precise)
+    result = se.search_in_file(str(path), "needle")
     assert result and result[0] == str(path)
-
-
-def test_unexpected_worker_failure_finalizes_partial_results(qtbot, mock_config_manager):
-    import time
-    from core.worker import SearchWorker
-    from ui.search_tab import SearchTab
-    tab = SearchTab(mock_config_manager)
-    qtbot.addWidget(tab)
-    tab.scan_start_time = time.time()
-    tab.search_state = Constants.SearchState.SEARCHING
-    worker = SearchWorker({Constants.PAYLOAD_SEARCH_PATHS: ["unused"], Constants.PAYLOAD_SEARCH_STRING: "needle", Constants.PAYLOAD_USE_COMPLEX_SEARCH: True})
-    tab.worker = worker
-    worker.signals.error.connect(tab._on_search_error)
-    worker.signals.finished.connect(tab._on_worker_finished)
-    worker.signals.search_finished.connect(tab._on_search_finished)
-    worker.signals.results_found.connect(tab._on_results_found)
-
-    def fail():
-        worker.signals.results_found.emit([("/partial.txt", 1, [(1, "needle", None, None)])])
-        raise RuntimeError("Injected unexpected worker failure")
-
-    with patch.object(worker, "_run_python_search", side_effect=fail):
-        worker.run()
-    assert tab.search_state == Constants.SearchState.IDLE
-    assert AppStrings.SUMMARY_PREFIX_FAILED in tab.result_view_panel.summary_label.text()
-    assert tab.result_view_panel.result_model.rowCount() == 1
 
 
 def test_benchmark_waits_for_runnable_cleanup(qtbot, tmp_path):

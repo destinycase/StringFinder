@@ -36,7 +36,7 @@ def test_search_utf16le_file(tmp_path):
         f.write(b"\xff\xfe")
         f.write(content.encode("utf-16-le"))
 
-    result = search_in_file(str(test_file), "Test", use_complex_search=True)
+    result = search_in_file(str(test_file), "Test")
     assert result is not None
     assert isinstance(result[1], int)
     assert result[1] > 0
@@ -49,13 +49,13 @@ def test_utf16le_large_file(tmp_path):
         f.write(b"\xff\xfe")
         f.write(content.encode("utf-16-le"))
 
-    result = search_in_file(str(test_file), "Test", use_complex_search=True)
+    result = search_in_file(str(test_file), "Test")
     assert result is not None
 
 
 def test_search_in_text_file(sample_text_file):
     file_path, search_str = sample_text_file
-    result = search_in_file(file_path, search_str, use_complex_search=True)
+    result = search_in_file(file_path, search_str)
     assert result is not None
     assert result[0] == file_path
     assert result[1] == 1
@@ -63,7 +63,7 @@ def test_search_in_text_file(sample_text_file):
 
 def test_search_not_found(sample_text_file):
     file_path, _ = sample_text_file
-    result = search_in_file(file_path, "NonExistentString", use_complex_search=True)
+    result = search_in_file(file_path, "NonExistentString")
     assert result is None
 
 
@@ -74,7 +74,7 @@ def test_search_empty_file(temp_dir):
     path = os.path.join(temp_dir, "empty.txt")
     with open(path, "w") as _:
         pass
-    result = search_in_file(path, "anything", use_complex_search=True)
+    result = search_in_file(path, "anything")
 
     assert result is not None
     assert result[0] == Constants.STATUS_SKIPPED
@@ -97,7 +97,7 @@ def test_search_in_excel(temp_dir):
     wb.save(excel_path)
     wb.close()
 
-    result = search_in_file(excel_path, "Rulez", use_complex_search=True)
+    result = search_in_file(excel_path, "Rulez")
     assert result is not None
     # [Mypy] Union[SearchResult, SkippedResult] 타입 추론 강화
     assert isinstance(result, tuple) and len(result) == 3
@@ -113,7 +113,7 @@ def test_search_in_file_nfc_normalization(temp_dir):
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-    result = search_in_file(file_path, "\uc548\ub155", use_complex_search=True)
+    result = search_in_file(file_path, "\uc548\ub155")
     assert result is not None
 
 
@@ -122,11 +122,14 @@ def test_search_large_file_size_limit(temp_dir, monkeypatch):
 
     file_path = os.path.join(temp_dir, "large_guard.json")
     with open(file_path, "w", encoding="utf-8") as f:
-        f.write('{"msg":"needle"}')
+        f.write('{"msg":"needle", "pad":"' + "x" * (2 * 1024 * 1024) + '"}')
 
-    forced_size = Constants.DEFAULT_MAX_JSON_DOM_SIZE_MB * 1024 * 1024 + 1
-    monkeypatch.setattr("core.search_engine.os.path.getsize", lambda _p: forced_size)
-    result = search_in_file(file_path, "needle", special_mode=Constants.MODE_JSON, use_complex_search=True)
+    # 설정한 상한(1MB)보다 실제로 큰 파일은 Rust가 크기 사유로 건너뜁니다.
+    from core import search_engine as engine_module
+    monkeypatch.setattr(engine_module.ConfigManager, "get_advanced_settings",
+                        lambda _self: {Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 1})
+    forced_size = os.path.getsize(file_path)
+    result = search_in_file(file_path, "needle", special_mode=Constants.MODE_JSON)
 
     assert isinstance(result, tuple)
     assert result[0] == Constants.STATUS_SKIPPED
@@ -139,13 +142,13 @@ def test_search_encoding_error_handling(temp_dir):
     file_path = os.path.join(temp_dir, "bad_encoding.txt")
     with open(file_path, "wb") as f:
         f.write(b"\xff\xfe\x00\x00")
-    result = search_in_file(file_path, "test", use_complex_search=True)
+    result = search_in_file(file_path, "test")
     assert result is None
 
 
 def test_search_io_error_handling(temp_dir):
     non_existent = os.path.join(temp_dir, "non_existent.txt")
-    result = search_in_file(non_existent, "test", use_complex_search=True)
+    result = search_in_file(non_existent, "test")
     assert isinstance(result, tuple)
     assert result[0] == "SKIPPED"
 
@@ -154,6 +157,6 @@ def test_search_corrupted_excel_handling(temp_dir):
     excel_path = os.path.join(temp_dir, "corrupted.xlsx")
     with open(excel_path, "w") as f:
         f.write("This is not a valid Excel file")
-    result = search_in_file(excel_path, "test", use_complex_search=True)
+    result = search_in_file(excel_path, "test")
     assert isinstance(result, tuple)
     assert result[0] == "SKIPPED"

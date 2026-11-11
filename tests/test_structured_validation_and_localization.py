@@ -132,7 +132,6 @@ def test_xml_dtd_is_explicitly_unsupported(tmp_path, use_complex_search):
     result = search_in_xml_special(
         str(file_path),
         "ACME",
-        use_complex_search=use_complex_search,
         )
 
     assert result is not None
@@ -147,7 +146,6 @@ def test_python_xml_existence_search_validates_the_entire_document(tmp_path):
     result = search_in_xml_special(
         str(file_path),
         "needle",
-        use_complex_search=True,
         )
 
     assert result is not None
@@ -161,7 +159,6 @@ def test_python_xml_search_matches_text_split_by_character_callbacks(tmp_path):
     result = search_in_xml_special(
         str(file_path),
         "needle",
-        use_complex_search=True,
     )
 
     assert result is not None
@@ -178,20 +175,20 @@ def test_python_json_fallback_uses_json_boolean_and_null_literals(tmp_path):
     )
 
     true_result = search_in_json_special(
-        str(file_path), "true", exact_match=True, use_complex_search=True
+        str(file_path), "true", exact_match=True
     )
     false_result = search_in_json_special(
-        str(file_path), "false", exact_match=True, use_complex_search=True
+        str(file_path), "false", exact_match=True
     )
     null_result = search_in_json_special(
-        str(file_path), "null", exact_match=True, use_complex_search=True
+        str(file_path), "null", exact_match=True
     )
 
     assert true_result is not None and true_result[2][0][2] == "true"
     assert false_result is not None and false_result[2][0][2] == "false"
     assert null_result is not None and null_result[2][0][2] == "null"
     assert search_in_json_special(
-        str(file_path), "True", exact_match=True, use_complex_search=True
+        str(file_path), "True", exact_match=True
     ) is not None
 
 
@@ -205,7 +202,6 @@ def test_python_precise_json_uses_stack_safe_fallback_for_deep_document(tmp_path
         str(file_path),
         "needle",
         exact_match=True,
-        use_complex_search=True,
     )
 
     assert result is not None
@@ -257,7 +253,7 @@ def test_json_parse_message_does_not_leak_format_placeholder(tmp_path):
     file_path.write_text('{"value":', encoding="utf-8")
 
     result = search_in_json_special(
-        str(file_path), "needle", use_complex_search=True
+        str(file_path), "needle"
     )
 
     assert result is not None

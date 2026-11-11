@@ -67,23 +67,6 @@ def test_rejected_execution_does_not_report_open_failure(qtbot, mock_config_mana
     assert messages == []
 
 
-@pytest.mark.parametrize("include", [False, True])
-def test_selected_junction_both_paths(tmp_path, monkeypatch, language, include):
-    root = tmp_path / "root"
-    root.mkdir()
-    monkeypatch.setattr(se.os.path, "isjunction", lambda path: str(path) == str(root))
-    monkeypatch.setattr(se.sf_engine, "search_dir", lambda **kw: ([], []))
-    with se.use_search_settings_snapshot({C.CONFIG_KEY_INCLUDE_JUNCTIONS: include}):
-        native = se.search_directory_fast([str(root)], "needle")
-        scanner = se.FileScanner([str(root)], [])
-        assert scanner.scan() == []
-    expected = [] if include else [(str(root), AppStrings.SKIP_ROOT_JUNCTION)]
-    assert native["skipped"] == scanner.skipped == expected
-    if expected:
-        assert se.is_supported_skip_reason(expected[0][1])
-        assert se.localize_skip_reason_for_display(expected[0][1]) == expected[0][1]
-
-
 def test_junction_notice_survives_other_results(tmp_path, monkeypatch):
     root, normal = str(tmp_path / "link"), str(tmp_path / "normal")
     monkeypatch.setattr(se.os.path, "isjunction", lambda path: path == root)

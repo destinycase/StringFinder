@@ -78,5 +78,5 @@ def test_search_text_special_characters_still_literal(tmp_path, qtbot, query, pr
     assert panel.get_search_text() == query
     file = tmp_path / "literal.txt"
     file.write_text("prefix " + query + " suffix\n", encoding="utf-8")
-    result = se.search_in_file(str(file), query, use_complex_search=precise)
+    result = se.search_in_file(str(file), query)
     assert result and result[0] == str(file) and result[1] == 1

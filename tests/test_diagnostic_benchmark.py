@@ -22,12 +22,11 @@ def test_only_supported_modes_run_five_times(tmp_path, monkeypatch):
         "exclude_hidden": True, "exclude_binary": True, "advanced_settings": {},
     })
     report = diagnostic.run(tmp_path, repeats=5, max_seconds=None)
-    assert report["diagnostic_version"] == 6
+    assert report["diagnostic_version"] == 7
     assert report["verdict"] == "PASS"
-    assert {row["name"] for row in report["scenarios"]} == {
-        "normal_no_match", "miss_prevention_no_match",
-    }
-    assert len(calls) == 10
+    # 6.4.6부터 검색 방식이 하나라 시나리오도 하나입니다(보고서 형식 7).
+    assert {row["name"] for row in report["scenarios"]} == {"normal_no_match"}
+    assert len(calls) == 5
     assert all("existence_only" not in call for call in calls)
     assert all(row["repeats_completed"] == 5 for row in report["scenarios"])
 
@@ -44,7 +43,7 @@ def test_timeout_returns_a_readable_partial_report(tmp_path, monkeypatch):
     assert report["status"] == "timed_out"
     assert report["verdict"] == "INCOMPLETE"
     assert report["scenarios"][0]["status"] == "timed_out"
-    assert len(report["scenarios"]) == 2
+    assert len(report["scenarios"]) == 1
     assert all(item["status"] == "timed_out" for item in report["scenarios"])
     assert all(item["measurement_coverage_percent"] == 0 for item in report["scenarios"])
     assert "INCOMPLETE" in diagnostic._markdown(report)
@@ -70,10 +69,10 @@ def test_time_slicing_samples_every_mode_before_global_timeout(tmp_path, monkeyp
         lambda: {"exclude_hidden": True, "exclude_binary": True, "advanced_settings": {}},
     )
 
-    report = diagnostic.run(tmp_path, repeats=1, max_seconds=4)
+    report = diagnostic.run(tmp_path, repeats=1, max_seconds=2)
 
     assert report["status"] == "timed_out"
-    assert len(report["scenarios"]) == 2
+    assert len(report["scenarios"]) == 1
     assert all(item["files_processed"] == 2 for item in report["scenarios"])
     assert all(item["measurement_coverage_percent"] == 66.67 for item in report["scenarios"])
 
@@ -197,13 +196,13 @@ def test_report_includes_actionable_aggregates_and_private_file_ids(tmp_path, mo
     monkeypatch.setattr(diagnostic, "search_in_file", fake_search)
     report = diagnostic.run(tmp_path, repeats=1, progress_callback=lambda *args: progress.append(args), max_seconds=None)
 
-    assert report["diagnostic_version"] == 6
+    assert report["diagnostic_version"] == 7
     assert report["status"] == "completed"
     assert report["verdict"] == "REVIEW"
     assert report["target"]["file_count"] == 3
-    assert report["diagnostic_config"]["completed_work_units"] == 6
-    assert len(progress) == 6
-    assert report["scenarios"][1]["skip_reason_codes"] == {"ERR_TOO_LARGE": 1}
+    assert report["diagnostic_config"]["completed_work_units"] == 3
+    assert len(progress) == 3
+    assert report["scenarios"][0]["skip_reason_codes"] == {"ERR_TOO_LARGE": 1}
     assert report["search_policy"] == policy
     assert len(set(observed_queries)) == 1
     assert len(observed_queries[0]) == 32

@@ -15,7 +15,7 @@
 
 import os
 
-from core.search_engine import _quick_text_probe, detect_encoding_quickly, search_in_file
+from core.search_engine import detect_encoding_quickly, search_in_file
 
 
 def test_search_extremely_long_line(tmp_path):
@@ -25,7 +25,7 @@ def test_search_extremely_long_line(tmp_path):
     with open(test_file, "w", encoding="utf-8") as f:
         f.write(long_line)
 
-    result = search_in_file(str(test_file), "Target", use_complex_search=True)
+    result = search_in_file(str(test_file), "Target")
     assert result is not None
     assert "Target" in result[2][0][1]  # type: ignore
     # 너무 길면 자르거나 처리가 되어야 하지만 현재는 전체 반환.
@@ -39,7 +39,7 @@ def test_unknown_encoding_fallback(tmp_path):
     with open(test_file, "wb") as f:
         f.write(os.urandom(1024))
 
-    result = search_in_file(str(test_file), "any", use_complex_search=True)
+    result = search_in_file(str(test_file), "any")
     assert result is None or (isinstance(result, tuple) and len(result) == 3)
 
 
@@ -47,43 +47,6 @@ def test_detect_encoding_empty_data():
     empty_data = b""
     enc = detect_encoding_quickly(empty_data)
     assert enc == "utf-8"
-
-
-def test_existence_check_detects_match_across_chunk_boundary(tmp_path):
-    """64KiB 스트리밍 청크 경계에 걸친 검색어도 검출해야 합니다."""
-    test_file = tmp_path / "chunk_boundary.txt"
-    test_file.write_text("a" * 65534 + "needle", encoding="utf-8")
-
-    assert _quick_text_probe(str(test_file), "needle", encoding="utf-8") is True
-
-
-def test_large_file_mixed_case_integrity(tmp_path):
-    """대용량 파일 내의 혼합 대소문자 매칭 무결성 확인"""
-    d = tmp_path / "large_edge"
-    d.mkdir()
-    p = d / "large_mixed.txt"
-
-    # 諛섎났 ?⑦꽩 (??100諛붿씠??
-    chunk = "This is a dummy text to fill the file size. \n" * 2
-
-    with open(p, "w", encoding="utf-8") as f:
-        for _ in range(110_000):
-            f.write(chunk)
-        f.write("\nHere is the target: hElLo world!\n")
-        for _ in range(100):
-            f.write(chunk)
-
-    from unittest.mock import patch
-
-    with patch("core.search_engine.HAS_RUST_ENGINE", False):
-        result = search_in_file(str(p), "hello", None, use_complex_search=True)
-        assert result is not None, "검색 결과가 누락되었습니다"
-        assert isinstance(result, tuple)
-        assert len(result) == 3
-        file_path_res, count, matches = result
-
-        assert count == 1
-        assert "hElLo" in matches[0][1]
 
 
 def test_search_empty_file_skip_reason(tmp_path):
@@ -106,48 +69,3 @@ def test_search_empty_file_skip_reason(tmp_path):
     assert result[1] == AppStrings.SKIP_EMPTY_FILE
 
 
-def test_large_file_exact_mode_correctness(tmp_path):
-    """test_large_file_exact_mode_correctness 함수."""
-    from unittest.mock import patch
-
-    from core.search_engine import search_in_file
-    from sf_utils.constants import Constants
-
-    d = tmp_path / "large_exact"
-    d.mkdir()
-    p = d / "large_exact.txt"
-
-    # 반복 패턴 (100바이트)
-    chunk = "X" * 99 + "\n"
-
-    with open(p, "w", encoding="utf-8") as f:
-        for _ in range(110_000):
-            f.write(chunk)
-
-        # exact 불일치 라인 + exact 일치 라인 혼합
-        f.write("Target: ExactCaseMatch\n")
-        f.write("Target: exactcasematch\n")
-        f.write("ExactCaseMatch\n")
-        f.write("exactcasematch\n")
-
-        for _ in range(100):
-            f.write(chunk)
-
-    with patch("core.search_engine.HAS_RUST_ENGINE", False):
-        res_a = search_in_file(str(p), "ExactCaseMatch", special_mode=Constants.MODE_EXACT, use_complex_search=True)
-        assert res_a is not None
-        count_a = res_a[1]
-        lines_a = [m[1] for m in res_a[2]]  # type: ignore
-
-        assert count_a == 2
-        assert "ExactCaseMatch" in lines_a
-        assert "exactcasematch" in lines_a
-
-        result_b = search_in_file(str(p), "exactcasematch", special_mode=Constants.MODE_EXACT, use_complex_search=True)
-        assert result_b is not None
-        count_b = result_b[1]
-        lines_b = [m[1] for m in result_b[2]]  # type: ignore
-
-        assert count_b == 2
-        assert "ExactCaseMatch" in lines_b
-        assert "exactcasematch" in lines_b

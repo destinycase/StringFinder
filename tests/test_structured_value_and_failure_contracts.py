@@ -1,5 +1,4 @@
 """Regression coverage for structured-document integrity and partial failures."""
-import sys
 import zipfile
 from datetime import date
 
@@ -8,7 +7,6 @@ from openpyxl import Workbook
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 
 from core import search_engine as se
-from core.json_policy import JsonInteger, loads_document
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
@@ -30,37 +28,12 @@ def native(path, query, mode, entry="directory"):
 
 
 def precise(path, query, mode):
-    return se.search_in_file(str(path), query, special_mode=mode,
-                             use_complex_search=True)
+    return se.search_in_file(str(path), query, special_mode=mode)
 
 
-@pytest.mark.parametrize("digits", [4301, 5000, 20000])
-@pytest.mark.parametrize("negative", [False, True])
-def test_json_large_integer_preserves_source_and_global_limit(tmp_path, digits, negative):
-    text = ("-" if negative else "") + "9" * digits
-    limit = sys.get_int_max_str_digits()
-    value = loads_document('{"v":' + text + '}')["v"]
-    assert isinstance(value, JsonInteger)
-    assert str(value) == text
-    assert sys.get_int_max_str_digits() == limit
-    p = tmp_path / "large.json"
-    p.write_text('{"v":' + text + ',"other":"needle"}', encoding="utf-8")
-    for query in ("999999", "needle"):
-        result = native(p, query, C.MODE_JSON)
-        assert result["results"][0][1] == 1 and not result["skipped"]
-        assert precise(p, query, C.MODE_JSON)[1] == 1
-    assert precise(p, "999999", C.MODE_JSON)[1] == 1
-
-
-def test_iterative_json_large_integer_and_invalid_number():
-    text = "9" * 5000
-    parsed = loads_document("[" * 1100 + text + "]" * 1100)
-    for _ in range(1100):
-        parsed = parsed[0]
-    assert str(parsed) == text
-    for invalid in ("01", "--1", "1e", "NaN", "Infinity"):
-        with pytest.raises(ValueError):
-            loads_document('{"v":' + invalid + '}')
+def partial_reason(rows):
+    """결과 행 중 부분 실패 안내(-2 행)의 문구입니다."""
+    return next((str(row[1]) for row in rows if str(row[0]) == "-2"), None)
 
 
 @pytest.mark.parametrize("mode", [C.MODE_JSON, C.MODE_XML])
@@ -129,7 +102,7 @@ def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, entry, query):
     else:
         assert result["results"][0][1] == 1
         assert answer[1] == 1
-        assert "Broken0" in se._extract_normalized_partial_skip_reason(answer[2])
+        assert "Broken0" in partial_reason(answer[2])
         assert "Good" not in result["skipped"][0][1]
 
 
@@ -141,10 +114,10 @@ def test_excel_errors_do_not_consume_cap_or_disappear_on_hit(tmp_path):
     assert len(result["skipped"]) == 1
     answer = precise(p, "needle", C.MODE_EXCEL)
     assert answer[1] == 1
-    assert se._extract_normalized_partial_skip_reason(answer[2])
+    assert partial_reason(answer[2])
     direct = se.search_in_excel_special(str(p), "needle")
     assert direct[1] == 1
-    assert se._extract_normalized_partial_skip_reason(direct[2])
+    assert partial_reason(direct[2])
 
 
 @pytest.mark.parametrize("entry", ["directory", "files", "single"])
@@ -154,29 +127,6 @@ def test_json_tab_key_keeps_value(tmp_path, entry):
     answer = se.search_in_json_special(str(p), "needle") if entry == "single" else native(p, "needle", C.MODE_JSON, entry=entry)["results"][0]
     assert answer[2][0][1:3] == ("a\tb", "needle\tvalue")
     assert precise(p, "needle", C.MODE_JSON)[2][0][1:3] == ("a\tb", "needle\tvalue")
-
-
-def test_deep_directory_scan_is_stack_safe(tmp_path):
-    # Lower the limit only for the scan, avoiding platform maximum path lengths.
-    directories = []
-    current = tmp_path
-    for _ in range(220):
-        current = current / "d"
-        current.mkdir()
-        directories.append(current)
-    path = current / "a.txt"
-    path.write_text("needle", encoding="utf-8")
-    previous = sys.getrecursionlimit()
-    try:
-        sys.setrecursionlimit(200)
-        scanner = se.FileScanner([str(tmp_path)], [])
-        assert scanner.scan() == [(str(path), 6)]
-        assert not scanner.skipped
-    finally:
-        sys.setrecursionlimit(previous)
-        path.unlink()
-        for directory in reversed(directories):
-            directory.rmdir()
 
 
 @pytest.mark.parametrize("mode", [None, C.MODE_JSON, C.MODE_XML])

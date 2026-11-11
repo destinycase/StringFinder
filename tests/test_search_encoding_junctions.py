@@ -21,8 +21,7 @@ def snapshot():
 def compare(path, query, mode=None):
     native = se.search_directory_fast([str(path)], query, [], special_mode=mode,
                                      exclude_hidden=False, exclude_binary=True)
-    precise = se.search_in_file(str(path), query, special_mode=mode,
-                               use_complex_search=True, exclude_binary=True)
+    precise = se.search_in_file(str(path), query, special_mode=mode, exclude_binary=True)
     assert not native['skipped']
     assert precise is None or precise[0] != C.STATUS_SKIPPED
     return sum(r[1] for r in native['results']), precise[1] if precise else 0
@@ -84,7 +83,7 @@ def test_json_overflow_is_explicitly_skipped(tmp_path):
     path.write_text('{"v":1e400}', encoding='utf-8')
     output = se.search_directory_fast([str(path)], 'inf', [], special_mode=C.MODE_JSON)
     assert not output['results'] and output['skipped']
-    result = se.search_in_file(str(path), 'inf', special_mode=C.MODE_JSON, use_complex_search=True)
+    result = se.search_in_file(str(path), 'inf', special_mode=C.MODE_JSON)
     assert result[0] == C.STATUS_SKIPPED
 
 
@@ -120,15 +119,6 @@ def junction_tree(tmp_path):
         for link in reversed(links):
             if os.path.isjunction(link):
                 os.rmdir(link)
-
-
-@pytest.mark.parametrize('include', [False, True])
-def test_junction_policy_cycle_and_duplicate(junction_tree, include):
-    with se.use_search_settings_snapshot({C.CONFIG_KEY_INCLUDE_JUNCTIONS: include}):
-        scanner = se.FileScanner([str(junction_tree)], [])
-        assert len(scanner.scan()) == int(include)
-        normal = se.search_directory_fast([str(junction_tree)], 'needle', [], exclude_hidden=False)
-        assert len(normal['results']) == int(include)
 
 
 @pytest.mark.parametrize('value', [None, 12, True, {}, [], 'unknown'])
@@ -175,5 +165,5 @@ def test_selected_encoding_does_not_filter_or_fallback(tmp_path):
     with se.use_search_settings_snapshot({C.CONFIG_KEY_SEARCH_ENCODING: 'utf-8'}):
         normal = se.search_directory_fast([str(tmp_path)], '한글', [])
         assert len(normal['results']) == 1 and len(normal['skipped']) == 1
-        precise = se.search_in_file(str(bad), '한글', use_complex_search=True)
+        precise = se.search_in_file(str(bad), '한글')
         assert precise[0] == C.STATUS_SKIPPED

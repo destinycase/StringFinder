@@ -1,37 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from core import search_engine
 from core.worker import SearchWorker
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
-
-
-def test_python_batch_uses_snapshot_without_reloading_advanced_settings(
-    monkeypatch, tmp_path: Path
-) -> None:
-    target = tmp_path / "many_matches.txt"
-    target.write_text("needle needle", encoding="utf-8")
-    snapshot = {
-        Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 1,
-        Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 1,
-        Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE: 10,
-    }
-
-    def unexpected_settings_read(_self):
-        raise AssertionError("search must use the captured settings snapshot")
-
-    monkeypatch.setattr(ConfigManager, "get_advanced_settings", unexpected_settings_read)
-
-    result = search_engine.search_in_files_batch(
-        [(str(target), target.stat().st_size)],
-        "needle",
-        force_python=True,
-        search_settings_snapshot=snapshot,
-    )
-
-    assert result[Constants.PAYLOAD_RESULTS]
 
 
 def test_rust_limits_use_the_search_snapshot(monkeypatch) -> None:

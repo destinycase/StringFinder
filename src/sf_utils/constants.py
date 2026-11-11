@@ -33,11 +33,8 @@ class Constants:
     # The persisted setting key remains stable for existing user configs, but
     # its meaning is now a shared per-file cap across formats and search modes.
     DEFAULT_MAX_SEARCH_FILE_SIZE_MB = DEFAULT_MAX_JSON_DOM_SIZE_MB
-    DEFAULT_MAX_SMALL_FILE_SIZE_MB = DEFAULTS["max_small_file_size"]
-    DEFAULT_JSON_MMAP_THRESHOLD_MB = DEFAULTS["json_mmap_threshold"]
     DEFAULT_MAX_TOTAL_MATCHES = DEFAULTS["max_total_matches"]
     DEFAULT_MAX_PER_FILE_MATCHES = DEFAULTS["max_per_file_matches"]
-    DEFAULT_TIMEOUT_WORKER_HANG = DEFAULTS["timeout_worker_hang"]
     DEFAULT_MAX_JSON_DEPTH = DEFAULTS["max_json_depth"]
     SETTING_MAX_SEARCH_FILE_SIZE_MB = 1024
 
@@ -135,12 +132,7 @@ class Constants:
     CONFIG_KEY_MAX_PER_FILE_MATCHES = "max_per_file_matches"
     CONFIG_KEY_MAX_JSON_DOM_SIZE = "max_json_dom_size"
     CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB = CONFIG_KEY_MAX_JSON_DOM_SIZE
-    CONFIG_KEY_MAX_SMALL_FILE_SIZE = "max_small_file_size"
-    CONFIG_KEY_JSON_MMAP_THRESHOLD = "json_mmap_threshold"
-    CONFIG_KEY_TIMEOUT_WORKER_HANG = "timeout_worker_hang"
     CONFIG_KEY_MAX_JSON_DEPTH = "max_json_depth"
-    CONFIG_KEY_EXCEL_MAX_CONCURRENCY = "excel_max_concurrency"
-    CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB = "excel_serialization_threshold_mb"
     # 고급 설정의 기본값과 허용 범위는 ConfigManager와 UI가 함께 사용하는
     # 단일 계약입니다. 두 계층에 숫자를 중복 선언하면 수동 편집된 설정이
     # 화면과 실제 검색에서 서로 다르게 적용될 수 있습니다.
@@ -166,35 +158,10 @@ class Constants:
             "minimum": 1,
             "maximum": SETTING_MAX_SEARCH_FILE_SIZE_MB,
         },
-        CONFIG_KEY_MAX_SMALL_FILE_SIZE: {
-            "default": DEFAULT_MAX_SMALL_FILE_SIZE_MB,
-            "minimum": 1,
-            "maximum": 100,
-        },
-        CONFIG_KEY_JSON_MMAP_THRESHOLD: {
-            "default": DEFAULT_JSON_MMAP_THRESHOLD_MB,
-            "minimum": 1,
-            "maximum": 100,
-        },
-        CONFIG_KEY_TIMEOUT_WORKER_HANG: {
-            "default": DEFAULT_TIMEOUT_WORKER_HANG,
-            "minimum": 10,
-            "maximum": 3_600,
-        },
         CONFIG_KEY_MAX_JSON_DEPTH: {
             "default": DEFAULT_MAX_JSON_DEPTH,
             "minimum": 10,
             "maximum": DEFAULT_MAX_JSON_DEPTH,
-        },
-        CONFIG_KEY_EXCEL_MAX_CONCURRENCY: {
-            "default": DEFAULTS["excel_max_concurrency"],
-            "minimum": 1,
-            "maximum": 4,
-        },
-        CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB: {
-            "default": DEFAULTS["excel_serialization_threshold_mb"],
-            "minimum": 1,
-            "maximum": 100,
         },
     }
     DEFAULT_CONTEXT_PREVIEW_LINES = 5

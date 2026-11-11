@@ -5,7 +5,6 @@ import pytest
 
 from core import search_engine as se
 from core.search_query import validate_search_query
-from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
@@ -19,22 +18,6 @@ def test_character_count_boundary(character):
     with pytest.raises(ValueError) as error:
         validate_search_query(character * 1001)
     assert str(error.value) == AppStrings.ERROR_SEARCH_QUERY_LENGTH.format(1000, 1001)
-
-
-@pytest.mark.parametrize("entry", ["file", "json", "xml", "excel", "batch", "directory", "files"])
-def test_python_entry_points_reject_before_any_io(entry):
-    calls = {
-        "file": lambda q: se.search_in_file("missing.txt", q),
-        "json": lambda q: se.search_in_json_special("missing.json", q),
-        "xml": lambda q: se.search_in_xml_special("missing.xml", q),
-        "excel": lambda q: se.search_in_excel_special("missing.xlsx", q),
-        "batch": lambda q: se.search_in_files_batch([], q),
-        "directory": lambda q: se.search_directory_fast([], q),
-        "files": lambda q: se.search_files_list_fast([], q),
-    }
-    with patch.object(se.os.path, "getsize", side_effect=AssertionError("unexpected I/O")):
-        with pytest.raises(ValueError, match="1,000"):
-            calls[entry]("a" * 1001)
 
 
 def test_input_preserves_oversized_text_and_clears_notice(qtbot):
@@ -62,24 +45,6 @@ def test_restored_long_input_blocks_search_without_clearing_results(qtbot, mock_
     setup.assert_not_called()
     clear.assert_not_called()
     assert tab.search_state == C.SearchState.IDLE
-
-
-@pytest.mark.parametrize("complex_search", [False, True])
-def test_worker_blocks_before_search_or_query_logging(complex_search):
-    worker = SearchWorker({C.PAYLOAD_SEARCH_STRING: "a" * 1001,
-                           C.PAYLOAD_USE_COMPLEX_SEARCH: complex_search})
-    errors, finished = [], []
-    worker.signals.error.connect(errors.append)
-    worker.signals.finished.connect(lambda: finished.append(True))
-    with patch.object(worker, "_run_rust_search") as rust, \
-         patch.object(worker, "_run_python_search") as python, \
-         patch("core.worker.logger.info") as log:
-        worker.run()
-    assert errors == [AppStrings.ERROR_SEARCH_QUERY_LENGTH.format(1000, 1001)]
-    assert finished == [True]
-    rust.assert_not_called()
-    python.assert_not_called()
-    log.assert_not_called()
 
 
 @pytest.mark.parametrize("language", ["ko", "en"])
@@ -116,5 +81,5 @@ def test_limit_length_query_is_searched_without_truncation(tmp_path, complex_sea
     p = tmp_path / "valid.txt"
     query = "가" * 1000
     p.write_text(query + "\n", encoding="utf-8")
-    result = se.search_in_file(str(p), query, use_complex_search=complex_search)
+    result = se.search_in_file(str(p), query)
     assert result[1] == 1

@@ -66,7 +66,7 @@ def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch, caplo
     import core.search_engine
     monkeypatch.setattr(core.search_engine, "sf_engine", type("obj", (object,), {"search_file": mock_search_file}))
 
-    result = core.search_engine.search_in_file(str(file_path), "query", use_complex_search=False)
+    result = core.search_engine.search_in_file(str(file_path), "query")
 
     assert result is not None
     assert isinstance(result, tuple)
@@ -79,7 +79,7 @@ def test_casefold_unicode_german(tmp_path):
     file_path = tmp_path / "german.json"
     file_path.write_text('{"name": "STRAẞE"}', encoding="utf-8")
 
-    result = search_in_json_special(str(file_path), "strasse", use_complex_search=True)
+    result = search_in_json_special(str(file_path), "strasse")
 
     assert result is not None
     res_list: List[Any] = list(result)
@@ -93,7 +93,7 @@ def test_casefold_unicode_turkish(tmp_path):
     file_path = tmp_path / "turkish.xml"
     file_path.write_text("<root><tag>İSTANBUL</tag></root>", encoding="utf-8")
 
-    result = search_in_xml_special(str(file_path), "İSTANBUL", use_complex_search=True)
+    result = search_in_xml_special(str(file_path), "İSTANBUL")
 
     assert result is not None
     res_list: List[Any] = list(result)

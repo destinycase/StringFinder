@@ -31,7 +31,6 @@ class TestQAEdgeFixesVerification:
             str(wb_path),
             search_string="ADMIN_USER",
             exact_match=True,
-            use_complex_search=True,
         )
 
         assert result is not None

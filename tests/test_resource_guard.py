@@ -188,10 +188,11 @@ def test_projected_structured_memory_is_a_local_skip(tmp_path, monkeypatch):
         },
     )
 
+    # 6.4.6부터 구조화 문서는 Rust만 읽으므로 Rust 추정값이 예산을 넘는 경우로 시험합니다.
+    monkeypatch.setattr(resource_guard, "estimate_structured_memory_bytes", lambda *_args: 2 * GIB)
     result = search_engine.search_in_json_special(
         str(file_path),
         "needle",
-        use_complex_search=True,
     )
 
     assert result is not None
@@ -204,8 +205,13 @@ def test_projected_structured_memory_is_a_local_skip(tmp_path, monkeypatch):
 
 def test_configured_json_size_limit_precedes_projected_budget(tmp_path, monkeypatch):
     file_path = tmp_path / "configured-limit.json"
-    file_path.write_text('{"value": "needle"}', encoding="utf-8")
-    monkeypatch.setattr(search_engine.os.path, "getsize", lambda _path: 1100 * MIB)
+    # 설정한 파일 크기 상한(1MB)보다 실제로 큰 파일입니다(Rust는 실제 크기로 판정).
+    file_path.write_text('{"value": "needle", "pad": "' + "x" * (2 * MIB) + '"}', encoding="utf-8")
+    monkeypatch.setattr(
+        search_engine.ConfigManager,
+        "get_advanced_settings",
+        lambda _self: {Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 1},
+    )
     monkeypatch.setattr(
         resource_guard,
         "memory_snapshot",
@@ -221,7 +227,6 @@ def test_configured_json_size_limit_precedes_projected_budget(tmp_path, monkeypa
     result = search_engine.search_in_json_special(
         str(file_path),
         "needle",
-        use_complex_search=True,
     )
 
     assert result is not None

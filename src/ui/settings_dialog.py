@@ -418,27 +418,6 @@ class SettingsDialog(QDialog):
         )
         tab_advanced_layout.addWidget(common_group)
 
-        precise_group = QGroupBox(AppStrings.ADVANCED_PRECISE_SEARCH_GROUP)
-        precise_layout = QVBoxLayout(precise_group)
-        self.adv_spinboxes[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE] = create_spinbox_row(
-            AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE,
-            Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, *setting_bounds(Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE), AppStrings.UNIT_MB,
-            target_layout=precise_layout,
-            description_text=AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION,
-        )
-        self.adv_spinboxes[Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD] = create_spinbox_row(
-            AppStrings.ADVANCED_JSON_MMAP_THRESHOLD,
-            Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, *setting_bounds(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD), AppStrings.UNIT_MB,
-            target_layout=precise_layout,
-            description_text=AppStrings.ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION,
-        )
-        self.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG] = create_spinbox_row(
-            AppStrings.ADVANCED_TIMEOUT_WORKER_HANG,
-            Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG, *setting_bounds(Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG), AppStrings.UNIT_SEC,
-            target_layout=precise_layout,
-            description_text=AppStrings.ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION,
-        )
-        tab_advanced_layout.addWidget(precise_group)
 
         diagnostic_group = QGroupBox(AppStrings.ADVANCED_DIAGNOSTICS_GROUP)
         diagnostic_layout = QVBoxLayout(diagnostic_group)
@@ -450,22 +429,6 @@ class SettingsDialog(QDialog):
         diagnostic_layout.addWidget(diagnostic_btn)
         tab_advanced_layout.addWidget(diagnostic_group)
 
-        self.adv_spinboxes[Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY] = create_spinbox_row(
-            AppStrings.ADVANCED_EXCEL_MAX_CONCURRENCY,
-            Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY,
-            *setting_bounds(Constants.CONFIG_KEY_EXCEL_MAX_CONCURRENCY),
-            AppStrings.UNIT_COUNT,
-            target_layout=precise_layout,
-            description_text=AppStrings.ADVANCED_EXCEL_MAX_CONCURRENCY_DESCRIPTION,
-        )
-        self.adv_spinboxes[Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB] = create_spinbox_row(
-            AppStrings.ADVANCED_EXCEL_SERIALIZATION_THRESHOLD,
-            Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB,
-            *setting_bounds(Constants.CONFIG_KEY_EXCEL_SERIALIZATION_THRESHOLD_MB),
-            AppStrings.UNIT_MB,
-            target_layout=precise_layout,
-            description_text=AppStrings.ADVANCED_EXCEL_SERIALIZATION_THRESHOLD_DESCRIPTION,
-        )
         tab_advanced_layout.addSpacing(10)
         reset_adv_btn = QPushButton(AppStrings.BTN_RESET_ADVANCED)
         reset_adv_btn.clicked.connect(self._reset_advanced_settings)

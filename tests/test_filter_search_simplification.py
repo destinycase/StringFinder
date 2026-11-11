@@ -1,7 +1,6 @@
 """Retired policies cannot reinterpret results; grouped filters retain their terms."""
 import inspect
 import json
-from pathlib import Path
 
 import pytest
 
@@ -50,24 +49,6 @@ def test_invalid_filename_group_is_atomic(qtbot, group):
     assert not panel.add_filename(group)
     assert panel.get_selected_filenames() == ["saved"]
     assert not panel.filename_input_notice.isHidden()
-
-
-@pytest.mark.parametrize("precise", [False, True])
-def test_filename_group_search_preserves_or_semantics(qtbot, tmp_path, precise):
-    panel = FilenameFilterPanel()
-    qtbot.addWidget(panel)
-    panel.add_filename("report,invoice")
-    for name in ("REPORT.txt", "invoice.txt", "other.txt"):
-        (tmp_path / name).write_text("needle needle", encoding="utf-8")
-    filters = panel.get_selected_filenames()
-    if precise:
-        files = engine.FileScanner([str(tmp_path)], ["txt"], filename_filter=filters).scan()
-        result = engine.search_in_files_batch(files, "needle", use_complex_search=True)
-    else:
-        result = engine.search_directory_fast([str(tmp_path)], "needle", ["txt"], filename_filter=filters)
-    assert {Path(row[0]).name for row in result["results"]} == {"REPORT.txt", "invoice.txt"}
-    assert all(row[1] == 2 for row in result["results"])
-    assert not result["skipped"]
 
 
 def test_status_conditions_and_warning_icon(qtbot, mock_config_manager, language):

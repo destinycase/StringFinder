@@ -20,37 +20,11 @@ import pytest
 
 from core.search_engine import (
     format_excel_panic_reason,
-    is_valid_excel_signature,
     search_in_excel_special,
     search_in_file,
 )
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
-
-
-def test_excel_signature_check(tmp_path):
-    with patch("core.search_engine.HAS_RUST_ENGINE", False):
-        valid_xlsx = tmp_path / "valid.xlsx"
-        with open(valid_xlsx, "wb") as f:
-            f.write(b"PK\x03\x04" + b"\x00" * 10)
-        assert is_valid_excel_signature(str(valid_xlsx))
-
-        valid_xls = tmp_path / "valid.xls"
-        with open(valid_xls, "wb") as f:
-            f.write(b"\xd0\xcf\x11\xe0" + b"\x00" * 10)
-        assert is_valid_excel_signature(str(valid_xls))
-
-        invalid_file = tmp_path / "fake.xlsx"
-        with open(invalid_file, "w") as f:
-            f.write("This is just a text file")
-        assert not is_valid_excel_signature(str(invalid_file))
-
-        res = search_in_excel_special(str(invalid_file), "test", exact_match=False)
-        assert res is not None
-        res_list: List[Any] = list(res)
-        assert res_list[0] == "SKIPPED"
-        assert len(res_list) >= 2
-        assert isinstance(res_list[1], str)
 
 
 def test_excel_access_error_classification(tmp_path, monkeypatch):
@@ -158,7 +132,6 @@ def test_python_excel_returns_cell_details(tmp_path, monkeypatch):
     result = search_in_excel_special(
         str(target),
         "needle",
-        use_complex_search=True,
         )
 
     assert isinstance(result, tuple) and len(result) == 3
@@ -178,7 +151,6 @@ def test_python_excel_precise_search_keeps_single_cell_sheet(tmp_path):
     result = search_in_excel_special(
         str(target),
         "needle",
-        use_complex_search=True,
     )
 
     assert isinstance(result, tuple) and len(result) == 3

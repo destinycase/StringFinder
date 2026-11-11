@@ -13,49 +13,10 @@
   3. 파일 처리 도중 예외 발생 시의 스킵(Skip) 처리 및 결과 리포팅.
 """
 
-from unittest.mock import MagicMock, patch
 
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
-
-
-def test_worker_result_batching():
-    file_list = [("test1.txt", 100), ("test2.txt", 200), ("test3.txt", 300)]
-    search_string = "hello"
-
-    worker = SearchWorker({"file_list": file_list, "search_string": search_string, "use_complex_search": True})
-
-    results_received = []
-    worker.signals.results_found.connect(lambda r: results_received.append(r))
-
-    with patch("core.worker.GlobalExecutor.get_executor") as mock_get:
-        mock_executor = MagicMock()
-        mock_get.return_value = mock_executor
-
-        mock_futures = []
-        future = MagicMock()
-        future.result.return_value = {
-            "results": [
-                ("test1.txt", 1, [(1, "hello")]),
-                ("test2.txt", 1, [(1, "hello")]),
-                ("test3.txt", 1, [(1, "hello")]),
-            ],
-            "skipped": [],
-        }
-        mock_futures.append(future)
-
-        mock_executor.submit.side_effect = mock_futures
-
-        with patch("core.worker.wait", return_value=(mock_futures, [])):
-            worker.run()
-
-    all_found = []
-    for batch in results_received:
-        for item in batch:
-            all_found.append(item[0])
-
-    assert len(all_found) == 3
 
 
 def test_worker_total_limit_keeps_exact_allowed_prefix():
@@ -87,108 +48,6 @@ def test_worker_emits_global_limit_for_result_banner():
     worker._stop_for_total_match_limit()
 
     assert emitted == [500_000]
-
-
-def test_precise_structured_concurrency_uses_shared_memory_budget(monkeypatch):
-    worker = SearchWorker(
-        {
-            "file_list": [],
-            "search_string": "needle",
-            "special_mode": "JSON",
-            "use_complex_search": True,
-        }
-    )
-    monkeypatch.setattr(
-        "sf_utils.resource_guard.memory_snapshot",
-        lambda: {
-            "available": 2 * 1024**3,
-            "total": 8 * 1024**3,
-            "process_rss": 1 * 1024**3,
-            "valid": 1,
-        },
-    )
-
-    batches = [[("large.json", 100 * 1024**2)]] * 16
-
-    assert worker._recommended_structured_in_flight(batches, 16) < 16
-
-
-def test_worker_stop_logic():
-    worker = SearchWorker(
-        {"file_list": [("f1.txt", 100), ("f2.txt", 100)], "search_string": "search", "use_complex_search": True}
-    )
-    finished_called = []
-    worker.signals.search_finished.connect(
-        lambda found, total_matches, skipped: finished_called.append((found, total_matches, skipped))
-    )
-
-    with patch("core.worker.GlobalExecutor.get_executor") as mock_get:
-        mock_executor = MagicMock()
-        mock_get.return_value = mock_executor
-
-        mock_future = MagicMock()
-        
-        # [v5.0.0 Fix] 제출 루프 중간에 stop()이 호출되도록 모킹하여 cancel() 호출 여부 검증
-        def side_effect(*args, **kwargs):
-            worker.stop()
-            return mock_future
-        mock_executor.submit.side_effect = side_effect
-
-        with patch("core.worker.wait", return_value=([mock_future], [])):
-            worker.run()
-
-    assert mock_future.cancel.called
-    assert not worker.is_running.is_set()
-    assert worker.stop_event.is_set()
-    assert finished_called == [(0, 0, 0)]
-
-
-def test_worker_timeout_handling():
-    file_list = [("slow_file.txt", 100)]
-    worker = SearchWorker({"file_list": file_list, "search_string": "search", "use_complex_search": True})
-
-    with patch("core.worker.GlobalExecutor.get_executor") as mock_get:
-        mock_executor = MagicMock()
-        mock_get.return_value = mock_executor
-
-        mock_future = MagicMock()
-        mock_future.result.side_effect = Exception("Timeout like error")
-        mock_executor.submit.return_value = mock_future
-
-        finished_called = []
-        skipped_received = []
-        worker.signals.search_finished.connect(
-            lambda found, total_matches, skipped: finished_called.append((found, total_matches, skipped))
-        )
-        worker.signals.skipped_found.connect(lambda s: skipped_received.extend(s))
-
-        with patch("core.worker.wait", return_value=([mock_future], [])):
-            worker.run()
-
-        assert finished_called == [(0, 0, 1)]
-        assert any(s[0] == "slow_file.txt" for s in skipped_received)
-
-
-def test_worker_skipped_signal():
-    file_list = [("skipped_file.xml", 100)]
-    worker = SearchWorker({"file_list": file_list, "search_string": "search", "use_complex_search": True})
-
-    skipped_received = []
-    worker.signals.skipped_found.connect(lambda s: skipped_received.extend(s))
-
-    with patch("core.worker.GlobalExecutor.get_executor") as mock_get:
-        mock_executor = MagicMock()
-        mock_get.return_value = mock_executor
-
-        future = MagicMock()
-        future.result.return_value = {"results": [], "skipped": [("skipped_file.xml", "Test reason")]}
-        mock_executor.submit.return_value = future
-
-        with patch("core.worker.wait", return_value=([future], [])):
-            worker.run()
-
-    assert any(s[0] == "skipped_file.xml" for s in skipped_received)
-    assert len(skipped_received) == 1
 
 
 def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
@@ -228,28 +87,3 @@ def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
     assert finished_received == [(1, 1, 1)]
 
 
-def test_worker_exception_handling():
-    file_list = [("error_file.txt", 100)]
-    worker = SearchWorker({"file_list": file_list, "search_string": "search", "use_complex_search": True})
-
-    skipped_received = []
-    finished_called = []
-    worker.signals.skipped_found.connect(lambda s: skipped_received.extend(s))
-    worker.signals.search_finished.connect(
-        lambda found, total_matches, skipped: finished_called.append((found, total_matches, skipped))
-    )
-
-    with patch("core.worker.GlobalExecutor.get_executor") as mock_get:
-        mock_executor = MagicMock()
-        mock_get.return_value = mock_executor
-        mock_future = MagicMock()
-        mock_future.result.side_effect = Exception("File processing error")
-        mock_executor.submit.return_value = mock_future
-
-        with patch("core.worker.wait", return_value=([mock_future], [])):
-            worker.run()
-
-    assert any(s[0] == "error_file.txt" for s in skipped_received)
-    assert finished_called
-    assert finished_called[0][0] == 0
-    assert finished_called[0][2] >= 1

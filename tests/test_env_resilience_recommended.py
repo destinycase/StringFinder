@@ -20,7 +20,6 @@ import os
 import subprocess
 import sys
 import threading
-import time
 import tracemalloc
 import types
 from typing import Any, cast
@@ -28,7 +27,6 @@ from typing import Any, cast
 import pytest
 
 from core.search_engine import (
-    FileScanner,
     format_excel_panic_reason,
     search_directory_fast,
     search_files_list_fast,
@@ -78,32 +76,6 @@ def test_engine_api_version_mismatch_fallback(monkeypatch, api_version):
         else:
             sys.modules["rust_engine.sf_engine"] = real_sf_engine
         importlib.reload(search_engine)
-
-
-def test_fallback_exact_match_semantics(tmp_path):
-    p = tmp_path / "exact_semantics.txt"
-    p.write_text("user_id\nid\nidentity\n", encoding="utf-8")
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("core.search_engine.HAS_RUST_ENGINE", False)
-        result = search_in_file(str(p), "id", special_mode=Constants.MODE_EXACT, use_complex_search=True)
-
-    search_result = _require_search_result(result)
-    assert search_result[1] == 1
-    assert search_result[2][0][1].strip() == "id"
-
-
-def test_fallback_binary_placeholder_consistency(tmp_path):
-    p = tmp_path / "binary_placeholder.bin"
-    p.write_bytes(b"Some text\x00More binary data with KEYWORD here")
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("core.search_engine.HAS_RUST_ENGINE", False)
-        result = search_in_file(str(p), "KEYWORD", use_complex_search=True)
-
-    search_result = _require_search_result(result)
-    assert search_result[1] == 1
-    assert search_result[2][0][1] == AppStrings.MSG_BINARY_MATCH.format(1)
 
 
 def test_rust_binary_marker_is_mapped_to_appstrings(tmp_path):
@@ -303,7 +275,7 @@ def test_windows_file_lock_sharing_violation_skip(monkeypatch, tmp_path):
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("core.search_engine.HAS_RUST_ENGINE", False)
-        result = search_in_file(str(p), "keyword", use_complex_search=True)
+        result = search_in_file(str(p), "keyword")
 
     assert isinstance(result, tuple) and len(result) == 2
     assert result[0] == Constants.STATUS_SKIPPED
@@ -363,20 +335,6 @@ def test_posix_concurrent_replace_does_not_crash_rust_search(tmp_path):
     _assert_concurrent_replace_is_safe(tmp_path, truncate=False)
 
 
-@pytest.mark.chaos
-@pytest.mark.skipif(os.name != "nt", reason="Windows-only UNC behavior")
-def test_unc_invalid_or_offline_share_timeout():
-    unc_path = r"\\this-host-should-not-exist-for-stringfinder-tests\missing-share"
-    scanner = FileScanner([unc_path], [".txt"])
-
-    t0 = time.perf_counter()
-    result = scanner.scan()
-    elapsed = time.perf_counter() - t0
-
-    assert result == []
-    assert elapsed < 10.0
-
-
 def test_mixed_encodings_and_corrupt_bytes(tmp_path):
     utf16be_file = tmp_path / "utf16be_no_bom.txt"
     cp949_file = tmp_path / "cp949_text.txt"
@@ -386,9 +344,9 @@ def test_mixed_encodings_and_corrupt_bytes(tmp_path):
     cp949_file.write_bytes("KOREAN TARGET".encode("cp949"))
     corrupt_file.write_bytes(b"\xff\xfe\x00\x80TARGET\xff\x00")
 
-    r1 = search_in_file(str(utf16be_file), "TARGET", use_complex_search=True)
-    r2 = search_in_file(str(cp949_file), "TARGET", use_complex_search=True)
-    r3 = search_in_file(str(corrupt_file), "TARGET", use_complex_search=True)
+    r1 = search_in_file(str(utf16be_file), "TARGET")
+    r2 = search_in_file(str(cp949_file), "TARGET")
+    r3 = search_in_file(str(corrupt_file), "TARGET")
 
     assert r1 is None or (isinstance(r1, tuple) and len(r1) in (2, 3))
     assert r2 is not None

@@ -164,21 +164,9 @@ def main():
         # Also prevents a queued first-paint callback from starting after shutdown.
         startup_cleanup.stop()
         from core.system_manager import SystemManager
-        from core.worker import GlobalExecutor, shutdown_global_manager
         from sf_utils.config_manager import ConfigManager
         from sf_utils.logger import logger
 
-        try:
-            logger.info(AppStrings.LOG_SYS_WKR_SHUTDOWN)
-            GlobalExecutor.shutdown(wait=True, cancel_futures=True)
-            logger.info(AppStrings.LOG_SYS_WKR_SHUTDOWN_DONE)
-        except Exception as e:
-            logger.error(AppStrings.LOG_SYS_WKR_SHUTDOWN_FAIL.format(e))
-        # 멀티프로세싱 자원을 안전하게 회수하고 매니저 프로세스를 종료합니다.
-        try:
-            shutdown_global_manager()
-        except Exception as e:
-            logger.debug(AppStrings.LOG_SYS_CLOSE_CLEANUP_FAIL.format(e))
         try:
             config_mgr = ConfigManager()
             config_mgr.stop()

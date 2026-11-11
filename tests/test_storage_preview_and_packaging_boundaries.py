@@ -12,7 +12,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QPlainTextEdit
 
 from core import search_engine as engine
-from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants as C
 from ui.models import MatchDetailModel
@@ -49,25 +48,6 @@ def test_stranded_config_backup_is_validated_and_loaded(mock_config_manager):
     assert manager._load()[C.CONFIG_KEY_THEME] == "Light"
     Path(str(path) + C.BACKUP_FILE_SUFFIX).write_text('[]', encoding="utf-8")
     assert manager._load()[C.CONFIG_KEY_THEME] == manager._defaults[C.CONFIG_KEY_THEME]
-
-
-def test_xml_limit_keeps_real_hit_and_reports_partial_file(tmp_path, monkeypatch):
-    if not engine.HAS_RUST_ENGINE:
-        pytest.skip("Rust engine unavailable")
-    path = tmp_path / "limited.xml"
-    path.write_text("<root><v>needle</v><v>needle</v></root>", encoding="utf-8")
-    monkeypatch.setattr(engine, "_memory_guard_result", lambda *args: None)
-    snapshot = {C.CONFIG_KEY_MAX_PER_FILE_MATCHES: 1}
-    with engine.use_search_settings_snapshot(snapshot):
-        result = engine.search_in_xml_special(str(path), "needle")
-    assert result[1] == 1
-    assert "__SF_TRUNCATED__" not in str(result)
-    batch = engine.search_in_files_batch(
-        [(str(path), path.stat().st_size)], "needle", C.MODE_XML,
-        search_settings_snapshot=snapshot,
-    )
-    assert batch["results"][0][1] == 1
-    assert batch["skipped"] == [(str(path), AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(1))]
 
 
 @pytest.mark.parametrize("mode,path,matches,column,expected", [
@@ -124,25 +104,6 @@ def test_long_preview_uses_original_character_indices(qapp, prefix):
     assert "needle" in text
     assert prefix[-20:] + "needle" in text
     preview.close()
-
-
-def test_cancelled_text_retains_completed_hits(tmp_path):
-    path = tmp_path / "cancel.txt"
-    path.write_text("needle\n" + "other\n" * 2000, encoding="utf-8")
-
-    class Cancel:
-        calls = 0
-
-        def is_set(self):
-            self.calls += 1
-            return self.calls >= 2
-
-    result = engine.search_in_file(str(path), "needle", use_complex_search=True, stop_event=Cancel())
-    assert result[0] == str(path)
-    assert result[1] == 1
-    assert result[2][0] == (1, "needle")
-    assert result[2][-1][0] == -2
-    assert result[2][-1][1] == AppStrings.LOG_SCH_STOPPED_BY_USER
 
 
 @pytest.mark.parametrize("query,content,found", [("a\ufeffb", "ab\n", False),

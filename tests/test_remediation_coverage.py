@@ -21,7 +21,6 @@ import pytest
 from core.search_engine import search_in_file, search_in_json_special, search_in_xml_special
 
 
-
 @pytest.fixture
 def json_file(tmp_path):
     data = {"settings": {"theme": "Dark", "volume": 80}}
@@ -64,11 +63,10 @@ def test_xml_detail_format(xml_file):
     assert str(matches_text[0][2]) == "Inner Content"
 
 
-
 def test_complex_search_python_fallback(tmp_path):
     f_path = tmp_path / "german.txt"
     f_path.write_text("Das ist die Maße.", encoding="utf-8")
-    res = search_in_file(str(f_path), "Masse", use_complex_search=True)
+    res = search_in_file(str(f_path), "Masse")
     assert res is not None
     res_list: List[Any] = list(res)
     assert int(res_list[1]) == 1

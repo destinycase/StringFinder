@@ -21,9 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from core.search_engine import (
     SearchResult,
-    _search_text_stream,
     search_in_file,
-    search_in_files_batch,
 )
 from sf_utils.constants import Constants
 
@@ -43,28 +41,17 @@ def complex_file(tmp_path):
 
 def test_search_in_file_complex_off(complex_file):
     # 6.4.2부터 기본 검색도 Unicode 전체 대소문자 접기(ß = ss)로 비교합니다.
-    result = _require_search_result(search_in_file(complex_file, "Masse", use_complex_search=False))
+    result = _require_search_result(search_in_file(complex_file, "Masse"))
     _file_path, count, matches = result
     assert count == 1
     assert matches[0][1] == "Hier ist das Ma\u00dfe aller Dinge."
 
 
 def test_search_in_file_complex_on(complex_file):
-    result = _require_search_result(search_in_file(complex_file, "Masse", use_complex_search=True))
+    result = _require_search_result(search_in_file(complex_file, "Masse"))
     _file_path, count, matches = result
     assert count == 1
     assert matches[0][1] == "Hier ist das Ma\u00dfe aller Dinge."
-
-
-def test_batch_search_complex(complex_file):
-    file_batch = [(complex_file, os.path.getsize(complex_file))]
-
-    res_off = search_in_files_batch(file_batch, "Masse", use_complex_search=False)
-    assert len(res_off["results"]) == 1
-
-    res_on = search_in_files_batch(file_batch, "Masse", use_complex_search=True)
-    assert len(res_on["results"]) == 1
-    assert res_on["results"][0][0] == complex_file
 
 
 @pytest.mark.parametrize("exact_match", [False, True])
@@ -78,39 +65,15 @@ def test_unicode_canonical_match_is_invariant_across_file_size_paths(tmp_path, e
         "\u00e9",
         file_size=file_path.stat().st_size,
         special_mode=special_mode,
-        use_complex_search=True,
     )
     large_result = search_in_file(
         str(file_path),
         "\u00e9",
         file_size=11 * 1024 * 1024,
         special_mode=special_mode,
-        use_complex_search=True,
     )
 
     assert _require_search_result(small_result)[1] == 1
     assert _require_search_result(large_result)[1] == 1
 
 
-def test_text_stream_stops_reading_after_the_truncation_marker():
-    consumed = 0
-
-    def matching_lines():
-        nonlocal consumed
-        for _ in range(100):
-            consumed += 1
-            yield "needle\n"
-
-    matches, count, stopped = _search_text_stream(
-        matching_lines(),
-        "needle",
-        exact_match=False,
-        stop_event=None,
-        max_per_file=2,
-    )
-
-    assert consumed == 3
-    assert count == 3
-    assert len(matches) == 3
-    assert matches[-1][0] == -1
-    assert stopped is False

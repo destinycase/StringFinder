@@ -33,7 +33,7 @@ def test_rust_performance_policy_guide(german_content_file):
     """
     [안내] 6.4.2부터 Rust 기본 검색도 'ß' <-> 'ss' 같은 Unicode 전체 대소문자 접기를 지원합니다.
     """
-    result = search_in_file(german_content_file, "strasse", use_complex_search=False)
+    result = search_in_file(german_content_file, "strasse")
     assert result is not None, "기본 검색도 casefold 기준으로 'ß'와 'ss'를 같게 봐야 합니다."
     assert result[1] == 1
     assert "Straße" in result[2][0][1]
@@ -44,7 +44,7 @@ def test_python_integrity_policy_guide(german_content_file):
     [안내] Python 엔진(특별한 문자열 검색)은Full Case Folding을 지원하여 유니코드 무결성을 보장합니다.
     """
     # 명시적으로 use_complex_search=True를 설정해야만 Python 엔진이 구동됩니다.
-    result = search_in_file(german_content_file, "strasse", use_complex_search=True)
+    result = search_in_file(german_content_file, "strasse")
 
     assert result is not None, "Python 엔진은 'casefold'를 통해 'ß' <-> 'ss' 검색에 성공해야 합니다."
     if isinstance(result, tuple) and len(result) == 3:
@@ -63,7 +63,7 @@ def test_engine_isolation_policy_guide_rust_error(tmp_path):
 
     with patch("core.search_engine.HAS_RUST_ENGINE", True):
         with patch("core.search_engine.sf_engine.search_file", side_effect=RuntimeError("Crash")):
-            result = search_in_file(str(test_file), "keyword", use_complex_search=False)
+            result = search_in_file(str(test_file), "keyword")
             # Rust 예외 → SKIPPED 반환 (Python 폴백 없음)
             assert result is not None
             assert result[0] == Constants.STATUS_SKIPPED or result is None

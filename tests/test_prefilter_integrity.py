@@ -1,7 +1,6 @@
 import os
-import json
 import unittest
-from core.search_engine import _quick_text_probe, search_in_json_special
+from core.search_engine import search_in_json_special
 
 class TestPrefilterIntegrity(unittest.TestCase):
     def setUp(self):
@@ -12,25 +11,6 @@ class TestPrefilterIntegrity(unittest.TestCase):
             if os.path.exists(f):
                 os.remove(f)
 
-    def test_utf16_prefilter_hit(self):
-        """UTF-16LE 대용량 파일에서 pre-filter가 정확히 매치를 찾는지 확인"""
-        self.test_file = "test_utf16_large.json"
-        target_str = "한글매치데이터"
-        data = {"key": target_str, "padding": "x" * 1024 * 1024} # 1MB+
-        
-        try:
-            # UTF-16LE로 저장
-            with open(self.test_file, "wb") as f:
-                f.write(json.dumps(data, ensure_ascii=False).encode("utf-16-le"))
-                
-            is_hit = _quick_text_probe(self.test_file, target_str)
-            self.assertTrue(is_hit, "UTF-16LE 대용량 파일에서 pre-filter 매치 실패")
-            
-            res = search_in_json_special(self.test_file, target_str)
-            self.assertIsNotNone(res, "UTF-16LE 검색 결과 누락")
-        finally:
-            if os.path.exists(self.test_file):
-                os.remove(self.test_file)
 
     def test_large_corrupted_file_integrity(self):
         """6MB 손상된 파일(Invalid Encoding)에서 NoneType 에러 없이 SKIPPED 반환되는지 확인 [v4.63.10]"""
@@ -67,37 +47,6 @@ class TestPrefilterIntegrity(unittest.TestCase):
             self.assertIn("JSON", str(res[1]), "정상적인 JSON 구문 오류 메시지가 보고되지 않음")
             self.assertNotIn("{}", str(res[1]), "포맷되지 않은 오류 메시지가 노출됨")
 
-    def test_utf16_prefilter_miss(self):
-        """매치가 없는 경우 정확히 False를 반환하여 조기 종료되는지 확인"""
-        target_str = "존재하지않는값"
-        data = {"key": "다른값", "padding": "y" * 5 * 1024 * 1024} # 5MB+
-        
-        with open(self.test_json, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-            
-        is_hit = _quick_text_probe(self.test_json, target_str)
-        self.assertFalse(is_hit, "매치가 없는데 pre-filter가 True를 반환함 (최적화 실패)")
-
-    def test_utf16_bom_prefilter_hit(self):
-        """[v4.63.13 Fix] UTF-16 BOM 파일의 중간에 위치한 검색어를 정상 탐지하는지 확인"""
-        self.test_file = "test_utf16_bom_middle.json"
-        target_str = "target_match_bom"
-        # 검색어가 중간에 오도록 padding 추가
-        data = {"padding": "P" * 1024 * 1024, "key": target_str}
-        
-        try:
-            with open(self.test_file, "wb") as f:
-                # encode("utf-16") -> BOM 포함됨
-                f.write(json.dumps(data).encode("utf-16"))
-                
-            is_hit = _quick_text_probe(self.test_file, target_str)
-            self.assertTrue(is_hit, "UTF-16 BOM 파일 중간의 매치를 찾지 못함 (v4.63.13 결함)")
-            
-            res = search_in_json_special(self.test_file, target_str)
-            self.assertIsNotNone(res, "UTF-16 BOM existence_only 결과 누락")
-        finally:
-            if os.path.exists(self.test_file):
-                os.remove(self.test_file)
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,22 +1,19 @@
 import ctypes
-import datetime
 from contextlib import contextmanager
 from contextvars import ContextVar
 import logging
-import mmap
-import multiprocessing
 import os
 import re
+import time
 import unicodedata
 from os.path import splitext
-from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
 from sf_utils.english_strings import ENGLISH_STRINGS
 from sf_utils.localization import get_korean_strings, get_language
-from core.json_policy import DuplicateKeyError, ObjectPairs, loads_document
 from core.search_query import validate_search_query
 from core.skip_reason_codes import (
     EXPAT_XML_DETAIL_TRANSLATION_NAMES,
@@ -86,17 +83,6 @@ def _max_search_file_size_bytes() -> int:
     return configured_mb * 1024 * 1024
 
 
-def _file_size_limit_result(file_size: int) -> Optional[Tuple[str, str]]:
-    if file_size <= _max_search_file_size_bytes():
-        return None
-    return (
-        Constants.STATUS_SKIPPED,
-        AppStrings.SKIP_REASON_TOO_LARGE.format(
-            AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
-        ),
-    )
-
-
 def _get_rust_search_limits() -> Tuple[int, int, int]:
     """Return the safety limits supported by the Rust search API.
 
@@ -133,7 +119,7 @@ def _build_rust_options(**values: Any) -> Optional[Any]:
     """Build the named Rust options object when the new extension is available.
 
     Older locally installed extensions do not expose ``SearchOptions`` yet.
-    Returning ``None`` keeps the Python compatibility path operational while a
+    Returning ``None`` lets callers use the plain keyword arguments while a
     rebuilt extension is rolled out.
     """
     options_type = getattr(sf_engine, "SearchOptions", None)
@@ -272,8 +258,6 @@ SearchMatch = Tuple[Any, ...]
 SearchResult = Tuple[str, int, List[SearchMatch]]
 SkippedResult = Tuple[str, str]
 FileInfo = Tuple[str, int]
-class _UnsupportedXmlDtd(Exception):
-    """XML DTD 및 엔터티 확장을 명시적으로 거부하기 위한 내부 신호입니다."""
 
 
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
@@ -425,6 +409,15 @@ def _localize_file_size_detail(detail: Any) -> str:
 def _localize_internal_error_detail(context: str, detail: Any) -> str:
     _log_raw_skip_detail(context, detail)
     return AppStrings.SKIP_DETAIL_INTERNAL_FAILURE
+
+
+def _known_rust_skip_reason(error: Any) -> Optional[str]:
+    """Rust가 ``코드|세부`` 형식으로 보낸 건너뜀 사유(파일 크기 초과 등)이면 번역한 문구를 돌려줍니다."""
+    raw = str(error)
+    code, separator, _detail = raw.partition("|")
+    if separator and code in _SKIP_REASON_TEMPLATE_NAMES:
+        return format_skip_reason(raw)
+    return None
 
 
 def format_skip_reason(reason: Any) -> str:
@@ -709,13 +702,6 @@ def _split_excel_match_content(content: str) -> Tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
-def _structured_decode_failure() -> SkippedResult:
-    reason = (AppStrings.ERROR_DOCUMENT_ENCODING
-              if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") == "auto"
-              else AppStrings.ERROR_SELECTED_ENCODING)
-    return Constants.STATUS_SKIPPED, reason
-
-
 def _split_json_match_content(content: str) -> List[str]:
     """Decode explicit fields when a JSON path contains the tab delimiter."""
     if content.startswith("JSON_FIELDS|"):
@@ -963,126 +949,11 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
     return "\n".join(unique_reasons) if unique_reasons else None
 
 
-def _extract_normalized_partial_skip_reason(matches: Any) -> Optional[str]:
-    """Extract partial-search notices from Python-normalized result rows."""
-    reasons: List[str] = []
-    for match in matches or []:
-        if not isinstance(match, (tuple, list)) or not match:
-            continue
-        marker_line = str(match[0])
-        if marker_line == "-1":
-            limit = _positive_limit(
-                None,
-                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-                Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-            )
-            reasons.append(AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(limit))
-        elif marker_line == "-2" and len(match) > 1 and match[1]:
-            reasons.append(str(match[1]))
-    unique_reasons = list(dict.fromkeys(reasons))
-    return "\n".join(unique_reasons) if unique_reasons else None
-
-
 def normalize_unicode(text: Any) -> str:
     """입력 텍스트를 NFC 유니코드 정규화 형식으로 변환하여 반환합니다."""
     if text is None:
         return ""
     return unicodedata.normalize("NFC", str(text))
-
-
-def _search_text_stream(
-    lines: Iterable[str],
-    search_string_nfc: str,
-    *,
-    exact_match: bool,
-    stop_event: Any,
-    max_per_file: int,
-) -> Tuple[List[SearchMatch], int, bool]:
-    """Search decoded text lines with one invariant implementation for every file size."""
-    matches: List[SearchMatch] = []
-    count = 0
-    search_fold = search_string_nfc.casefold()
-    normalize_nfc = unicodedata.normalize
-
-    def detail_texts(line: str, folded: str, occurrences: int):
-        """Keep detail rows bounded for huge single-line documents."""
-        normalized = line if line.isascii() else normalize_nfc("NFC", line)
-        text = normalized.strip()
-        leading = len(normalized) - len(normalized.lstrip())
-        limit = 1024
-        if len(text) <= limit:
-            return [text] * occurrences
-        positions = []
-        cursor = 0
-        for _ in range(occurrences):
-            found = folded.find(search_fold, cursor)
-            if found < 0:
-                break
-            positions.append(found)
-            cursor = found + max(1, len(search_fold))
-        result = []
-        # Folded indices are not character indices (e.g. ß -> ss).
-        original_cursor = 0
-        folded_cursor = 0
-        for start in positions:
-            if normalized.isascii():
-                start = max(0, start - leading)
-            else:
-                while original_cursor < len(normalized):
-                    width = len(normalized[original_cursor].casefold())
-                    if folded_cursor + width > start:
-                        break
-                    folded_cursor += width
-                    original_cursor += 1
-                start = max(0, original_cursor - leading)
-            left = max(0, start - limit // 2)
-            right = min(len(text), left + limit)
-            left = max(0, right - limit)
-            result.append(("..." if left else "") + text[left:right] + ("..." if right < len(text) else ""))
-        return result or [text[:limit] + "..."] * occurrences
-
-    # Hoist the search-mode branch out of the line loop. Checking ``stop_event``
-    # first also avoids the modulo operation for synchronous callers without one.
-    if exact_match:
-        for line_number, line in enumerate(lines, start=1):
-            if stop_event and (line_number - 1) % 1000 == 0 and stop_event.is_set():
-                return matches, count, True
-            normalized_line = line if line.isascii() else normalize_nfc("NFC", line)
-            folded_line = normalized_line.casefold()
-            if folded_line.strip() != search_fold:
-                continue
-
-            occurrences = 1
-            count += occurrences
-            available = max_per_file - (count - occurrences)
-            if available > 0:
-                matches.extend((line_number, detail) for detail in detail_texts(
-                    line, folded_line, min(occurrences, available)
-                ))
-            if occurrences > available:
-                matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file)))
-                break
-    else:
-        for line_number, line in enumerate(lines, start=1):
-            if stop_event and (line_number - 1) % 1000 == 0 and stop_event.is_set():
-                return matches, count, True
-            normalized_line = line if line.isascii() else normalize_nfc("NFC", line)
-            folded_line = normalized_line.casefold()
-            if search_fold not in folded_line:
-                continue
-
-            occurrences = folded_line.count(search_fold)
-            count += occurrences
-            available = max_per_file - (count - occurrences)
-            if available > 0:
-                matches.extend((line_number, detail) for detail in detail_texts(
-                    line, folded_line, min(occurrences, available)
-                ))
-            if occurrences > available:
-                matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file)))
-                break
-
-    return matches, count, False
 
 
 def is_hidden_windows(path: str) -> bool:
@@ -1101,7 +972,7 @@ def is_hidden_path(path: str) -> bool:
 
     The Rust ``ignore`` walker treats dot-prefixed files and directories as
     hidden even on Windows, while the Win32 attribute check alone does not.
-    Keep the Python fallback/precise-search scanner consistent with that rule.
+    Keep the Python-side path checks consistent with that rule.
     """
     name = os.path.basename(os.fspath(path))
     return name.startswith(".") and name not in {".", ".."} or is_hidden_windows(path)
@@ -1158,20 +1029,6 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
     if Constants.MODE_EXACT in special_mode:
         bits |= Constants.RUST_MODE_EXACT
     return bits
-
-
-def is_binary_file(file_path: str) -> bool:
-    """파일의 처음 8KB를 읽어 NUL 바이트 포함 여부로 바이너리 여부를 판별합니다."""
-    try:
-        with open(file_path, "rb") as f:
-            # 헤드 읽기 범위를 8KB로 확대하여 PDF 파일 등의 바이너리 판독 정확도를 높였습니다.
-            chunk = f.read(8192)
-            return b"\x00" in chunk and not detect_encoding_quickly(chunk).startswith("utf-16")
-    except (IOError, OSError, PermissionError):
-        return False
-    except Exception as e:
-        logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_FAIL.format(file_path, e))
-        return False
 
 
 def detect_encoding_quickly(data: bytes) -> str:
@@ -1248,207 +1105,6 @@ def detect_encoding_quickly(data: bytes) -> str:
         pass
     return Constants.ENC_UTF8
 
-def _quick_text_probe(
-    file_path: str, search_string: str, exact_match: bool = False,
-    raw_data: Optional[bytes] = None, encoding: Optional[str] = None,
-) -> bool:
-    """Conservative decoded-text check; never reject matches using raw bytes."""
-    try:
-        if encoding is None:
-            if raw_data is not None:
-                encoding = detect_encoding_quickly(raw_data[:65536])
-            else:
-                with open(file_path, "rb") as stream:
-                    encoding = detect_encoding_quickly(stream.read(65536))
-        if raw_data is not None:
-            content = raw_data.decode(encoding, errors="strict")
-            return normalize_unicode(search_string).casefold() in normalize_unicode(content).casefold()
-        with open(file_path, "r", encoding=encoding, errors="strict") as stream:
-            query = normalize_unicode(search_string).casefold()
-            for line in stream:
-                value = normalize_unicode(line).casefold()
-                if (value.strip() == query if exact_match else query in value):
-                    return True
-        return False
-    except (OSError, UnicodeError, LookupError):
-        # A pre-check cannot prove a miss when reading/decoding fails.
-        return True
-
-
-def _decode_text_bytes(data: bytes) -> Tuple[str, str]:
-    """Decode strictly; an ASCII prefix does not prove the rest is UTF-8."""
-    encoding = detect_encoding_quickly(data[:65536])
-    if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") != "auto":
-        return data.decode(encoding, errors="strict"), encoding
-    if encoding == Constants.ENC_CP949:
-        # A sample ending inside a UTF-8 character can look like CP949.
-        encoding = Constants.ENC_UTF8
-    try:
-        return data.decode(encoding, errors="strict"), encoding
-    except UnicodeDecodeError:
-        if encoding != Constants.ENC_UTF8:
-            raise
-        return data.decode(Constants.ENC_CP949, errors="strict"), Constants.ENC_CP949
-
-
-def _search_text_file(file_path: str, encoding: str, *args, **kwargs):
-    """Restart a failed UTF-8 scan without retaining partial results."""
-    if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") != "auto":
-        with open(file_path, "r", encoding=encoding, errors="strict") as stream:
-            return _search_text_stream(stream, *args, **kwargs)
-    if encoding == Constants.ENC_CP949:
-        encoding = Constants.ENC_UTF8
-    try:
-        with open(file_path, "r", encoding=encoding, errors="strict") as stream:
-            return _search_text_stream(stream, *args, **kwargs)
-    except UnicodeDecodeError:
-        if encoding == Constants.ENC_UTF8:
-            try:
-                with open(file_path, "r", encoding=Constants.ENC_CP949, errors="strict") as stream:
-                    return _search_text_stream(stream, *args, **kwargs)
-            except UnicodeDecodeError:
-                pass
-        # Ordinary text/binary searches retain the existing replacement policy
-        # for unsupported encodings. Structured parsers remain strict.
-        with open(file_path, "r", encoding=encoding, errors="replace") as stream:
-            return _search_text_stream(stream, *args, **kwargs)
-
-
-def read_text_file_with_encoding(file_path: str) -> Tuple[str, str]:
-    """파일 경로를 받아 자동으로 인코딩을 감지한 뒤 텍스트를 반환합니다."""
-    try:
-        with open(file_path, "rb") as f:
-            return _decode_text_bytes(f.read())
-    except (IOError, OSError) as e:
-        logger.debug(AppStrings.ERROR_READ_FILE.format(file_path, e))
-        raise
-
-
-class FileScanner:
-    """지정된 폴더 및 확장자에 맞는 파일을 찾아 목록화하는 클래스입니다."""
-
-    def __init__(
-        self,
-        folders: List[str],
-        extensions: List[str],
-        filename_filter: Optional[Union[str, List[str]]] = None,
-        stop_check_callback: Optional[Callable[[], bool]] = None,
-        **kwargs,
-    ):
-        """객체를 초기화합니다."""
-        self.folders = folders
-        self.extensions = [(e if e.startswith(".") else "." + e).lower() for e in extensions]
-        if not filename_filter:
-            self.filename_filters: List[str] = []
-        elif isinstance(filename_filter, str):
-            self.filename_filters = [filename_filter.lower()]
-        else:
-            self.filename_filters = [f.lower() for f in filename_filter]
-        self.exclude_hidden = bool(kwargs.get("exclude_hidden", False))
-        self.include_junctions = kwargs.get("include_junctions", _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False)) is True
-        self.stop_check_callback = stop_check_callback
-        self._yield_counter: int = 0
-        self.skipped: List[Tuple[str, str]] = []
-
-    def scan(self) -> List[FileInfo]:
-        """지정된 폴더들을 재귀적으로 스캔하여 파일 목록을 반환합니다."""
-        file_list: List[FileInfo] = []
-        self.skipped.clear()
-        visited = set()
-        for folder in self.folders:
-            if self.stop_check_callback and self.stop_check_callback():
-                break
-            if is_recycle_bin_path(folder):
-                continue
-            if not os.path.exists(folder):
-                self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, "file not found"))))
-                continue
-            if not self.include_junctions and os.path.isjunction(folder):
-                self.skipped.append((folder, AppStrings.SKIP_ROOT_JUNCTION))
-                continue
-            real_folder = os.path.normcase(os.path.realpath(folder))
-            if real_folder in visited:
-                continue
-            visited.add(real_folder)
-            self._scan_iterative(folder, file_list, visited)
-        return file_list
-
-    def _scan_iterative(self, folder: str, file_list: List[FileInfo], visited: set):
-        """Directory depth must not depend on Python's recursion limit."""
-        pending = [folder]
-        while pending:
-            if self.stop_check_callback and self.stop_check_callback():
-                return
-            self._scan_directory(pending.pop(), file_list, visited, pending)
-
-    def _scan_directory(self, folder: str, file_list: List[FileInfo], visited: set, pending: List[str]):
-        """Close the directory handle before processing its children."""
-        if _has_recycle_bin_component(folder):
-            return
-        try:
-            with os.scandir(folder) as entries:
-                for entry in entries:
-                    if self.stop_check_callback and self.stop_check_callback():
-                        return
-                    if self.exclude_hidden and is_hidden_path(entry.path):
-                        continue
-                    if entry.is_symlink():
-                        continue
-                    if not self.include_junctions and os.path.isjunction(entry.path):
-                        continue
-                    if hasattr(self, "_yield_counter"):
-                        self._yield_counter += 1
-                        if self._yield_counter % 5000 == 0:
-                            import time
-
-                            time.sleep(Constants.YIELD_SLEEP_TIME)
-                    else:
-                        self._yield_counter = 1
-                    try:
-                        if entry.is_dir():
-                            real_path = os.path.normcase(os.path.realpath(entry.path))
-                            if real_path not in visited:
-                                visited.add(real_path)
-                                pending.append(entry.path)
-                        elif entry.is_file():
-                            if is_recycle_bin_path(entry.path):
-                                continue
-                            ext = splitext(entry.name)[1].lower()
-                            if not self.extensions or ext in self.extensions:
-                                if self.filename_filters:
-                                    is_matched = False
-                                    fname_lower = entry.name.lower()
-                                    for pattern in self.filename_filters:
-                                        if pattern in fname_lower:
-                                            is_matched = True
-                                            break
-                                    if not is_matched:
-                                        continue
-                                file_list.append((entry.path, entry.stat().st_size))
-                    except PermissionError as e:
-                        self.skipped.append((entry.path, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
-                        logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_FAIL.format(entry.path, e))
-                    except OSError as e:
-                        self.skipped.append((entry.path, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
-                        logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_FAIL.format(entry.path, e))
-        except PermissionError as e:
-            self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
-            logger.warning(AppStrings.LOG_SCH_FOLDER_ACCESS_DENIED.format(folder, e))
-        except OSError as e:
-            self.skipped.append((folder, format_skip_reason(build_skip_reason(SKIP_CODE_WALK, str(e)))))
-            logger.error(AppStrings.LOG_SCH_SCAN_OS_ERROR.format(folder, e))
-
-
-def _excel_cell_text(value: Any) -> str:
-    """Use the same decoded cell representation as the native Excel reader."""
-    if isinstance(value, bool):
-        return str(value).lower()
-    if isinstance(value, float) and value.is_integer():
-        return format(value, ".0f")
-    if isinstance(value, datetime.datetime) and value.time() == datetime.time():
-        return value.date().isoformat()
-    return str(value)
-
 
 def _check_excel_signature(file_path: str) -> Tuple[bool, Optional[str]]:
     """엑셀 파일의 이진 시그니처가 올바른지 확인합니다."""
@@ -1469,17 +1125,10 @@ def _check_excel_signature(file_path: str) -> Tuple[bool, Optional[str]]:
         )
 
 
-def is_valid_excel_signature(file_path: str) -> bool:
-    """주어진 파일이 유효한 엑셀 시그니처를 가졌는지 여부를 반환합니다."""
-    is_valid, _ = _check_excel_signature(file_path)
-    return is_valid
-
-
 def search_in_excel_special(
     file_path: str,
     search_string: str,
     exact_match: bool = False,
-    use_complex_search: bool = False,
     stop_event=None,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """엑셀 파일 내의 텍스트를 검색하는 특수 엔진을 실행합니다."""
@@ -1487,155 +1136,51 @@ def search_in_excel_special(
     signature_ok, signature_error = _check_excel_signature(file_path)
     if not signature_ok:
         return (Constants.STATUS_SKIPPED, signature_error or AppStrings.ERROR_EXCEL_SIGNATURE)
-    if HAS_RUST_ENGINE and not use_complex_search:
-        try:
-            mode_bits = Constants.RUST_MODE_NORMAL | Constants.RUST_MODE_EXCEL
-            if exact_match:
-                mode_bits |= Constants.RUST_MODE_EXACT
-            max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-            results = sf_engine.search_file(  # type: ignore
-                str(file_path),
-                search_string,
-                mode_bits,
-                max_per_file=max_per_file,
-                max_json_depth=max_json_depth,
-                max_json_size=max_json_size,
-                **_rust_policy_kwargs(),
-            )
-            if results:
-                error_reason = _extract_marker_skip_reason(results)
-                if error_reason:
-                    return (Constants.STATUS_SKIPPED, error_reason)
-                partial_reason = _extract_partial_skip_reason(results)
-                processed, _binary_count, sheet_skips = _normalize_rust_matches(
-                    results,
-                    Constants.MODE_EXCEL,
-                )
-                sheet_errors = [
-                    AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, detail)
-                    for sheet_name, detail in sheet_skips
-                ]
-                for sheet_error in sheet_errors:
-                    logger.warning("[%s] %s", file_path, sheet_error)
-                if processed:
-                    if partial_reason:
-                        processed.append((-2, partial_reason, "", ""))
-                    return (file_path, _visible_match_count(processed), processed)
-                if sheet_errors:
-                    return (Constants.STATUS_SKIPPED, sheet_errors[0])
-            # [방어 정책] Rust 엔진에서 결과가 없으면 즉시 종료합니다.
-            # 이는 중복 파싱과 다른 성능 비용을 방지하기 위한 의도적인 설계입니다.
-            # 복합 검색(대소문자 비교) 상황에서는 Python 폴백을 사용하여 무결성을 보장합니다.
-            return None
-        except Exception as e:
-            logger.error(AppStrings.LOG_SCH_RUST_EXCEL_FAIL.format(file_path, e))
-            raw_reason = str(e)
-            if raw_reason.startswith((f"{SKIP_CODE_EXCEL_PROCESS}|", f"{SKIP_CODE_EXCEL_PANIC}|")):
-                return (Constants.STATUS_SKIPPED, format_skip_reason(raw_reason))
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_SEARCH_EXCEL.format(
-                    file_path,
-                    _localize_internal_error_detail("Excel", e),
-                ),
-            )
     try:
-        from python_calamine import CalamineWorkbook
-
-        try:
-            sparse_reader = getattr(sf_engine, "SparseExcelWorkbook", None) if HAS_RUST_ENGINE else None
-            use_sparse = isinstance(sparse_reader, type) and file_path.lower().endswith((".xlsx", ".xlsm"))
-            workbook = cast(Any, sparse_reader)(file_path) if use_sparse else CalamineWorkbook.from_path(file_path)
-        except (IOError, OSError) as e:
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_EXCEL_ACCESS.format(_localize_io_error_detail(e)),
-            )
-        except BaseException as e:  # PanicException 등 C 레벨 예외까지 포착
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_EXCEL_PROCESS.format(
-                    _localize_internal_error_detail("Excel conversion", e)
-                ),
-            )
-
-        count = 0
-        matches = []
-        sheet_errors = []
-        date_cells = {}
-        max_per_file = _positive_limit(
-            None,
-            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-            Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+        mode_bits = Constants.RUST_MODE_NORMAL | Constants.RUST_MODE_EXCEL
+        if exact_match:
+            mode_bits |= Constants.RUST_MODE_EXACT
+        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
+        results = sf_engine.search_file(  # type: ignore
+            str(file_path),
+            search_string,
+            mode_bits,
+            max_per_file=max_per_file,
+            max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
+            **_rust_policy_kwargs(),
         )
-        search_string_norm = normalize_unicode(search_string).casefold().strip()
-        search_string_lower = search_string.casefold()
-
-        for sheet_name in workbook.sheet_names:
-            if stop_event and stop_event.is_set():
-                break
-            try:
-                from core.excel_sparse import iter_legacy_cells, iter_sparse_cells
-                if use_sparse:
-                    cells_iter = iter_sparse_cells(workbook, sheet_name, include_empty=not search_string_norm)
-                else:
-                    sheet = workbook.get_sheet_by_name(sheet_name)
-                    cells_iter = iter_legacy_cells(sheet)
-                for cell_index, (row_idx, col_idx, cell_value) in enumerate(cells_iter):
-                    # read_sheet has already validated this entire sheet. Once
-                    # detail capacity is exhausted, still parse later sheets,
-                    # but do not enumerate potentially billions of empty gaps.
-                    if use_sparse and count > max_per_file:
-                        break
-                    if cell_index % 100 == 0 and stop_event and stop_event.is_set():
-                        break
-                    # Empty cells need no normalization for a nonempty query.
-                    if cell_value is not None and (cell_value != "" or not search_string_norm):
-                        if not use_sparse and isinstance(cell_value, datetime.time) and file_path.lower().endswith((".xlsx", ".xlsm")):
-                            if sheet_name not in date_cells:
-                                from core.excel_date_formats import read_date_cells
-                                date_cells[sheet_name] = read_date_cells(file_path, sheet_name)
-                            from openpyxl.utils.cell import get_column_letter
-                            coordinate = f"{get_column_letter(col_idx + 1)}{row_idx + 1}"
-                            if (sheet_name, coordinate) in date_cells[sheet_name]:
-                                cell_value = datetime.datetime.combine(datetime.date(1904, 1, 1), cell_value)
-                                if cell_value.time() == datetime.time():
-                                    cell_value = cell_value.date()
-                        val_str = normalize_unicode(_excel_cell_text(cell_value))
-                        val_lower = val_str.casefold()
-                        val_norm = val_lower.strip()
-                        if exact_match:
-                            is_match = val_norm == search_string_norm
-                        else:
-                            is_match = (search_string_norm in val_norm) or (search_string_lower in val_lower)
-                        if is_match:
-                            count += 1
-                            if count <= max_per_file:
-                                col_letter = ""
-                                temp_col = col_idx
-                                while temp_col >= 0:
-                                    col_letter = chr(65 + (temp_col % 26)) + col_letter
-                                    temp_col = (temp_col // 26) - 1
-                                matches.append((0, sheet_name, f"{col_letter}{row_idx + 1}", val_str))
-                            elif count == max_per_file + 1:
-                                matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", ""))
-            except BaseException as e:  # 특정 시트에서 패닉 발생 시 해당 시트만 스킵
-                _log_raw_skip_detail(f"Excel sheet {sheet_name}", e)
-                sheet_err_msg = AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(sheet_name)
-                logger.warning(f"[{file_path}] {sheet_err_msg}")
-                sheet_errors.append(sheet_err_msg)
-                continue
-
-        if count > 0:
+        if results:
+            error_reason = _extract_marker_skip_reason(results)
+            if error_reason:
+                return (Constants.STATUS_SKIPPED, error_reason)
+            partial_reason = _extract_partial_skip_reason(results)
+            processed, _binary_count, sheet_skips = _normalize_rust_matches(
+                results,
+                Constants.MODE_EXCEL,
+            )
+            sheet_errors = [
+                AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, detail)
+                for sheet_name, detail in sheet_skips
+            ]
             for sheet_error in sheet_errors:
-                matches.append((-2, sheet_error, "", ""))
-            final_count = min(count, max_per_file + 1)
-            return (file_path, final_count, matches)
-        if sheet_errors:
-            return (Constants.STATUS_SKIPPED, "\n".join(sheet_errors))
-    except ImportError:
-        return (Constants.STATUS_SKIPPED, AppStrings.ERROR_EXCEL_CALAMINE)
-    except BaseException as e:  # 전체 파일 처리 중 발생하는 모든 치명적 예외 포착
+                logger.warning("[%s] %s", file_path, sheet_error)
+            if processed:
+                if partial_reason:
+                    processed.append((-2, partial_reason, "", ""))
+                return (file_path, _visible_match_count(processed), processed)
+            if sheet_errors:
+                return (Constants.STATUS_SKIPPED, sheet_errors[0])
+        # Rust가 결과를 내지 않으면 결과가 없는 것입니다(다른 검색 경로는 없음).
+        return None
+    except Exception as e:
+        logger.error(AppStrings.LOG_SCH_RUST_EXCEL_FAIL.format(file_path, e))
+        known_reason = _known_rust_skip_reason(e)
+        if known_reason:
+            return (Constants.STATUS_SKIPPED, known_reason)
+        raw_reason = str(e)
+        if raw_reason.startswith((f"{SKIP_CODE_EXCEL_PROCESS}|", f"{SKIP_CODE_EXCEL_PANIC}|")):
+            return (Constants.STATUS_SKIPPED, format_skip_reason(raw_reason))
         return (
             Constants.STATUS_SKIPPED,
             AppStrings.ERROR_SEARCH_EXCEL.format(
@@ -1646,141 +1191,10 @@ def search_in_excel_special(
     return None
 
 
-def _load_json_document(file_path: str, allow_duplicate_keys: bool, keep_text: bool = False) -> Tuple[bool, Any]:
-    """JSON 문서 전체를 엄격하게 읽고 검증합니다.
-
-    성공하면 ``(True, 문서)``, 건너뛸 파일이면 ``(False, 건너뜀 결과)``를 돌려줍니다.
-    JSON 값만 검색과 UE 현지화 archive 검색이 같은 크기·인코딩·재시도·중복 키 규칙을 쓰도록 공유합니다.
-    파일 열기 실패는 호출자의 예외 처리로 전달합니다.
-    """
-    import json
-
-    file_size = 0
-    try:
-        file_size = os.path.getsize(file_path)
-        if file_size > _max_search_file_size_bytes():
-            logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
-            return False, (
-                Constants.STATUS_SKIPPED,
-                AppStrings.SKIP_REASON_TOO_LARGE.format(
-                    AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
-                ),
-            )
-    except (OSError, IOError):
-        # 파일 크기 측정 실패 시 안전을 위해 필터링을 건너뜁니다.
-        pass
-
-    # Always validate the entire JSON document. Raw-byte
-    # negative filters cannot rule out decoded/Unicode-normalized values.
-
-    # [v4.63.9 Defensive] 변수 초기화 강제 (UnboundLocalError 원천 차단)
-    raw_bytes = None
-    encoding = None
-    processed_content = None
-
-    try:
-        with open(file_path, "rb") as f_raw:
-            # Check the opened file, not the path again: it may have been
-            # replaced or grown since preflight. Keep the size guard before
-            # either read() or mmap allocation.
-            f_size = os.fstat(f_raw.fileno()).st_size
-            size_limit_result = _file_size_limit_result(f_size)
-            if size_limit_result:
-                return False, size_limit_result
-            # 성능 최적화를 위해 일정 크기 이상의 파일은 mmap(메모리 매핑)을 사용합니다.
-            if f_size >= (_get_adv_setting(Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD, Constants.DEFAULT_JSON_MMAP_THRESHOLD_MB) * 1024 * 1024):
-                mm = mmap.mmap(f_raw.fileno(), 0, access=mmap.ACCESS_READ)
-                try:
-                    # Avoid the additional ``mm[:]`` copy. ``read()`` still creates
-                    # the byte buffer required before DOM parsing creates a string.
-                    try:
-                        # JSON loads를 위해 전체 텍스트 변환 (DOM 방식의 한계)
-                        processed_content, encoding = _decode_text_bytes(mm.read())
-                        # 디코딩 성공 시 메모리 절감을 위해 raw_bytes를 유지하지 않습니다.
-                    except UnicodeDecodeError:
-                        processed_content = None
-                        # 디코딩 실패 시 폴백 처리를 위한 데이터를 확보합니다.
-                        # mm.read() 이후이므로 seek(0) 후 전체 읽기
-                        mm.seek(0)
-                        raw_bytes = mm.read()
-                finally:
-                    mm.close()
-            else:
-                # 소형 파일은 기존 방식 유지
-                raw_bytes = f_raw.read()
-                encoding = detect_encoding_quickly(raw_bytes[:65536])
-    except (IOError, OSError) as e:
-        logger.debug(AppStrings.ERROR_READ_FILE.format(file_path, e))
-        raise
-
-    try:
-        # 손상된 바이트가 무음 치환되는 것을 방지하기 위해 strict 모드로 디코딩합니다.
-        # mmap 분기에서 이미 디코딩을 시도했을 수 있으므로 가드 추가
-        if processed_content is None:
-            # raw_bytes가 None인 경우를 대비한 가드 로직입니다.
-            if raw_bytes is not None:
-                try:
-                    processed_content, encoding = _decode_text_bytes(raw_bytes)
-                except UnicodeDecodeError:
-                    # 인코딩 감지가 틀렸거나 데이터가 손상됨. UTF-16 재시도 게이트
-                    processed_content = None
-            else:
-                processed_content = None
-        missing = object()
-        data = missing
-        if processed_content:
-            try:
-                data = loads_document(processed_content, allow_duplicate_keys)
-            except DuplicateKeyError:
-                return False, (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-        # JSON 파싱이나 디코딩 실패 시 No-BOM UTF-16으로 재시도를 수행합니다.
-        if data is missing:
-            # 데이터가 확보된 경우에만 재시도를 수행하여 무결성을 유지합니다.
-            # mmap 디코딩 성공 후 파싱이 실패한 경우(raw_bytes=None)는 메시지 왜곡 방지를 위해 즉시 실패 처리
-            if (_get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") == "auto"
-                    and raw_bytes is not None and encoding not in ["utf-16-le", "utf-16-be", "utf-16"]):
-                for alt_enc in ["utf-16-le", "utf-16-be"]:
-                    try:
-                        alt_content = raw_bytes.decode(alt_enc, errors="strict")
-                        data = loads_document(alt_content, allow_duplicate_keys)
-                        encoding = alt_enc
-                        processed_content = alt_content
-                        break
-                    except DuplicateKeyError:
-                        return False, (Constants.STATUS_SKIPPED, AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_DUPLICATE_KEYS))
-                    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-                        continue
-
-            if data is missing:
-                # 모든 재시도 실패 시 SKIPPED 보고 (None 반환 방지)
-                _log_raw_skip_detail("JSON", "Integrity check failed")
-                if processed_content is None:
-                    return False, _structured_decode_failure()
-                return False, (
-                    Constants.STATUS_SKIPPED,
-                    AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT),
-                )
-
-    except UnicodeError as e:
-        _log_raw_skip_detail("JSON decoding", e)
-        return False, _structured_decode_failure()
-    except Exception as e:
-        return False, (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
-        )
-    # keep_text를 쓰면 줄 위치 계산에 쓸 수 있도록 디코딩한 본문도 함께 돌려줍니다.
-    return True, ((data, processed_content) if keep_text else data)
-
-
 def search_in_json_special(
     file_path: str,
     search_string: str,
     exact_match: bool = False,
-    use_complex_search: bool = False,
     stop_event=None,
     _rust_only: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
@@ -1788,163 +1202,68 @@ def search_in_json_special(
     JSON 특수 검색을 수행합니다.
     """
     validate_search_query(search_string)
-    initial_engine: Literal["rust", "python"] = (
-        "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
-    )
+    initial_engine: Literal["rust", "python"] = "rust"
     memory_result = _memory_guard_result(file_path, "json", initial_engine)
     if memory_result:
         return memory_result
-    if HAS_RUST_ENGINE and not use_complex_search:
-        try:
-            mode_bits = Constants.RUST_MODE_JSON
-            if _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False):
-                mode_bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS
-            if exact_match:
-                mode_bits |= Constants.RUST_MODE_EXACT
-            max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-            results = sf_engine.search_file(  # type: ignore
-                str(file_path),
-                search_string,
-                mode_bits,
-                max_per_file=max_per_file,
-                max_json_depth=max_json_depth,
-                max_json_size=max_json_size,
-                **_rust_policy_kwargs(),
-            )
-            if results:
-                skip_reason = _extract_marker_skip_reason(results)
-                if skip_reason:
-                    return (Constants.STATUS_SKIPPED, skip_reason)
-                partial_reason = _extract_partial_skip_reason(results)
-                processed: List[SearchMatch] = []
-                for m in results:
-                    content = _rust_match_field(m, 1, "content", "")
-                    line = _rust_match_field(m, 0, "line", 1)
-                    if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
-                        processed.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
-                            _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
-                        ), "", ""))
-                        continue
-                    if line == 0 and content.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
-                        continue
-                    if line == 0:
-                        line = ""
-                    parts = _split_json_match_content(content)
-                    # JSON 경로 정규화: /를 .으로 변경하고 시작 / 문자를 제거합니다.
-                    json_path = parts[0].lstrip("/").replace("/", ".")
-                    val = parts[1] if len(parts) > 1 else ""
-                    processed.append((line, json_path, val, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
-                if partial_reason:
-                    processed.append((-2, partial_reason, "", None, None))
-                return (file_path, _visible_match_count(processed), processed)
-            
-            # 탐지 누락 방지: Rust 엔진이 결과를 찾지 못한 경우 Python 폴백으로 이어지도록 합니다.
-            if _rust_only:
-                return None
-        except Exception as e:
-            logger.error(AppStrings.LOG_SCH_RUST_JSON_FAIL.format(file_path, e))
-            # [Policy] 자동 폴백 중단
-            reason = str(e)
-            if reason.startswith((f"{SKIP_CODE_JSON_PARSE}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
-                return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(reason)),
-            )
-    if initial_engine == "rust":
-        memory_result = _memory_guard_result(file_path, "json", "python")
-        if memory_result:
-            return memory_result
     try:
-        import json
-
-        loaded, data = _load_json_document(
-            file_path,
-            _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False),
+        mode_bits = Constants.RUST_MODE_JSON
+        if _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False):
+            mode_bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS
+        if exact_match:
+            mode_bits |= Constants.RUST_MODE_EXACT
+        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
+        results = sf_engine.search_file(  # type: ignore
+            str(file_path),
+            search_string,
+            mode_bits,
+            max_per_file=max_per_file,
+            max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
+            **_rust_policy_kwargs(),
         )
-        if not loaded:
-            return cast(SkippedResult, data)
-        matches: List[SearchMatch] = []
-        # 특수 문자(ß, İ 등)의 정규화를 위해 casefold() 사용
-        search_string = normalize_unicode(search_string).casefold()
-        # 재귀 DFS 대신 명시적 일반 반복문 Stack-based DFS 사용
-        # 깊은 중첩 구조에서 RecursionError 발생을 사전 차단합니다.
-        stack = [(data, "", 0)]  # (obj, path, depth)
-        configured_depth = _get_adv_setting(Constants.CONFIG_KEY_MAX_JSON_DEPTH, Constants.DEFAULT_MAX_JSON_DEPTH)
-        try:
-            MAX_JSON_DEPTH = max(1, min(int(configured_depth), Constants.DEFAULT_MAX_JSON_DEPTH))
-        except (TypeError, ValueError):
-            MAX_JSON_DEPTH = Constants.DEFAULT_MAX_JSON_DEPTH
-        total_count = 0
-        depth_limit_reached = False
-        _iter_count = 0  # independent iteration counter
-        max_per_file = _positive_limit(
-            None,
-            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-            Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-        )
-
-        while stack:
-            # 중단 이벤트를 확인하기 위해 별도의 반복 카운터를 사용합니다.
-            # 매치가 없을 때 불필요한 IPC 호출이 발생하는 것을 방지합니다.
-            _iter_count += 1
-            if _iter_count % 1000 == 0 and stop_event and stop_event.is_set():
-                break
-            obj, path, depth = stack.pop()
-
-            if depth > MAX_JSON_DEPTH:
-                depth_limit_reached = True
-                continue
-
-            if isinstance(obj, (dict, ObjectPairs)):
-                for k, v in (obj.items() if isinstance(obj, dict) else obj):
-                    new_path = f"{path}.{k}" if path else str(k)
-                    stack.append((v, new_path, depth + 1))
-            elif isinstance(obj, list):
-                for i, v in enumerate(obj):
-                    new_path = f"{path}[{i}]" if path else f"[{i}]"
-                    stack.append((v, new_path, depth + 1))
-            else:
-                if obj is None:
-                    val_raw = "null"
-                elif isinstance(obj, bool):
-                    val_raw = "true" if obj else "false"
-                else:
-                    val_raw = normalize_unicode(str(obj))
-                val_comp = val_raw.casefold()
-                is_match = (val_comp.strip() == search_string.strip()) if exact_match else (search_string in val_comp)
-                if is_match:
-                    total_count += 1
-                    
-                    # [상] Python 경로 매치 상한 적용
-                    if total_count <= max_per_file:
-                        matches.append((1, path or "root", val_raw))
-                    elif total_count == max_per_file + 1:
-                        matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), ""))
-        if depth_limit_reached:
-            matches.append((
-                -2,
-                AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(MAX_JSON_DEPTH),
-                "",
-            ))
-        if total_count > 0 or depth_limit_reached:
-            final_count = min(total_count, max_per_file + 1)
-            return (file_path, final_count, matches)
-        return None
-    except UnicodeError as e:
-        _log_raw_skip_detail("JSON decoding", e)
-        return _structured_decode_failure()
-    except (json.JSONDecodeError, ValueError) as e:
-        return (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
-        )
+        if results:
+            skip_reason = _extract_marker_skip_reason(results)
+            if skip_reason:
+                return (Constants.STATUS_SKIPPED, skip_reason)
+            partial_reason = _extract_partial_skip_reason(results)
+            processed: List[SearchMatch] = []
+            for m in results:
+                content = _rust_match_field(m, 1, "content", "")
+                line = _rust_match_field(m, 0, "line", 1)
+                if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
+                    processed.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
+                        _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
+                    ), "", ""))
+                    continue
+                if line == 0 and content.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
+                    continue
+                if line == 0:
+                    line = ""
+                parts = _split_json_match_content(content)
+                # JSON 경로 정규화: /를 .으로 변경하고 시작 / 문자를 제거합니다.
+                json_path = parts[0].lstrip("/").replace("/", ".")
+                val = parts[1] if len(parts) > 1 else ""
+                processed.append((line, json_path, val, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
+            if partial_reason:
+                processed.append((-2, partial_reason, "", None, None))
+            return (file_path, _visible_match_count(processed), processed)
+        if _rust_only:
+            return None
     except Exception as e:
-        logger.error(AppStrings.LOG_SCH_JSON_FAIL.format(file_path, e))
+        logger.error(AppStrings.LOG_SCH_RUST_JSON_FAIL.format(file_path, e))
+        known_reason = _known_rust_skip_reason(e)
+        if known_reason:
+            return (Constants.STATUS_SKIPPED, known_reason)
+        # [Policy] 자동 폴백 중단
+        reason = str(e)
+        if reason.startswith((f"{SKIP_CODE_JSON_PARSE}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
+            return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
         return (
             Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(e)),
+            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(reason)),
         )
+    return None
 
 
 def _archive_fields_from_rust(content: str) -> Optional[List[str]]:
@@ -1962,174 +1281,10 @@ def _archive_fields_from_rust(content: str) -> Optional[List[str]]:
     return fields
 
 
-class _ArchiveObject:
-    """줄 위치를 기억하는 JSON 객체입니다. 멤버는 ``(이름, 이름이 시작한 줄, 값)``입니다."""
-
-    __slots__ = ("members",)
-
-    def __init__(self, members: List[Tuple[str, int, Any]]):
-        self.members = members
-
-    def member(self, name: str) -> Optional[Tuple[Any, int]]:
-        for key, line, value in self.members:
-            if key == name:
-                return value, line
-        return None
-
-
-_ARCHIVE_SCALAR = object()  # 숫자·true·false·null처럼 검색하지 않는 값
-_ARCHIVE_MAX_NESTING = 128  # Rust 경로와 같은 중첩 한도입니다.
-
-
-def _parse_archive_positions(text: str) -> Any:
-    """검증을 마친 archive 문서를 다시 읽어 객체 멤버의 줄 번호를 기억합니다.
-
-    문자열 해석은 ``json`` 모듈의 ``scanstring``을 사용해 검증과 같은 규칙을 따릅니다.
-    중첩이 128단계를 넘으면 문제 위치 대신 ``depth>128``을 담은 ``ValueError``를 발생시킵니다.
-    """
-    import bisect
-    from json import decoder as json_decoder
-
-    # 표준 라이브러리에 있지만 타입 정보에는 빠져 있는 문자열 해석 함수입니다.
-    scanstring = cast(Callable[[str, int, bool], Tuple[str, int]], getattr(json_decoder, "scanstring"))
-
-    newlines = [match.start() for match in re.finditer("\n", text)]
-    whitespace = re.compile(r"[ \t\r\n]*")
-    scalar = re.compile(r"[^,}\]\s]*")
-    length = len(text)
-
-    def line_of(position: int) -> int:
-        return bisect.bisect_left(newlines, position) + 1
-
-    def skip(position: int) -> int:
-        match = whitespace.match(text, position)
-        return match.end() if match else position
-
-    def expect(position: int, char: str) -> int:
-        position = skip(position)
-        if text[position:position + 1] != char:
-            raise json_error(position)
-        return position + 1
-
-    def json_error(position: int) -> Exception:
-        return RuntimeError(f"unexpected input at line {line_of(position)}")
-
-    def value(position: int, depth: int) -> Tuple[Any, int]:
-        if depth > _ARCHIVE_MAX_NESTING:
-            raise ValueError(f"depth>{_ARCHIVE_MAX_NESTING}")
-        position = skip(position)
-        char = text[position:position + 1]
-        if char == "{":
-            members: List[Tuple[str, int, Any]] = []
-            position = skip(position + 1)
-            if text[position:position + 1] == "}":
-                return _ArchiveObject(members), position + 1
-            while True:
-                position = skip(position)
-                if text[position:position + 1] != '"':
-                    raise json_error(position)
-                key_line = line_of(position)
-                key, position = scanstring(text, position + 1, True)
-                position = expect(position, ":")
-                item, position = value(position, depth + 1)
-                members.append((key, key_line, item))
-                position = skip(position)
-                char = text[position:position + 1]
-                if char == ",":
-                    position += 1
-                elif char == "}":
-                    return _ArchiveObject(members), position + 1
-                else:
-                    raise json_error(position)
-        if char == "[":
-            items: List[Any] = []
-            position = skip(position + 1)
-            if text[position:position + 1] == "]":
-                return items, position + 1
-            while True:
-                item, position = value(position, depth + 1)
-                items.append(item)
-                position = skip(position)
-                char = text[position:position + 1]
-                if char == ",":
-                    position += 1
-                elif char == "]":
-                    return items, position + 1
-                else:
-                    raise json_error(position)
-        if char == '"':
-            return scanstring(text, position + 1, True)
-        if position >= length:
-            raise json_error(position)
-        match = scalar.match(text, position)
-        return _ARCHIVE_SCALAR, (match.end() if match else position + 1)
-
-    document, _ = value(0, 0)
-    return document
-
-
-def _archive_text_field(entry: _ArchiveObject, field: str, path: str) -> str:
-    holder = entry.member(field)
-    text = holder[0].member("Text") if holder and isinstance(holder[0], _ArchiveObject) else None
-    if not text or not isinstance(text[0], str):
-        raise ValueError(f"{path}/{field}/Text")
-    return text[0]
-
-
-def _archive_entries(document: Any, stop_event=None):
-    """UE 현지화 archive 구조를 문서 순서대로 펼쳐 ``(Key 줄, Namespace, Key, 원문, 번역문)``을 냅니다.
-
-    각 노드의 ``Children``을 먼저, 그다음 ``Subnamespaces``를 방문하며 Rust 경로와 같은 순서를 씁니다.
-    구조가 맞지 않으면 문제 위치 경로를 담은 ``ValueError``를 발생시킵니다.
-    """
-    if not isinstance(document, _ArchiveObject):
-        raise ValueError("/")
-    if document.member("Children") is None and document.member("Subnamespaces") is None:
-        raise ValueError("/Children")
-    stack: List[Tuple[Any, str, str]] = [(document, "", "")]
-    visited = 0
-    while stack:
-        node, parent_namespace, path = stack.pop()
-        visited += 1
-        if visited % 1000 == 0 and stop_event and stop_event.is_set():
-            return
-        if not isinstance(node, _ArchiveObject):
-            raise ValueError(path or "/")
-        own = node.member("Namespace")
-        own_namespace = "" if own is None else own[0]
-        if not isinstance(own_namespace, str):
-            raise ValueError(f"{path}/Namespace")
-        namespace = ".".join(part for part in (parent_namespace, own_namespace) if part)
-        children_member = node.member("Children")
-        if children_member is not None:
-            children = children_member[0]
-            if not isinstance(children, list):
-                raise ValueError(f"{path}/Children")
-            for index, child in enumerate(children):
-                child_path = f"{path}/Children/{index}"
-                if not isinstance(child, _ArchiveObject):
-                    raise ValueError(child_path)
-                key_member = child.member("Key")
-                if key_member is None or not isinstance(key_member[0], str):
-                    raise ValueError(f"{child_path}/Key")
-                source = _archive_text_field(child, "Source", child_path)
-                translation = _archive_text_field(child, "Translation", child_path)
-                yield key_member[1], namespace, key_member[0], source, translation
-        sub_member = node.member("Subnamespaces")
-        if sub_member is not None:
-            subnamespaces = sub_member[0]
-            if not isinstance(subnamespaces, list):
-                raise ValueError(f"{path}/Subnamespaces")
-            # 스택은 뒤에서 꺼내므로 역순으로 넣어 문서 순서를 유지합니다.
-            for index in range(len(subnamespaces) - 1, -1, -1):
-                stack.append((subnamespaces[index], namespace, f"{path}/Subnamespaces/{index}"))
-
-
 def search_in_archive_special(
     file_path: str,
     search_string: str,
     exact_match: bool = False,
-    use_complex_search: bool = False,
     stop_event=None,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """UE 현지화 archive의 원문·번역문·Key 값을 검색합니다.
@@ -2138,9 +1293,7 @@ def search_in_archive_special(
     archive의 구조 필드는 하나씩만 있어야 하므로 JSON 중복 키 설정과 관계없이 중복 키를 허용하지 않습니다.
     """
     validate_search_query(search_string)
-    initial_engine: Literal["rust", "python"] = (
-        "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
-    )
+    initial_engine: Literal["rust", "python"] = "rust"
     memory_result = _memory_guard_result(file_path, "json", initial_engine)
     if memory_result:
         return memory_result
@@ -2150,285 +1303,111 @@ def search_in_archive_special(
         Constants.DEFAULT_MAX_PER_FILE_MATCHES,
     )
     limit_row = (-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", "", "", None, None)
-    if initial_engine == "rust":
-        try:
-            mode_bits = Constants.RUST_MODE_ARCHIVE
-            if exact_match:
-                mode_bits |= Constants.RUST_MODE_EXACT
-            rust_max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-            results = sf_engine.search_file(  # type: ignore
-                str(file_path),
-                search_string,
-                mode_bits,
-                max_per_file=rust_max_per_file,
-                max_json_depth=max_json_depth,
-                max_json_size=max_json_size,
-                **_rust_policy_kwargs(),
-            )
-        except Exception as e:
-            logger.error(AppStrings.LOG_SCH_RUST_ARCHIVE_FAIL.format(file_path, e))
-            reason = str(e)
-            if reason.startswith((
-                f"{SKIP_CODE_ARCHIVE_FORMAT}|",
-                f"{SKIP_CODE_JSON_PARSE}|",
-                f"{SKIP_CODE_DECODING}|",
-                f"{SKIP_CODE_ENCODING}|",
-            )):
-                return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_UNEXPECTED_FILE.format(
-                    file_path, _localize_internal_error_detail("UE localization archive", e)
-                ),
-            )
-        if not results:
-            return None
-        skip_reason = _extract_marker_skip_reason(results)
-        if skip_reason:
-            return (Constants.STATUS_SKIPPED, skip_reason)
-        processed: List[Any] = []
-        for m in results:
-            content = str(_rust_match_field(m, 1, "content", ""))
-            line = _rust_match_field(m, 0, "line", 0)
-            if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
-                processed.append(limit_row)
-                continue
-            fields = _archive_fields_from_rust(content)
-            if fields is None:
-                continue
-            processed.append((line, *fields, None, None))
-        if not processed:
-            return None
-        return (file_path, _visible_match_count(processed), processed)
-
     try:
-        loaded, loaded_value = _load_json_document(file_path, False, keep_text=True)
-        if not loaded:
-            return cast(SkippedResult, loaded_value)
-        _, text = loaded_value
-        query = normalize_unicode(search_string).casefold()
-        query_stripped = query.strip()
-        matches: List[Any] = []
-        total_count = 0
-        try:
-            # 검증은 json 모듈로 마쳤고, 줄 번호를 얻기 위해 같은 본문을 위치를 기억하며 다시 읽습니다.
-            document = _parse_archive_positions(str(text).lstrip("﻿"))
-            for key_line, namespace, key, source, translation in _archive_entries(document, stop_event):
-                matched = False
-                for value in (key, source, translation):
-                    folded = normalize_unicode(value).casefold()
-                    if (folded.strip() == query_stripped) if exact_match else (query in folded):
-                        matched = True
-                        break
-                if not matched:
-                    continue
-                total_count += 1
-                if total_count <= max_per_file:
-                    matches.append((key_line, namespace, key, source, translation, None, None))
-                elif total_count == max_per_file + 1:
-                    matches.append(limit_row)
-                # 상한 이후에도 문서 끝까지 구조를 확인해야 잘못된 파일을 결과로 확정하지 않습니다.
-        except ValueError as structure_error:
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_ARCHIVE_FORMAT.format(str(structure_error)))
-        if stop_event and stop_event.is_set():
-            return None
-        if total_count:
-            return (file_path, min(total_count, max_per_file + 1), matches)
-        return None
+        mode_bits = Constants.RUST_MODE_ARCHIVE
+        if exact_match:
+            mode_bits |= Constants.RUST_MODE_EXACT
+        rust_max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
+        results = sf_engine.search_file(  # type: ignore
+            str(file_path),
+            search_string,
+            mode_bits,
+            max_per_file=rust_max_per_file,
+            max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
+            **_rust_policy_kwargs(),
+        )
     except Exception as e:
-        logger.error(AppStrings.LOG_SCH_ARCHIVE_FAIL.format(file_path, e))
+        logger.error(AppStrings.LOG_SCH_RUST_ARCHIVE_FAIL.format(file_path, e))
+        known_reason = _known_rust_skip_reason(e)
+        if known_reason:
+            return (Constants.STATUS_SKIPPED, known_reason)
+        reason = str(e)
+        if reason.startswith((
+            f"{SKIP_CODE_ARCHIVE_FORMAT}|",
+            f"{SKIP_CODE_JSON_PARSE}|",
+            f"{SKIP_CODE_DECODING}|",
+            f"{SKIP_CODE_ENCODING}|",
+        )):
+            return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
         return (
             Constants.STATUS_SKIPPED,
             AppStrings.ERROR_UNEXPECTED_FILE.format(
                 file_path, _localize_internal_error_detail("UE localization archive", e)
             ),
         )
+    if not results:
+        return None
+    skip_reason = _extract_marker_skip_reason(results)
+    if skip_reason:
+        return (Constants.STATUS_SKIPPED, skip_reason)
+    processed: List[Any] = []
+    for m in results:
+        content = str(_rust_match_field(m, 1, "content", ""))
+        line = _rust_match_field(m, 0, "line", 0)
+        if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
+            processed.append(limit_row)
+            continue
+        fields = _archive_fields_from_rust(content)
+        if fields is None:
+            continue
+        processed.append((line, *fields, None, None))
+    if not processed:
+        return None
+    return (file_path, _visible_match_count(processed), processed)
 
 
 def search_in_xml_special(
     file_path: str,
     search_string: str,
     exact_match: bool = False,
-    use_complex_search: bool = False,
     stop_event=None,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """
     XML 특수 검색을 수행합니다.
     """
     validate_search_query(search_string)
-    initial_engine: Literal["rust", "python"] = (
-        "rust" if HAS_RUST_ENGINE and not use_complex_search else "python"
-    )
+    initial_engine: Literal["rust", "python"] = "rust"
     memory_result = _memory_guard_result(file_path, "xml", initial_engine)
     if memory_result:
         return memory_result
-    if HAS_RUST_ENGINE and not use_complex_search:
-        try:
-            mode_bits = Constants.RUST_MODE_XML
-            if exact_match:
-                mode_bits |= Constants.RUST_MODE_EXACT
-            max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-            results = sf_engine.search_file(  # type: ignore
-                str(file_path),
-                search_string,
-                mode_bits,
-                max_per_file=max_per_file,
-                max_json_depth=max_json_depth,
-                max_json_size=max_json_size,
-                **_rust_policy_kwargs(),
-            )
-            if results:
-                skip_reason = _extract_marker_skip_reason(results)
-                if skip_reason:
-                    return (Constants.STATUS_SKIPPED, skip_reason)
-                processed, _, _ = _normalize_rust_matches(results, Constants.MODE_XML)
-                partial_reason = _extract_partial_skip_reason(results)
-                if partial_reason:
-                    processed.append((-2, partial_reason, None, None))
-                return (file_path, _visible_match_count(processed), processed)
-            
-            # XML 모드에서 탐지 누락을 방지합니다.
-            pass
-        except Exception as e:
-            logger.error(AppStrings.LOG_SCH_RUST_XML_FAIL.format(file_path, e))
-            # [Policy] 자동 폴백 중단
-            reason = str(e)
-            if reason.startswith((f"{SKIP_CODE_XML_PARSE}|", f"{SKIP_CODE_XML_UNSUPPORTED_DTD}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
-                return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
-            return (
-                Constants.STATUS_SKIPPED,
-                format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, reason)),
-            )
-    if initial_engine == "rust":
-        memory_result = _memory_guard_result(file_path, "xml", "python")
-        if memory_result:
-            return memory_result
     try:
-        import xml.parsers.expat
-
-        # XML DOM 로딩 전 크기 확인 (JSON과 동일한 패턴)
-        # 이유: 크기 제한 없이 전체 파일을 메모리에 로드 -> 대용량 XML에서 OOM 위험
-        try:
-            file_size = os.path.getsize(file_path)
-            if file_size > _max_search_file_size_bytes():
-                logger.warning(AppStrings.LOG_SCH_JSON_LIMIT.format(file_path))
-                return (
-                    Constants.STATUS_SKIPPED,
-                    AppStrings.SKIP_REASON_TOO_LARGE.format(
-                        AppStrings.SKIP_DETAIL_FILE_SIZE_BYTES.format(file_size)
-                    ),
-                )
-        except (OSError, IOError):
-            pass
-
-        raw_content, encoding = read_text_file_with_encoding(file_path)
-        processed_content = raw_content  # 주석 제거 기능 없음
-        matches = []
-        count = 0
-        search_string = normalize_unicode(search_string).casefold()
-        max_per_file = _positive_limit(
-            None,
-            Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-            Constants.DEFAULT_MAX_PER_FILE_MATCHES,
+        mode_bits = Constants.RUST_MODE_XML
+        if exact_match:
+            mode_bits |= Constants.RUST_MODE_EXACT
+        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
+        results = sf_engine.search_file(  # type: ignore
+            str(file_path),
+            search_string,
+            mode_bits,
+            max_per_file=max_per_file,
+            max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
+            **_rust_policy_kwargs(),
         )
-        # stop_event 참조를 핸들러에 전달하기 위해 클로저로 캡처
-        _stop_event = stop_event
-
-        class XMLSearcher:
-            def __init__(self):
-                self.parser = xml.parsers.expat.ParserCreate()
-                self.parser.StartElementHandler = self.start_element
-                self.parser.EndElementHandler = self.end_element
-                self.parser.CharacterDataHandler = self.char_data
-                self.parser.StartDoctypeDeclHandler = self.start_doctype
-                self.current_tags = []
-                self.text_chunks = []
-                self.text_line = 1
-
-            def start_doctype(self, _name, _system_id, _public_id, _has_internal_subset):
-                raise _UnsupportedXmlDtd("DTD declarations and entity expansion are not supported")
-
-            def start_element(self, name, attrs):
-                nonlocal count
-                # 중단 신호 확인 후 즉시 예외로 실제 종료
-                if _stop_event and _stop_event.is_set():
-                    raise xml.parsers.expat.ExpatError("User stopped")
-                self.flush_text()
-                self.current_tags.append(name)
-                for k, v in attrs.items():
-                    val = normalize_unicode(str(v))
-                    val_comp = val.casefold()
-                    if (search_string in val_comp) if not exact_match else (search_string.strip() == val_comp.strip()):
-                        count += 1
-                        
-                        # [상] Python 경로 매치 상한 적용
-                        if count <= max_per_file:
-                            matches.append((self.parser.CurrentLineNumber, str(k), val))
-                        elif count == max_per_file + 1:
-                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), ""))
-
-            def end_element(self, name):
-                self.flush_text()
-                if self.current_tags:
-                    self.current_tags.pop()
-
-            def char_data(self, data):
-                if not self.text_chunks:
-                    self.text_line = self.parser.CurrentLineNumber
-                self.text_chunks.append(data)
-
-            def flush_text(self):
-                nonlocal count
-                if not self.text_chunks:
-                    return
-                text = normalize_unicode("".join(self.text_chunks)).strip()
-                self.text_chunks.clear()
-                if text:
-                    text_comp = text.casefold()
-                    if (search_string in text_comp) if not exact_match else (search_string == text_comp):
-                        count += 1
-                        
-                        # Python 검색 경로에서 매치 결과 개수 상한을 적용합니다.
-                        if count <= max_per_file:
-                            matches.append(
-                                (
-                                    self.text_line,
-                                    self.current_tags[-1] if self.current_tags else "root",
-                                    text,
-                                )
-                            )
-                        elif count == max_per_file + 1:
-                            matches.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), ""))
-
-        searcher = XMLSearcher()
-        try:
-            searcher.parser.Parse(processed_content, True)
-        except _UnsupportedXmlDtd as dtd_error:
-            return (
-                Constants.STATUS_SKIPPED,
-                format_skip_reason(_build_skip_reason(SKIP_CODE_XML_UNSUPPORTED_DTD, dtd_error)),
-            )
-        except xml.parsers.expat.ExpatError as xe:
-            if _stop_event and _stop_event.is_set():
-                return (Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER)
-            logger.warning(AppStrings.LOG_SCH_XML_FAIL.format(xe))
-            return (
-                Constants.STATUS_SKIPPED,
-                format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, xe)),
-            )
-        if count > 0:
-            final_count = min(count, max_per_file + 1)
-            return (file_path, final_count, matches)
-        return None
-    except UnicodeError as e:
-        _log_raw_skip_detail("XML decoding", e)
-        return _structured_decode_failure()
+        if results:
+            skip_reason = _extract_marker_skip_reason(results)
+            if skip_reason:
+                return (Constants.STATUS_SKIPPED, skip_reason)
+            processed, _, _ = _normalize_rust_matches(results, Constants.MODE_XML)
+            partial_reason = _extract_partial_skip_reason(results)
+            if partial_reason:
+                processed.append((-2, partial_reason, None, None))
+            return (file_path, _visible_match_count(processed), processed)
     except Exception as e:
-        logger.error(AppStrings.LOG_SCH_XML_FAIL.format(e))
+        logger.error(AppStrings.LOG_SCH_RUST_XML_FAIL.format(file_path, e))
+        known_reason = _known_rust_skip_reason(e)
+        if known_reason:
+            return (Constants.STATUS_SKIPPED, known_reason)
+        # [Policy] 자동 폴백 중단
+        reason = str(e)
+        if reason.startswith((f"{SKIP_CODE_XML_PARSE}|", f"{SKIP_CODE_XML_UNSUPPORTED_DTD}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
+            return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
         return (
             Constants.STATUS_SKIPPED,
-            format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, e)),
+            format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, reason)),
         )
+    return None
 
 
 def search_in_file(
@@ -2436,64 +1415,31 @@ def search_in_file(
     search_string: str,
     file_size: Optional[int] = None,
     special_mode: Optional[str] = None,
-    use_complex_search: bool = False,
     stop_event=None,
-    force_python: bool = False,
     **kwargs,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
-    """파일의 성격에 따라 적절한 검색 엔진을 선택하여 검색을 수행합니다."""
+    """파일 하나를 Rust 엔진으로 검색합니다. Excel·값만 검색 형식은 해당 경로로 보냅니다.
+
+    검색 방식은 하나입니다(모든 형식이 Rust의 같은 비교 기준을 씀). Rust가 결과를 내지 않으면
+    결과가 없는 것이며, 다른 인코딩으로 다시 검색하는 Python 대체 경로는 없습니다(CP949·UTF-16 등은
+    Rust가 직접 디코딩).
+    """
     validate_search_query(search_string)
     if is_recycle_bin_path(file_path):
         return None
-    if use_complex_search or force_python or not HAS_RUST_ENGINE:
-        try:
-            if file_size is None:
-                file_size = os.path.getsize(file_path)
-        except (OSError, IOError) as e:
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_FILE_ACCESS_BINARY.format(_localize_io_error_detail(e)),
-            )
-        size_limit_result = _file_size_limit_result(file_size)
-        if size_limit_result:
-            return size_limit_result
     search_string_nfc = normalize_unicode(search_string)
     ext = splitext(file_path)[1].lower()
     if ext in EXCEL_EXTS:
-        is_exact = False
-        if special_mode and Constants.MODE_EXACT in special_mode:
-            is_exact = True
-        try:
-            return search_in_excel_special(
-                file_path, 
-                search_string_nfc, 
-                is_exact, 
-                use_complex_search=use_complex_search, 
-                stop_event=stop_event,
-                )
-        except ImportError as e:
-            logger.error(AppStrings.ERROR_EXCEL_LIB.format(e))
-            raise RuntimeError(AppStrings.ERROR_EXCEL_CALAMINE_REQ)
-        except Exception as e:
-            logger.error(AppStrings.ERROR_SEARCH_EXCEL.format(file_path, e), exc_info=True)
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_SEARCH_EXCEL.format(
-                    file_path,
-                    _localize_internal_error_detail("Excel", e),
-                ),
-            )
+        is_exact = bool(special_mode and Constants.MODE_EXACT in special_mode)
+        return search_in_excel_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
     if special_mode:
         is_exact = Constants.MODE_EXACT in special_mode
         if Constants.MODE_XML in special_mode and ext in (".xml", ".sf_xml"):
-            return search_in_xml_special(
-                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event)
+            return search_in_xml_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
         elif Constants.MODE_JSON in special_mode and ext == ".json":
-            return search_in_json_special(
-                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event)
+            return search_in_json_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
         elif Constants.MODE_ARCHIVE in special_mode and ext == Constants.EXT_ARCHIVE:
-            return search_in_archive_special(
-                file_path, search_string_nfc, is_exact, use_complex_search, stop_event=stop_event)
+            return search_in_archive_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
     if file_size is None:
         try:
             file_size = os.path.getsize(file_path)
@@ -2505,345 +1451,59 @@ def search_in_file(
             )
     if file_size == 0:
         return (Constants.STATUS_SKIPPED, AppStrings.SKIP_EMPTY_FILE)
-    # 인코딩 조기 감지 (Rust 결과 신뢰도 판단 및 폴백 결정용)
-    head = b""
-    detected_enc_quick = Constants.ENC_UTF8
-    try:
-        with open(file_path, "rb") as f_chk:
-            head = f_chk.read(4096)
-            detected_enc_quick = detect_encoding_quickly(head)
-    except Exception as error:
-        # 감지 함수의 예상 밖 오류도 검색을 막지 않습니다. 기존 재읽기 동작을 유지합니다.
-        logger.debug(AppStrings.LOG_SCH_ENCODING_PROBE_FAIL.format(file_path, error), exc_info=True)
-
-    t_rust = 0.0
-    t_norm = 0.0
-    rust_results = None
-    # 기본 검색은 Rust를, 글자 변형 검색은 Python을 사용해 해당 비교 정책을 유지합니다.
-    # Cache the binary classification only on paths that may need Python.
-    is_binary = is_binary_file(file_path) if not HAS_RUST_ENGINE or use_complex_search else False
-    if HAS_RUST_ENGINE and not use_complex_search and not force_python:
-        try:
-            exclude_binary = bool(kwargs.get("exclude_binary", False))
-            mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary)
-            # Rust 단일 파일 검색 시 중단 이벤트(stop_event) 체크를 포함합니다.
-            import time
-            t_start = time.time()
-            # File decoders handle BOM metadata. Preserve the user's query.
-            max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-            rust_results = sf_engine.search_file(  # type: ignore
-                str(file_path),
-                search_string_nfc,
-                mode_bits,
-                stop_event=stop_event,
-                max_per_file=max_per_file,
-                max_json_depth=max_json_depth,
-                max_json_size=max_json_size,
-                **_rust_policy_kwargs(),
-            )
-            t_rust = time.time() - t_start
-            if not rust_results:
-                # 인코딩 신뢰도 판단: UTF-8(및 SIG)인 경우 Rust 결과를 신뢰합니다.
-                if detected_enc_quick in [Constants.ENC_UTF8, Constants.ENC_UTF8_SIG]:
-                    if b"\x00" not in head:
-                        return None
-                
-                # Non-UTF-8 text may require the Python compatibility path.
-            
-            if rust_results:
-                # 방어 로직: 정상 결과 확인 전 에러 마커가 있는지 먼저 체크합니다.
-                skip_reason = _extract_marker_skip_reason(rust_results)
-                if skip_reason:
-                    return (Constants.STATUS_SKIPPED, skip_reason)
-
-                t_n_start = time.time()
-                normalized, binary_count, _ = _normalize_rust_matches(
-                    rust_results, special_mode)
-                t_norm = time.time() - t_n_start
-                # 프로덕션 디버그 로그 출력
-                if len(rust_results) > 100 or t_rust > 0.1:
-                    logger.debug(AppStrings.LOG_SCH_RUST_PERF_STATS.format(len(rust_results), t_rust, t_norm))
-                if binary_count > 0:
-                    return (
-                        file_path,
-                        binary_count,
-                        [(1, AppStrings.MSG_BINARY_MATCH.format(binary_count), None, None)],
-                    )
-
-                if normalized:
-                    return (file_path, len(normalized), normalized)
-
-
-            # Only encoding formats unsupported by the Rust path may fall back.
-            if not use_complex_search and not force_python:
-                try:
-                    with open(file_path, "rb") as f_chk:
-                        chk_data = f_chk.read(65536)
-                        # UTF-16 no-BOM 폴백 조건 완화 (BOM이 없더라도 가능성 있으면 허용)
-                        if not chk_data.startswith((b"\xff\xfe", b"\xfe\xff", b"\xef\xbb\xbf")):
-                            # NUL 바이트가 포함되어 있으면 UTF-16일 가능성이 높으므로 폴백 허용
-                            if b"\x00" not in chk_data:
-                                return None
-                except OSError as error:
-                    logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
-                    return (
-                        Constants.STATUS_SKIPPED,
-                        AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(error)),
-                    )
-                except Exception as error:
-                    logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
-                    return (
-                        Constants.STATUS_SKIPPED,
-                        AppStrings.ERROR_UNEXPECTED_FILE.format(
-                            file_path, _localize_internal_error_detail("encoding compatibility check", error)
-                        ),
-                    )
-        except Exception as e:
-            logger.error(AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format(file_path, e), exc_info=True)
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_UNEXPECTED_FILE.format(
-                    file_path,
-                    _localize_internal_error_detail("Rust file search", e),
-                ),
-            )
-
-    # 글자 변형 검색과 Rust에서 끝내지 못한 제한된 호환 경로만 Python에서 처리합니다.
-    exclude_binary = bool(kwargs.get("exclude_binary", False))
-    if exclude_binary and is_binary:
-        # 옵션 계약 준수: 바이너리 파일 제외 시 Python 경로에서도 즉시 반환
-        return None
-
-    if not use_complex_search and not force_python:
-        try:
-            # JSON remains searchable when the native extension is unavailable.
-            # Excel files have already returned through ``search_in_excel_special``.
-            ext = os.path.splitext(file_path)[1].lower()
-            if ext != Constants.EXT_JSON:
-                with open(file_path, "rb") as f_chk:
-                    chk_data = f_chk.read(65536)
-                    # UTF-16/32 등 Rust 지원 외 인코딩이 아닌 일반 텍스트는 Rust의 영역입니다.
-                    if not chk_data.startswith((b"\xff\xfe", b"\xfe\xff", b"\xef\xbb\xbf")):
-                        # BOM이 없더라도 NUL 바이트 분포가 UTF-16LE/BE 휴리스틱에 맞으면 폴백 허용
-                        detected = detect_encoding_quickly(chk_data)
-                        if detected not in ["utf-16-le", "utf-16-be"]:
-                            return None
-        except OSError as error:
-            logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(error)),
-            )
-        except Exception as error:
-            logger.debug(AppStrings.LOG_SCH_COMPATIBILITY_PROBE_FAIL.format(file_path, error), exc_info=True)
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_UNEXPECTED_FILE.format(
-                    file_path, _localize_internal_error_detail("encoding compatibility check", error)
-                ),
-            )
-    is_exact = bool(special_mode and Constants.MODE_EXACT in special_mode)
-    max_per_file = _positive_limit(
-        None,
-        Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-        Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-    )
-
-    try:
-        if file_size is None:
-            file_size = os.path.getsize(file_path)
-        encoding = None
-        if file_size < (_get_adv_setting(Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE, Constants.DEFAULT_MAX_SMALL_FILE_SIZE_MB) * 1024 * 1024):
-            if not encoding:
-                with open(file_path, "rb") as f_head:
-                    head_data = f_head.read(65536)
-                    encoding = detect_encoding_quickly(head_data)
-                    if not encoding and len(head_data) > 0:
-                        # 4바이트 미만 파일에 대한 방어
-                        try:
-                            encoding = detect_encoding_quickly(head_data[:min(len(head_data), 4)])
-                        except Exception:
-                            encoding = Constants.ENC_UTF8
-            
-            # [Extern] 바이너리 판정 전 인코딩 확인 (UTF-16 텍스트 보호)
-            is_actually_text = encoding and ("utf-16" in encoding.lower() or "utf-32" in encoding.lower())
-            if is_actually_text:
-                is_binary = False
-            
-            # [Batch 3 Optimization] Tiny Files (<128KB) skipping pre-search
-            skip_presearch = file_size < 128 * 1024
-            
-            if not use_complex_search and not skip_presearch:
-                # [Optimization] 전체 로드 전 간단한 바이너리 검색으로 필터링 시도
-                # 중복 감지 제거를 위해 기 감지된 인코딩을 재사용합니다.
-                if not _quick_text_probe(file_path, search_string, is_exact, encoding=encoding):
-                    return None
-
-            matches, count, stopped = _search_text_file(
-                file_path, encoding,
-                search_string_nfc,
-                exact_match=is_exact,
-                stop_event=stop_event,
-                max_per_file=max_per_file,
-            )
-
-            if stopped:
-                if not matches:
-                    return Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER
-                matches.append((-2, AppStrings.LOG_SCH_STOPPED_BY_USER, None, None))
-                return (file_path, _visible_match_count(matches), matches)
-
-            if count > 0:
-                final_count = min(count, max_per_file + 1)
-                if is_binary:
-                    return (file_path, final_count, [(1, AppStrings.MSG_BINARY_MATCH.format(final_count), None, None)])
-                return (file_path, final_count, matches)
-            return None
-        with open(file_path, "rb") as f_bin:
-            file_size_actual = os.fstat(f_bin.fileno()).st_size
-            if file_size_actual == 0:
-                return (Constants.STATUS_SKIPPED, AppStrings.SKIP_EMPTY_FILE)
-            head = f_bin.read(4096)
-            detected_enc = detect_encoding_quickly(head)
-            if not detected_enc:
-                detected_enc = "utf-8"
-
-            try:
-                matches, count, stopped = _search_text_file(
-                    file_path, detected_enc,
-                    search_string_nfc,
-                    exact_match=is_exact,
-                    stop_event=stop_event,
-                    max_per_file=max_per_file,
-                )
-            except Exception as e:
-                logger.debug(AppStrings.LOG_SCH_STREAM_ERROR.format(e))
-                return (
-                    Constants.STATUS_SKIPPED,
-                    AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(e)),
-                )
-
-            if stopped:
-                if not matches:
-                    return Constants.STATUS_SKIPPED, AppStrings.LOG_SCH_STOPPED_BY_USER
-                matches.append((-2, AppStrings.LOG_SCH_STOPPED_BY_USER, None, None))
-                return (file_path, _visible_match_count(matches), matches)
-            if count > 0:
-                if is_binary:
-                    return (file_path, count, [(1, AppStrings.MSG_BINARY_MATCH.format(count), None, None)])
-                
-                # 카운트와 matches 길이 불일치를 보정합니다. (최대 상한 + 마커 1개로 제한)
-                # UI 데이터 일관성을 위해 튜플 구조를 정규화합니다.
-                final_count = min(count, max_per_file + 1)
-                normalized_matches = []
-                for m in matches:
-                    if len(m) == 2:
-                        # (line, content) -> (line, content, offset, length)
-                        normalized_matches.append((m[0], m[1], None, None))
-                    else:
-                        normalized_matches.append(m)
-                return (file_path, final_count, normalized_matches)
-            return None
-    except UnicodeError as e:
-        _log_raw_skip_detail("Text encoding", e)
-        if _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto") != "auto":
-            return Constants.STATUS_SKIPPED, AppStrings.ERROR_SELECTED_ENCODING
-        return Constants.STATUS_SKIPPED, AppStrings.ERROR_UNEXPECTED_FILE.format(file_path, _localize_internal_error_detail("file search", e))
-    except (IOError, OSError) as e:
-        logger.debug(AppStrings.LOG_SCH_ERROR_FILE.format(file_path, e))
+    if not HAS_RUST_ENGINE:
         return (
             Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(e)),
+            AppStrings.ERROR_UNEXPECTED_FILE.format(
+                file_path, _localize_internal_error_detail("Rust file search", _RUST_ENGINE_ERROR)
+            ),
         )
-    except Exception as e:  # BaseException 대신 구체적인 Exception 포착
-        logger.error(AppStrings.LOG_SCH_UNEXPECTED_ERROR.format(AppStrings.HEADER_FILE, file_path, e), exc_info=True)
+    try:
+        exclude_binary = bool(kwargs.get("exclude_binary", False))
+        mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary)
+        started = time.time()
+        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
+        rust_results = sf_engine.search_file(  # type: ignore
+            str(file_path),
+            search_string_nfc,
+            mode_bits,
+            stop_event=stop_event,
+            max_per_file=max_per_file,
+            max_json_depth=max_json_depth,
+            max_json_size=max_json_size,
+            **_rust_policy_kwargs(),
+        )
+        elapsed = time.time() - started
+        if not rust_results:
+            return None
+        skip_reason = _extract_marker_skip_reason(rust_results)
+        if skip_reason:
+            return (Constants.STATUS_SKIPPED, skip_reason)
+        normalize_started = time.time()
+        normalized, binary_count, _ = _normalize_rust_matches(rust_results, special_mode)
+        if len(rust_results) > 100 or elapsed > 0.1:
+            logger.debug(AppStrings.LOG_SCH_RUST_PERF_STATS.format(
+                len(rust_results), elapsed, time.time() - normalize_started))
+        if binary_count > 0:
+            return (
+                file_path,
+                binary_count,
+                [(1, AppStrings.MSG_BINARY_MATCH.format(binary_count), None, None)],
+            )
+        if normalized:
+            return (file_path, len(normalized), normalized)
+        return None
+    except Exception as e:
+        known_reason = _known_rust_skip_reason(e)
+        if known_reason:
+            return (Constants.STATUS_SKIPPED, known_reason)
+        logger.error(AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format(file_path, e), exc_info=True)
         return (
             Constants.STATUS_SKIPPED,
             AppStrings.ERROR_UNEXPECTED_FILE.format(
                 file_path,
-                _localize_internal_error_detail("file search", e),
+                _localize_internal_error_detail("Rust file search", e),
             ),
-        )
-    return None
-
-
-def _search_in_files_batch_impl(
-    file_batch: List[FileInfo],
-    search_string: str,
-    special_mode: Optional[str] = None,
-    use_complex_search: bool = False,
-    stop_event=None,
-    force_python: bool = False,
-    **kwargs,
-) -> Dict[str, List]:
-    """파일 배치를 순회하며 검색을 수행합니다."""
-    results = []
-    skipped = []
-    for f_path, f_size in file_batch:
-        # 부모 프로세스의 상태를 확인하여 좀비 프로세스가 되는 것을 방지합니다.
-        # pp가 None이면 현재 프로세스가 메인 프로세스이므로 건너뛴다.
-        pp = multiprocessing.parent_process()
-        if pp and not pp.is_alive():
-            break
-
-        if stop_event and hasattr(stop_event, "is_set") and stop_event.is_set():
-            break
-        res = search_in_file(
-            f_path,
-            search_string,
-            f_size,
-            special_mode,
-            use_complex_search=use_complex_search,
-            stop_event=stop_event,
-            force_python=force_python,
-            **kwargs,
-        )
-        if isinstance(res, tuple) and res[0] == Constants.STATUS_SKIPPED:
-            skipped.append((f_path, res[1]))
-        elif res == Constants.STATUS_SKIPPED:
-            skipped.append((f_path, AppStrings.ERROR_UNKNOWN))
-        elif res:
-            result_matches = res[2] if len(res) > 2 else []
-            partial_reason = _extract_normalized_partial_skip_reason(result_matches)
-            if partial_reason:
-                skipped.append((f_path, partial_reason))
-                visible_rows = [
-                    match
-                    for match in result_matches
-                    if not (
-                        isinstance(match, (tuple, list))
-                        and match
-                        and str(match[0]) == "-2"
-                    )
-                ]
-                if visible_rows:
-                    results.append((res[0], _visible_match_count(visible_rows), visible_rows))
-            else:
-                results.append(cast(SearchResult, res))
-    return {"results": results, "skipped": skipped}
-
-
-def search_in_files_batch(
-    file_batch: List[FileInfo],
-    search_string: str,
-    special_mode: Optional[str] = None,
-    use_complex_search: bool = False,
-    stop_event=None,
-    force_python: bool = False,
-    **kwargs,
-) -> Dict[str, List]:
-    """Search one batch using the settings snapshot captured by its parent worker."""
-    validate_search_query(search_string)
-    settings_snapshot = kwargs.pop("search_settings_snapshot", None)
-    with use_search_settings_snapshot(settings_snapshot):
-        return _search_in_files_batch_impl(
-            file_batch,
-            search_string,
-            special_mode,
-            use_complex_search,
-            stop_event,
-            force_python,
-            **kwargs,
         )
 
 

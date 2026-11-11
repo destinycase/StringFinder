@@ -60,7 +60,7 @@ def write_archive(tmp_path, document, name="Game.archive", encoding="utf-8"):
 
 
 def search(path, query, precise, exact=False):
-    return engine.search_in_archive_special(str(path), query, exact, use_complex_search=precise)
+    return engine.search_in_archive_special(str(path), query, exact)
 
 
 def rows(result):

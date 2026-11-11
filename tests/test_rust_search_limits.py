@@ -11,8 +11,6 @@ def _configured_limits(monkeypatch):
         Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 17,
         Constants.CONFIG_KEY_MAX_JSON_DEPTH: 29,
         Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE: 31,
-        Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE: 37,
-        Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD: 41,
     }
     monkeypatch.setattr(
         search_engine.ConfigManager,
@@ -20,32 +18,6 @@ def _configured_limits(monkeypatch):
         lambda _self: limits,
     )
     return limits
-
-
-def test_single_file_rust_search_receives_configured_limits(tmp_path, monkeypatch):
-    file_path = tmp_path / "sample.txt"
-    file_path.write_text("needle", encoding="utf-8")
-    captured = {}
-
-    class FakeEngine:
-        def search_file(self, *args, **kwargs):
-            captured["args"] = args
-            captured["kwargs"] = kwargs
-            return []
-
-    _configured_limits(monkeypatch)
-    monkeypatch.setattr(search_engine, "HAS_RUST_ENGINE", True)
-    monkeypatch.setattr(search_engine, "sf_engine", FakeEngine())
-
-    assert search_engine.search_in_file(str(file_path), "needle") is None
-    assert captured["kwargs"] == {
-        "stop_event": None,
-        "max_per_file": 17,
-        "max_json_depth": 29,
-        "max_json_size": 31 * 1024 * 1024,
-    }
-    assert Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE not in captured["kwargs"]
-    assert Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD not in captured["kwargs"]
 
 
 def test_batch_rust_searches_receive_the_same_configured_limits(monkeypatch):
@@ -95,27 +67,6 @@ def test_rust_search_limits_fall_back_to_safe_defaults_for_invalid_values(monkey
     limits = search_engine._get_rust_search_limits()
     assert limits[:2] == (Constants.DEFAULT_MAX_PER_FILE_MATCHES, 1)
     assert limits[2] == Constants.SETTING_MAX_SEARCH_FILE_SIZE_MB * 1024 * 1024
-
-
-def test_common_file_size_limit_applies_to_python_text_search(tmp_path, monkeypatch):
-    target = tmp_path / "oversized.txt"
-    target.write_bytes(b"x" * (1024 * 1024 + 1) + b"needle")
-    monkeypatch.setattr(
-        search_engine,
-        "_get_adv_setting",
-        lambda key, default: 1 if key == Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB else default,
-    )
-
-    result = search_engine.search_in_file(
-        str(target),
-        "needle",
-        use_complex_search=True,
-        force_python=True,
-    )
-
-    assert isinstance(result, tuple)
-    assert result[0] == Constants.STATUS_SKIPPED
-    assert "1048583" in result[1]
 
 
 def test_real_rust_engine_enforces_configured_json_size_limit(tmp_path):
@@ -386,50 +337,6 @@ def test_file_list_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
     assert response["skipped"][0][0] == "limited.json"
     assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(17) in response["skipped"][0][1]
     assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in response["skipped"][0][1]
-
-
-def test_python_batch_reports_depth_only_notice_without_empty_result(tmp_path, monkeypatch):
-    file_path = tmp_path / "deep.json"
-    file_path.write_text('{"outer":{"value":"needle"}}', encoding="utf-8")
-    monkeypatch.setattr(
-        search_engine.ConfigManager,
-        "get_advanced_settings",
-        lambda _self: {Constants.CONFIG_KEY_MAX_JSON_DEPTH: 1},
-    )
-
-    response = search_engine.search_in_files_batch(
-        [(str(file_path), file_path.stat().st_size)],
-        "needle",
-        Constants.MODE_JSON,
-        use_complex_search=True,
-    )
-
-    assert response["results"] == []
-    assert response["skipped"] == [
-        (str(file_path), search_engine.AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(1))
-    ]
-
-
-def test_python_batch_keeps_results_and_reports_match_limit(tmp_path, monkeypatch):
-    file_path = tmp_path / "many.txt"
-    file_path.write_text("needle\nneedle\nneedle\n", encoding="utf-8")
-    monkeypatch.setattr(
-        search_engine.ConfigManager,
-        "get_advanced_settings",
-        lambda _self: {Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 2},
-    )
-
-    response = search_engine.search_in_files_batch(
-        [(str(file_path), file_path.stat().st_size)],
-        "needle",
-        use_complex_search=True,
-    )
-
-    assert response["results"][0][0] == str(file_path)
-    assert response["results"][0][1] == 2
-    assert response["skipped"] == [
-        (str(file_path), search_engine.AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))
-    ]
 
 
 def test_real_rust_engine_marks_partial_json_depth_without_dropping_visible_match(tmp_path):

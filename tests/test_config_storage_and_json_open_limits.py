@@ -8,7 +8,6 @@ from unittest.mock import Mock
 import pytest
 from PySide6.QtWidgets import QMainWindow
 
-from core import search_engine as engine
 from sf_utils import resource_guard
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
@@ -198,27 +197,6 @@ def test_storage_flag_only_marks_actual_temp_fallback(tmp_path, monkeypatch, fal
         ConfigManager._instance = None
 
 
-@pytest.mark.parametrize("mmap_read", [False, True])
-def test_json_uses_open_descriptor_size_and_preserves_results(tmp_path, monkeypatch, mmap_read):
-    path = tmp_path / "sample.json"
-    path.write_text('{"v":"needle"}', encoding="utf-8")
-    calls = []
-    real_getsize = os.path.getsize
-
-    def track_size(filename):
-        calls.append(filename)
-        return real_getsize(filename)
-
-    monkeypatch.setattr(engine, "_memory_guard_result", lambda *args: None)
-    monkeypatch.setattr(engine.os.path, "getsize", track_size)
-    snapshot = {C.CONFIG_KEY_JSON_MMAP_THRESHOLD: 0 if mmap_read else 50}
-    with engine.use_search_settings_snapshot(snapshot):
-        result = engine.search_in_json_special(str(path), "needle", use_complex_search=True)
-    assert result[1] == 1
-    assert result[2][0][2] == "needle"
-    assert calls == [str(path)]
-
-
 def test_missing_appdata_home_fallback_is_not_temporary(tmp_path, monkeypatch):
     ConfigManager._instance = None
     monkeypatch.delenv("APPDATA", raising=False)
@@ -232,15 +210,3 @@ def test_missing_appdata_home_fallback_is_not_temporary(tmp_path, monkeypatch):
         ConfigManager._instance = None
 
 
-def test_json_opened_size_limit_precedes_read_and_mmap(tmp_path, monkeypatch):
-    path = tmp_path / "grown.json"
-    path.write_text('{"v":"needle"}', encoding="utf-8")
-    monkeypatch.setattr(engine, "_memory_guard_result", lambda *args: None)
-    monkeypatch.setattr(engine.os, "fstat", lambda _: SimpleNamespace(st_size=2 * 1024**2))
-    mapping = Mock(side_effect=AssertionError("must not allocate mmap"))
-    monkeypatch.setattr(engine.mmap, "mmap", mapping)
-    with engine.use_search_settings_snapshot({C.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 1}):
-        result = engine.search_in_json_special(str(path), "needle", use_complex_search=True)
-    assert result[0] == C.STATUS_SKIPPED
-    assert result[1].startswith(AppStrings.SKIP_REASON_TOO_LARGE.split("{", 1)[0])
-    mapping.assert_not_called()

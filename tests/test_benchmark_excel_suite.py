@@ -18,7 +18,7 @@ def fixtures(tmp_path_factory):
 
 
 @pytest.mark.parametrize("kind", range(4))
-@pytest.mark.parametrize("case_index", range(8))
+@pytest.mark.parametrize("case_index", range(4))
 def test_native_and_precise_fixture_contract(fixtures, kind, case_index):
     from core.search_engine import HAS_RUST_ENGINE
 

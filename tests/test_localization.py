@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton
+from PySide6.QtWidgets import QLabel
 
 from core.search_engine import (
     format_excel_panic_reason,
@@ -112,120 +112,6 @@ def test_projected_resource_budget_reason_follows_active_language():
     assert "Insufficient file memory budget" in english_reason
     assert AppStrings.SKIP_DETAIL_RESOURCE_BUDGET in english_reason
     assert "123456" not in english_reason
-
-
-def test_precise_search_setting_labels_describe_actual_scope(qtbot, mock_config_manager):
-    set_language("en")
-    dialog = SettingsDialog(mock_config_manager)
-    qtbot.addWidget(dialog)
-
-    labels = [label.text() for label in dialog.findChildren(QLabel)]
-    assert AppStrings.ADVANCED_PRECISE_SEARCH_GROUP in [
-        group.title() for group in dialog.findChildren(QGroupBox)
-    ]
-    assert AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE in labels
-    assert AppStrings.ADVANCED_MAX_SMALL_FILE_SIZE_DESCRIPTION in labels
-    assert AppStrings.ADVANCED_JSON_MMAP_THRESHOLD in labels
-    assert AppStrings.ADVANCED_JSON_MMAP_THRESHOLD_DESCRIPTION in labels
-    assert AppStrings.ADVANCED_TIMEOUT_WORKER_HANG in labels
-    assert AppStrings.ADVANCED_TIMEOUT_WORKER_HANG_DESCRIPTION in labels
-    assert all("streaming parser" not in text.casefold() for text in labels)
-
-    precise_group = next(
-        group
-        for group in dialog.findChildren(QGroupBox)
-        if group.title() == AppStrings.ADVANCED_PRECISE_SEARCH_GROUP
-    )
-    timeout_spinbox = dialog.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG]
-    parent = timeout_spinbox.parentWidget()
-    while parent is not None and parent is not precise_group:
-        parent = parent.parentWidget()
-    assert parent is precise_group
-
-
-def test_advanced_tab_groups_settings_by_runtime_scope(qtbot, mock_config_manager):
-    dialog = SettingsDialog(mock_config_manager)
-    qtbot.addWidget(dialog)
-
-    advanced_index = next(
-        index
-        for index in range(dialog.tab_widget.count())
-        if dialog.tab_widget.tabText(index) == AppStrings.SETTINGS_GROUP_ADVANCED
-    )
-    advanced_tab = dialog.tab_widget.widget(advanced_index).widget()
-    group_titles = [
-        advanced_tab.layout().itemAt(index).widget().title()
-        for index in range(advanced_tab.layout().count())
-        if isinstance(advanced_tab.layout().itemAt(index).widget(), QGroupBox)
-    ]
-    assert group_titles == [
-        AppStrings.ADVANCED_COMMON_GROUP,
-        AppStrings.ADVANCED_PRECISE_SEARCH_GROUP,
-        AppStrings.ADVANCED_DIAGNOSTICS_GROUP,
-    ]
-    assert AppStrings.SETTINGS_GROUP_ADVANCED not in group_titles
-
-    groups = {
-        group.title(): group for group in advanced_tab.findChildren(QGroupBox)
-    }
-    assert len(
-        groups[AppStrings.ADVANCED_DIAGNOSTICS_GROUP].findChildren(QPushButton)
-    ) == 2
-
-    def belongs_to_group(widget, group_title):
-        parent = widget.parentWidget()
-        while parent is not None and parent is not groups[group_title]:
-            parent = parent.parentWidget()
-        return parent is groups[group_title]
-
-    common_keys = {
-        Constants.CONFIG_KEY_MAX_TOTAL_MATCHES,
-        Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-        Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE,
-        Constants.CONFIG_KEY_MAX_JSON_DEPTH,
-    }
-    precise_keys = {
-        Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE,
-        Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD,
-        Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG,
-    }
-    assert all(
-        belongs_to_group(dialog.adv_spinboxes[key], AppStrings.ADVANCED_COMMON_GROUP)
-        for key in common_keys
-    )
-    assert belongs_to_group(dialog.exclude_binary_check, AppStrings.ADVANCED_COMMON_GROUP)
-    assert all(
-        belongs_to_group(dialog.adv_spinboxes[key], AppStrings.ADVANCED_PRECISE_SEARCH_GROUP)
-        for key in precise_keys
-    )
-
-    def ordered_controls(group_title, expected_controls):
-        controls = []
-        layout = groups[group_title].layout()
-        for index in range(layout.count()):
-            row = layout.itemAt(index).layout()
-            if row is None:
-                continue
-            for row_index in range(row.count()):
-                widget = row.itemAt(row_index).widget()
-                if any(widget is expected for expected in expected_controls):
-                    controls.append(widget)
-        return controls
-
-    expected_common_order = [
-        dialog.exclude_binary_check,
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_MAX_TOTAL_MATCHES],
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES],
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DOM_SIZE],
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_MAX_JSON_DEPTH],
-    ]
-    expected_precise_order = [
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_MAX_SMALL_FILE_SIZE],
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_JSON_MMAP_THRESHOLD],
-        dialog.adv_spinboxes[Constants.CONFIG_KEY_TIMEOUT_WORKER_HANG],
-    ]
-    assert ordered_controls(AppStrings.ADVANCED_COMMON_GROUP, expected_common_order) == expected_common_order
-    assert ordered_controls(AppStrings.ADVANCED_PRECISE_SEARCH_GROUP, expected_precise_order) == expected_precise_order
 
 
 def test_advanced_setting_spinbox_ranges_share_the_config_contract(qtbot, mock_config_manager):

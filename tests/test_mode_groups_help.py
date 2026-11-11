@@ -1,11 +1,9 @@
 """One-line controls, extension groups and local help preserve search policy."""
-from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialogButtonBox, QTextBrowser
 
-from core import search_engine as se
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
@@ -72,23 +70,6 @@ def test_invalid_groups_are_rejected_atomically(qtbot, language, group):
         AppStrings.EXTENSION_FILTER_WILDCARD_NOT_ALLOWED if "*" in group
         else AppStrings.EXTENSION_FILTER_INVALID_GROUP
     )
-
-
-@pytest.mark.parametrize("precise", [False, True])
-def test_groups_select_same_files_on_search_paths(tmp_path, qtbot, language, precise):
-    for name in ("a.txt", "b.json", "c.xml", "no_extension"):
-        (tmp_path / name).write_text("needle", encoding="utf-8")
-    panel = ExtensionFilterPanel()
-    qtbot.addWidget(panel)
-    panel.add_extension("txt,json")
-    extensions = panel.get_selected_extensions()
-    if precise:
-        files = se.FileScanner([str(tmp_path)], extensions, exclude_hidden=False).scan()
-        names = {Path(row[0]).name for row in files}
-    else:
-        result = se.search_directory_fast([str(tmp_path)], "needle", extensions, exclude_hidden=False)
-        names = {Path(row[0]).name for row in result["results"]}
-    assert names == {"a.txt", "b.json"}
 
 
 def test_help_button_order_localized_content_and_reuse(qtbot, mock_config_manager, language):

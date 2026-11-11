@@ -21,7 +21,6 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from core.search_engine import (
-    FileScanner,
     search_directory_fast,
     search_files_list_fast,
     search_in_file,
@@ -54,20 +53,6 @@ def hidden_test_env(tmp_path):
     set_hidden(hidden_dir)
 
     return base
-
-
-def test_python_scanner_exclude_hidden(hidden_test_env):
-    """test_python_scanner_exclude_hidden ?⑥닔."""
-    scanner = FileScanner(folders=[str(hidden_test_env)], extensions=[".txt"], exclude_hidden=True)
-    files = scanner.scan()
-    paths = [f[0] for f in files]
-    assert any("normal_dir" in p for p in paths)
-    assert not any("hidden_dir" in p for p in paths)
-    assert len(files) == 1
-
-    scanner = FileScanner(folders=[str(hidden_test_env)], extensions=[".txt"], exclude_hidden=False)
-    files = scanner.scan()
-    assert len(files) == 2
 
 
 def test_rust_engine_exclude_hidden(hidden_test_env):
@@ -120,27 +105,6 @@ def test_rust_engine_search_includes_gitignored_files(tmp_path):
     assert results[0][0].endswith("ignored.json")
 
 
-def test_normal_and_precise_search_both_ignore_no_ignore_files(tmp_path):
-    (tmp_path / ".ignore").write_text("ignored.txt\n", encoding="utf-8")
-    (tmp_path / "ignored.txt").write_text("needle in ignored file", encoding="utf-8")
-    (tmp_path / "kept.txt").write_text("needle in kept file", encoding="utf-8")
-
-    precise_names = {
-        os.path.basename(path)
-        for path, _size in FileScanner(
-            [str(tmp_path)], ["txt"], exclude_hidden=False
-        ).scan()
-    }
-    normal_names = {
-        os.path.basename(item[0])
-        for item in search_directory_fast(
-            [str(tmp_path)], "needle", extensions=["txt"], exclude_hidden=False
-        )["results"]
-    }
-
-    assert precise_names == normal_names == {"ignored.txt", "kept.txt"}
-
-
 def test_normal_search_deduplicates_overlapping_roots(tmp_path):
     nested = tmp_path / "nested"
     nested.mkdir()
@@ -154,152 +118,37 @@ def test_normal_search_deduplicates_overlapping_roots(tmp_path):
     assert [item[0] for item in result["results"]] == [str(target)]
 
 
-def test_empty_extension_filter_means_all_files_for_precise_scanner(tmp_path):
-    with_extension = tmp_path / "with-extension.txt"
-    without_extension = tmp_path / "without-extension"
-    with_extension.write_text("needle", encoding="utf-8")
-    without_extension.write_text("needle", encoding="utf-8")
-
-    scanned = FileScanner(
-        [str(tmp_path)], [], exclude_hidden=False
-    ).scan()
-
-    assert {os.path.basename(path) for path, _size in scanned} == {
-        with_extension.name,
-        without_extension.name,
-    }
-    normal = search_directory_fast(
-        [str(tmp_path)], "needle", extensions=[], exclude_hidden=False
-    )
-    assert {os.path.basename(item[0]) for item in normal["results"]} == {
-        with_extension.name,
-        without_extension.name,
-    }
-
-
-def test_precise_scanner_does_not_follow_symlinked_directories(tmp_path):
-    root = tmp_path / "root"
-    external = tmp_path / "external"
-    root.mkdir()
-    external.mkdir()
-    target = external / "linked.txt"
-    target.write_text("needle", encoding="utf-8")
-    try:
-        os.symlink(external, root / "alias", target_is_directory=True)
-    except OSError as exc:
-        if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
-            pytest.skip("Creating symlinks requires Windows Developer Mode or elevation")
-        raise
-
-    scanned = FileScanner([str(root)], ["txt"], exclude_hidden=False).scan()
-
-    assert scanned == []
-
-
-def test_precise_scanner_rejects_symlink_entries_without_following_them(tmp_path, monkeypatch):
-    class SymlinkEntry:
-        name = "linked.txt"
-        path = str(tmp_path / name)
-
-        def is_symlink(self):
-            return True
-
-        def is_dir(self, *, follow_symlinks=True):
-            raise AssertionError("symlink target must not be queried as a directory")
-
-        def is_file(self, *, follow_symlinks=True):
-            raise AssertionError("symlink target must not be queried as a file")
-
-    class ScandirContext:
-        def __enter__(self):
-            return iter([SymlinkEntry()])
-
-        def __exit__(self, *_args):
-            return False
-
-    monkeypatch.setattr(os, "scandir", lambda _path: ScandirContext())
-    scanner = FileScanner([str(tmp_path)], ["txt"], exclude_hidden=False)
-    files = []
-
-    scanner._scan_iterative(str(tmp_path), files, set())
-
-    assert files == []
-
-
 def test_all_search_modes_apply_the_configured_common_file_size_limit(tmp_path, monkeypatch):
     from core import search_engine
     from sf_utils.constants import Constants
 
-    target = tmp_path / "oversized.txt"
-    target.write_text("small fixture", encoding="utf-8")
-    oversized_size = 2 * 1024 * 1024
     monkeypatch.setattr(
         search_engine.ConfigManager,
         "get_advanced_settings",
         lambda _self: {Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 1},
     )
 
+    # Rust는 실제 파일 크기로 상한을 판정하므로 상한(1MB)보다 큰 파일을 만듭니다.
+    contents = {
+        "txt": "needle " + "x" * (2 * 1024 * 1024),
+        "json": '{"v": "needle", "pad": "' + "x" * (2 * 1024 * 1024) + '"}',
+        "xml": "<root><v>needle</v><pad>" + "x" * (2 * 1024 * 1024) + "</pad></root>",
+    }
     for extension, special_mode in (
         ("txt", None),
         ("json", Constants.MODE_JSON),
         ("xml", Constants.MODE_XML),
-        ("xlsx", None),
     ):
+        target = tmp_path / f"oversized.{extension}"
+        target.write_text(contents[extension], encoding="utf-8")
+        oversized_size = target.stat().st_size
         result = search_in_file(
-            str(target.with_suffix(f".{extension}")),
+            str(target),
             "needle",
-            file_size=oversized_size,
             special_mode=special_mode,
-            use_complex_search=True,
         )
         assert result is not None
         assert result[0] == Constants.STATUS_SKIPPED
         assert str(oversized_size) in result[1]
 
 
-def test_python_scanner_matches_rust_hidden_dotfile_policy(tmp_path):
-    """Dot-prefixed files are hidden for both normal and precise searches."""
-    dotfile = tmp_path / ".package-lock.json"
-    dotfile.write_text('{"needle": "le"}', encoding="utf-8")
-
-    excluded = FileScanner(
-        folders=[str(tmp_path)], extensions=[".json"], exclude_hidden=True
-    ).scan()
-    included = FileScanner(
-        folders=[str(tmp_path)], extensions=[".json"], exclude_hidden=False
-    ).scan()
-
-    assert not any(os.path.basename(item[0]) == dotfile.name for item in excluded)
-    assert any(os.path.basename(item[0]) == dotfile.name for item in included)
-
-
-def test_recycle_bin_is_always_excluded_from_every_search_entry_point(tmp_path):
-    normal = tmp_path / "normal.txt"
-    normal.write_text("needle", encoding="utf-8")
-    recycle = tmp_path / "$RECYCLE.BIN" / "user" / "recycled.txt"
-    recycle.parent.mkdir(parents=True)
-    recycle.write_text("needle", encoding="utf-8")
-
-    scanned = FileScanner(
-        folders=[str(tmp_path)],
-        extensions=[".txt"],
-        exclude_hidden=False,
-    ).scan()
-    assert [path for path, _size in scanned] == [str(normal)]
-
-    directory_result = search_directory_fast(
-        [str(tmp_path)],
-        "needle",
-        extensions=["txt"],
-        exclude_hidden=False,
-    )
-    assert [item[0] for item in directory_result["results"]] == [str(normal)]
-
-    listed_result = search_files_list_fast(
-        [str(normal), str(recycle)],
-        "needle",
-        exclude_hidden=False,
-    )
-    assert [item[0] for item in listed_result["results"]] == [str(normal)]
-
-    assert search_in_file(str(recycle), "needle", force_python=True) is None

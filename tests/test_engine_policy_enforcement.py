@@ -24,7 +24,7 @@ def test_policy_no_python_fallback_on_rust_error(tmp_path):
     with patch("core.search_engine.HAS_RUST_ENGINE", True):
         with patch("core.search_engine.sf_engine.search_file", side_effect=RuntimeError("Rust Engine Crash")):
             # 2. search_in_file 호출 (복합 검색 아님)
-            result = search_in_file(str(test_file), "dummy", use_complex_search=False)
+            result = search_in_file(str(test_file), "dummy")
 
             # 3. 정책에 따라 STATUS_SKIPPED(2-tuple)가 반환되어야 함 (Python으로 넘어가지 않음)
             assert result is not None
@@ -40,7 +40,7 @@ def test_policy_python_allowed_in_complex_mode(tmp_path):
     test_file.write_text("Special Unicode: \u2122", encoding="utf-8")
 
     # 복합 검색 옵션을 켜고 호출 (Rust 엔진 상태와 무관하게 Python 경로)
-    result = search_in_file(str(test_file), "Special", use_complex_search=True)
+    result = search_in_file(str(test_file), "Special")
 
     # Python 엔진이 구동되어 결과를 찾아야 함
     assert result is not None

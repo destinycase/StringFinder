@@ -135,10 +135,6 @@ class MainWindow(QMainWindow):
         # [Fix] 명시적으로 리소스 정리 호출 (탭 워커, 전역 매니저 등)
         self.cleanup()
         
-        from core.worker import shutdown_global_manager, GlobalExecutor
-        GlobalExecutor.shutdown(wait=True)
-        shutdown_global_manager()
-
         QApplication.quit()
 
     def _init_ui(self):
