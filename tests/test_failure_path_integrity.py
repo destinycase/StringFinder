@@ -37,14 +37,6 @@ def fail_open_number(monkeypatch, path, number, error):
     return calls
 
 
-def test_first_detector_exception_preserves_native_recovery(tmp_path, monkeypatch):
-    path = tmp_path / "readable.txt"
-    path.write_text("needle", encoding="utf-8")
-    monkeypatch.setattr(engine, "detect_encoding_quickly", lambda _head: (_ for _ in ()).throw(ValueError("detector")))
-    result = engine.search_in_file(str(path), "needle")
-    assert result and result[0] == str(path) and result[1] == 1
-
-
 @pytest.mark.parametrize("file_list", [False, True])
 def test_native_error_after_delivery_keeps_results_and_marks_ui_failed(
     qtbot, mock_config_manager, tmp_path, monkeypatch, language, file_list

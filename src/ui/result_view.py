@@ -66,16 +66,16 @@ def _append_excel_row(worksheet, values):
 
 
 def _detect_text_encoding(file_path):
-    """Detect preview encoding from the same bounded sample used by search."""
+    """미리보기 인코딩을 검색 엔진과 같은 판정(파일 전체 기준, 설정의 지정 인코딩 우선)으로 정합니다."""
     with open(file_path, "rb") as file:
-        sample = file.read(65536)
+        sample = file.read(4)
     if sample.startswith(b"\xff\xfe\x00\x00"):
         return "utf-32-le"
     if sample.startswith(b"\x00\x00\xfe\xff"):
         return "utf-32-be"
-    from core.search_engine import detect_encoding_quickly
+    from core.search_engine import detect_preview_encoding
 
-    return detect_encoding_quickly(sample)
+    return detect_preview_encoding(file_path)
 
 
 def _read_context_lines_from_file(file_path, target_line, before_lines, after_lines, cancel_event=None):
@@ -957,28 +957,18 @@ class ResultView(QWidget):
             if len(line) > self.CONTEXT_MAX_LINE_CHARS:
                 # Center the bounded preview on the selected match instead of
                 # always showing the beginning of a minified/long line.
-                folded_line = line.casefold()
-                folded_query = str(self.search_text or "").casefold()
-                match_start = folded_line.find(folded_query) if folded_query else 0
-                # Use the selected detail row as a hint so repeated matches on
-                # the same line do not always preview the first occurrence.
-                hint = str(getattr(self, "_context_match_content", "") or "").strip(".")
-                if hint and folded_query:
-                    hint_pos = folded_line.find(hint.casefold())
-                    query_in_hint = hint.casefold().find(folded_query)
-                    if hint_pos >= 0 and query_in_hint >= 0:
-                        match_start = hint_pos + query_in_hint
-                if match_start < 0:
-                    match_start = 0
-                # Case folding can expand characters (ß -> ss, İ -> i + dot).
-                # Translate the comparison index back before slicing the source.
-                if not line.isascii():
-                    folded_offset = 0
-                    for source_offset, character in enumerate(line):
-                        folded_offset += len(character.casefold())
-                        if folded_offset > match_start:
-                            match_start = source_offset
-                            break
+                # 검색과 같은 비교 기준(엔진의 key())으로 일치 위치를 찾습니다. 분해형 글자처럼
+                # 새 기준으로만 성립하는 일치도 미리보기에 보이게 합니다(검수 R-3).
+                from core.search_engine import find_key_match_char
+
+                query = str(self.search_text or "")
+                # 선택한 상세 행의 내용(원문 일부)을 단서로, 같은 줄의 여러 일치 중 그 위치를 보여 줍니다.
+                hint = str(getattr(self, "_context_match_content", "") or "").strip(".").strip()
+                hint_pos = line.find(hint) if hint else -1
+                found = find_key_match_char(line, query, max(0, hint_pos))
+                if found is None and hint_pos > 0:
+                    found = find_key_match_char(line, query, 0)
+                match_start = found if found is not None else 0
                 start = max(0, match_start - self.CONTEXT_TRUNCATED_BEFORE_CHARS)
                 end = min(len(line), match_start + self.CONTEXT_TRUNCATED_AFTER_CHARS)
                 line = ("..." if start else "") + line[start:end] + ("..." if end < len(line) else "")

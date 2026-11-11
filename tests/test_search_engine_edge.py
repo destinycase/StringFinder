@@ -15,7 +15,7 @@
 
 import os
 
-from core.search_engine import detect_encoding_quickly, search_in_file
+from core.search_engine import search_in_file
 
 
 def test_search_extremely_long_line(tmp_path):
@@ -41,12 +41,6 @@ def test_unknown_encoding_fallback(tmp_path):
 
     result = search_in_file(str(test_file), "any")
     assert result is None or (isinstance(result, tuple) and len(result) == 3)
-
-
-def test_detect_encoding_empty_data():
-    empty_data = b""
-    enc = detect_encoding_quickly(empty_data)
-    assert enc == "utf-8"
 
 
 def test_search_empty_file_skip_reason(tmp_path):

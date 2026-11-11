@@ -134,8 +134,9 @@ pub struct SearchMatch {
     pub offset: Option<usize>,
     #[pyo3(get)]
     pub length: Option<usize>,
+    // 대부분 "match" 같은 고정 값이라 결과마다 문자열을 할당하지 않습니다.
     #[pyo3(get)]
-    pub kind: String,
+    pub kind: std::borrow::Cow<'static, str>,
     #[pyo3(get)]
     pub code: Option<String>,
     #[pyo3(get)]
@@ -160,7 +161,7 @@ impl SearchMatch {
             content,
             offset,
             length,
-            kind,
+            kind: std::borrow::Cow::Owned(kind),
             code,
             detail,
         }
@@ -191,7 +192,11 @@ impl SearchMatch {
 
 impl From<RawMatch> for SearchMatch {
     fn from((line, content, offset, length): RawMatch) -> Self {
-        let (kind, code, detail) = if content == "__SF_TRUNCATED__" {
+        // 대부분은 일반 일치 줄입니다. 표시 접두어(`__SF_`, `ERR_`)로 시작할 때만 아래 분류를 봅니다.
+        let (kind, code, detail) = if !content.starts_with("__SF_") && !content.starts_with("ERR_")
+        {
+            ("match", None, None)
+        } else if content == "__SF_TRUNCATED__" {
             ("truncated", Some("TRUNCATED"), None)
         } else if let Some(detail) = content.strip_prefix("__SF_JSON_DEPTH_LIMIT__|") {
             ("partial", Some("JSON_DEPTH_LIMIT"), Some(detail))
@@ -199,6 +204,8 @@ impl From<RawMatch> for SearchMatch {
             ("binary", Some("BINARY"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_LONG_LINE__|") {
             ("long_line", Some("LONG_LINE"), Some(detail))
+        } else if let Some(detail) = content.strip_prefix("__SF_DECODE_PARTIAL__|") {
+            ("partial", Some("DECODE_PARTIAL"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_EXCEL_SHEET_ERR__|") {
             ("sheet_error", Some("EXCEL_SHEET_ERROR"), Some(detail))
         } else if let Some(detail) = content.strip_prefix("__SF_EXCEL_PANIC__|") {
@@ -211,7 +218,7 @@ impl From<RawMatch> for SearchMatch {
         } else {
             ("match", None, None)
         };
-        let kind = kind.to_string();
+        let kind = std::borrow::Cow::Borrowed(kind);
         let code = code.map(str::to_string);
         let detail = detail.map(str::to_string);
         Self {

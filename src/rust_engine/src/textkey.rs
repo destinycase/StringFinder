@@ -375,6 +375,97 @@ fn two_byte_table() -> &'static [u32] {
     })
 }
 
+/// `key`에서 앞 글자와 나눠 변환해도 되는 글자(ASCII·불변·단순 접기)인지 알려 줍니다.
+#[inline]
+fn is_segment_start(c: char) -> bool {
+    c.is_ascii() || class_code(c as u32) & (CLASS_INVARIANT | CLASS_SIMPLE) != 0
+}
+
+fn segment_start_at_or_before(text: &str, mut byte: usize) -> usize {
+    while byte > 0 {
+        let c = text[byte..].chars().next();
+        if c.is_some_and(is_segment_start) {
+            return byte;
+        }
+        byte -= text[..byte].chars().next_back().map_or(1, char::len_utf8);
+    }
+    0
+}
+
+fn segment_start_at_or_after(text: &str, mut byte: usize) -> usize {
+    while byte < text.len() {
+        let c = text[byte..].chars().next().unwrap();
+        if is_segment_start(c) {
+            return byte;
+        }
+        byte += c.len_utf8();
+    }
+    text.len()
+}
+
+/// `segment`(나눌 수 있는 글자에서 시작)의 `key` 결과에서 `converted` 바이트 위치가 원본의
+/// 어느 바이트(그 위치를 만든 나눔 단위의 시작)에서 왔는지 돌려줍니다.
+fn original_byte_of(segment: &str, converted: usize) -> usize {
+    let mut produced = 0usize;
+    let mut start = 0usize;
+    while start < segment.len() {
+        let first = segment[start..].chars().next().unwrap();
+        let mut end = start + first.len_utf8();
+        end = segment_start_at_or_after(segment, end);
+        produced += key(&segment[start..end]).len();
+        if produced > converted {
+            return start;
+        }
+        start = end;
+    }
+    segment.len()
+}
+
+/// 미리보기용: `text`에서 `start_char`번째 글자부터 `key(검색어)`와 일치하는 첫 위치(글자 번호)입니다.
+///
+/// 검색과 같은 비교 기준입니다. 긴 줄도 메모리를 일정하게 쓰도록 64KiB 단위(나눌 수 있는 글자에서
+/// 자름, 검색어 길이만큼 겹침)로 변환해 찾습니다. 위치는 그 일치를 만든 원본 글자 묶음의 시작입니다.
+pub fn find_key_match_char(text: &str, pattern: &str, start_char: usize) -> Option<usize> {
+    let pattern_key = key(pattern);
+    if pattern_key.is_empty() {
+        return None;
+    }
+    let finder = memchr::memmem::Finder::new(pattern_key.as_bytes());
+    let begin = text
+        .char_indices()
+        .nth(start_char)
+        .map_or(text.len(), |(byte, _)| byte);
+    let overlap_chars = pattern.chars().count() * 3 + 8;
+    let mut chunk_start = segment_start_at_or_before(text, begin);
+    while chunk_start < text.len() {
+        let mut chunk_end = (chunk_start + 65_536).min(text.len());
+        while !text.is_char_boundary(chunk_end) {
+            chunk_end += 1;
+        }
+        chunk_end = segment_start_at_or_after(text, chunk_end);
+        let mut window_end = chunk_end;
+        for c in text[chunk_end..].chars().take(overlap_chars) {
+            window_end += c.len_utf8();
+        }
+        window_end = segment_start_at_or_after(text, window_end);
+        let window = &text[chunk_start..window_end];
+        let converted = key(window);
+        let mut search_from = 0usize;
+        while let Some(found) = finder.find(&converted.as_bytes()[search_from..]) {
+            let byte = chunk_start + original_byte_of(window, search_from + found);
+            if byte >= begin {
+                return Some(text[..byte].chars().count());
+            }
+            search_from += found + 1;
+        }
+        if chunk_end >= text.len() {
+            break;
+        }
+        chunk_start = chunk_end;
+    }
+    None
+}
+
 /// `text`가 첫소리+가운뎃소리[+끝소리] 자모로 시작하고 그 뒤 글자가 나눌 수 있는 글자이면
 /// (합친 음절, 사용한 바이트 수)를 돌려줍니다. 뒤에 다른 결합 글자가 오면 None(정의대로 계산).
 fn compose_hangul(text: &str) -> Option<(char, usize)> {
@@ -866,6 +957,24 @@ impl LineCounter {
         }
     }
 
+    /// 지금까지 센 위치입니다.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// 호출자가 이미 센 결과(`position`이 `line`번째 줄, 그 줄이 `start`에서 시작)로 앞으로 옮깁니다.
+    pub fn advance_known(&mut self, position: usize, line: usize, start: usize) {
+        debug_assert!(position >= self.position);
+        self.position = position;
+        self.line = line;
+        self.start = start;
+        if let Some((_, to)) = self.break_free {
+            if position >= to {
+                self.break_free = None;
+            }
+        }
+    }
+
     /// `[from, to)`에 CR·LF가 없음을 알려 줍니다. 이 구간을 지나는 줄 번호 계산에서 건너뜁니다.
     pub fn note_break_free(&mut self, from: usize, to: usize) {
         if from < to && self.position <= from {
@@ -1101,6 +1210,79 @@ impl<'a> Iterator for LineSplit<'a> {
 #[cfg(test)]
 mod key_into_tests {
     use super::*;
+
+    /// 나누지 않고 한 번에 변환해 찾는 기준 구현입니다.
+    fn unchunked_reference(text: &str, pattern: &str, start_char: usize) -> Option<usize> {
+        let pat = key(pattern);
+        let begin = text
+            .char_indices()
+            .nth(start_char)
+            .map_or(text.len(), |(b, _)| b);
+        let first = segment_start_at_or_before(text, begin);
+        let converted = key(&text[first..]);
+        let finder = memchr::memmem::Finder::new(pat.as_bytes());
+        let mut from = 0usize;
+        while let Some(found) = finder.find(&converted.as_bytes()[from..]) {
+            let byte = first + original_byte_of(&text[first..], from + found);
+            if byte >= begin {
+                return Some(text[..byte].chars().count());
+            }
+            from += found + 1;
+        }
+        None
+    }
+
+    /// 미리보기 위치 찾기가 나누지 않고 찾은 기준과 같은지 무작위로 확인합니다.
+    #[test]
+    fn find_key_match_char_matches_brute_force() {
+        let pool: Vec<char> = "ab \u{e9}\u{c9}\u{301}\u{df}\u{1100}\u{1161}\u{11a8}\u{ac00}\u{ac01}\u{3a3}\u{3c3}\u{41f}\u{43f}\u{212a}k"
+            .chars()
+            .collect();
+        let patterns = [
+            "\u{e9}",
+            "ss",
+            "\u{ac01}",
+            "\u{3c3}",
+            "k",
+            "ab",
+            "\u{43f}\u{43f}",
+        ];
+        let mut state = 0x1357_9BDF_2468_ACE0u64;
+        for round in 0..20_000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let length = (state % 40) as usize;
+            let text: String = (0..length)
+                .map(|step| pool[(state.rotate_left(step as u32 * 5) % pool.len() as u64) as usize])
+                .collect();
+            let pattern = patterns[round % patterns.len()];
+            let start_char = (state % 5) as usize;
+            assert_eq!(
+                find_key_match_char(&text, pattern, start_char),
+                unchunked_reference(&text, pattern, start_char),
+                "{text:?} {pattern:?} {start_char}"
+            );
+        }
+        // 64KiB 나눔 경계 근처에 일치를 넣은 긴 줄
+        for offset in [65_530usize, 65_534, 65_536, 65_540, 131_070] {
+            for pattern in ["\u{e9}", "ss", "\u{ac01}"] {
+                let mut text = "x".repeat(offset);
+                text.push_str("\u{c9}e\u{301}\u{df}\u{1100}\u{1161}\u{11a8}");
+                text.push_str(&"y".repeat(70_000));
+                for start_char in [0, offset - 3, offset + 2] {
+                    assert_eq!(
+                        find_key_match_char(&text, pattern, start_char),
+                        unchunked_reference(&text, pattern, start_char),
+                        "{offset} {pattern:?} {start_char}"
+                    );
+                }
+            }
+        }
+        // 분해형 한글 긴 줄에서 완성형 검색어의 위치를 찾습니다(검수 R-3).
+        let long: String = "\u{1100}\u{1161}".repeat(50_000) + "\u{1106}\u{1169}\u{11a8}";
+        assert_eq!(find_key_match_char(&long, "\u{baa9}", 0), Some(100_000));
+    }
 
     /// 결합 부호·자모·접기 대상이 섞인 무작위 문자열에서 `key_into`가 정의와 같은지 확인합니다.
     #[test]

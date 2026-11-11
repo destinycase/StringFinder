@@ -23,9 +23,8 @@ def test_precise_json_existence_matches_decoded_values(tmp_path, content, query)
     assert result and result[0] == str(path) and result[1] == 1
 
 
-@pytest.mark.parametrize("precise", [False, True])
 @pytest.mark.parametrize("allow", [False, True])
-def test_duplicate_json_keys_policy(tmp_path, precise, allow):
+def test_duplicate_json_keys_policy(tmp_path, allow):
     path = tmp_path / "duplicate.json"
     path.write_text('{"v":"needle","\\u0076":"needle"}', encoding="utf-8")
     with se.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
@@ -96,15 +95,13 @@ def test_excel_coordinates_and_sheet_failure(tmp_path):
     assert result and (result[0] == Constants.STATUS_SKIPPED or any(row[0] == -2 for row in result[2]))
 
 
-@pytest.mark.parametrize("precise", [False, True])
-def test_json_exact_trims_only_outer_whitespace(tmp_path, precise):
+def test_json_exact_trims_only_outer_whitespace(tmp_path):
     path = tmp_path / "exact.json"
     path.write_text(json.dumps({"value": " needle "}))
     assert se.search_in_json_special(str(path), "needle", exact_match=True)
 
 
-@pytest.mark.parametrize("precise", [False, True])
-def test_excel_exact_keeps_internal_whitespace(tmp_path, precise):
+def test_excel_exact_keeps_internal_whitespace(tmp_path):
     from openpyxl import Workbook
     path = tmp_path / "spaces.xlsx"
     book = Workbook()
@@ -196,16 +193,14 @@ def test_duplicate_setting_combo_persists_and_resets(qtbot, mock_config_manager)
     assert mock_config_manager.get_advanced_settings()[Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS] is False
 
 
-@pytest.mark.parametrize("precise", [False, True])
-def test_duplicate_keys_in_separate_objects_are_not_duplicates(tmp_path, precise):
+def test_duplicate_keys_in_separate_objects_are_not_duplicates(tmp_path):
     path = tmp_path / "separate.json"
     path.write_text('[{"v":"needle"},{"v":"needle"}]', encoding="utf-8")
     result = se.search_in_json_special(str(path), "needle")
     assert result and result[0] == str(path) and result[1] == 2
 
 
-@pytest.mark.parametrize("precise", [False, True])
-def test_duplicate_policy_does_not_restrict_plain_text_search(tmp_path, precise):
+def test_duplicate_policy_does_not_restrict_plain_text_search(tmp_path):
     path = tmp_path / "plain.json"
     path.write_text('{"v":"needle","v":"needle"}', encoding="utf-8")
     result = se.search_in_file(str(path), "needle")

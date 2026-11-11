@@ -111,13 +111,12 @@ def semantic_details(row, mode):
     return [(match[0], match[1]) for match in row[2]]
 
 
-@pytest.mark.parametrize("precise", [False, True], ids=["normal", "precise"])
 @pytest.mark.parametrize("mode,suffix,content", [
     (C.MODE_JSON, "json", '{"v":"\\u006e\\u0065\\u0065\\u0064\\u006c\\u0065"}'),
     (C.MODE_XML, "xml", "<root><v>&#110;&#101;&#101;&#100;&#108;&#101;</v></root>"),
 ], ids=["json-escape", "xml-entity"])
 def test_decoded_values_are_intentionally_different_from_raw_search(
-    tmp_path, precise, mode, suffix, content
+    tmp_path, mode, suffix, content
 ):
     path = tmp_path / f"encoded.{suffix}"
     path.write_text(content, encoding="utf-8")
@@ -135,8 +134,7 @@ def test_decoded_values_are_intentionally_different_from_raw_search(
         assert sum(row[1] for row in native["results"]) == expected_count
 
 
-@pytest.mark.parametrize("precise", [False, True], ids=["normal", "precise"])
-def test_json_key_only_is_not_a_structured_value_result(tmp_path, precise):
+def test_json_key_only_is_not_a_structured_value_result(tmp_path):
     path = tmp_path / "key.json"
     path.write_text('{"needle":"quiet"}', encoding="utf-8")
     raw = engine.search_in_file(str(path), QUERY,

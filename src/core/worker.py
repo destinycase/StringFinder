@@ -40,7 +40,6 @@ class SearchWorker(QRunnable):
         self.filename_filter = params.get(Constants.PAYLOAD_FILENAME_FILTER)
         self.exclude_hidden = params.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True)
         self.exclude_binary = params.get(Constants.PAYLOAD_EXCLUDE_BINARY, True)
-        self._last_progress_time: Optional[float] = None
         self.stop_event = threading.Event()
         if self.special_mode and self.special_mode.startswith(Constants.MODE_EXCEL):
             from core.search_engine import EXCEL_EXTS

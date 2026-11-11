@@ -96,6 +96,8 @@ const MATCH_META_BINARY_PREFIX: &str = "__SF_BINARY_MATCH__|";
 const MATCH_META_TRUNCATED: &str = "__SF_TRUNCATED__";
 // Shared marker for long-line result metadata and offset handling.
 const MATCH_META_LONG_LINE_PREFIX: &str = "__SF_LONG_LINE__|";
+/// 파일 일부를 해석하지 못했음(디코딩 오류)을 알리는 파일 단위 표시입니다. 뒤에 인코딩 이름이 붙습니다.
+const MATCH_META_DECODE_PARTIAL_PREFIX: &str = "__SF_DECODE_PARTIAL__|";
 
 const MONITOR_INTERVAL_MS: u64 = 100;
 const LARGE_STRUCTURED_FILE_BYTES: u64 = 8 * 1024 * 1024;
@@ -705,7 +707,7 @@ fn do_search_with_mmap(
     max_per_file: usize,
 ) -> Vec<RawMatch> {
     let mut results = Vec::new();
-    if encoding == UTF_8 {
+    let had_decode_errors = if encoding == UTF_8 {
         search_utf8_text(
             mmap,
             matcher,
@@ -713,19 +715,31 @@ fn do_search_with_mmap(
             stop_flag,
             max_per_file,
             &mut results,
-        );
+        )
     } else {
         // Non-UTF8 일반 텍스트는 파일 전체를 String으로 복사하지 않고 청크 단위로 디코딩합니다.
-        search_non_utf8_chunks(
-            mmap,
-            encoding,
-            matcher,
-            is_exact,
-            stop_flag,
-            max_per_file,
-            &mut results,
-            false,
-        );
+        matches!(
+            search_non_utf8_chunks(
+                mmap,
+                encoding,
+                matcher,
+                is_exact,
+                stop_flag,
+                max_per_file,
+                &mut results,
+                false,
+            ),
+            ChunkDecode::Completed { had_errors: true }
+        )
+    };
+    if had_decode_errors {
+        // 해석하지 못한 바이트가 있으면 일치가 없어도 파일 단위 안내를 남깁니다(제안서 2.5).
+        results.push((
+            0,
+            format!("{MATCH_META_DECODE_PARTIAL_PREFIX}{}", encoding.name()),
+            None,
+            None,
+        ));
     }
     results
 }
@@ -750,15 +764,83 @@ struct Utf8TextSearch<'a> {
     max_per_file: usize,
     stop_flag: &'a Arc<AtomicBool>,
     counter: textkey::LineCounter,
-    // 같은 줄의 여러 일치에서 줄 경계를 다시 찾지 않도록 마지막 줄을 기억합니다.
+    // 같은 줄의 여러 일치에서 줄 경계를 다시 찾지 않도록 마지막 줄과 그 줄 번호를 기억합니다.
     line: Option<(usize, usize)>,
+    line_no: Option<usize>,
     last_exact_line_start: Option<usize>,
     results: &'a mut Vec<RawMatch>,
+    // UTF-8 유효성을 확인한 위치와, 해석하지 못한 바이트를 만났는지 여부입니다.
+    utf8_checked: usize,
+    invalid_utf8: bool,
 }
 
 impl Utf8TextSearch<'_> {
     fn full(&self) -> bool {
         self.results.len() > self.max_per_file
+    }
+
+    /// `[start, end)`까지 UTF-8로 올바른지 확인합니다. 이미 확인한 위치부터 이어서 보며,
+    /// ASCII로 확인된 구간은 다시 검사하지 않습니다. 구간 끝에서 잘린 글자는 다음 구간에서 봅니다.
+    fn check_utf8(&mut self, start: usize, end: usize, ascii: bool) {
+        if self.invalid_utf8 || end <= self.utf8_checked {
+            return;
+        }
+        if ascii && self.utf8_checked >= start {
+            self.utf8_checked = end;
+            return;
+        }
+        match simdutf8::compat::from_utf8(&self.buf[self.utf8_checked..end]) {
+            Ok(_) => self.utf8_checked = end,
+            Err(error) if error.error_len().is_none() && end < self.buf.len() => {
+                self.utf8_checked += error.valid_up_to();
+            }
+            Err(_) => self.invalid_utf8 = true,
+        }
+    }
+
+    /// `position`의 줄 번호와 줄 경계입니다(앞으로만 이동).
+    ///
+    /// 일치가 촘촘한 파일에서는 일치마다 줄 번호 계산과 줄 경계 찾기를 따로 하면 비용이 큽니다.
+    /// 그래서 기억한 줄의 바로 다음 몇 줄 안에 있으면, 줄 끝에서 다음 줄바꿈까지만 찾으며 줄 번호를
+    /// 1씩 올립니다(줄바꿈 하나 = LF·CR·CRLF 하나라 카운터와 같은 값). 멀면 카운터로 셉니다.
+    fn locate(&mut self, position: usize) -> (usize, (usize, usize)) {
+        const NEAR_LINES: usize = 8;
+        if let Some((start, end)) = self.line {
+            if start <= position && position < end {
+                let line = match self.line_no {
+                    Some(line) => line,
+                    None => self.counter.line_at(self.buf, position),
+                };
+                self.line_no = Some(line);
+                return (line, (start, end));
+            }
+            if let Some(mut line) = self.line_no {
+                if position > end && self.counter.position() <= end {
+                    let mut line_end = end;
+                    for _ in 0..NEAR_LINES {
+                        let next_start = skip_line_break(self.buf, line_end);
+                        if next_start == line_end {
+                            break;
+                        }
+                        line += 1;
+                        line_end = next_line_break(self.buf, next_start);
+                        if position < next_start {
+                            break;
+                        }
+                        if position < line_end {
+                            self.counter.advance_known(position, line, next_start);
+                            self.line = Some((next_start, line_end));
+                            self.line_no = Some(line);
+                            return (line, (next_start, line_end));
+                        }
+                    }
+                }
+            }
+        }
+        let line = self.counter.line_at(self.buf, position);
+        let bounds = self.bounds(position);
+        self.line_no = Some(line);
+        (line, bounds)
     }
 
     fn bounds(&mut self, position: usize) -> (usize, usize) {
@@ -767,6 +849,7 @@ impl Utf8TextSearch<'_> {
                 return (start, end);
             }
         }
+        self.line_no = None;
         // 줄 시작은 줄 번호 카운터가 지나온 곳까지만 거꾸로 찾습니다(긴 줄에서 파일 처음까지 훑지 않음).
         let start = self.counter.line_start(self.buf, position);
         let end = memchr::memchr2(b'\n', b'\r', &self.buf[position..])
@@ -796,9 +879,7 @@ impl Utf8TextSearch<'_> {
 
     /// 원본에서 찾은 일치 하나를 기록합니다(줄에 변환 대상이 없음이 확인된 경우).
     fn raw_hit(&mut self, match_start: usize, match_len: usize) {
-        // 줄 번호를 먼저 세면 줄 시작을 찾을 때 지나온 구간을 다시 훑지 않습니다.
-        let line = self.counter.line_at(self.buf, match_start);
-        let (line_start, line_end) = self.bounds(match_start);
+        let (line, (line_start, line_end)) = self.locate(match_start);
         if self.is_exact {
             if self.last_exact_line_start == Some(line_start) {
                 return;
@@ -949,6 +1030,7 @@ fn search_long_line(
             // 보고할 것이 없으므로 줄바꿈을 찾지 않고 건너뜁니다.
             let window = &buf[window_start..window_end];
             if is_ascii_chunk(window) {
+                search.check_utf8(window_start, window_end, true);
                 let search_end = (window_end + overlap).min(len);
                 let has_hit = matcher
                     .raw_hits_in(&buf[search_from..search_end])
@@ -972,6 +1054,7 @@ fn search_long_line(
                 }
             }
         }
+        search.check_utf8(window_start, window_end, false);
         let line_break = memchr::memchr2(b'\n', b'\r', &buf[window_start..window_end]);
         let segment_end = line_break.map_or(window_end, |index| window_start + index);
         let line_ends = line_break.is_some() || window_end == len;
@@ -1020,6 +1103,7 @@ fn search_long_line(
             // 줄 경계를 이미 알고 있으므로 줄 번호 계산과 줄 경계 찾기에서 줄을 다시 훑지 않습니다.
             search.counter.note_break_free(line_start, segment_end);
             search.line = Some((line_start, segment_end));
+            search.line_no = None;
             for (hit_start, hit_len) in pending.drain(..) {
                 if search.full() {
                     return None;
@@ -1051,6 +1135,7 @@ fn next_line_break(buf: &[u8], from: usize) -> usize {
         .map_or(buf.len(), |index| from + index)
 }
 
+/// UTF-8 텍스트를 검색합니다. 해석하지 못한(올바른 UTF-8이 아닌) 바이트가 있었으면 참을 돌려줍니다.
 fn search_utf8_text(
     buf: &[u8],
     matcher: &textkey::Matcher,
@@ -1058,8 +1143,7 @@ fn search_utf8_text(
     stop_flag: &Arc<AtomicBool>,
     max_per_file: usize,
     results: &mut Vec<RawMatch>,
-) {
-    let ascii_pattern = matcher.pat_ascii();
+) -> bool {
     let mut search = Utf8TextSearch {
         buf,
         matcher,
@@ -1068,13 +1152,26 @@ fn search_utf8_text(
         stop_flag,
         counter: textkey::LineCounter::new(),
         line: None,
+        line_no: None,
         last_exact_line_start: None,
         results,
+        utf8_checked: 0,
+        invalid_utf8: false,
     };
-    if let Some(triggers) = matcher.triggers() {
-        search_utf8_with_triggers(&mut search, triggers);
-        return;
+    match matcher.triggers() {
+        Some(triggers) => search_utf8_with_triggers(&mut search, triggers),
+        None => search_utf8_plain(&mut search),
     }
+    // 판정은 실제로 검색한 부분만 합니다. 결과 상한·중지로 일찍 끝나면 읽지 않은 부분은 판정하지
+    // 않습니다(디코딩 경로도 그 부분은 디코딩하지 않으므로 같은 규칙).
+    search.invalid_utf8
+}
+
+/// 유발 글자가 없는 검색어(검색어의 `key`에 불변이 아닌 글자가 있는 경우)의 일반 텍스트 검색입니다.
+fn search_utf8_plain(search: &mut Utf8TextSearch<'_>) {
+    let buf = search.buf;
+    let stop_flag = search.stop_flag;
+    let ascii_pattern = search.matcher.pat_ascii();
     let mut chunk_start = 0usize;
     while chunk_start < buf.len() {
         if search.full() || stop_flag.load(Ordering::Relaxed) {
@@ -1091,7 +1188,9 @@ fn search_utf8_text(
             }
             chunk_end = aligned;
         }
-        if is_ascii_chunk(&buf[chunk_start..chunk_end]) {
+        let ascii = is_ascii_chunk(&buf[chunk_start..chunk_end]);
+        search.check_utf8(chunk_start, chunk_end, ascii);
+        if ascii {
             // ASCII 본문의 key는 ASCII뿐이므로 비ASCII 검색어는 일치할 수 없습니다.
             if ascii_pattern && search.raw_region(chunk_start, chunk_end) {
                 return;
@@ -1168,7 +1267,18 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
             }
         }
         convert_lines.clear();
-        if !is_ascii_chunk(&buf[chunk_start..chunk_end]) {
+        let ascii = is_ascii_chunk(&buf[chunk_start..chunk_end]);
+        search.check_utf8(chunk_start, chunk_end, ascii);
+        if ascii {
+            // ASCII 조각에는 유발 글자도, 일치 뒤에 붙는 변환 대상 글자도 없으므로 줄 변환이 필요 없습니다.
+            // 원본 일치를 바로 기록합니다(검색어의 key에 비ASCII가 있으면 일치할 수 없음).
+            if search.matcher.pat_ascii() && search.raw_region(chunk_start, chunk_end) {
+                return;
+            }
+            chunk_start = chunk_end;
+            continue;
+        }
+        {
             triggers.scan(buf, chunk_start, chunk_end, |position| {
                 let bounds = textkey::line_bounds(buf, position);
                 convert_lines.push(bounds);
@@ -1179,23 +1289,14 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
         }
         let mut next_convert = 0usize;
         let mut converted_until = chunk_start;
-        // 같은 줄의 원본 일치는 줄이 끝날 때까지 모았다가, 줄이 변환되지 않았을 때만 기록합니다.
-        let mut pending: Vec<(usize, usize)> = Vec::new();
-        let mut pending_line: Option<(usize, usize)> = None;
+        // 원본 일치는 바로 기록합니다(바로 뒤가 변환 대상 글자가 아닌 원본 일치는 그 자체로 참 일치).
+        // 같은 줄의 나중 일치 때문에 줄을 변환하게 되면, 그 줄에서 이미 기록한 결과를 되돌리고
+        // 줄 전체를 변환해 다시 셉니다(중복 방지). 현재 줄과 그 줄의 첫 결과 위치를 기억합니다.
+        let mut current_line: Option<((usize, usize), usize)> = None;
         for (hit_start, hit_len) in matcher.raw_hits_in(&buf[chunk_start..chunk_end]) {
             let start = chunk_start + hit_start;
             if start < converted_until {
                 continue;
-            }
-            // 앞 줄에 모아 둔 원본 일치를 기록합니다(이 일치는 그 줄 뒤에 있음).
-            if pending_line.is_some_and(|line| start > line.1) {
-                for (hit_start, hit_len) in pending.drain(..) {
-                    if search.full() {
-                        return;
-                    }
-                    search.raw_hit(hit_start, hit_len);
-                }
-                pending_line = None;
             }
             // 이 일치보다 앞에서 끝나는 변환 대상 줄을 먼저 처리합니다(결과는 위치 순서).
             let before = convert_lines[next_convert..].partition_point(|line| line.1 < start);
@@ -1205,10 +1306,9 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
                 return;
             }
             // 줄 번호 카운터를 먼저 옮겨, 줄 시작을 찾을 때 지나온 구간을 다시 훑지 않게 합니다.
-            search.counter.line_at(buf, start);
-            let bounds = search.bounds(start);
-            if pending_line.is_none() {
-                pending_line = Some(bounds);
+            let (_, bounds) = search.locate(start);
+            if current_line.is_none_or(|(line, _)| line != bounds) {
+                current_line = Some((bounds, search.results.len()));
             }
             let in_trigger_line =
                 next_convert < convert_lines.len() && convert_lines[next_convert].0 == bounds.0;
@@ -1216,13 +1316,14 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
                 if in_trigger_line {
                     next_convert += 1;
                 }
-                // 이미 모은 같은 줄의 원본 일치는 버리고 줄 전체를 변환해 다시 셉니다.
-                pending.clear();
-                pending_line = None;
+                // 이 줄에서 이미 기록한 원본 일치는 되돌리고 줄 전체를 변환해 다시 셉니다.
+                if let Some((_, first_result)) = current_line.take() {
+                    search.results.truncate(first_result);
+                }
                 search.converted_line(bounds.0, bounds.1);
                 converted_until = bounds.1.max(start + 1);
             } else {
-                pending.push((start, hit_len));
+                search.raw_hit(start, hit_len);
             }
             if search.full() {
                 return;
@@ -1231,12 +1332,6 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
             {
                 return;
             }
-        }
-        for (hit_start, hit_len) in pending.drain(..) {
-            if search.full() {
-                return;
-            }
-            search.raw_hit(hit_start, hit_len);
         }
         search.converted_lines(&convert_lines[next_convert..]);
         if search.full() {
@@ -1323,7 +1418,7 @@ fn search_korean_strict(
     max_per_file: usize,
 ) -> Option<Vec<RawMatch>> {
     let mut results = Vec::new();
-    let decode_error = search_non_utf8_chunks(
+    let outcome = search_non_utf8_chunks(
         mmap,
         encoding_rs::EUC_KR,
         matcher,
@@ -1333,7 +1428,7 @@ fn search_korean_strict(
         &mut results,
         true,
     );
-    if decode_error {
+    if outcome == ChunkDecode::Aborted {
         return None;
     }
     // 결과 상한으로 일찍 끝났다면 나머지가 CP949로 읽히는지는 따로 확인합니다(중지는 그대로 둠).
@@ -1344,6 +1439,15 @@ fn search_korean_strict(
         return None;
     }
     Some(results)
+}
+
+/// 디코딩 경로 검색의 끝난 방식입니다.
+#[derive(Debug, PartialEq)]
+enum ChunkDecode {
+    /// 끝까지(또는 상한·중지까지) 검색했습니다. `had_errors`는 해석하지 못한 바이트가 있었는지입니다.
+    Completed { had_errors: bool },
+    /// 엄격 모드에서 디코딩 오류를 만나 중단했습니다.
+    Aborted,
 }
 
 /// 디코딩이 필요한 텍스트(UTF-16·CP949 등)를 청크 단위로 검색합니다.
@@ -1359,8 +1463,9 @@ fn search_non_utf8_chunks(
     max_per_file: usize,
     results: &mut Vec<RawMatch>,
     strict: bool,
-) -> bool {
+) -> ChunkDecode {
     const DECODE_CHUNK_SIZE: usize = 64 * 1024;
+    let mut had_errors_seen = false;
     let mut decoder = encoding.new_decoder_without_bom_handling();
     let mut pending = String::new();
     let mut input_offset = 0usize;
@@ -1368,7 +1473,9 @@ fn search_non_utf8_chunks(
 
     while input_offset < mmap.len() {
         if stop_flag.load(Ordering::Relaxed) {
-            return false;
+            return ChunkDecode::Completed {
+                had_errors: had_errors_seen,
+            };
         }
         let end = (input_offset + DECODE_CHUNK_SIZE).min(mmap.len());
         let last = end == mmap.len();
@@ -1379,8 +1486,9 @@ fn search_non_utf8_chunks(
             decoder.decode_to_string(&mmap[input_offset..end], &mut decoded, last);
         if strict && (had_errors || (consumed == 0 && end > input_offset)) {
             // 엄격 모드: 이 인코딩으로 오류 없이 읽히지 않으므로 중단합니다(이 조각은 검색하지 않음).
-            return true;
+            return ChunkDecode::Aborted;
         }
+        had_errors_seen |= had_errors;
         if consumed == 0 && end > input_offset {
             // Decoder가 입력을 소비하지 못하는 경우 무한 루프를 방지합니다.
             break;
@@ -1418,7 +1526,9 @@ fn search_non_utf8_chunks(
                 max_per_file,
                 results,
             ) {
-                return false;
+                return ChunkDecode::Completed {
+                    had_errors: had_errors_seen,
+                };
             }
             pending.drain(..cut);
         }
@@ -1440,7 +1550,9 @@ fn search_non_utf8_chunks(
             results,
         );
     }
-    false
+    ChunkDecode::Completed {
+        had_errors: had_errors_seen,
+    }
 }
 
 /// 디코딩한 텍스트 구간을 UTF-8 경로로 검색합니다. `line_number`는 구간 첫 줄의 번호이며,
@@ -2536,6 +2648,71 @@ fn validate_query_length(query: &str) -> PyResult<()> {
 /// 비교(일치 여부)는 항상 비교기(`key()` 기준)가 정합니다. 자동자는 원본 바이트에서 위치를 찾거나
 /// 바이너리 파일의 일치 개수를 셀 때만 쓰며, `key(검색어)`와 정규화한 검색어의 표기
 /// (대소문자·XML 엔티티·JSON 이스케이프 변형)를 모두 담습니다.
+/// 미리보기용: 검색과 같은 비교 기준으로 `text`의 `start_char`번째 글자 이후 첫 일치 위치(글자 번호)를 찾습니다.
+#[pyfunction]
+#[pyo3(signature = (text, pattern, start_char=0))]
+fn find_key_match_char(
+    py: Python<'_>,
+    text: String,
+    pattern: String,
+    start_char: usize,
+) -> Option<usize> {
+    py.allow_threads(|| textkey::find_key_match_char(&text, &pattern, start_char))
+}
+
+/// 미리보기용: 엔진의 일반 텍스트 인코딩 판정(파일 전체 기준)을 Python 코덱 이름으로 돌려줍니다.
+/// `encoding`에 사용자가 지정한 인코딩(설정값)이 있으면 그 값을 씁니다.
+#[pyfunction]
+#[pyo3(signature = (path, encoding=None))]
+fn detect_file_encoding(
+    py: Python<'_>,
+    path: String,
+    encoding: Option<String>,
+) -> PyResult<String> {
+    let file = std::fs::File::open(&path)?;
+    let length = file.metadata()?.len();
+    let detected = if let Some(selected) = crate::utils::requested_encoding(encoding.as_deref()) {
+        selected
+    } else if length == 0 {
+        UTF_8
+    } else {
+        // 파일을 메모리에 복사하지 않고 매핑해 판정합니다(검색과 같은 방식).
+        let mapped = unsafe { Mmap::map(&file) }?;
+        py.allow_threads(|| detect_encoding(&mapped))
+    };
+    let mut head = [0u8; 3];
+    let read = {
+        use std::io::Read;
+        let mut reader = std::fs::File::open(&path)?;
+        reader.read(&mut head)?
+    };
+    let has_bom = |bom: &[u8]| read >= bom.len() && head.starts_with(bom);
+    Ok(if detected == UTF_8 {
+        if has_bom(b"\xef\xbb\xbf") {
+            "utf-8-sig"
+        } else {
+            "utf-8"
+        }
+    } else if detected == encoding_rs::EUC_KR {
+        "cp949"
+    } else if detected == UTF_16LE {
+        if has_bom(b"\xff\xfe") {
+            "utf-16"
+        } else {
+            "utf-16-le"
+        }
+    } else if detected == UTF_16BE {
+        if has_bom(b"\xfe\xff") {
+            "utf-16"
+        } else {
+            "utf-16-be"
+        }
+    } else {
+        "utf-8"
+    }
+    .to_string())
+}
+
 fn build_search_matchers(
     pattern: &str,
     is_xml: bool,
@@ -2572,10 +2749,11 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<SearchMatch>()?;
     m.add_class::<SearchOptions>()?;
-    m.add_class::<excel_search::SparseExcelWorkbook>()?;
     m.add_function(wrap_pyfunction!(search_file, m)?)?;
     m.add_function(wrap_pyfunction!(search_dir, m)?)?;
     m.add_function(wrap_pyfunction!(search_files_list, m)?)?;
+    m.add_function(wrap_pyfunction!(find_key_match_char, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_file_encoding, m)?)?;
     m.add("API_VERSION", 8)?;
     m.add("MAX_SEARCH_QUERY_LENGTH", MAX_SEARCH_QUERY_LENGTH)?;
     // Cargo.toml version 필드를 빌드 시점에 자동으로 읽어 Python 측에 노출합니다.

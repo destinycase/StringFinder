@@ -134,8 +134,12 @@ def test_ordinary_text_keeps_replacement_policy(tmp_path, mode):
     p = tmp_path / "ordinary.txt"
     p.write_bytes(b"\xff\xfe" + "needle\ud800".encode("utf-16-le", errors="surrogatepass"))
     result = native(p, "needle", mode)
-    assert result["results"][0][1] == 1 and not result["skipped"]
-    assert precise(p, "needle", mode)[1] == 1
+    # 결과는 유지하고, 해석하지 못한 바이트(짝 없는 서로게이트)는 부분 검색 안내로 알립니다(제안서 2.5).
+    assert result["results"][0][1] == 1
+    assert len(result["skipped"]) == 1
+    assert AppStrings.SKIP_REASON_DECODE_PARTIAL.split("{}", 1)[0] in result["skipped"][0][1]
+    single = precise(p, "needle", mode)
+    assert single[1] == 1 and partial_reason(single[2])
 
 
 def test_json_tab_numeric_key_obeys_match_cap(tmp_path):

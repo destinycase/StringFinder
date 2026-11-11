@@ -28,7 +28,9 @@ def test_invalid_utf8_line_cannot_match_internal_sentinel(tmp_path, api):
         assert skipped == []
         assert len(rows) == 1
         matches = rows[0][1]
-    assert [list(match)[:2] for match in matches] == [[2, "invalid_utf8"]]
+    # 잘못된 UTF-8 바이트(ÿ)는 일치가 아니라 파일 단위 "일부 해석 못 함" 표시(line 0)로만 남습니다.
+    assert [list(match)[:2] for match in matches if match.line != 0] == [[2, "invalid_utf8"]]
+    assert [match.code for match in matches if match.line == 0] == ["DECODE_PARTIAL"]
 
 
 @pytest.mark.parametrize("api", ["directory", "file_list"])

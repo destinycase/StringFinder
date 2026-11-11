@@ -66,7 +66,6 @@ class Constants:
     RUST_MODE_EXCEL = 1 << 4
     RUST_MODE_EXCLUDE_BINARY = 1 << 5
     SYMBOL_CLOSE = "×"
-    YIELD_SLEEP_TIME = 0.001
     STATUS_SKIPPED = "SKIPPED"
     PAYLOAD_INPUTS = "inputs"
     PAYLOAD_RESULTS = "results"
@@ -168,10 +167,7 @@ class Constants:
     MAX_CONTEXT_PREVIEW_LINES = 20
     DEFAULT_EXTERNAL_EDITOR = "system"
 
-    ADAPTIVE_BATCH_SIZE_THRESHOLD = 100 * 1024 * 1024  # 100MB (적응형 배치 임계치)
     COLOR_RED = "#FF5555"
-    BATCH_SIZE_LARGE = 500
-    BATCH_SIZE_NORMAL = 100
     # 워커 진단/호환용 최근 결과만 보관합니다. 전체 결과는 UI 시그널로 전달됩니다.
     WORKER_RESULT_RETENTION = 2_048
     # 검색 프로세스 트리 기준 보호값입니다. 시스템 전체 사용률만 보면

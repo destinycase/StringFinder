@@ -23,9 +23,8 @@ def native(path, query, mode=None, **kwargs):
                                     exclude_hidden=False, **kwargs)
 
 
-@pytest.mark.parametrize("precise", [False, True])
 @pytest.mark.parametrize("prefix_size", [65536, 2 * 1024 * 1024])
-def test_korean_after_ascii_prefix(tmp_path, precise, prefix_size):
+def test_korean_after_ascii_prefix(tmp_path, prefix_size):
     path = tmp_path / "korean.txt"
     path.write_bytes(b"a" * prefix_size + "\nneedle 가나다\n".encode("cp949"))
     result = se.search_in_file(str(path), "가나다",
@@ -54,8 +53,7 @@ def test_ascii_scan_rechecks_late_cp949_without_false_hits(tmp_path, query, tail
     (C.MODE_JSON, "json", '{"padding":"' + 'a' * 65536 + '","v":"가나다"}'),
     (C.MODE_XML, "xml", '<root><padding>' + 'a' * 65536 + '</padding><v>가나다</v></root>'),
 ], ids=["json", "xml"])
-@pytest.mark.parametrize("precise", [False, True])
-def test_structured_korean_after_ascii_prefix(tmp_path, mode, suffix, content, precise):
+def test_structured_korean_after_ascii_prefix(tmp_path, mode, suffix, content):
     path = tmp_path / ("korean." + suffix)
     path.write_bytes(content.encode("cp949"))
     result = se.search_in_file(str(path), "가나다", special_mode=mode)

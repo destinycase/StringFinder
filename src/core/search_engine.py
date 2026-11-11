@@ -116,14 +116,10 @@ def _get_rust_search_limits() -> Tuple[int, int, int]:
 
 
 def _build_rust_options(**values: Any) -> Optional[Any]:
-    """Build the named Rust options object when the new extension is available.
-
-    Older locally installed extensions do not expose ``SearchOptions`` yet.
-    Returning ``None`` lets callers use the plain keyword arguments while a
-    rebuilt extension is rolled out.
-    """
+    """Rust 검색 옵션 객체(``SearchOptions``)를 만듭니다. 앱이 요구하는 엔진 API에는 항상 있습니다."""
     options_type = getattr(sf_engine, "SearchOptions", None)
     if options_type is None:
+        # 테스트의 가짜 엔진처럼 옵션 객체가 없으면 키워드 인자로 호출합니다.
         return None
     include_junctions = _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False) is True
     encoding = _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto")
@@ -257,7 +253,6 @@ except Exception as e:
 SearchMatch = Tuple[Any, ...]
 SearchResult = Tuple[str, int, List[SearchMatch]]
 SkippedResult = Tuple[str, str]
-FileInfo = Tuple[str, int]
 
 
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
@@ -267,6 +262,7 @@ RUST_MATCH_MARKER_JSON_DEPTH_LIMIT = "__SF_JSON_DEPTH_LIMIT__|"
 # Rust UE 현지화 archive 결과 표식입니다. 뒤에 [Namespace, Key, 원문, 번역문] JSON 배열이 옵니다.
 RUST_MATCH_MARKER_ARCHIVE_FIELDS = "ARCHIVE_FIELDS|"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
+RUST_MATCH_MARKER_DECODE_PARTIAL = "__SF_DECODE_PARTIAL__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
 _SKIP_REASON_TEMPLATE_NAMES = TEMPLATE_NAMES
 # Keep accepting skip reasons saved by releases predating the structured
@@ -493,6 +489,7 @@ _LOCALIZED_SKIP_MESSAGE_NAMES = (
     "SKIP_REASON_FILE_MATCH_LIMIT",
     "SKIP_REASON_JSON_DEPTH_LIMIT",
     "SKIP_REASON_EXCEL_PARTIAL",
+    "SKIP_REASON_DECODE_PARTIAL",
     "SKIP_REASON_PANIC",
     "SKIP_REASON_CRITICAL",
     "SKIP_REASON_BATCH",
@@ -573,6 +570,12 @@ def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> 
     }
     if resource_name in direct_resources:
         return str(getattr(AppStrings, resource_name))
+    if resource_name == "SKIP_REASON_DECODE_PARTIAL":
+        for catalog in (get_korean_strings(), ENGLISH_STRINGS):
+            prefix, suffix = str(catalog[resource_name]).split("{}", 1)
+            if source_reason.startswith(prefix) and source_reason.endswith(suffix):
+                encoding = source_reason[len(prefix):len(source_reason) - len(suffix)]
+                return AppStrings.SKIP_REASON_DECODE_PARTIAL.format(encoding)
     if resource_name == "SKIP_REASON_EXCEL_PARTIAL":
         for catalog in (get_korean_strings(), ENGLISH_STRINGS):
             prefix, suffix = str(catalog[resource_name]).split("{}", 1)
@@ -750,7 +753,7 @@ def _normalize_rust_matches(
                     _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
                 ), None, None))
                 continue
-            if c.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
+            if c.startswith((RUST_MATCH_MARKER_JSON_DEPTH_LIMIT, RUST_MATCH_MARKER_DECODE_PARTIAL)):
                 # 파일 단위 부분 검색 안내로 별도 전달되며 결과 행에는 표시하지 않습니다.
                 continue
             if c.startswith(RUST_MATCH_MARKER_LONG_LINE):
@@ -920,6 +923,13 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
             reasons.append(AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(limit))
             continue
 
+        if code == "DECODE_PARTIAL" or (
+            is_tuple_metadata and content.startswith(RUST_MATCH_MARKER_DECODE_PARTIAL)
+        ):
+            encoding = str(detail) if detail is not None else content[len(RUST_MATCH_MARKER_DECODE_PARTIAL):]
+            reasons.append(AppStrings.SKIP_REASON_DECODE_PARTIAL.format(encoding))
+            continue
+
         if code == "JSON_DEPTH_LIMIT":
             limit = _positive_limit(
                 detail,
@@ -947,6 +957,20 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
         reasons.append(AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(", ".join(dict.fromkeys(failed_sheets))))
     unique_reasons = list(dict.fromkeys(reasons))
     return "\n".join(unique_reasons) if unique_reasons else None
+
+
+def find_key_match_char(text: str, query: str, start_char: int = 0) -> Optional[int]:
+    """미리보기용: 검색과 같은 비교 기준으로 ``text``의 ``start_char``번째 글자 이후 첫 일치 위치(글자 번호)입니다."""
+    if not query or not HAS_RUST_ENGINE:
+        return None
+    return cast(Optional[int], sf_engine.find_key_match_char(text, query, max(0, int(start_char))))  # type: ignore
+
+
+def detect_preview_encoding(file_path: str) -> str:
+    """미리보기용: 검색 엔진과 같은 인코딩 판정(설정의 지정 인코딩, 없으면 파일 전체 기준 자동 판정)입니다."""
+    selected = _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto")
+    return cast(str, sf_engine.detect_file_encoding(  # type: ignore
+        str(file_path), None if selected == "auto" else selected))
 
 
 def normalize_unicode(text: Any) -> str:
@@ -1031,81 +1055,6 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
     return bits
 
 
-def detect_encoding_quickly(data: bytes) -> str:
-    """바이트 데이터의 BOM 및 패턴 기반 빠른 인코딩 감지를 수행합니다."""
-    requested = _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto")
-    if requested in ("utf-8", "cp949", "utf-16-le", "utf-16-be"):
-        for bom, declared in ((b"\xef\xbb\xbf", "utf-8"), (b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be")):
-            if data.startswith(bom) and requested != declared:
-                raise UnicodeError("File BOM conflicts with the selected encoding")
-        if requested == "utf-8" and data.startswith(b"\xef\xbb\xbf"):
-            return "utf-8-sig"
-        if requested.startswith("utf-16") and data.startswith(b"\xff\xfe" if requested.endswith("le") else b"\xfe\xff"):
-            return "utf-16"
-        return cast(str, requested)
-    if not data:
-        return Constants.ENC_UTF8
-    if data.startswith(b"\xef\xbb\xbf"):
-        return Constants.ENC_UTF8_SIG
-    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
-        # utf-16 사용 시 BOM에 따라 LE/BE 자동 감지 및 BOM 제거 수행
-        return "utf-16"
-    
-    # UTF-16 No-BOM 휴리스틱 감지
-    # 1. 시그니처 기반 (JSON/XML 등)
-    if len(data) >= 2:
-        if data.startswith(b"\x00{") or data.startswith(b"\x00<") or data.startswith(b"\x00["):
-            return "utf-16-be"
-        if data[0:2] in [b"{\x00", b"<\x00", b"[\x00"]:
-            return "utf-16-le"
-            
-    # 2. 분포 기반 (NUL 바이트가 한쪽 인덱스에 압도적으로 많은지 확인)
-    # Share the Rust detector's NUL-distribution thresholds, including short files.
-    if len(data) >= 4:
-        sample = data[:min(len(data), 2048)]
-        even_nuls = sum(1 for i in range(0, len(sample), 2) if sample[i] == 0)
-        odd_nuls = sum(1 for i in range(1, len(sample), 2) if sample[i] == 0)
-        total_pairs = len(sample) // 2
-        if total_pairs >= 2:
-            if even_nuls > total_pairs * 0.7 and odd_nuls <= total_pairs * 0.1:
-                return "utf-16-be"
-            if odd_nuls > total_pairs * 0.7 and even_nuls <= total_pairs * 0.1:
-                return "utf-16-le"
-
-    try:
-        data.decode(Constants.ENC_UTF8)
-        return Constants.ENC_UTF8
-    except UnicodeDecodeError:
-        pass
-    # A long Korean UTF-16 prefix need not have many NULs. Accept only an
-    # unambiguous, strictly decoded Hangul-dominant sample; never override UTF-8.
-    sample = data[:2048]
-    sample = sample[:len(sample) // 2 * 2]
-    candidates = []
-    for encoding in ("utf-16-le", "utf-16-be"):
-        try:
-            decoded = sample.decode(encoding, errors="strict")
-        except UnicodeDecodeError:
-            continue
-        if len(decoded) >= 16 and sum("\uac00" <= c <= "\ud7a3" for c in decoded) >= len(decoded) * 0.8:
-            candidates.append(encoding)
-    if len(candidates) == 1:
-        try:
-            sample.decode(Constants.ENC_CP949, errors="strict")
-        except UnicodeDecodeError:
-            return candidates[0]
-        # Valid CP949 Korean bytes can also look like Hangul in UTF-16 BE.
-        # Preserve the existing interpretation when both encodings are valid.
-    # [L-03 Fix] EUC-KR 검사 제거 — CP949가 EUC-KR의 상위집합이므로 중복 처리 불필요
-    try:
-        decoded_cp = data.decode(Constants.ENC_CP949)
-        if re.search("[\uac00-\ud7a3]", decoded_cp):
-            return Constants.ENC_CP949
-    except UnicodeDecodeError:
-        pass
-    return Constants.ENC_UTF8
-
-
 def _check_excel_signature(file_path: str) -> Tuple[bool, Optional[str]]:
     """엑셀 파일의 이진 시그니처가 올바른지 확인합니다."""
     try:
@@ -1188,7 +1137,6 @@ def search_in_excel_special(
                 _localize_internal_error_detail("Excel", e),
             ),
         )
-    return None
 
 
 def search_in_json_special(
@@ -1196,14 +1144,12 @@ def search_in_json_special(
     search_string: str,
     exact_match: bool = False,
     stop_event=None,
-    _rust_only: bool = False,
 ) -> Optional[Union[SearchResult, SkippedResult]]:
     """
     JSON 특수 검색을 수행합니다.
     """
     validate_search_query(search_string)
-    initial_engine: Literal["rust", "python"] = "rust"
-    memory_result = _memory_guard_result(file_path, "json", initial_engine)
+    memory_result = _memory_guard_result(file_path, "json", "rust")
     if memory_result:
         return memory_result
     try:
@@ -1248,8 +1194,6 @@ def search_in_json_special(
             if partial_reason:
                 processed.append((-2, partial_reason, "", None, None))
             return (file_path, _visible_match_count(processed), processed)
-        if _rust_only:
-            return None
     except Exception as e:
         logger.error(AppStrings.LOG_SCH_RUST_JSON_FAIL.format(file_path, e))
         known_reason = _known_rust_skip_reason(e)
@@ -1293,8 +1237,7 @@ def search_in_archive_special(
     archive의 구조 필드는 하나씩만 있어야 하므로 JSON 중복 키 설정과 관계없이 중복 키를 허용하지 않습니다.
     """
     validate_search_query(search_string)
-    initial_engine: Literal["rust", "python"] = "rust"
-    memory_result = _memory_guard_result(file_path, "json", initial_engine)
+    memory_result = _memory_guard_result(file_path, "json", "rust")
     if memory_result:
         return memory_result
     max_per_file = _positive_limit(
@@ -1367,8 +1310,7 @@ def search_in_xml_special(
     XML 특수 검색을 수행합니다.
     """
     validate_search_query(search_string)
-    initial_engine: Literal["rust", "python"] = "rust"
-    memory_result = _memory_guard_result(file_path, "xml", initial_engine)
+    memory_result = _memory_guard_result(file_path, "xml", "rust")
     if memory_result:
         return memory_result
     try:
@@ -1490,8 +1432,15 @@ def search_in_file(
                 binary_count,
                 [(1, AppStrings.MSG_BINARY_MATCH.format(binary_count), None, None)],
             )
+        # 해석하지 못한 바이트 안내 등 파일 단위 부분 검색 안내입니다. 일치가 없어도 알립니다.
+        partial_reason = _extract_partial_skip_reason(rust_results)
         if normalized:
+            if partial_reason:
+                normalized.append((-2, partial_reason, None, None))
+                return (file_path, _visible_match_count(normalized), normalized)
             return (file_path, len(normalized), normalized)
+        if partial_reason:
+            return (Constants.STATUS_SKIPPED, partial_reason)
         return None
     except Exception as e:
         known_reason = _known_rust_skip_reason(e)

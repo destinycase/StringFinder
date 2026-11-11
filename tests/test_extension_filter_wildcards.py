@@ -70,8 +70,7 @@ def test_clean_restore_clears_old_notice(panel):
 
 
 @pytest.mark.parametrize("query", ["*", "?", "[text]", r"folder\file"])
-@pytest.mark.parametrize("precise", [False, True])
-def test_search_text_special_characters_still_literal(tmp_path, qtbot, query, precise):
+def test_search_text_special_characters_still_literal(tmp_path, qtbot, query):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
     panel.search_combo.setEditText(query)

@@ -19,14 +19,8 @@ import os
 
 import openpyxl
 
-from core.search_engine import detect_encoding_quickly, search_in_file
+from core.search_engine import search_in_file
 from sf_utils.constants import Constants
-
-
-def test_detect_encoding_utf16le():
-    data = b"\xff\xfe\x48\x00\x65\x00\x6c\x00\x6c\x00\x6f\x00"  # "Hello" 문자열
-    encoding = detect_encoding_quickly(data)
-    assert encoding in ["utf-16-le", "utf-16"]
 
 
 def test_search_utf16le_file(tmp_path):
@@ -79,13 +73,6 @@ def test_search_empty_file(temp_dir):
     assert result is not None
     assert result[0] == Constants.STATUS_SKIPPED
     assert result[1] == AppStrings.SKIP_EMPTY_FILE
-
-
-def test_detect_encoding_quickly():
-    utf8_data = "Hello World".encode("utf-8")
-    assert detect_encoding_quickly(utf8_data) == "utf-8"
-    cp949_data = "Hello".encode("cp949")
-    assert detect_encoding_quickly(cp949_data) in ["ascii", "cp949", "utf-8"]
 
 
 def test_search_in_excel(temp_dir):

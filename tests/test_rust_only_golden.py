@@ -120,3 +120,71 @@ def test_random_and_malformed_bytes_never_break_the_search(tmp_path):
         for path in files:
             single = se.search_in_file(str(path), query)
             assert single is None or isinstance(single, tuple)
+
+
+# ---------------------------------------------------------------------------
+# 해석하지 못한 바이트 안내(제안서 2.5, 검수 R-1)
+# ---------------------------------------------------------------------------
+
+DECODE_CASES = {
+    # 잘못된 UTF-8 바이트가 섞인 파일
+    "bad_utf8.txt": b"hello\n\xff\xfe\xfd bad\nworld target\n" + "한글".encode(),
+    # 끝이 잘린 UTF-16 파일(BOM 있음)
+    "bad_utf16.txt": b"\xff\xfe" + "target\n".encode("utf-16-le") + b"\x00\xd8",
+    # 끝에 잘못된 바이트가 있는 CP949 파일
+    "bad_cp949_tail.txt": "검색 target\n".encode("cp949") + b"\xff\xff\n",
+    # 중간에 잘못된 바이트가 하나만 있는 CP949 한글 파일(검수 재현: 예전에는 0건·안내 없음)
+    "bad_cp949_mid.txt": ("한글 문서 " * 2000 + "\n").encode("cp949") + b"\x80\n" + "검색어 여기\n".encode("cp949"),
+}
+
+
+@pytest.fixture
+def decode_corpus(tmp_path):
+    root = tmp_path / "decode"
+    root.mkdir()
+    for name, data in DECODE_CASES.items():
+        (root / name).write_bytes(data)
+    return root
+
+
+def _decode_notice(reason):
+    from sf_utils.app_strings import AppStrings
+    prefix = AppStrings.SKIP_REASON_DECODE_PARTIAL.split("{}", 1)[0]
+    return reason.startswith(prefix) or ("\n" + prefix) in reason
+
+
+@pytest.mark.parametrize("query", ["target", "검색"])
+def test_undecodable_bytes_are_reported_even_without_matches(decode_corpus, query):
+    result = se.search_directory_fast([str(decode_corpus)], query, ["txt"])
+    notices = {os.path.basename(path): reason for path, reason in result["skipped"]}
+    # 일치가 있든 없든 네 파일 모두 "일부를 해석하지 못함" 안내가 붙습니다.
+    assert set(notices) == set(DECODE_CASES)
+    assert all(_decode_notice(reason) for reason in notices.values())
+    # 안내는 파일을 건너뛰었다는 뜻이 아니라, 찾은 결과는 그대로 남습니다.
+    found = {os.path.basename(path) for path, _count, _rows in result["results"]}
+    if query == "target":
+        assert {"bad_utf8.txt", "bad_utf16.txt", "bad_cp949_tail.txt"} <= found
+
+
+def test_single_file_entry_reports_the_notice(decode_corpus):
+    path = decode_corpus / "bad_cp949_mid.txt"
+    result = se.search_in_file(str(path), "검색")
+    # 일치가 없어도 부분 검색 안내로 알립니다.
+    assert result and result[0] == C.STATUS_SKIPPED and _decode_notice(result[1])
+    hit = se.search_in_file(str(decode_corpus / "bad_utf8.txt"), "target")
+    assert hit and hit[1] == 1
+    assert any(str(row[0]) == "-2" and _decode_notice(row[1]) for row in hit[2])
+
+
+def test_real_replacement_characters_and_binary_files_are_not_decode_failures(tmp_path):
+    root = tmp_path / "ok"
+    root.mkdir()
+    # 원본에 원래 들어 있는 U+FFFD는 디코딩 실패가 아닙니다.
+    (root / "fffd.txt").write_text("앞 � 뒤 target\n", encoding="utf-8")
+    (root / "fffd16.txt").write_bytes("﻿앞 � 뒤 target\n".encode("utf-16-le"))
+    (root / "fine_cp949.txt").write_bytes("한글 target 문서\n".encode("cp949"))
+    # 바이너리 파일은 일치 개수만 보고하므로 안내 대상이 아닙니다.
+    (root / "blob.bin").write_bytes(b"\x00\x01\xff\xfe target \x00" * 100)
+    result = se.search_directory_fast([str(root)], "target", [], exclude_binary=False)
+    assert result["skipped"] == []
+    assert len(result["results"]) == 4

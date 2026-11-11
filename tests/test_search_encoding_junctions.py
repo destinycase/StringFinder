@@ -37,7 +37,8 @@ def test_automatic_korean_utf16_prefix(tmp_path, encoding):
 def test_cp949_korean_is_not_mistaken_for_utf16(tmp_path):
     path = tmp_path / 'legacy.txt'
     path.write_bytes(('가나다' * 30000 + '\nneedle\n').encode('cp949'))
-    assert se.detect_encoding_quickly(path.read_bytes()[:65536]) == 'cp949'
+    # 미리보기와 검색이 같은 엔진 판정을 씁니다.
+    assert se.detect_preview_encoding(str(path)) == 'cp949'
     assert compare(path, 'needle') == (1, 1)
 
 
