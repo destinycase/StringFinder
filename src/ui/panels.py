@@ -1,11 +1,10 @@
 from typing import Any, Dict, List, Union, cast
 
-from PySide6.QtCore import QEvent, QPoint, QRect, QRegularExpression, QSignalBlocker, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QRegularExpression, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QBrush,
-    QIcon,
     QPainter,
     QPalette,
     QPolygon,
@@ -27,10 +26,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QMenu,
     QPushButton,
-    QStyle,
     QSizePolicy,
     QToolButton,
-    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -488,38 +485,6 @@ def normalize_special_search_mode(value: Any) -> str:
     return AppStrings.SPECIAL_SEARCH_ITEMS[index]
 
 
-class SearchProfileMenu(QMenu):
-    """글자 변형 검색 항목에만 사용 안내를 표시합니다."""
-
-    def sizeHint(self):
-        # Reserve a trailing icon column without using Qt's checkmark column.
-        return super().sizeHint() + QSize(24, 0)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        try:
-            for action in self.actions():
-                if action.data() is True and action.isVisible():
-                    row = self.actionGeometry(action)
-                    icon_rect = QRect(self.width() - 24, row.center().y() - 8, 16, 16)
-                    icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
-                    icon.paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter,
-                               QIcon.Mode.Normal if action.isEnabled() else QIcon.Mode.Disabled)
-        finally:
-            painter.end()
-
-    def event(self, event):
-        if event.type() == QEvent.Type.ToolTip:
-            action = self.actionAt(event.pos())
-            if action is not None and action.data() is True:
-                QToolTip.showText(event.globalPos(), AppStrings.COMPLEX_SEARCH_TOOLTIP, self)
-            else:
-                QToolTip.hideText()
-            return True
-        return super().event(event)
-
-
 class SearchOptionsPanel(QWidget):
     search_started = Signal()
     stop_requested = Signal()
@@ -529,7 +494,6 @@ class SearchOptionsPanel(QWidget):
     def __init__(self, parent=None, config_manager=None):
         super().__init__(parent)
         self.config_manager = config_manager
-        self._use_complex_search = False
         self._special_mode = AppStrings.SPECIAL_SEARCH_OFF
         self._exclude_hidden = True
         self._toolbar_mode = None
@@ -547,26 +511,9 @@ class SearchOptionsPanel(QWidget):
             f"padding-right: {SearchSettingsButton.RESERVED_RIGHT}px; }}"
         )
         self.search_settings_menu = QMenu(self.search_settings_button)
-        self.profile_menu = SearchProfileMenu(AppStrings.SEARCH_PROFILE_LABEL, self.search_settings_menu)
-        self.profile_menu.aboutToHide.connect(QToolTip.hideText)
-        self.search_settings_menu.addMenu(self.profile_menu)
-        self.profile_action_group = QActionGroup(self)
-        self.profile_action_group.setExclusive(True)
-        self.profile_actions = []
-        for label_text, precise in (
-            (AppStrings.SEARCH_PROFILE_NORMAL, False),
-            (AppStrings.SEARCH_PROFILE_PRECISE, True),
-        ):
-            action = QAction(label_text, self)
-            action.setCheckable(True)
-            action.setData(precise)
-            if precise:
-                action.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP)
-            self.profile_action_group.addAction(action)
-            self.profile_menu.addAction(action)
-            self.profile_actions.append(action)
-        self.profile_action_group.triggered.connect(lambda action: self.set_complex_search(action.data()))
-        self.value_menu = self.search_settings_menu.addMenu(AppStrings.SPECIAL_SEARCH_LABEL)
+        # 검색 방식은 하나로 통합되어, 설정 메뉴에는 값만 검색 선택만 둡니다.
+        self.value_menu = self.search_settings_menu
+        self.value_menu.addSection(AppStrings.SPECIAL_SEARCH_LABEL)
         self.value_action_group = QActionGroup(self)
         self.value_action_group.setExclusive(True)
         self.special_mode_actions = {}
@@ -631,12 +578,9 @@ class SearchOptionsPanel(QWidget):
         for control in controls:
             control.setFixedHeight(height)
         metrics = self.search_settings_button.fontMetrics()
-        # Reserve the longest selection and warning icon, independent of the current choice.
-        selections = [
-            profile if not value else AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(profile, value)
-            for profile in (AppStrings.SEARCH_PROFILE_NORMAL_COMPACT, AppStrings.SEARCH_PROFILE_PRECISE_COMPACT)
-            for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS
-        ]
+        # Reserve the longest selection, independent of the current choice.
+        selections = [value or AppStrings.SEARCH_SETTINGS_TEXT_COMPACT
+                      for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS]
         self.search_settings_button.setFixedWidth(
             max(metrics.horizontalAdvance(text) for text in selections) + 48 + SearchSettingsButton.RESERVED_RIGHT
         )
@@ -679,34 +623,13 @@ class SearchOptionsPanel(QWidget):
         self._layout_search_controls()
 
     def _refresh_search_settings(self):
-        for action in self.profile_actions:
-            action.setChecked(action.data() is self._use_complex_search)
         for label, action in self.special_mode_actions.items():
             action.setChecked(label == self._special_mode)
-        profile = AppStrings.SEARCH_PROFILE_PRECISE if self._use_complex_search else AppStrings.SEARCH_PROFILE_NORMAL
-        self.search_settings_button.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
-            if self._use_complex_search else QIcon()
-        )
         value = AppStrings.SPECIAL_SEARCH_MENU_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
-        text = AppStrings.SEARCH_SETTINGS_SELECTION.format(profile, value)
-        self.search_settings_button.setAccessibleName(text)
-        compact_profile = (AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if self._use_complex_search
-                           else AppStrings.SEARCH_PROFILE_NORMAL_COMPACT)
+        self.search_settings_button.setAccessibleName(AppStrings.SEARCH_SETTINGS_SELECTION.format(value))
         compact_value = AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[AppStrings.SPECIAL_SEARCH_ITEMS.index(self._special_mode)]
-        self.search_settings_button.setText(
-            AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(compact_profile, compact_value)
-            if compact_value else compact_profile
-        )
-        self.search_settings_button.setToolTip(AppStrings.COMPLEX_SEARCH_TOOLTIP if self._use_complex_search else "")
+        self.search_settings_button.setText(compact_value or AppStrings.SEARCH_SETTINGS_TEXT_COMPACT)
         self._layout_search_controls()
-
-    def set_complex_search(self, precise: bool):
-        changed = self._use_complex_search != (precise is True)
-        self._use_complex_search = precise is True
-        self._refresh_search_settings()
-        if changed:
-            self.settings_changed.emit()
 
     def set_special_mode(self, mode: str):
         normalized = normalize_special_search_mode(mode)
@@ -736,11 +659,9 @@ class SearchOptionsPanel(QWidget):
         self.stop_btn.setVisible(searching)
         self.search_combo.setEnabled(not searching)
         self.search_settings_button.setEnabled(not searching)
-        self.profile_action_group.setEnabled(not searching)
         self.value_action_group.setEnabled(not searching)
         if searching:
             self.search_settings_menu.close()
-            self.profile_menu.close()
             self.value_menu.close()
         self.search_btn.setEnabled(True)
         self.search_btn.setText(AppStrings.SEARCH_BTN)
@@ -763,9 +684,6 @@ class SearchOptionsPanel(QWidget):
     def get_search_text(self) -> str:
         return self.search_combo.currentText().strip()
 
-    def is_complex_search(self) -> bool:
-        return self._use_complex_search
-
     def is_exclude_hidden(self) -> bool:
         if self.config_manager is not None:
             return bool(self.config_manager.get(Constants.CONFIG_KEY_EXCLUDE_HIDDEN, True))
@@ -774,7 +692,6 @@ class SearchOptionsPanel(QWidget):
     def get_state(self) -> dict:
         return {
             Constants.STATE_KEY_SEARCH: self.search_combo.currentText(),
-            Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.is_complex_search(),
             Constants.PAYLOAD_SPECIAL_MODE: self._special_mode,
             Constants.PAYLOAD_EXCLUDE_HIDDEN: self.is_exclude_hidden(),
         }
@@ -783,8 +700,7 @@ class SearchOptionsPanel(QWidget):
         state = state if isinstance(state, dict) else {}
         search_text = state.get(Constants.STATE_KEY_SEARCH, "")
         self.search_combo.set_current_text(search_text if isinstance(search_text, str) else "")
-        # Invalid JSON types must not enable a different search policy through truthiness.
-        self.set_complex_search(state.get(Constants.PAYLOAD_USE_COMPLEX_SEARCH) is True)
+        # 예전 세션의 검색 모드 값(use_complex_search)은 검색 방식이 하나로 통합되어 무시합니다.
         if Constants.PAYLOAD_SPECIAL_MODE in state:
             self.set_special_mode(state[Constants.PAYLOAD_SPECIAL_MODE])
         exclude_hidden = state.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True)

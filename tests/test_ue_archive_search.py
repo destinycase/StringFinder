@@ -236,7 +236,7 @@ def test_menu_titles_and_compact_button_text(qtbot, language):
         assert titles == ["UE localization archive (contains)", "UE localization archive (exact)"]
         assert compact == ["ARCHIVE (contains)", "ARCHIVE (exact)"]
     panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[8]].trigger()
-    assert panel.search_settings_button.text() == f"{AppStrings.SEARCH_PROFILE_NORMAL_COMPACT} · {compact[1]}"
+    assert panel.search_settings_button.text() == compact[1]
     for value in AppStrings.SPECIAL_SEARCH_ITEMS[7:]:
         # 다른 형식의 판별 글자가 섞이면 엉뚱한 파서로 연결됩니다.
         assert not any(code.casefold() in value.casefold()

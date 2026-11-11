@@ -9,19 +9,12 @@ from sf_utils.config_manager import ConfigManager
 class TestQAEdgeFixesVerification:
     """수정 버전에 대한 QA 재검증 테스트"""
 
-    def test_search_options_panel_profile_session_persistence(self, qtbot):
-        """검색 패널 프로필(누락 방지 검색 / 존재 확인) 선택 시 get_state 직렬화 정확성 검증"""
+    def test_search_options_panel_ignores_retired_profile_in_session(self, qtbot):
+        """검색 방식 통합 뒤에는 예전 세션의 검색 모드 값을 무시하고 다시 저장하지 않습니다."""
         panel = SearchOptionsPanel()
         qtbot.addWidget(panel)
-
-        # 누락 방지 검색 경로
-        panel.set_complex_search(True)
-        state = panel.get_state()
-        assert state[Constants.PAYLOAD_USE_COMPLEX_SEARCH] is True
-
-        # 존재만 확인은 검색 방식과 독립적인 체크 박스로 선택합니다.
-        state_both = panel.get_state()
-        assert state_both[Constants.PAYLOAD_USE_COMPLEX_SEARCH] is True
+        panel.load_state({Constants.PAYLOAD_USE_COMPLEX_SEARCH: True})
+        assert Constants.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
 
     def test_excel_complex_search_uppercase_exact_match(self, tmp_path):
         """엑셀 Python 폴백 검색 시 대문자 검색어의 exact_match 탐지 보장 검증"""

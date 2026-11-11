@@ -134,25 +134,15 @@ ENGLISH_STRINGS = {
     "COMBO_DISABLE": "Disabled",
     "COMBO_LOCKED": "Locked",
     "COMBO_UNLOCKED": "Unlocked",
-    "COMPLEX_SEARCH_TOOLTIP": (
-        "Use character variant search only when default search misses expected text.\n\n"
-        "• Composed and decomposed Korean characters (NFC/NFD)\n"
-        "• Special case relationships, such as German ß and ss\n\n"
-        "Try a small set of files first: this mode is slow. It does not fix every encoding issue."
-    ),
     "EXCLUDE_HIDDEN_LABEL": "Exclude hidden files/folders",
     "EXCLUDE_BINARY_LABEL": "Exclude binary files",
-    "SEARCH_PROFILE_LABEL": "Search mode",
-    "SEARCH_PROFILE_NORMAL": "Default search (recommended)",
     "SEARCH_SETTINGS_LABEL": "Search settings",
-    "SEARCH_PROFILE_NORMAL_COMPACT": "Default search",
     "SPECIAL_SEARCH_OFF_DISPLAY": "Off",
-    "SEARCH_PROFILE_PRECISE": "Character variant search (slow)",
     "FILENAME_FILTER_INVALID_GROUP": "Enter a filename term between each comma.",
     "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
     "SPECIAL_SEARCH_LABEL": "Values only",
-    "SEARCH_SETTINGS_SELECTION": "Search mode: {} / Values only: {}",
-    "SEARCH_PROFILE_PRECISE_COMPACT": "Character variant search (slow)",
+    "SEARCH_SETTINGS_SELECTION": "Values only: {}",
+    "SEARCH_SETTINGS_TEXT_COMPACT": "Full text",
     "SPECIAL_SEARCH_COMPACT_ITEMS": [
         "", "XML values (contains)", "XML values (exact)",
         "JSON values (contains)", "JSON values (exact)", "Excel values (contains)", "Excel values (exact)",
@@ -190,14 +180,9 @@ ENGLISH_STRINGS = {
         '<p>- Any checked term may match. With no checked terms, filenames are unrestricted.</p>'
         '<p>- Filename filters do not support wildcards.</p>'
         '<br><h3>Search settings</h3>'
-        '<p>- Click the button to the left of the search input to choose <b>Search mode</b> and <b>Values only</b>.</p>'
-        '<h4>Search mode</h4><p><b>Default search</b></p>'
-        '<p>Searches ordinary English and Korean text. (Default)</p>'
-        '<p><b>Character variant search</b></p>'
-        '<p>- Try a narrow scope when text known to exist is not found. This is very slow. Use it for the cases below.</p>'
-        '<p>- Decomposed Korean characters (NFD), such as text in files created on macOS</p>'
-        '<p>- Special case relationships in other languages, such as German ß ↔ ss</p>'
-        '<p>- For encoding issues, check the text encoding setting. This mode does not fix every encoding issue.</p>'
+        '<p>- Click the button to the left of the search input to choose <b>Values only</b>.</p>'
+        '<p>- Searches compare case (in all languages) and different forms of the same character, e.g. decomposed Korean (NFD) text from macOS files, or German ß ↔ ss.</p>'
+        '<p>- For encoding issues, check the text encoding setting.</p>'
         '<h4>Values only</h4><p><b>Off</b></p>'
         '<p>- Uses your extension filter. This does not turn off searching. (Default)</p>'
         '<p><b>JSON/XML</b></p>'
@@ -240,7 +225,7 @@ ENGLISH_STRINGS = {
         "UE localization archive (contains)",
         "UE localization archive (exact)",
     ],
-    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... Try character variant search only if default search misses expected text.",
+    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... Case and character form differences (such as decomposed Korean) are matched automatically.",
     "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm",
     "EXTENSION_FILTER_WILDCARD_NOT_ALLOWED": "Extension filters do not support wildcard or pattern characters (*, ?, [, ], \\).",
     "FILENAME_LIST_PLACEHOLDER": 'e.g. report or report,invoice',
@@ -280,9 +265,8 @@ ENGLISH_STRINGS = {
     "RESULT_SEARCHING_MSG": "Searching for \"{}\"...",
     "RESULT_EMPTY_NO_FOLDER": "Add a folder to search.",
     "RESULT_EMPTY_NO_MATCH": (
-        "No results found for '{}'. Consider character variant search for these cases:\n\n"
-        "Decomposed (NFD) text, such as Korean text in files created on macOS\n"
-        "Special multilingual case relationships, such as German ß and ss\n\n"
+        "No results found for '{}'.\n\n"
+        "Decomposed (NFD) text and multilingual case relationships such as German ß and ss were already matched.\n\n"
         "If characters look garbled or you suspect an encoding issue, check Text encoding in Settings."
     ),
     "RESULT_SUMMARY_FORMAT": "Files: {file_count} | Strings: {match_count} | Time: {duration}s",

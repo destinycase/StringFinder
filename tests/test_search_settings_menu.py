@@ -2,9 +2,7 @@
 import json
 
 import pytest
-from PySide6.QtCore import QEvent, QPoint, Qt
-from PySide6.QtGui import QHelpEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint, Qt
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
@@ -21,57 +19,48 @@ def language(request):
     set_language(previous)
 
 
+def _value_actions(panel):
+    return [action for action in panel.value_menu.actions() if not action.isSeparator()]
+
+
 def test_defaults_and_menu_order(qtbot, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    assert [action.text() for action in panel.search_settings_menu.actions()] == [
-        AppStrings.SEARCH_PROFILE_LABEL, AppStrings.SPECIAL_SEARCH_LABEL,
-    ]
-    assert panel.profile_actions[0].isChecked()
+    actions = panel.search_settings_menu.actions()
+    # 검색 방식이 하나로 통합되어 설정 메뉴에는 값만 검색 제목과 선택지만 있습니다.
+    assert actions[0].isSeparator() and actions[0].text() == AppStrings.SPECIAL_SEARCH_LABEL
+    assert panel.value_menu is panel.search_settings_menu
+    assert not hasattr(panel, "profile_actions") and not hasattr(panel, "profile_menu")
     assert panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_OFF].isChecked()
-    assert [action.text() for action in panel.value_menu.actions()] == [
-        AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6, 7, 8)
-    ]
-    assert panel.search_settings_button.text() == AppStrings.SEARCH_PROFILE_NORMAL_COMPACT
-    assert not hasattr(panel, "search_settings_summary")
+    assert [action.text() for action in _value_actions(panel)] == [AppStrings.SPECIAL_SEARCH_MENU_ITEMS[index] for index in (0, 3, 4, 1, 2, 5, 6, 7, 8)]
+    assert panel.search_settings_button.text() == AppStrings.SEARCH_SETTINGS_TEXT_COMPACT
+    assert panel.search_settings_button.icon().isNull()
     assert panel.search_settings_button.menu() is None
     assert panel.search_settings_button.accessibleName() == (
-        "검색 모드: 기본 검색 (권장) / 값만 검색: 사용 안 함" if language == "ko"
-        else "Search mode: Default search (recommended) / Values only: Off"
-    )
-    assert not hasattr(panel, "search_profile_combo")
-    assert [action.text() for action in panel.profile_actions] == (
-        ["기본 검색 (권장)", "글자 변형 검색 (느림)"] if language == "ko"
-        else ["Default search (recommended)", "Character variant search (slow)"]
+        "값만 검색: 사용 안 함" if language == "ko" else "Values only: Off"
     )
     assert panel.search_settings_label.text() == ("검색 설정" if language == "ko" else "Search settings")
     assert panel.search_settings_label.buddy() is panel.search_settings_button
 
 
-@pytest.mark.parametrize("precise", [False, True])
 @pytest.mark.parametrize("value_index", range(9))
-def test_each_group_has_exactly_one_selection(qtbot, language, precise, value_index):
+def test_each_group_has_exactly_one_selection(qtbot, language, value_index):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    panel.profile_actions[int(precise)].trigger()
     mode = AppStrings.SPECIAL_SEARCH_ITEMS[value_index]
     action = panel.special_mode_actions[mode]
     action.trigger()
     action.trigger()  # Selecting the current choice cannot leave the group empty.
-    assert sum(action.isChecked() for action in panel.profile_actions) == 1
-    assert sum(action.isChecked() for action in panel.value_menu.actions()) == 1
-    assert panel.is_complex_search() is precise
+    assert sum(action.isChecked() for action in _value_actions(panel)) == 1
     assert panel.get_state()[C.PAYLOAD_SPECIAL_MODE] == mode
-    profile = AppStrings.SEARCH_PROFILE_PRECISE if precise else AppStrings.SEARCH_PROFILE_NORMAL
+    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
     assert panel.search_settings_button.accessibleName() == AppStrings.SEARCH_SETTINGS_SELECTION.format(
-        profile, AppStrings.SPECIAL_SEARCH_MENU_ITEMS[value_index]
+        AppStrings.SPECIAL_SEARCH_MENU_ITEMS[value_index]
     )
-    compact_profile = AppStrings.SEARCH_PROFILE_PRECISE_COMPACT if precise else AppStrings.SEARCH_PROFILE_NORMAL_COMPACT
     value = AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS[value_index]
-    expected = AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(compact_profile, value) if value else compact_profile
-    assert panel.search_settings_button.text() == expected
+    assert panel.search_settings_button.text() == (value or AppStrings.SEARCH_SETTINGS_TEXT_COMPACT)
     assert panel.search_settings_label.buddy() is panel.search_settings_button
-    assert (not panel.search_settings_button.icon().isNull()) is precise
+    assert panel.search_settings_button.icon().isNull()
 
 
 def test_selection_reaches_search_and_survives_session(qtbot, mock_config_manager, tmp_path, language, monkeypatch):
@@ -81,7 +70,6 @@ def test_selection_reaches_search_and_survives_session(qtbot, mock_config_manage
     tab.ext_panel.restore_state({"txt": True, "log": False})
     panel = tab.search_panel
     panel.search_combo.set_current_text("needle")
-    panel.profile_actions[1].trigger()
     mode = AppStrings.SPECIAL_SEARCH_ITEMS[4]  # JSON exact, irrespective of menu display order.
     panel.special_mode_actions[mode].trigger()
     assert tab.ext_panel.get_selected_extensions() == [C.EXT_JSON]
@@ -92,12 +80,11 @@ def test_selection_reaches_search_and_survives_session(qtbot, mock_config_manage
     before = mock_config_manager.get_filters()
     restored.load_state(saved)
     assert mock_config_manager.get_filters() == before
-    assert restored.search_panel.is_complex_search()
     assert restored.search_panel.special_mode_actions[mode].isChecked()
     captured = []
     monkeypatch.setattr(restored, "_setup_search_worker", captured.append)
     restored.start_search()
-    assert captured[0][C.PAYLOAD_USE_COMPLEX_SEARCH] is True
+    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in captured[0]
     assert captured[0][C.PAYLOAD_SPECIAL_MODE] == mode
     assert captured[0][C.PAYLOAD_EXTENSIONS] == [C.EXT_JSON]
     restored._set_inputs_enabled(True)
@@ -117,31 +104,14 @@ def test_open_menu_closes_and_locks_during_search(qtbot, language):
     panel.set_searching(True)
     assert not panel.search_settings_menu.isVisible()
     assert not panel.search_settings_button.isEnabled()
-    assert all(not action.isEnabled() for action in [*panel.profile_actions, *panel.value_menu.actions()])
+    assert all(not action.isEnabled() for action in _value_actions(panel))
     before = panel.get_state()
-    panel.profile_actions[1].trigger()
+    panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[3]].trigger()
     assert panel.get_state() == before
     panel.set_searching(False)
     assert panel.search_settings_button.isEnabled()
-    panel.profile_actions[1].trigger()
-    assert panel.is_complex_search()
-
-
-def test_only_precise_menu_item_shows_guidance(qtbot, language, monkeypatch):
-    panel = SearchOptionsPanel()
-    qtbot.addWidget(panel)
-    menu = panel.profile_menu
-    menu.popup(QPoint(50, 50))
-    shown, hidden = [], []
-    monkeypatch.setattr("ui.panels.QToolTip.showText", lambda *args: shown.append(args[1]))
-    monkeypatch.setattr("ui.panels.QToolTip.hideText", lambda: hidden.append(True))
-    for action in reversed(panel.profile_actions):
-        position = menu.actionGeometry(action).center()
-        event = QHelpEvent(QEvent.Type.ToolTip, position, menu.mapToGlobal(position))
-        QApplication.sendEvent(menu, event)
-    assert shown == [AppStrings.COMPLEX_SEARCH_TOOLTIP]
-    assert hidden
-    menu.close()
+    panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[3]].trigger()
+    assert panel.get_state()[C.PAYLOAD_SPECIAL_MODE] == AppStrings.SPECIAL_SEARCH_ITEMS[3]
 
 
 def test_requested_labels_and_input_order(qtbot, language):
@@ -152,37 +122,20 @@ def test_requested_labels_and_input_order(qtbot, language):
     assert panel.search_label.text() == ("검색할 문자열" if language == "ko" else "Text to search")
     assert row.indexOf(panel.search_settings_button) < row.indexOf(panel.search_combo) < row.indexOf(panel.search_btn)
     if language == "ko":
-        assert panel.value_menu.title() == "값만 검색"
-        assert [action.text() for action in panel.value_menu.actions()] == [
+        assert panel.value_menu.actions()[0].text() == "값만 검색"
+        assert [action.text() for action in _value_actions(panel)] == [
             "사용 안 함", "JSON (부분 일치)", "JSON (정확히 일치)",
             "XML (부분 일치)", "XML (정확히 일치)",
             "Excel (부분 일치)", "Excel (정확히 일치)",
             "UE 현지화 archive (부분 일치)", "UE 현지화 archive (정확히 일치)",
         ]
     else:
-        assert panel.value_menu.title() == "Values only"
-        assert [action.text() for action in panel.value_menu.actions()] == [
+        assert panel.value_menu.actions()[0].text() == "Values only"
+        assert [action.text() for action in _value_actions(panel)] == [
             "Off", "JSON (contains)", "JSON (exact)", "XML (contains)", "XML (exact)",
             "Excel (contains)", "Excel (exact)",
             "UE localization archive (contains)", "UE localization archive (exact)",
         ]
-
-
-def test_menu_warning_is_colored_without_replacing_selection(qtbot, language):
-    panel = SearchOptionsPanel()
-    qtbot.addWidget(panel)
-    panel.profile_actions[1].trigger()
-    menu = panel.profile_menu
-    menu.popup(QPoint(50, 50))
-    QApplication.processEvents()
-    image = menu.grab().toImage()
-    yellow = [image.pixelColor(x, y) for y in range(image.height()) for x in range(image.width())
-              if (color := image.pixelColor(x, y)).red() > 170 and color.green() > 120 and color.blue() < 100]
-    assert len(yellow) > 5
-    assert panel.profile_actions[1].isChecked()
-    assert sum(action.isChecked() for action in panel.profile_actions) == 1
-    assert panel.profile_actions[1].icon().isNull()  # Theme-owned check column remains available.
-    menu.close()
 
 
 @pytest.mark.parametrize("value_index", [6, 8])
@@ -190,7 +143,6 @@ def test_menu_warning_is_colored_without_replacing_selection(qtbot, language):
 def test_long_selection_keeps_query_and_buttons_inside_panel(qtbot, language, width, value_index):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    panel.profile_actions[1].trigger()
     panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[value_index]].trigger()
     panel.resize(width, 220)
     panel.show()
@@ -215,45 +167,39 @@ def test_settings_button_opens_menu_and_controls_stay_aligned(qtbot, language):
     panel.show()
     qtbot.wait(20)
     initial_width = panel.search_settings_button.width()
-    for precise in (True, False):
-        panel.set_complex_search(precise)
-        for mode in AppStrings.SPECIAL_SEARCH_ITEMS:
-            panel.set_special_mode(mode)
-            assert panel.search_settings_button.width() == initial_width
-            assert panel.search_settings_button.fontMetrics().horizontalAdvance(
-                panel.search_settings_button.text()) <= initial_width - 40
-        for searching in (True, False):
-            panel.set_searching(searching)
-            action = panel.stop_btn if searching else panel.search_btn
-            assert panel.search_combo.height() == panel.search_settings_button.height() == action.height()
-            assert panel.search_combo.geometry().center().y() == action.geometry().center().y()
+    for mode in AppStrings.SPECIAL_SEARCH_ITEMS:
+        panel.set_special_mode(mode)
+        assert panel.search_settings_button.width() == initial_width
+        assert panel.search_settings_button.fontMetrics().horizontalAdvance(
+            panel.search_settings_button.text()) <= initial_width - 40
+    for searching in (True, False):
+        panel.set_searching(searching)
+        action = panel.stop_btn if searching else panel.search_btn
+        assert panel.search_combo.height() == panel.search_settings_button.height() == action.height()
+        assert panel.search_combo.geometry().center().y() == action.geometry().center().y()
     qtbot.mouseClick(panel.search_settings_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(panel.search_settings_menu.isVisible)
     panel.search_settings_menu.close()
 
 
-def test_native_submenus_work_with_keyboard(qtbot, language):
+def test_menu_works_with_keyboard(qtbot, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
     panel.show()
     menu = panel.search_settings_menu
     menu.popup(panel.mapToGlobal(QPoint(0, panel.height())))
-    qtbot.keyClick(menu, Qt.Key.Key_Down)
-    qtbot.keyClick(menu, Qt.Key.Key_Right)
-    qtbot.waitUntil(panel.profile_menu.isVisible)
-    for _ in range(2):
-        if panel.profile_menu.activeAction() is panel.profile_actions[1]:
+    target = panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[3]]  # 메뉴 두 번째 선택지
+    for _ in range(4):
+        if menu.activeAction() is target:
             break
-        qtbot.keyClick(panel.profile_menu, Qt.Key.Key_Down)
-    assert panel.profile_menu.activeAction() is panel.profile_actions[1]
-    qtbot.keyClick(panel.profile_menu, Qt.Key.Key_Return)
-    assert panel.is_complex_search()
-    assert panel.profile_actions[1].isChecked()
+        qtbot.keyClick(menu, Qt.Key.Key_Down)
+    assert menu.activeAction() is target
+    qtbot.keyClick(menu, Qt.Key.Key_Return)
+    assert target.isChecked()
     assert not menu.isVisible()
     menu.popup(panel.mapToGlobal(QPoint(0, panel.height())))
     qtbot.keyClick(menu, Qt.Key.Key_Escape)
     assert not menu.isVisible()
-    assert panel.is_complex_search()
 
 
 @pytest.mark.parametrize("old_mode", ["끄기", "기본", "Default", "Off", "Normal", None, 123, {}, []])
@@ -268,8 +214,9 @@ def test_old_default_labels_restore_to_disabled(old_mode, language):
 def test_old_modes_restore_in_current_language(qtbot, old_mode, index, language):
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
+    # 예전 세션의 검색 모드 값은 오류 없이 무시합니다.
     panel.load_state({C.PAYLOAD_USE_COMPLEX_SEARCH: True, C.PAYLOAD_SPECIAL_MODE: old_mode})
-    assert panel.is_complex_search()
+    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
     assert panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[index]].isChecked()
 
 
@@ -298,13 +245,12 @@ def test_legacy_saved_values_remain_engine_values(qtbot, language, precise, save
     qtbot.addWidget(panel)
     panel.load_state({C.PAYLOAD_USE_COMPLEX_SEARCH: precise, C.PAYLOAD_SPECIAL_MODE: saved_mode})
     state = panel.get_state()
-    assert state[C.PAYLOAD_USE_COMPLEX_SEARCH] is precise
+    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in state
     assert state[C.PAYLOAD_SPECIAL_MODE] == expected[index]
 
 
 def test_display_resources_do_not_use_retired_names(language):
-    for key in ("SEARCH_PROFILE_NORMAL", "SEARCH_PROFILE_PRECISE", "SEARCH_PROFILE_PRECISE_COMPACT",
-                "SPECIAL_SEARCH_LABEL", "SPECIAL_SEARCH_MENU_ITEMS", "COMPLEX_SEARCH_TOOLTIP",
+    for key in ("SPECIAL_SEARCH_LABEL", "SPECIAL_SEARCH_MENU_ITEMS", "SEARCH_SETTINGS_TEXT_COMPACT",
                 "SEARCH_HELP_TEXT", "SEARCH_EDIT_PLACEHOLDER", "RESULT_EMPTY_NO_MATCH"):
         value = str(getattr(AppStrings, key))
         for retired in ("누락 방지", "특수 검색", "값 만", "Miss-prevention", "Special search"):
@@ -376,7 +322,6 @@ def test_settings_button_shows_right_arrow_without_overlapping_text(qtbot, langu
 
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    panel.profile_actions[1].trigger()
     panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[6]].trigger()
     panel.resize(1280, 180)
     panel.show()
@@ -385,11 +330,10 @@ def test_settings_button_shows_right_arrow_without_overlapping_text(qtbot, langu
     assert isinstance(button, SearchSettingsButton)
     assert button.menu() is None
     assert f"padding-right: {SearchSettingsButton.RESERVED_RIGHT}px" in button.styleSheet()
-    # 가장 긴 문구에 경고 아이콘·여백과 ▼ 자리까지 더한 고정 폭이어야 글자가 ▼와 겹치지 않습니다.
+    # 가장 긴 문구에 여백과 ▼ 자리까지 더한 고정 폭이어야 글자가 ▼와 겹치지 않습니다.
     longest = max(
-        button.fontMetrics().horizontalAdvance(text)
-        for text in (AppStrings.SEARCH_SETTINGS_COMPACT_SELECTION.format(AppStrings.SEARCH_PROFILE_PRECISE_COMPACT, value)
-                     for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS if value)
+        button.fontMetrics().horizontalAdvance(value or AppStrings.SEARCH_SETTINGS_TEXT_COMPACT)
+        for value in AppStrings.SPECIAL_SEARCH_COMPACT_ITEMS
     )
     assert button.width() >= longest + 48 + SearchSettingsButton.RESERVED_RIGHT
     image = button.grab().toImage()

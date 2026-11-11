@@ -720,7 +720,6 @@ class SearchTab(QMainWindow):
                 Constants.PAYLOAD_SPECIAL_MODE: special_mode,
                 Constants.PAYLOAD_EXCLUDE_HIDDEN: exclude_hidden,
                 Constants.PAYLOAD_EXCLUDE_BINARY: exclude_binary,
-                Constants.PAYLOAD_USE_COMPLEX_SEARCH: self.search_panel.is_complex_search(),
 
             }
             self._setup_search_worker(params)

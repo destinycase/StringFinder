@@ -31,11 +31,11 @@ def test_valid_search_settings_roundtrip(qtbot, value):
     qtbot.addWidget(panel)
     state = {
         C.STATE_KEY_SEARCH: "  needle 한글  ",
-        C.PAYLOAD_USE_COMPLEX_SEARCH: value,
         C.PAYLOAD_EXCLUDE_HIDDEN: value,
         C.PAYLOAD_SPECIAL_MODE: AppStrings.SPECIAL_SEARCH_OFF,
     }
-    panel.load_state(state)
+    # 예전 세션의 검색 모드 값(use_complex_search)은 오류 없이 무시됩니다.
+    panel.load_state({**state, C.PAYLOAD_USE_COMPLEX_SEARCH: value})
     assert panel.get_state() == state
 
 

@@ -73,16 +73,13 @@ def test_search_settings_prefix_refreshes_immediately_and_follows_active_tab(win
     first = window.tab_widget.currentWidget()
     second = window.add_new_tab()
     window.tab_widget.setCurrentWidget(first)
-    for precise in (True, False):
-        first.search_panel.profile_actions[int(precise)].trigger()
-        for index in (0, 4, 6):
-            first.search_panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[index]].trigger()
-            parts = window.filter_status_label.text().split(" | ")
-            assert len(parts) == 4
-            assert parts[0] == first.search_panel.search_settings_button.text()
-            assert parts[1] == first.folder_panel.status_label.text()
+    for index in (0, 4, 6):
+        first.search_panel.special_mode_actions[AppStrings.SPECIAL_SEARCH_ITEMS[index]].trigger()
+        parts = window.filter_status_label.text().split(" | ")
+        assert len(parts) == 4
+        assert parts[0] == first.search_panel.search_settings_button.text()
+        assert parts[1] == first.folder_panel.status_label.text()
     original = window.filter_status_label.text()
-    second.search_panel.set_complex_search(True)
     second.search_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_ITEMS[3])
     assert window.filter_status_label.text() == original
     window.tab_widget.setCurrentWidget(second)

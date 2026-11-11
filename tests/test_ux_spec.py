@@ -166,7 +166,6 @@ def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture
     assert search_panel.search_btn.toolTip() == ""
     assert search_panel.stop_btn.toolTip() == ""
     assert search_panel.search_settings_button.toolTip() == ""
-    assert search_panel.profile_actions[1].toolTip() == AppStrings.COMPLEX_SEARCH_TOOLTIP
     assert result_panel.result_view.toolTip() == ""
     assert result_panel.match_view.toolTip() == ""
     assert result_panel.context_preview.toolTip() == ""
@@ -183,15 +182,14 @@ def test_search_options_use_user_facing_label_and_requested_order(search_tab_fix
     assert search_panel.search_settings_button in [input_layout.itemAt(i).widget() for i in range(input_layout.count())]
 
 
-def test_search_profile_items_expose_precise_guidance_tooltips(qtbot):
-    """누락 방지 검색 프로필 항목은 선택 목록에서 사용 안내를 제공한다."""
+def test_search_settings_has_no_retired_profile_guidance(qtbot):
+    """검색 방식이 하나로 통합되어 글자 변형 검색 안내·경고 아이콘이 없습니다."""
     from ui.panels import SearchOptionsPanel
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    panel.profile_actions[1].trigger()
-    assert panel.search_settings_button.toolTip() == AppStrings.COMPLEX_SEARCH_TOOLTIP
-    panel.profile_actions[0].trigger()
     assert panel.search_settings_button.toolTip() == ""
+    assert panel.search_settings_button.icon().isNull()
+    assert not hasattr(AppStrings, "COMPLEX_SEARCH_TOOLTIP")
 
 
 def test_skipped_count_signal_is_updated(search_tab_fixture):

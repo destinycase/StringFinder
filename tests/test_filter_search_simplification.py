@@ -104,8 +104,9 @@ def test_retired_feature_has_no_live_ui_or_api(qtbot, language):
     assert not hasattr(panel, "boolean_search_check")
     assert not hasattr(panel, "is_existence_only")
     assert "existence_only" not in panel.get_state()
-    assert len(panel.profile_menu.actions()) == 2
-    assert panel.profile_actions[1].toolTip() == AppStrings.COMPLEX_SEARCH_TOOLTIP
+    # 검색 모드(기본/글자 변형) 메뉴도 검색 방식 통합으로 없어졌습니다.
+    assert not hasattr(panel, "profile_menu") and not hasattr(panel, "set_complex_search")
+    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
     assert "existence_only" not in inspect.signature(engine.search_in_file).parameters
     assert not hasattr(engine, "find_files_with_keyword_fast")
     assert not hasattr(engine.sf_engine, "find_files_with_keyword")

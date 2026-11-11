@@ -143,26 +143,15 @@ class AppStrings:
     # =========================================================================
     # [3] 도움말 및 툴팁 (Tooltips & Guidance)
     # =========================================================================
-    COMPLEX_SEARCH_TOOLTIP = (
-        "기본 검색으로 찾지 못했을 때만 글자 변형 검색을 사용하세요.\n\n"
-        "• 한글 자모의 조합·분리 표현 차이(NFC/NFD)\n"
-        "• 독일어 ß와 ss 같은 특수 대소문자 관계\n\n"
-        "느리므로 적은 파일부터 시도하세요. 모든 인코딩 문제를 해결하지는 않습니다."
-    )
     EXCLUDE_HIDDEN_LABEL = "숨김 파일/폴더 제외"
     EXCLUDE_BINARY_LABEL = "바이너리 파일 제외"
-    SEARCH_PROFILE_LABEL = "검색 모드"
-    SEARCH_PROFILE_NORMAL = "기본 검색 (권장)"
     SEARCH_SETTINGS_LABEL = "검색 설정"
-    SEARCH_PROFILE_NORMAL_COMPACT = "기본 검색"
     SPECIAL_SEARCH_OFF_DISPLAY = "사용 안 함"
-    SEARCH_PROFILE_PRECISE = "글자 변형 검색 (느림)"
     FILENAME_FILTER_INVALID_GROUP = "쉼표 사이에 파일명 조건을 입력하세요."
     SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
     SPECIAL_SEARCH_LABEL = "값만 검색"
-    SEARCH_SETTINGS_SELECTION = "검색 모드: {} / 값만 검색: {}"
-    SEARCH_PROFILE_PRECISE_COMPACT = "글자 변형 검색 (느림)"
-    SEARCH_SETTINGS_COMPACT_SELECTION = "{} · {}"
+    SEARCH_SETTINGS_SELECTION = "값만 검색: {}"
+    SEARCH_SETTINGS_TEXT_COMPACT = "전체 텍스트"
     SPECIAL_SEARCH_COMPACT_ITEMS = [
         "", "XML 값 (부분 일치)", "XML 값 (정확히 일치)",
         "JSON 값 (부분 일치)", "JSON 값 (정확히 일치)", "Excel 값 (부분 일치)", "Excel 값 (정확히 일치)",
@@ -201,15 +190,9 @@ class AppStrings:
 		"<p>- 파일명 필터에는 와일드카드를 사용할 수 없습니다.</p>"
         "<br>"
         "<h3>검색 설정</h3>"
-		"<p>- 검색할 문자열 입력 칸 왼쪽 버튼을 눌러 <b>검색 모드</b>와 <b>값만 검색</b>을 선택할 수 있습니다.</p>"
-		"<h4>검색 모드</h4>"
-        "<p><b>기본 검색</b></p>"
-		"<p>일반적인 영어, 한글 검색을 합니다.(기본)</p>"
-        "<p><b>글자 변형 검색</b></p>"
-		"<p>- 파일에 글자가 있는데 찾지 못했을 때 좁은 범위에서 시도하세요. 매우 느립니다. 아래 경우 이용하세요.</p>"
-		"<p>- macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열</p>"
-		"<p>- 독일어 ß↔ss 등 다국어 특수 대소문자 관계</p>"
-		"<p>- 인코딩 문제는 설정의 문자 인코딩을 확인하세요. 이 검색 방식도 모든 인코딩 문제를 해결하지는 않습니다.</p>"
+		"<p>- 검색할 문자열 입력 칸 왼쪽 버튼을 눌러 <b>값만 검색</b>을 선택할 수 있습니다.</p>"
+		"<p>- 검색은 대소문자(다국어 포함)와 같은 글자의 다른 표현을 맞춰 비교합니다. 예: macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열, 독일어 ß↔ss.</p>"
+		"<p>- 인코딩 문제는 설정의 문자 인코딩을 확인하세요.</p>"
 		"<h4>값만 검색</h4>"
         "<p><b>사용 안 함</b></p>"
 		"<p>- 확장자 필터 조건을 사용합니다. 검색 전체를 끄는 설정이 아닙니다.(기본)</p>"
@@ -271,7 +254,7 @@ class AppStrings:
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)
     # =========================================================================
     SEARCH_EDIT_PLACEHOLDER = (
-        "검색할 문자열 입력… 기본 검색으로 찾지 못한 글자 표현은 글자 변형 검색으로 확인하세요."
+        "검색할 문자열 입력… 대소문자와 글자 표현 차이(한글 자모 분리 등)는 자동으로 맞춰 찾습니다."
     )
     EXT_EDIT_PLACEHOLDER = "예: txt 또는 xlsx,xlsm"
     EXTENSION_FILTER_WILDCARD_NOT_ALLOWED = "확장자 필터에는 와일드카드·패턴 문자(*, ?, [, ], \\)를 사용할 수 없습니다."
@@ -320,9 +303,8 @@ class AppStrings:
     RESULT_SEARCHING_MSG = '"{}" 검색 중 입니다.'
     RESULT_EMPTY_NO_FOLDER = "검색할 폴더를 추가해주세요."
     RESULT_EMPTY_NO_MATCH = (
-        "'{}'에 대한 검색 결과가 없습니다. 아래 경우에는 글자 변형 검색을 권장합니다.\n\n"
-        "macOS에서 만든 파일처럼 한글 자모가 분리된(NFD) 문자열\n"
-        "독일어 ß↔ss 등 다국어 특수 대소문자 관계\n\n"
+        "'{}'에 대한 검색 결과가 없습니다.\n\n"
+        "한글 자모가 분리된(NFD) 문자열이나 독일어 ß↔ss 같은 다국어 대소문자 차이는 이미 맞춰 비교했습니다.\n\n"
         "글자가 깨져 보이는 등 인코딩 문제가 의심되면 설정의 문자 인코딩을 확인하세요."
     )
     RESULT_SUMMARY_FORMAT = "파일 수 : {file_count} | 문자열 수 : {match_count} | 시간 : {duration}s"
