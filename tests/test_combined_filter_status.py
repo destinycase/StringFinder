@@ -32,10 +32,10 @@ def window(qtbot, mock_config_manager, request):
 
 def test_single_filter_dock_and_distinct_extension_count(window):
     tab = window.tab_widget.currentWidget()
-    # 기본은 위아래 패널: 확장자·파일명 필터가 한 도크 안에 동시에 보입니다.
-    assert tab.filter_tabs.count() == 0 and tab.filter_tabs.isHidden()
-    assert tab.ext_group.isAncestorOf(tab.ext_panel)
-    assert tab.filename_group.isAncestorOf(tab.filename_panel)
+    # 기본은 탭: 확장자·파일명 필터가 한 도크의 두 탭에 있습니다.
+    assert tab.filter_tabs.count() == 2 and tab.filter_splitter.isHidden()
+    assert tab.filter_tabs.widget(0) is tab.ext_panel
+    assert tab.filter_tabs.widget(1) is tab.filename_panel
     assert {d.objectName() for d in tab.findChildren(QDockWidget)} == {
         C.OBJ_NAME_SEARCH_DOCK, C.OBJ_NAME_FOLDER_DOCK, "filtersDockV2", "resultsDock"
     }
@@ -122,7 +122,7 @@ def test_restoration_lock_and_layout_fallback(window):
     window.config_manager.set(C.CONFIG_KEY_DOCK_LAYOUT_STATE, old_state)
     new = window.add_new_tab()
     assert not new.filter_dock.isHidden()
-    assert new.filter_splitter.count() == 2 and not new.filter_splitter.isHidden()
+    assert new.filter_tabs.count() == 2 and new.filter_splitter.isHidden()
 
 
 def test_errors_remain_visible_without_replacing_filter_status(window):
@@ -151,17 +151,19 @@ def test_filter_layout_option_switches_between_stacked_panels_and_tabs(window):
     tab = window.tab_widget.currentWidget()
     second = window.add_new_tab()
     window.tab_widget.setCurrentWidget(tab)
-    assert window.config_manager.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_STACKED
+    assert window.config_manager.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_TABS
     tab.ext_panel.restore_state({"txt": True, "log": False})
     tab.filename_panel.restore_state({})
     tab.filename_panel.add_filename("report")
     tab._refresh_filter_ui()
-    assert tab.ext_group.title() == AppStrings.FILTER_EXTENSION_TAB.format(1)
-    assert tab.filename_group.title() == AppStrings.FILTER_FILENAME_TAB.format(1)
     dialog = SettingsDialog(window.config_manager, window)
     dialog.display_density_changed.connect(window._apply_display_density)
     combo = dialog.filter_layout_combo
-    assert [combo.itemData(i) for i in range(combo.count())] == [C.FILTER_LAYOUT_STACKED, C.FILTER_LAYOUT_TABS]
+    assert [combo.itemData(i) for i in range(combo.count())] == [C.FILTER_LAYOUT_TABS, C.FILTER_LAYOUT_STACKED]
+    assert combo.currentData() == C.FILTER_LAYOUT_TABS
+    combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_STACKED))
+    assert tab.ext_group.title() == AppStrings.FILTER_EXTENSION_TAB.format(1)
+    assert tab.filename_group.title() == AppStrings.FILTER_FILENAME_TAB.format(1)
     combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_TABS))
     assert window.config_manager.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_TABS
     for current in (tab, second):
@@ -190,19 +192,26 @@ def test_filter_layout_option_switches_between_stacked_panels_and_tabs(window):
     dialog.close()
 
 
-def test_invalid_saved_filter_layout_falls_back_to_stacked(mock_config_manager):
+@pytest.mark.parametrize("saved", [
+    {"filter_layout_v2": "sideways"},
+    # 6.4.12~6.4.13 사용자: 예전 키에 저장된 위아래 패널(당시 기본값)은 탭으로 바뀝니다.
+    {"filter_layout": "stacked"},
+])
+def test_saved_filter_layout_falls_back_to_tabs(mock_config_manager, saved):
     import json
     from sf_utils.config_manager import ConfigManager
 
     path = mock_config_manager.config_path
     data = json.loads(open(path, encoding="utf-8").read()) if os.path.exists(path) else {}
-    data[C.CONFIG_KEY_FILTER_LAYOUT] = "sideways"
+    data.pop(C.CONFIG_KEY_FILTER_LAYOUT, None)
+    data.update(saved)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(data, handle)
     mock_config_manager.stop()
     ConfigManager._instance = None
     reloaded = ConfigManager()
     try:
-        assert reloaded.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_STACKED
+        assert reloaded.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_TABS
+        assert reloaded.get(C.LEGACY_CONFIG_KEY_FILTER_LAYOUT) is None
     finally:
         reloaded.stop()

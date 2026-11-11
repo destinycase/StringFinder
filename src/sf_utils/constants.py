@@ -104,11 +104,14 @@ class Constants:
     CONFIG_KEY_MATCH_COLUMN_WIDTHS = "match_column_widths"
     CONFIG_KEY_CONTEXT_BEFORE_LINES = "context_before_lines"
     CONFIG_KEY_COMPACT_RESULT_ROWS = "compact_result_rows"
-    # 확장자·파일명 필터 표시 방식: 탭(하나씩) 또는 위아래 패널(동시에)
-    CONFIG_KEY_FILTER_LAYOUT = "filter_layout"
+    # 확장자·파일명 필터 표시 방식: 탭(하나씩, 기본) 또는 위아래 패널(동시에)
+    # 6.4.12~6.4.13은 기본값이 위아래 패널이었고 기본값도 설정 파일에 저장되어, 사용자가 직접 고른 값과
+    # 구분할 수 없습니다. 기본값을 탭으로 바꾸며 새 키를 쓰고 예전 키(filter_layout)는 읽지 않습니다.
+    CONFIG_KEY_FILTER_LAYOUT = "filter_layout_v2"
+    LEGACY_CONFIG_KEY_FILTER_LAYOUT = "filter_layout"
     FILTER_LAYOUT_TABS = "tabs"
     FILTER_LAYOUT_STACKED = "stacked"
-    DEFAULT_FILTER_LAYOUT = FILTER_LAYOUT_STACKED
+    DEFAULT_FILTER_LAYOUT = FILTER_LAYOUT_TABS
     CONFIG_KEY_EXCLUDE_HIDDEN = "exclude_hidden"
     CONFIG_KEY_CONTEXT_AFTER_LINES = "context_after_lines"
     CONFIG_KEY_EXTERNAL_EDITOR = "external_editor"
