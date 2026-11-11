@@ -724,6 +724,7 @@ fn do_search_with_mmap(
             stop_flag,
             max_per_file,
             &mut results,
+            false,
         );
     }
     results
@@ -1263,7 +1264,27 @@ fn apply_match_limit(matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatc
     visible_matches
 }
 
-fn detect_text_search_encoding(data: &[u8], pattern: &str, is_exact: bool) -> &'static Encoding {
+/// 일반 텍스트 검색의 자동 인코딩 판정 결과입니다.
+#[derive(Debug, PartialEq)]
+enum TextEncoding {
+    Known(&'static Encoding),
+    /// UTF-8이 아니고 BOM·UTF-16 단서도 없어, CP949로 오류 없이 읽히는지 확인해야 합니다.
+    /// 확인을 위한 디코딩과 검색을 한 번에 합니다(`search_korean_strict`).
+    KoreanUnverified,
+}
+
+#[cfg(test)]
+impl TextEncoding {
+    /// 판정을 끝까지 마친 인코딩입니다(시험용).
+    fn resolve(&self, data: &[u8]) -> &'static Encoding {
+        match self {
+            TextEncoding::Known(encoding) => encoding,
+            TextEncoding::KoreanUnverified => detect_encoding(data),
+        }
+    }
+}
+
+fn detect_text_search_encoding(data: &[u8], pattern: &str, is_exact: bool) -> TextEncoding {
     let prefix = &data[..data.len().min(65536)];
     // Literal ASCII matches are byte-compatible with CP949. Keep the existing
     // sampled fast path; invalid decoded result snippets trigger a full recheck.
@@ -1273,15 +1294,56 @@ fn detect_text_search_encoding(data: &[u8], pattern: &str, is_exact: bool) -> &'
         while end < data.len() && end < prefix.len() + 3 && data[end] & 0xc0 == 0x80 {
             end += 1;
         }
-        let encoding = detect_encoding(&data[..end]);
+        // 앞부분만 보므로 끝에서 잘린 CP949 두 바이트 글자는 CP949가 아니라는 근거로 쓰지 않습니다.
+        let encoding = crate::utils::detect_encoding_with(&data[..end], end == data.len());
         // UTF-8 boundary extension may split a CP949 pair. Do not let that
         // artificial failure override a valid CP949 sample with UTF-16.
         if encoding == UTF_16LE || encoding == UTF_16BE {
-            return detect_encoding(prefix);
+            return TextEncoding::Known(crate::utils::detect_encoding_with(
+                prefix,
+                prefix.len() == data.len(),
+            ));
         }
-        return encoding;
+        return TextEncoding::Known(encoding);
     }
-    detect_encoding(data)
+    match crate::utils::detect_until_korean(data) {
+        crate::utils::Detection::Encoding(encoding) => TextEncoding::Known(encoding),
+        crate::utils::Detection::KoreanCheck => TextEncoding::KoreanUnverified,
+    }
+}
+
+/// CP949로 엄격하게(디코딩 오류가 나면 중단) 디코딩하면서 바로 검색합니다. 파일 전체가 오류 없이
+/// 읽히면 "CP949로 판정한 뒤 검색"한 결과와 같고, 오류가 나면 None입니다(호출자가 나머지 판정을 이어 감).
+/// 판정용 디코딩과 검색용 디코딩을 한 번으로 줄입니다.
+fn search_korean_strict(
+    mmap: &[u8],
+    matcher: &textkey::Matcher,
+    is_exact: bool,
+    stop_flag: &Arc<AtomicBool>,
+    max_per_file: usize,
+) -> Option<Vec<RawMatch>> {
+    let mut results = Vec::new();
+    let decode_error = search_non_utf8_chunks(
+        mmap,
+        encoding_rs::EUC_KR,
+        matcher,
+        is_exact,
+        stop_flag,
+        max_per_file,
+        &mut results,
+        true,
+    );
+    if decode_error {
+        return None;
+    }
+    // 결과 상한으로 일찍 끝났다면 나머지가 CP949로 읽히는지는 따로 확인합니다(중지는 그대로 둠).
+    if results.len() > max_per_file
+        && !stop_flag.load(Ordering::Relaxed)
+        && !crate::utils::korean_bytes_valid(mmap, true)
+    {
+        return None;
+    }
+    Some(results)
 }
 
 /// 디코딩이 필요한 텍스트(UTF-16·CP949 등)를 청크 단위로 검색합니다.
@@ -1296,7 +1358,8 @@ fn search_non_utf8_chunks(
     stop_flag: &Arc<AtomicBool>,
     max_per_file: usize,
     results: &mut Vec<RawMatch>,
-) {
+    strict: bool,
+) -> bool {
     const DECODE_CHUNK_SIZE: usize = 64 * 1024;
     let mut decoder = encoding.new_decoder_without_bom_handling();
     let mut pending = String::new();
@@ -1305,15 +1368,19 @@ fn search_non_utf8_chunks(
 
     while input_offset < mmap.len() {
         if stop_flag.load(Ordering::Relaxed) {
-            return;
+            return false;
         }
         let end = (input_offset + DECODE_CHUNK_SIZE).min(mmap.len());
         let last = end == mmap.len();
         // encoding_rs는 출력 버퍼가 가득 차면 입력을 소비하지 않으므로 충분한
         // 청크 출력 공간을 미리 확보합니다. 필요 시 내부적으로 더 작은 결과를 생성합니다.
         let mut decoded = String::with_capacity((end - input_offset).saturating_mul(3));
-        let (_status, consumed, _had_errors) =
+        let (_status, consumed, had_errors) =
             decoder.decode_to_string(&mmap[input_offset..end], &mut decoded, last);
+        if strict && (had_errors || (consumed == 0 && end > input_offset)) {
+            // 엄격 모드: 이 인코딩으로 오류 없이 읽히지 않으므로 중단합니다(이 조각은 검색하지 않음).
+            return true;
+        }
         if consumed == 0 && end > input_offset {
             // Decoder가 입력을 소비하지 못하는 경우 무한 루프를 방지합니다.
             break;
@@ -1351,7 +1418,7 @@ fn search_non_utf8_chunks(
                 max_per_file,
                 results,
             ) {
-                return;
+                return false;
             }
             pending.drain(..cut);
         }
@@ -1373,6 +1440,7 @@ fn search_non_utf8_chunks(
             results,
         );
     }
+    false
 }
 
 /// 디코딩한 텍스트 구간을 UTF-8 경로로 검색합니다. `line_number`는 구간 첫 줄의 번호이며,
@@ -1518,6 +1586,8 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     let structured_document = (is_json && ext_l == ".json")
         || is_archive_document
         || (is_xml && (ext_l == ".xml" || ext_l == ".sf_xml"));
+    // CP949 확인이 필요한 일반 텍스트는 확인용 디코딩과 검색을 한 번에 하고, 그 결과를 아래에서 씁니다.
+    let mut korean_results: Option<Vec<RawMatch>> = None;
     let enc = if let Some(encoding) = encoding {
         if !crate::utils::selected_encoding_valid(mmap_c, encoding) {
             return Some(Err(encode_skip_reason(
@@ -1529,7 +1599,18 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     } else if structured_document {
         detect_encoding(mmap_c)
     } else {
-        detect_text_search_encoding(mmap_c, matcher.pat_key(), is_exact)
+        match detect_text_search_encoding(mmap_c, matcher.pat_key(), is_exact) {
+            TextEncoding::Known(encoding) => encoding,
+            TextEncoding::KoreanUnverified => {
+                match search_korean_strict(mmap_c, matcher, is_exact, &stop_flag, max_per_file) {
+                    Some(found) => {
+                        korean_results = Some(found);
+                        encoding_rs::EUC_KR
+                    }
+                    None => crate::utils::detect_after_korean_failed(mmap_c),
+                }
+            }
+        }
     };
     let decoded = if structured_document {
         match decode_structured_bytes(mmap_c, enc) {
@@ -1616,25 +1697,59 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                 0
             };
             let searchable_mmap = &mmap_c[bom_len..];
-            let mut matches = do_search_with_mmap(
-                searchable_mmap,
-                enc,
-                matcher,
-                is_exact,
-                &stop_flag,
-                max_per_file,
-            );
-            if enc == UTF_8 && matches.iter().any(|m| m.1.contains('\u{fffd}')) {
-                let verified_encoding = encoding.unwrap_or_else(|| detect_encoding(mmap_c));
-                if verified_encoding != UTF_8 {
-                    matches = do_search_with_mmap(
-                        mmap_c,
-                        verified_encoding,
-                        matcher,
-                        is_exact,
-                        &stop_flag,
-                        max_per_file,
-                    );
+            let mut matches = match korean_results.take() {
+                Some(found) => found,
+                None => do_search_with_mmap(
+                    searchable_mmap,
+                    enc,
+                    matcher,
+                    is_exact,
+                    &stop_flag,
+                    max_per_file,
+                ),
+            };
+            if enc == UTF_8
+                && encoding.is_none()
+                && matches.iter().any(|m| m.1.contains('\u{fffd}'))
+            {
+                // 앞부분만 보고 UTF-8로 정했는데 깨진 글자가 보이면 파일 전체로 다시 판정합니다.
+                // CP949 확인이 필요하면 확인과 재검색을 한 번의 디코딩으로 합니다.
+                match crate::utils::detect_until_korean(mmap_c) {
+                    crate::utils::Detection::Encoding(verified) if verified != UTF_8 => {
+                        matches = do_search_with_mmap(
+                            mmap_c,
+                            verified,
+                            matcher,
+                            is_exact,
+                            &stop_flag,
+                            max_per_file,
+                        );
+                    }
+                    crate::utils::Detection::Encoding(_) => {}
+                    crate::utils::Detection::KoreanCheck => {
+                        match search_korean_strict(
+                            mmap_c,
+                            matcher,
+                            is_exact,
+                            &stop_flag,
+                            max_per_file,
+                        ) {
+                            Some(found) => matches = found,
+                            None => {
+                                let verified = crate::utils::detect_after_korean_failed(mmap_c);
+                                if verified != UTF_8 {
+                                    matches = do_search_with_mmap(
+                                        mmap_c,
+                                        verified,
+                                        matcher,
+                                        is_exact,
+                                        &stop_flag,
+                                        max_per_file,
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
             }
             matches
@@ -2753,8 +2868,61 @@ mod tests {
                     &Arc::new(AtomicBool::new(false)),
                     5000,
                     &mut actual,
+                    false,
                 );
                 assert_eq!(actual, expected, "encoding={encoding:?}, exact={exact}");
+            }
+        }
+    }
+
+    /// CP949 확인과 검색을 한 번의 디코딩으로 하는 경로가 "판정을 끝낸 뒤 검색"과 같은 결과를 내는지 확인합니다.
+    #[test]
+    fn korean_strict_search_matches_detect_then_search() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let line = encoding_rs::EUC_KR
+            .encode("가나다 needle 목표단어 끝\r\n")
+            .0
+            .into_owned();
+        let mut valid = Vec::new();
+        for _ in 0..3000 {
+            valid.extend_from_slice(&line);
+        }
+        let mut invalid_tail = valid.clone();
+        invalid_tail.extend_from_slice(b"\xff\xff broken");
+        let mut invalid_head = b"\xff\xff broken\r\n".to_vec();
+        invalid_head.extend_from_slice(&valid);
+        for (name, data) in [
+            ("valid", &valid),
+            ("invalid_tail", &invalid_tail),
+            ("invalid_head", &invalid_head),
+        ] {
+            assert!(matches!(
+                crate::utils::detect_until_korean(data),
+                crate::utils::Detection::KoreanCheck
+            ));
+            for query in ["needle", "목표단어"] {
+                let matcher = textkey::Matcher::new(query).unwrap();
+                for max_per_file in [5, 10_000] {
+                    let strict = search_korean_strict(data, &matcher, false, &stop, max_per_file);
+                    let detected = detect_encoding(data);
+                    if detected == encoding_rs::EUC_KR {
+                        let expected = do_search_with_mmap(
+                            data,
+                            detected,
+                            &matcher,
+                            false,
+                            &stop,
+                            max_per_file,
+                        );
+                        assert_eq!(
+                            strict.as_ref(),
+                            Some(&expected),
+                            "{name} {query} {max_per_file}"
+                        );
+                    } else {
+                        assert!(strict.is_none(), "{name} {query} {max_per_file}");
+                    }
+                }
             }
         }
     }
@@ -2764,17 +2932,35 @@ mod tests {
         let mut bytes = b"needle\n".to_vec();
         bytes.resize(65536, b'a');
         bytes.extend_from_slice(&encoding_rs::EUC_KR.encode("한글").0);
-        assert_eq!(detect_text_search_encoding(&bytes, "needle", false), UTF_8);
         assert_eq!(
-            detect_text_search_encoding(&bytes, "needle", true),
+            detect_text_search_encoding(&bytes, "needle", false).resolve(&bytes),
+            UTF_8
+        );
+        assert_eq!(
+            detect_text_search_encoding(&bytes, "needle", true).resolve(&bytes),
             encoding_rs::EUC_KR
         );
         assert_eq!(
-            detect_text_search_encoding(&bytes, "한글", false),
+            detect_text_search_encoding(&bytes, "한글", false).resolve(&bytes),
             encoding_rs::EUC_KR
         );
         let utf16: Vec<u8> = "needle".encode_utf16().flat_map(u16::to_le_bytes).collect();
-        assert_eq!(detect_text_search_encoding(&utf16, "n", false), UTF_16LE);
+        assert_eq!(
+            detect_text_search_encoding(&utf16, "n", false).resolve(&utf16),
+            UTF_16LE
+        );
+        // 앞부분 판정이 CP949 두 바이트 글자의 중간에서 잘려도 CP949로 판정합니다.
+        // U+AC4B는 CP949로 B0 C0입니다. 둘째 바이트가 0xC0 이상이라 UTF-8 경계 보정으로 붙지 않습니다.
+        let mut korean = b"needle ".to_vec();
+        korean.resize(65535, b'a');
+        for _ in 0..100 {
+            korean.extend_from_slice(&encoding_rs::EUC_KR.encode("\u{AC4B}").0);
+        }
+        assert_eq!(&korean[65535..65537], b"\xb0\xc0");
+        assert_eq!(
+            detect_text_search_encoding(&korean, "needle", false),
+            TextEncoding::Known(encoding_rs::EUC_KR)
+        );
     }
 
     #[test]
@@ -2804,6 +2990,7 @@ mod tests {
                     &Arc::new(AtomicBool::new(false)),
                     limit,
                     &mut results,
+                    false,
                 );
                 assert_eq!(results.len(), 3.min(limit + 1));
                 assert!(results.iter().all(|m| m.0 == 1));
@@ -2828,6 +3015,7 @@ mod tests {
             &Arc::new(AtomicBool::new(true)),
             5000,
             &mut actual,
+            false,
         );
         assert_eq!(actual, original);
     }

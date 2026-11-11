@@ -5,17 +5,26 @@ use unicode_normalization::UnicodeNormalization;
 
 use globset::{GlobSet, GlobSetBuilder};
 
-pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
+/// 자동 인코딩 판정의 중간 결과입니다.
+pub enum Detection {
+    /// 판정이 끝났습니다.
+    Encoding(&'static Encoding),
+    /// BOM·UTF-16 단서가 없고 UTF-8도 아닙니다. 다음은 CP949로 오류 없이 읽히는지 확인할 차례입니다.
+    KoreanCheck,
+}
+
+/// `detect_encoding`의 앞 단계(BOM, NUL 분포로 본 UTF-16, 전체 UTF-8 유효성)입니다.
+pub fn detect_until_korean(data: &[u8]) -> Detection {
     if data.len() >= 2 {
         if data.starts_with(b"\xff\xfe") {
-            return UTF_16LE;
+            return Detection::Encoding(UTF_16LE);
         }
         if data.starts_with(b"\xfe\xff") {
-            return UTF_16BE;
+            return Detection::Encoding(UTF_16BE);
         }
     }
     if data.starts_with(b"\xef\xbb\xbf") {
-        return UTF_8;
+        return Detection::Encoding(UTF_8);
     }
 
     // UTF-16 heuristics need only a prefix; UTF-8 validity needs the full input.
@@ -39,21 +48,24 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
         let half = (check_limit / 2) as f32;
         // 특정 오프셋에 NUL 바이트가 70% 이상 집중되어 있으면 UTF-16으로 간주
         if zero_odd as f32 > half * 0.7 && zero_even <= (half * 0.1) as usize {
-            return UTF_16LE;
+            return Detection::Encoding(UTF_16LE);
         }
         if zero_even as f32 > half * 0.7 && zero_odd <= (half * 0.1) as usize {
-            return UTF_16BE;
+            return Detection::Encoding(UTF_16BE);
         }
     }
 
     // Validate the whole UTF-8 input: ASCII-only sampling can hide CP949 later.
     // UTF-16 heuristics above take precedence over UTF-8 validity.
     if simd_from_utf8(data).is_ok() {
-        return UTF_8;
+        return Detection::Encoding(UTF_8);
     }
-    if valid_korean_bytes(data) {
-        return EUC_KR;
-    }
+    Detection::KoreanCheck
+}
+
+/// CP949로 읽히지 않는다고 확인된 뒤의 판정(한글 중심 UTF-16 후보, 없으면 UTF-8)입니다.
+pub fn detect_after_korean_failed(data: &[u8]) -> &'static Encoding {
+    let sample = &data[..data.len().min(64 * 1024)];
     let korean_sample = &sample[..sample.len().min(2048) / 2 * 2];
     let mut candidate = None;
     for encoding in [UTF_16LE, UTF_16BE] {
@@ -69,21 +81,27 @@ pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
                 >= count * 4
         {
             if candidate.is_some() {
-                return if valid_korean_bytes(data) {
-                    EUC_KR
-                } else {
-                    UTF_8
-                };
+                // 두 후보가 모두 맞으면 정할 수 없습니다(CP949는 이미 아님).
+                return UTF_8;
             }
             candidate = Some(encoding);
         }
     }
-    if let Some(encoding) = candidate {
-        return encoding;
-    }
+    candidate.unwrap_or(UTF_8)
+}
 
-    // 기본값으로 UTF-8 반환
-    UTF_8
+pub fn detect_encoding(data: &[u8]) -> &'static Encoding {
+    detect_encoding_with(data, true)
+}
+
+/// `complete`가 거짓이면 `data`는 파일 앞부분이라 끝의 CP949 두 바이트 글자가 잘려 있을 수 있습니다.
+/// 그 잘림은 CP949가 아니라는 근거가 아니므로 오류로 보지 않습니다.
+pub fn detect_encoding_with(data: &[u8], complete: bool) -> &'static Encoding {
+    match detect_until_korean(data) {
+        Detection::Encoding(encoding) => encoding,
+        Detection::KoreanCheck if korean_bytes_valid(data, complete) => EUC_KR,
+        Detection::KoreanCheck => detect_after_korean_failed(data),
+    }
 }
 
 pub fn requested_encoding(label: Option<&str>) -> Option<&'static Encoding> {
@@ -107,15 +125,19 @@ pub fn selected_encoding_valid(data: &[u8], encoding: &'static Encoding) -> bool
     !errors
 }
 
-fn valid_korean_bytes(data: &[u8]) -> bool {
+/// CP949(EUC-KR 확장)로 오류 없이 읽히는지 확인합니다. `complete`가 거짓이면 끝의 잘린 글자는 허용합니다.
+pub fn korean_bytes_valid(data: &[u8], complete: bool) -> bool {
     let mut decoder = EUC_KR.new_decoder_without_bom_handling();
     let mut decoded = String::with_capacity(65536 * 3);
     let mut offset = 0;
     while offset < data.len() {
         decoded.clear();
         let end = (offset + 65536).min(data.len());
-        let (_, consumed, had_errors) =
-            decoder.decode_to_string(&data[offset..end], &mut decoded, end == data.len());
+        let (_, consumed, had_errors) = decoder.decode_to_string(
+            &data[offset..end],
+            &mut decoded,
+            complete && end == data.len(),
+        );
         if had_errors || consumed == 0 {
             return false;
         }
