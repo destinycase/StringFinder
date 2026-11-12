@@ -76,8 +76,7 @@ def test_native_entry_points_enforce_same_limit(entry, tmp_path):
         calls[entry]("😀" * 1001)
 
 
-@pytest.mark.parametrize("complex_search", [False, True])
-def test_limit_length_query_is_searched_without_truncation(tmp_path, complex_search):
+def test_limit_length_query_is_searched_without_truncation(tmp_path):
     p = tmp_path / "valid.txt"
     query = "가" * 1000
     p.write_text(query + "\n", encoding="utf-8")

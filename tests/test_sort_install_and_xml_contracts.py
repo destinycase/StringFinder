@@ -1,4 +1,4 @@
-"""Deterministic regressions for the 5.9.2 follow-up review."""
+"""정렬·설치 경로·XML 해석의 결정적 동작 계약."""
 
 import pytest
 

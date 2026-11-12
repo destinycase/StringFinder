@@ -24,7 +24,7 @@ def test_only_supported_modes_run_five_times(tmp_path, monkeypatch):
     report = diagnostic.run(tmp_path, repeats=5, max_seconds=None)
     assert report["diagnostic_version"] == 7
     assert report["verdict"] == "PASS"
-    # 6.4.6부터 검색 방식이 하나라 시나리오도 하나입니다(보고서 형식 7).
+    # 검색 방식이 하나라 시나리오도 하나입니다(보고서 형식 7).
     assert {row["name"] for row in report["scenarios"]} == {"normal_no_match"}
     assert len(calls) == 5
     assert all("existence_only" not in call for call in calls)

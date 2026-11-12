@@ -1,6 +1,6 @@
 """UE 현지화 archive 값만 검색: 구조 해석, 비교, 형식 오류, 인코딩, 상한, 화면 계약.
 
-기본 검색(Rust)과 글자 변형 검색(Python)이 같은 표본에서 같은 결과를 내는지 함께 확인합니다.
+
 표본 구조는 5.5.0까지 제공하던 archive 샘플 생성 스크립트와 같습니다.
 """
 import json
@@ -38,7 +38,6 @@ SAMPLE = {
         },
     ]
 }
-ENGINES = pytest.mark.parametrize("precise", [False, True], ids=["rust", "python"])
 
 def choose_search_mode(panel, mode):
     """사용자가 검색 모드 콤보 박스에서 ``mode``(저장 값)를 고른 것과 같이 처리합니다."""
@@ -68,7 +67,7 @@ def write_archive(tmp_path, document, name="Game.archive", encoding="utf-8"):
     return path
 
 
-def search(path, query, precise, exact=False):
+def search(path, query, exact=False):
     return folder_search_helper.search_in_archive_special(str(path), query, exact)
 
 
@@ -77,41 +76,36 @@ def rows(result):
     return [tuple(match[1:5]) for match in result[2]]
 
 
-@ENGINES
 @pytest.mark.parametrize("query,expected", [
     ("proceed", [("System_UI", "ID_BTN_CONFIRM", "Confirm and Proceed", "확인 후 진행")]),
     ("여행자", [("Game_Dialog", "NPC_GREET_01", "Hello, brave traveler!", "안녕, 용감한 여행자여!")]),
     ("npc_greet", [("Game_Dialog", "NPC_GREET_01", "Hello, brave traveler!", "안녕, 용감한 여행자여!")]),
 ])
-def test_source_translation_and_key_are_searched(tmp_path, precise, query, expected):
-    assert rows(search(write_archive(tmp_path, SAMPLE), query, precise)) == expected
+def test_source_translation_and_key_are_searched(tmp_path, query, expected):
+    assert rows(search(write_archive(tmp_path, SAMPLE), query)) == expected
 
 
-@ENGINES
-def test_namespace_and_json_field_names_are_not_searched(tmp_path, precise):
+def test_namespace_and_json_field_names_are_not_searched(tmp_path):
     path = write_archive(tmp_path, SAMPLE)
     for query in ("System_UI", "Subnamespaces", "Translation"):
-        assert search(path, query, precise) is None, query
+        assert search(path, query) is None, query
 
 
-@ENGINES
-def test_one_entry_is_one_result_when_several_values_match(tmp_path, precise):
-    result = search(write_archive(tmp_path, SAMPLE), "StringFinder", precise)
+def test_one_entry_is_one_result_when_several_values_match(tmp_path):
+    result = search(write_archive(tmp_path, SAMPLE), "StringFinder")
     assert result[1] == 1
     assert rows(result) == [("System_UI", "ID_LBL_WELCOME", "Welcome to StringFinder",
                              "StringFinder에 오신 것을 환영합니다")]
 
 
-@ENGINES
-def test_exact_match_compares_each_whole_value(tmp_path, precise):
+def test_exact_match_compares_each_whole_value(tmp_path):
     path = write_archive(tmp_path, SAMPLE)
-    assert len(rows(search(path, "id_btn_confirm", precise, exact=True))) == 1
-    assert len(rows(search(path, "확인 후 진행", precise, exact=True))) == 1
-    assert search(path, "ID_BTN", precise, exact=True) is None
+    assert len(rows(search(path, "id_btn_confirm", exact=True))) == 1
+    assert len(rows(search(path, "확인 후 진행", exact=True))) == 1
+    assert search(path, "ID_BTN", exact=True) is None
 
 
-@ENGINES
-def test_root_children_and_nested_namespaces_keep_document_order(tmp_path, precise):
+def test_root_children_and_nested_namespaces_keep_document_order(tmp_path):
     document = {
         "FormatVersion": 2,
         "Namespace": "",
@@ -125,12 +119,11 @@ def test_root_children_and_nested_namespaces_keep_document_order(tmp_path, preci
                 {"Key": "LAST", "Source": {"Text": "needle last"}, "Translation": {"Text": "y"}}]},
         ],
     }
-    found = rows(search(write_archive(tmp_path, document), "needle", precise))
+    found = rows(search(write_archive(tmp_path, document), "needle"))
     assert [(namespace, key) for namespace, key, _, _ in found] == [("", "ROOT"), ("UI.Menu", "DEEP"),
                                                                   ("Last", "LAST")]
 
 
-@ENGINES
 @pytest.mark.parametrize("document,location", [
     ([], "/"),
     ({"FormatVersion": 2}, "/Children"),
@@ -140,35 +133,32 @@ def test_root_children_and_nested_namespaces_keep_document_order(tmp_path, preci
     ({"Children": {"Key": "k"}}, "/Children"),
     ({"Namespace": 3, "Children": []}, "/Namespace"),
 ])
-def test_structure_violations_are_skipped_with_location(tmp_path, precise, document, location):
-    result = search(write_archive(tmp_path, document), "needle", precise)
+def test_structure_violations_are_skipped_with_location(tmp_path, document, location):
+    result = search(write_archive(tmp_path, document), "needle")
     assert result == (C.STATUS_SKIPPED, AppStrings.ERROR_ARCHIVE_FORMAT.format(location))
 
 
-@ENGINES
-def test_invalid_entry_after_a_hit_discards_the_whole_file(tmp_path, precise):
+def test_invalid_entry_after_a_hit_discards_the_whole_file(tmp_path):
     document = {"Children": [
         {"Key": "OK", "Source": {"Text": "needle"}, "Translation": {"Text": ""}},
         {"Key": "BROKEN", "Source": {"Text": "needle"}},
     ]}
-    result = search(write_archive(tmp_path, document), "needle", precise)
+    result = search(write_archive(tmp_path, document), "needle")
     assert result[0] == C.STATUS_SKIPPED
 
 
-@ENGINES
 @pytest.mark.parametrize("text", [
     '{"Children": [',
     '{"Children": [], "Children": []}',  # 중복 키 허용 설정과 관계없이 archive는 건너뜁니다.
 ])
-def test_json_errors_and_duplicate_keys_are_skipped(tmp_path, precise, text):
-    result = search(write_archive(tmp_path, text), "needle", precise)
+def test_json_errors_and_duplicate_keys_are_skipped(tmp_path, text):
+    result = search(write_archive(tmp_path, text), "needle")
     assert result[0] == C.STATUS_SKIPPED
     assert result[1].startswith(AppStrings.ERROR_JSON_PARSE.split("{")[0])
 
 
-@ENGINES
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "utf-16-be"])
-def test_supported_encodings_return_identical_rows(tmp_path, precise, encoding):
+def test_supported_encodings_return_identical_rows(tmp_path, encoding):
     text = json.dumps(SAMPLE, ensure_ascii=False)
     if encoding == "utf-16-be":
         raw = b"\xfe\xff" + text.encode("utf-16-be")
@@ -176,18 +166,17 @@ def test_supported_encodings_return_identical_rows(tmp_path, precise, encoding):
         path.write_bytes(raw)
     else:
         path = write_archive(tmp_path, text, encoding=encoding)
-    assert rows(search(path, "여행자", precise)) == [
+    assert rows(search(path, "여행자")) == [
         ("Game_Dialog", "NPC_GREET_01", "Hello, brave traveler!", "안녕, 용감한 여행자여!")]
 
 
-@ENGINES
-def test_per_file_limit_keeps_exactly_the_limit_and_one_notice(tmp_path, precise):
+def test_per_file_limit_keeps_exactly_the_limit_and_one_notice(tmp_path):
     children = [{"Key": f"K{index}", "Source": {"Text": "needle"}, "Translation": {"Text": ""}}
                 for index in range(5)]
     path = write_archive(tmp_path, {"Children": children})
     with engine.use_search_settings_snapshot({C.CONFIG_KEY_MAX_PER_FILE_MATCHES: 2,
                                               C.CONFIG_KEY_SEARCH_ENCODING: "auto"}):
-        result = search(path, "needle", precise)
+        result = search(path, "needle")
     visible = [match for match in result[2] if str(match[0]) not in {"-1", "-2"}]
     notices = [match for match in result[2] if str(match[0]) == "-1"]
     assert [match[2] for match in visible] == ["K0", "K1"]
@@ -283,8 +272,7 @@ def test_detail_model_shows_line_and_four_archive_columns():
     assert model.rowCount() == 0
 
 
-@ENGINES
-def test_result_line_is_the_key_line_in_both_engines(tmp_path, precise):
+def test_result_line_is_the_key_line(tmp_path):
     lines = [
         "{",
         '  "Subnamespaces": [',
@@ -304,6 +292,6 @@ def test_result_line_is_the_key_line_in_both_engines(tmp_path, precise):
     ]
     for encoding in ("utf-8", "utf-16"):
         path = write_archive(tmp_path, "\r\n".join(lines), name=f"lines_{encoding}.archive", encoding=encoding)
-        result = search(path, "needle", precise)
+        result = search(path, "needle")
         assert [(match[0], match[2]) for match in result[2]] == [(9, "K_FIRST"), (11, "K_SECOND")]
         assert result[2][0][3] == "needle é first"

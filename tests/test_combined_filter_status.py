@@ -177,7 +177,7 @@ def test_filter_layout_option_switches_between_stacked_panels_and_tabs(window):
     assert tab.filename_panel.get_selected_filenames() == ["report"]
     combo.setCurrentIndex(combo.findData(C.FILTER_LAYOUT_STACKED))
     assert tab.filter_tabs.count() == 0 and not tab.filter_splitter.isHidden()
-    # 탭에서 돌아온 패널의 내용이 숨겨진 채로 남지 않아야 합니다(6.4.12 오류).
+    # 탭에서 돌아온 패널의 내용이 숨겨진 채로 남지 않아야 합니다(예전 오류 재발 방지).
     window.show()
     for current in (tab, second):
         window.tab_widget.setCurrentWidget(current)
@@ -194,7 +194,7 @@ def test_filter_layout_option_switches_between_stacked_panels_and_tabs(window):
 
 @pytest.mark.parametrize("saved", [
     {"filter_layout_v2": "sideways"},
-    # 6.4.12~6.4.13 사용자: 예전 키에 저장된 위아래 패널(당시 기본값)은 탭으로 바뀝니다.
+    # 예전 설정 키에 저장된 위아래 패널(당시 기본값)은 탭으로 바뀝니다.
     {"filter_layout": "stacked"},
 ])
 def test_saved_filter_layout_falls_back_to_tabs(mock_config_manager, saved):

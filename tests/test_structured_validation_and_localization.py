@@ -114,10 +114,7 @@ def test_rust_xml_search_rejects_invalid_document_ordering(tmp_path, content):
     assert "XML" in result[1]
 
 
-@pytest.mark.parametrize("use_complex_search", [False, True])
-def test_xml_dtd_is_explicitly_unsupported(tmp_path, use_complex_search):
-    if not use_complex_search and not search_engine.HAS_RUST_ENGINE:
-        pytest.skip("Rust extension is required for the fast XML path")
+def test_xml_dtd_is_explicitly_unsupported(tmp_path):
     file_path = tmp_path / "entity.xml"
     file_path.write_text(
         '<!DOCTYPE root [<!ENTITY company "ACME">]><root>&company;</root>',
@@ -188,7 +185,7 @@ def test_python_json_fallback_uses_json_boolean_and_null_literals(tmp_path):
 
 
 @requires_rust
-def test_python_precise_json_uses_stack_safe_fallback_for_deep_document(tmp_path):
+def test_deep_json_document_is_searched_without_stack_overflow(tmp_path):
     depth = 1_500
     file_path = tmp_path / "deep.json"
     file_path.write_text("[" * depth + '"needle"' + "]" * depth, encoding="utf-8")

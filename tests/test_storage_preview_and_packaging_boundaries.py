@@ -1,4 +1,4 @@
-"""Regression coverage for the verified 5.9.27 audit findings."""
+"""저장소·미리보기·패키징 경계 동작 계약."""
 
 import os
 from pathlib import Path

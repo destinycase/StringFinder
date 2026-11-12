@@ -1,4 +1,4 @@
-"""Verified low-risk fixes from the external 6.0.3 review."""
+"""설정 저장(임시 파일 소유권)과 JSON 열기 크기 제한 계약."""
 import json
 import os
 from pathlib import Path

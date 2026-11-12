@@ -1,15 +1,4 @@
-"""
-[test_search_engine_complex.py]
-
-이 테스트는 복합 검색 엔진의 고도화된 기능 및 결과 처리 알고리즘을 검증합니다.
-
-- 테스트 목적:
-  1. 다중 파일 검색, 배치 처리 및 대규모 결과 셋에 대한 정합성 확인.
-
-- 주요 검증 사항:
-  1. 검색 결과 정렬 및 중복 제거 로직.
-  2. 대용량 텍스트 파일 내의 다중 키워드 매칭 무결성.
-"""
+"""유니코드 비교(ß = ss, 결합형 é = 완성형 é)가 파일 크기에 따른 읽기 경로와 관계없이 같은지 확인합니다."""
 
 import os
 import sys
@@ -31,25 +20,18 @@ def _require_search_result(result: object) -> SearchResult:
 
 
 @pytest.fixture
-def complex_file(tmp_path):
-    file_path = tmp_path / "complex.txt"
+def sharp_s_file(tmp_path):
+    file_path = tmp_path / "sharp_s.txt"
     file_path.write_text("Hier ist das Ma\u00dfe aller Dinge.", encoding="utf-8")
     return str(file_path)
 
 
-def test_search_in_file_complex_off(complex_file):
-    # 6.4.2부터 기본 검색도 Unicode 전체 대소문자 접기(ß = ss)로 비교합니다.
-    result = _require_search_result(search_in_file(complex_file, "Masse"))
+def test_full_case_folding_matches_sharp_s(sharp_s_file):
+    result = _require_search_result(search_in_file(sharp_s_file, "Masse"))
     _file_path, count, matches = result
     assert count == 1
     assert matches[0][1] == "Hier ist das Ma\u00dfe aller Dinge."
 
-
-def test_search_in_file_complex_on(complex_file):
-    result = _require_search_result(search_in_file(complex_file, "Masse"))
-    _file_path, count, matches = result
-    assert count == 1
-    assert matches[0][1] == "Hier ist das Ma\u00dfe aller Dinge."
 
 
 @pytest.mark.parametrize("exact_match", [False, True])

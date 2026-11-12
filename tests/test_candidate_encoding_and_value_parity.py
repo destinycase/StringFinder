@@ -1,4 +1,4 @@
-"""Candidate omissions and native/precise result consistency regressions."""
+"""폴더 검색과 파일 하나 검색이 후보·인코딩·값 표기에서 같은 결과를 내는지 확인합니다."""
 from datetime import date, datetime, time, timedelta
 import json
 import random
@@ -46,8 +46,8 @@ def test_ascii_scan_rechecks_late_cp949_without_false_hits(tmp_path, query, tail
     assert sum(row[1] for row in output["results"]) == expected
     for result in output["results"]:
         assert all("�" not in match[1] for match in result[2])
-    precise = folder_search_helper.search_in_file(str(path), query)
-    assert (precise[1] if precise else 0) == expected
+    single = folder_search_helper.search_in_file(str(path), query)
+    assert (single[1] if single else 0) == expected
 
 
 @pytest.mark.parametrize("mode,suffix,content", [
@@ -66,9 +66,8 @@ def test_structured_korean_after_ascii_prefix(tmp_path, mode, suffix, content):
 def test_repeated_occurrences_have_same_count(tmp_path, encoding, newline):
     path = tmp_path / "repeated.txt"
     path.write_bytes(("needle needle needle 한글" + newline).encode(encoding))
-    for precise in [False, True]:
-        result = folder_search_helper.search_in_file(str(path), "needle")
-        assert result and result[0] == str(path) and result[1] == 3
+    result = folder_search_helper.search_in_file(str(path), "needle")
+    assert result and result[0] == str(path) and result[1] == 3
 
 
 @pytest.mark.parametrize("number", ["1.0", "-0.0", "1e20", "1e-5", "1e-4", "1e15", "1e16", "1.2345678901234567", "0.84551240822557006", "1.234567890123456789"])
@@ -78,8 +77,8 @@ def test_json_float_value_text_agrees(tmp_path, number):
     query = str(float(number))
     output = native(path, query, C.MODE_JSON)
     assert len(output["results"]) == 1 and not output["skipped"]
-    precise = folder_search_helper.search_in_file(str(path), query, special_mode=C.MODE_JSON)
-    assert precise and precise[1] == 1
+    single = folder_search_helper.search_in_file(str(path), query, special_mode=C.MODE_JSON)
+    assert single and single[1] == 1
 
 
 def test_json_float_roundtrip_preserves_searchable_digits(tmp_path):
@@ -109,8 +108,8 @@ def test_excel_typed_values_agree(tmp_path, value, query, iso_dates):
     wb.save(path)
     output = native(path, query, C.MODE_EXCEL)
     assert len(output["results"]) == 1 and not output["skipped"]
-    precise = folder_search_helper.search_in_file(str(path), query, special_mode=C.MODE_EXCEL)
-    assert precise and precise[0] == str(path) and precise[1] == 1
-    assert output["results"][0][2][0][3] == precise[2][0][3]
+    single = folder_search_helper.search_in_file(str(path), query, special_mode=C.MODE_EXCEL)
+    assert single and single[0] == str(path) and single[1] == 1
+    assert output["results"][0][2][0][3] == single[2][0][3]
 
 

@@ -1,4 +1,4 @@
-"""Reproductions of silent omissions found in the 5.9.24 reliability review."""
+"""JSON 값 검색이 결과를 조용히 빠뜨리지 않는지(해석된 값 비교, 중복 키 정책, 깊은 문서) 확인합니다."""
 import json
 from unittest.mock import patch
 import zipfile
@@ -17,7 +17,7 @@ def search_policy():
 
 
 @pytest.mark.parametrize("content,query", [(' {"v":"NEEDLE"}', "needle"), ('{"v":"\\u006e\\u0065\\u0065\\u0064\\u006c\\u0065"}', "needle"), ('{"v":"ß"}', "ss"), ('null', "null")])
-def test_precise_json_existence_matches_decoded_values(tmp_path, content, query):
+def test_json_value_match_uses_decoded_values(tmp_path, content, query):
     path = tmp_path / "sample.json"
     path.write_text(content, encoding="utf-8")
     result = folder_search_helper.search_in_json_special(str(path), query)
@@ -38,7 +38,7 @@ def test_duplicate_json_keys_policy(tmp_path, allow):
         assert AppStrings.JSON_DETAIL_DUPLICATE_KEYS in result[1]
 
 
-def test_precise_deep_json_search_keeps_unicode(tmp_path):
+def test_deep_json_search_keeps_unicode(tmp_path):
     path = tmp_path / "deep.json"
     path.write_text('[' * 3000 + '"ß"' + ']' * 3000, encoding="utf-8")
     assert folder_search_helper.search_in_json_special(str(path), "ss")[1] == 1
@@ -49,8 +49,7 @@ def test_precise_deep_json_search_keeps_unicode(tmp_path):
 def test_short_no_bom_utf16_is_text_in_all_paths(tmp_path, encoding, query):
     path = tmp_path / "short.txt"
     path.write_bytes(query.encode(encoding))
-    for precise in (False, True):
-        assert folder_search_helper.search_in_file(str(path), query, exclude_binary=True)
+    assert folder_search_helper.search_in_file(str(path), query, exclude_binary=True)
 
 
 @pytest.mark.parametrize("fragment", ["nee<![CDATA[dle]]>", "nee<!--comment-->dle", "nee<?test abc?>dle"])
