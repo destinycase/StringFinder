@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from functools import lru_cache
 from typing import cast
-from PySide6.QtCore import QByteArray, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QItemSelectionModel, Qt, QTimer, Signal
 from PySide6.QtCore import QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
     QAction,
@@ -56,9 +56,20 @@ _EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 def _sanitize_excel_cell(value):
     """Return user-controlled text as a literal Excel cell value."""
-    if isinstance(value, str) and value.startswith(_EXCEL_FORMULA_PREFIXES):
-        return "'" + value
+    if isinstance(value, str):
+        # Excel이 받지 않는 제어 문자(로그의 색 코드 ESC 등)가 하나라도 있으면 파일 전체 저장이
+        # 실패하므로 지웁니다(검수 U-5).
+        from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
+        value = ILLEGAL_CHARACTERS_RE.sub("", value)
+        if value.startswith(_EXCEL_FORMULA_PREFIXES):
+            return "'" + value
     return value
+
+
+def _text_or_empty(value):
+    """내보낼 값: 없으면 빈 칸(None이라고 쓰지 않음, 검수 U-10)."""
+    return "" if value is None else str(value)
 
 
 def _append_excel_row(worksheet, values):
@@ -427,11 +438,17 @@ class ResultView(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 파일명
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # 폴더
         header.sectionResized.connect(lambda i, _o, _n: self._save_column_widths(Constants.VIEW_RESULT))
+        # 기본 정렬 표시는 검색 종료 시 정렬(매치 수 많은 순)과 같게 둡니다.
+        header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
         self.result_view.setSortingEnabled(True)
         self.result_view.customContextMenuRequested.connect(self._show_result_context_menu)
-        self.result_view.clicked.connect(self._on_result_clicked)
-        # 키보드 방향키로 항목 이동 시에도 상세 매치 정보가 즉시 업데이트되도록 연결합니다.
+        # 마우스·키보드로 현재 행이 바뀌면 상세 매치 정보를 갱신합니다. 누름 신호까지 연결하면 한 번 누를 때
+        # 상세 목록을 두 번 만들므로 현재 행 변경 신호 하나만 씁니다(검수 S-4).
         self.result_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._on_result_clicked(curr))
+        # 검색 중 결과가 추가되며 목록을 다시 만들 때 선택한 파일을 유지합니다(검수 U-3).
+        self._reselect_path = None
+        self.proxy_model.modelAboutToBeReset.connect(self._remember_result_selection)
+        self.proxy_model.modelReset.connect(self._restore_result_selection)
         self.result_view.doubleClicked.connect(self._on_result_double_clicked)
         result_list_layout.addWidget(self.result_view)
         self.pagination_widget = self._create_pagination_widget()
@@ -781,6 +798,33 @@ class ResultView(QWidget):
             self.pagination_widget.setVisible(total > 1)
         finally:
             self.result_view.setUpdatesEnabled(True)
+
+    def _remember_result_selection(self):
+        index = self.result_view.currentIndex()
+        self._reselect_path = None
+        if index.isValid():
+            item = self.result_model.get_item(self.proxy_model.mapToSource(index).row())
+            if item:
+                self._reselect_path = item[0]
+
+    def _restore_result_selection(self):
+        path, self._reselect_path = self._reselect_path, None
+        if not path:
+            return
+        for row in range(self.proxy_model.rowCount()):
+            index = self.proxy_model.index(row, 0)
+            item = self.result_model.get_item(self.proxy_model.mapToSource(index).row())
+            if item and item[0] == path:
+                selection = self.result_view.selectionModel()
+                # 같은 파일을 다시 고르는 것이므로 상세 목록을 다시 만들지 않습니다.
+                selection.blockSignals(True)
+                selection.setCurrentIndex(
+                    index,
+                    QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
+                )
+                selection.blockSignals(False)
+                self.result_view.viewport().update()
+                return
 
     def _on_result_clicked(self, index):
         if not index.isValid():
@@ -1347,6 +1391,13 @@ class ResultView(QWidget):
             self.match_filter_4_edit.setVisible(False)
             self.match_filter_1_edit.setPlaceholderText(AppStrings.MATCH_FILTER_LIST_PLACEHOLDER)
 
+        # 숨긴 입력란에 남은 글자가 다른 모드의 결과를 몰래 거르지 않도록 비웁니다(검수 U-1).
+        for edit in (self.match_filter_1_edit, self.match_filter_2_edit,
+                     self.match_filter_3_edit, self.match_filter_4_edit):
+            if edit.isHidden() and edit.text():
+                edit.blockSignals(True)
+                edit.clear()
+                edit.blockSignals(False)
         # [H-06 Fix] 가시성 변경 후 현재 입력된 텍스트들을 모델의 정확한 컬럼 인덱스에 재전송
         self.match_model.set_column_filter(self._get_match_filter_col(0), self.match_filter_1_edit.text())
         self.match_model.set_column_filter(self._get_match_filter_col(1), self.match_filter_2_edit.text())
@@ -1583,19 +1634,26 @@ class ResultView(QWidget):
 
             # 시트 2 데이터 추가
             for m in matches:
+                # 파일당 상한·부분 검색 안내 행(-1/-2)은 일치가 아니므로 내보내지 않습니다(검수 U-10).
+                if str(m[0]) in {"-1", "-2"}:
+                    continue
                 row = [full_path]
                 if Constants.MODE_ARCHIVE.upper() in mode_upper:
                     # [Key 줄 번호, Namespace, Key, 원문, 번역문, ...]
                     row.extend([self._export_value(value) for value in list(m[:5]) + [""] * (5 - len(m[:5]))])
                 elif Constants.MODE_EXCEL.upper() in mode_upper:
                     # [Line, Sheet, Cell, Val, ...]
-                    row.extend([str(m[1]), str(m[2]), str(m[3])])
+                    row.extend([_text_or_empty(m[1]), _text_or_empty(m[2]), _text_or_empty(m[3])])
                 elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
                     # [Line, Name/Path, Value, ...]
-                    row.extend([str(m[0]), str(m[1]), str(m[2])])
+                    row.extend([_text_or_empty(m[0]), _text_or_empty(m[1]), _text_or_empty(m[2])])
                 else:
-                    # 기본 모드: [Line, Content]
-                    row.extend([str(m[0]), str(m[1])])
+                    # 기본 모드: [Line, Content]. 일반 검색에 섞인 Excel 결과(시트<탭>셀<탭>값)는 화면처럼 보이게 바꿉니다.
+                    content = _text_or_empty(m[1])
+                    if "\t" in content:
+                        sheet, cell, value = (content.split("\t", 2) + ["", ""])[:3]
+                        content = f"{sheet}!{cell} | {value}"
+                    row.extend([_text_or_empty(m[0]), content])
                 _append_excel_row(ws2, row)
 
         temp_file = tempfile.NamedTemporaryFile(

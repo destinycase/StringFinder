@@ -172,9 +172,9 @@ class SearchWorker(QRunnable):
             remaining = 0
             break
 
+        # 상한과 정확히 같은 건수에서 끝난 검색은 상한 도달이 아닙니다. 더 받을 결과가 남았을 때만
+        # 상한 도달로 봅니다(다음 묶음에서 판정, 검수 E-4).
         if accepted_count < sum(max(0, int(item[1])) for item in result_batch):
-            limit_reached = True
-        elif accepted_count > 0 and remaining == 0:
             limit_reached = True
         return accepted, accepted_count, limit_reached
 
@@ -188,10 +188,10 @@ class SearchWorker(QRunnable):
         logger.warning(err_msg)
         self.stop_event.set()
         self.is_running.clear()
+        # 상한 도달은 오류가 아니라 의도한 중지입니다. 전용 배너로 알리고 오류 신호는 보내지 않습니다(검수 U-4).
         if not self._total_limit_alert_emitted:
             self._total_limit_alert_emitted = True
             self._safe_emit(self.signals.total_match_limit_reached, maximum)
-        self._safe_emit(self.signals.error, err_msg)
 
     @Slot()
     def run(self):

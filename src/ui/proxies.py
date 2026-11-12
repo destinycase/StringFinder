@@ -10,6 +10,18 @@ class ResultProxyModel(QSortFilterProxyModel):
         """필터링은 소스 모델(SearchResultModel)에서 직접 처리합니다."""
         return True
 
+    def sort(self, column, order=Qt.SortOrder.AscendingOrder):
+        """머리글 정렬을 현재 쪽이 아니라 전체 결과에 적용합니다(검수 U-6).
+
+        화면 표에는 현재 쪽(최대 1,000행)만 있으므로 여기서 정렬하면 쪽 안에서만 순서가 바뀝니다.
+        원본 모델이 전체 결과를 정렬하고 첫 쪽부터 다시 보여 줍니다.
+        """
+        source = self.sourceModel()
+        if source is not None and hasattr(source, "sort_all"):
+            source.sort_all(column, order)
+            return
+        super().sort(column, order)
+
     def lessThan(self, left, right):
         """두 항목의 크기를 비교하여 정렬 순서를 결정합니다."""
         left_data = self.sourceModel().data(left, Qt.ItemDataRole.EditRole)

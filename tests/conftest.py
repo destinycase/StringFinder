@@ -46,11 +46,7 @@ def session_worker_cleanup():
     """session_worker_cleanup 함수."""
     yield
     try:
-        from core.worker import GlobalExecutor, shutdown_global_manager
-
-        shutdown_global_manager()
-        GlobalExecutor.shutdown(wait=True, cancel_futures=True)
-
+        # 프로세스 풀(GlobalExecutor)은 제거되었습니다. 남은 자식 프로세스만 정리합니다.
         if os.name == "nt":
             # 전체 python.exe 강제 종료는 현재 pytest 프로세스까지 종료시킬 수 있으므로 금지.
             # 현재 프로세스가 만든 자식 프로세스만 안전하게 정리합니다.

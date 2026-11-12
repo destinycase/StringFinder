@@ -304,8 +304,6 @@ class SettingsDialog(QDialog):
             lambda i: self.config_manager.set_exclude_binary(bool(self.exclude_binary_combo.itemData(i)))
         )
         self.exclude_binary_combo.setFixedWidth(INPUT_WIDTH)
-        # 기존 테스트·외부 호출자의 이름 호환성을 유지합니다.
-        self.exclude_binary_check = self.exclude_binary_combo
         eb_row.addWidget(eb_label)
         eb_row.addStretch()
         eb_row.addWidget(self.exclude_binary_combo)

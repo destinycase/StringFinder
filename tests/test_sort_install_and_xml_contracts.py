@@ -52,7 +52,10 @@ def test_sort_failure_preserves_results(monkeypatch, qtbot):
     monkeypatch.setattr("ui.models.QThreadPool.globalInstance", lambda: pool)
     model = SearchResultModel()
     model.add_results([("old.txt", 1, [])])
+    # 없는 열 번호는 정렬하지 않습니다. 정렬 중 오류는 키 함수 오류로 재현합니다.
     model.sort(99)
+    assert pool.jobs == []
+    model._start_sort(lambda _row: 1 / 0)
     pool.jobs[0].run()
     assert [row[3] for row in model.get_all_results()] == ["old.txt"]
     assert not model._is_sorting

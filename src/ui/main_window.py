@@ -120,13 +120,15 @@ class MainWindow(QMainWindow):
                     getattr(tab, "stop_search")()
                 except Exception as e:
                     logger.warning(AppStrings.LOG_WKR_BATCH_ERROR.format(e))
-        self.config_manager.set_window_state(self.saveGeometry(), self.saveState())
-        for i in range(self.tab_widget.count()):
-            current_tab = self.tab_widget.widget(i)
-            if isinstance(current_tab, SearchTab):
-                current_tab.save_splitter_states()
-            self._save_tab(i)
-        self._save_tab_order()
+        # "모든 데이터 삭제" 뒤 새로 저장한 세션이 없으면, 지운 탭·창 상태를 종료하면서 되살리지 않습니다(검수 U-9).
+        if not getattr(self.config_manager, "data_cleared", False):
+            self.config_manager.set_window_state(self.saveGeometry(), self.saveState())
+            for i in range(self.tab_widget.count()):
+                current_tab = self.tab_widget.widget(i)
+                if isinstance(current_tab, SearchTab):
+                    current_tab.save_splitter_states()
+                self._save_tab(i)
+            self._save_tab_order()
 
         # [무결성 강화] 종료 직전 모든 설정이 디스크에 물리적으로 기록되는지 확인
         if not self.config_manager.stop():
@@ -244,8 +246,13 @@ class MainWindow(QMainWindow):
         if name:
             tab_title = name
         else:
+            # 세션 파일은 탭 이름으로 구분하므로 열린 탭과 겹치지 않는 번호를 고릅니다(검수 U-2).
+            existing = {self.tab_widget.tabText(index) for index in range(self.tab_widget.count())}
             tab_count = self.tab_widget.count() + 1
             tab_title = AppStrings.SEARCH_TAB_TITLE_TEMPLATE.format(AppStrings.SEARCH_TAB_DEFAULT_TITLE, tab_count)
+            while tab_title in existing:
+                tab_count += 1
+                tab_title = AppStrings.SEARCH_TAB_TITLE_TEMPLATE.format(AppStrings.SEARCH_TAB_DEFAULT_TITLE, tab_count)
         self.tab_widget.addTab(new_tab, tab_title)
         self.tab_widget.setCurrentWidget(new_tab)
         return new_tab
@@ -519,6 +526,9 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self._on_global_error_logged(level, message))
             return
 
+        # 팝업이 떠 있는 동안 반복되는 처리(타이머·그리기)에서 오류가 또 나도 팝업을 겹쳐 띄우지 않습니다(검수 D-1).
+        if getattr(self, "_error_popup_open", False):
+            return
         # 중복 팝업 방지 (1초 이내 동일 메시지)
         current_time = time.time()
         if message == self._last_error_msg and (current_time - self._last_error_time) < 1.0:
@@ -540,4 +550,8 @@ class MainWindow(QMainWindow):
         # 2. 팝업 표시
         from PySide6.QtWidgets import QMessageBox
 
-        QMessageBox.critical(self, AppStrings.ERROR_TITLE, f"{AppStrings.ERROR_SEARCH_CRITICAL_MSG.format(message)}")
+        self._error_popup_open = True
+        try:
+            QMessageBox.critical(self, AppStrings.ERROR_TITLE, f"{AppStrings.ERROR_SEARCH_CRITICAL_MSG.format(message)}")
+        finally:
+            self._error_popup_open = False

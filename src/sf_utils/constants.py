@@ -43,8 +43,6 @@ class Constants:
     VIEW_RESULT = "result"
     VIEW_MATCH = "match"
     ENC_UTF8 = "utf-8"
-    ENC_UTF8_SIG = "utf-8-sig"
-    ENC_CP949 = "cp949"
     MODE_XML = "XML"
     MODE_JSON = "JSON"
     MODE_EXCEL = "Excel"

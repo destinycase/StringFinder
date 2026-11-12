@@ -885,15 +885,21 @@ impl Matcher {
         self.folded.find_iter(converted.as_bytes()).collect()
     }
 
-    /// 정확히 일치: `key(값)`의 앞뒤 공백(Unicode White_Space)을 지운 결과가 `key(검색어)`와 같으면 참입니다.
+    /// 정확히 일치: `key(값)`과 `key(검색어)`의 앞뒤 공백(Unicode White_Space)을 지운 결과가 같으면 참입니다.
     pub fn equals_trimmed(&self, value: &str) -> bool {
         if self.never {
             return false;
         }
-        if value.is_ascii() {
-            return self.pat_ascii && value.trim().eq_ignore_ascii_case(&self.pat_key);
+        // 검색어 쪽 앞뒤 공백도 값과 같은 규칙으로 지웁니다(검수 F-1, 엔진을 직접 부르는 경우).
+        // 공백뿐인 검색어는 어떤 값과도 일치하지 않습니다.
+        let target = self.pat_key.trim();
+        if target.is_empty() {
+            return false;
         }
-        key(value).trim() == self.pat_key
+        if value.is_ascii() {
+            return target.is_ascii() && value.trim().eq_ignore_ascii_case(target);
+        }
+        key(value).trim() == target
     }
 }
 
@@ -1483,7 +1489,8 @@ mod tests {
             );
             assert_eq!(
                 matcher.equals_trimmed(&value),
-                key_reference(&value).trim() == key_reference(&pattern),
+                !key_reference(&pattern).trim().is_empty()
+                    && key_reference(&value).trim() == key_reference(&pattern).trim(),
                 "exact pattern={pattern:?} value={value:?}"
             );
             for hit in matcher.hits(&value).into_iter().flatten() {

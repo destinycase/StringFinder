@@ -2,6 +2,7 @@ import collections
 import os
 import re
 import time
+import weakref
 from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QThreadPool, QTimer, Signal
@@ -40,6 +41,9 @@ class SearchTab(QMainWindow):
     검색어 입력, 필터 설정, 결과 표시 및 미리보기 기능을 통합 제공합니다.
     """
 
+    # 열린 검색 탭 목록입니다. 로그를 검색 중인 탭에만 보내는 데 씁니다(검수 U-8).
+    _instances: "weakref.WeakSet[SearchTab]" = weakref.WeakSet()
+
     status_message_requested = Signal(str, int)
     progress_update_requested = Signal(int, int, bool)
     search_finished_with_data = Signal()
@@ -71,6 +75,7 @@ class SearchTab(QMainWindow):
         self.last_summary_update_time = 0.0  # 실시간 요약 업데이트를 위한 시간 기록입니다.
         self.last_search_duration = 0.0  # 검색에 소요된 총 시간을 저장합니다.
         self.search_state = Constants.SearchState.IDLE
+        SearchTab._instances.add(self)
         self._search_allowed = True
         self.pending_restart = False
         self._memory_alert_shown = False
@@ -364,6 +369,12 @@ class SearchTab(QMainWindow):
         self._refresh_logs_output()
 
     def _on_log_message(self, level: str, message: str):
+        # 로그에는 어느 탭의 검색인지 표시가 없습니다. 검색 중인 탭이 있으면 그 탭(들)에만 쌓고,
+        # 없으면(시작·설정 등 공통 로그) 모든 탭에 쌓습니다(검수 U-8).
+        if self.search_state == Constants.SearchState.IDLE and any(
+            tab is not self and tab.search_state != Constants.SearchState.IDLE for tab in list(SearchTab._instances)
+        ):
+            return
         # [Security] MainWindow에서 처리하므로 여기서는 로그 기록 기능만 수행
         # 테스트 환경에서는 즉시 플러시하여 UI 검증 로직이 깨지지 않도록 함
         if os.environ.get("PYTEST_CURRENT_TEST"):
@@ -433,9 +444,10 @@ class SearchTab(QMainWindow):
             return
         self._stop_existing_search()
         self.search_panel.stop_btn.setEnabled(False)
-        # 중단 시 불필요한 로그 업데이트 타이머 정지
+        # 중단 시 타이머를 멈추되, 대기 중이던 로그는 바로 표시합니다(검수 E-3).
         if self._log_throttle_timer.isActive():
             self._log_throttle_timer.stop()
+            self._flush_pending_logs()
 
     def cleanup(self):
         """탭을 닫거나 테스트 종료 시 리소스를 정리하여 메모리 누수와 세그폴트를 방지합니다."""
@@ -679,7 +691,8 @@ class SearchTab(QMainWindow):
         self.search_panel.set_stopping_state()
         try:
             if getattr(self, "worker", None) is not None:
-                if self.worker and self.worker.is_running:
+                # is_running은 이벤트 객체라 그 자체로는 늘 참입니다(검수 E-2).
+                if self.worker and self.worker.is_running.is_set():
                     self.worker.stop()
         except Exception as e:
             logger.debug(AppStrings.LOG_SCH_STOP_THREAD_ERR.format(e))
@@ -965,7 +978,7 @@ class SearchTab(QMainWindow):
                 if getattr(self, "_search_failed", False)
                 else
                 AppStrings.SUMMARY_PREFIX_STOPPED
-                if self.search_state == Constants.SearchState.STOPPING
+                if self.search_state == Constants.SearchState.STOPPING or self.total_match_limit_count
                 else AppStrings.SUMMARY_PREFIX_FINISHED
             )
             self._update_realtime_summary(

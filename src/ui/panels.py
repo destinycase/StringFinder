@@ -1177,10 +1177,12 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.filter_changed.emit()
 
     def toggle_all(self, checked: bool):
+        # 항목마다 설정 저장·화면 갱신이 일어나지 않도록 신호를 막고 끝에 한 번만 알립니다(검수 S-5).
         for i in range(self.ext_list.count()):
             widget = self.ext_list.itemWidget(self.ext_list.item(i))
             if isinstance(widget, FilterItemWidget):
-                widget.checkbox.setChecked(checked)
+                with QSignalBlocker(widget.checkbox):
+                    widget.checkbox.setChecked(checked)
         self.filter_changed.emit()
 
     def get_selected_extensions(self) -> List[str]:
@@ -1359,10 +1361,12 @@ class FilenameFilterPanel(DenseFilterPanel):
         self.filter_changed.emit()
 
     def toggle_all(self, checked: bool):
+        # 항목마다 설정 저장·화면 갱신이 일어나지 않도록 신호를 막고 끝에 한 번만 알립니다(검수 S-5).
         for i in range(self.filename_list.count()):
             widget = self.filename_list.itemWidget(self.filename_list.item(i))
             if isinstance(widget, FilterItemWidget):
-                widget.checkbox.setChecked(checked)
+                with QSignalBlocker(widget.checkbox):
+                    widget.checkbox.setChecked(checked)
         self.filter_changed.emit()
 
 

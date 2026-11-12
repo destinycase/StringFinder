@@ -190,6 +190,21 @@ def main():
     sys.exit(app.exec())
 
 
+def _main_window_shows_errors() -> bool:
+    """치명 로그를 팝업으로 알리는 메인 창이 떠 있는지 확인합니다."""
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return False
+        from ui.main_window import MainWindow
+
+        return any(isinstance(widget, MainWindow) and widget.isVisible() for widget in QApplication.topLevelWidgets())
+    except Exception:
+        return False
+
+
 def global_exception_handler(exctype, value, tb):
     """
     프로그램에서 처리되지 않은 예외를 포착하여 로그를 기록하고,
@@ -226,6 +241,10 @@ def global_exception_handler(exctype, value, tb):
     except Exception as e:
         print(f"Failed to write crash dump: {e}")
     # 3. 사용자에게 팝업 알림 (치명적 오류)
+    # 메인 창이 떠 있으면 위의 치명 로그를 받은 메인 창이 이미 알렸으므로 팝업을 한 번 더 띄우지 않습니다(검수 D-1).
+    if _main_window_shows_errors():
+        sys.__excepthook__(exctype, value, tb)
+        return
     try:
         import ctypes
 

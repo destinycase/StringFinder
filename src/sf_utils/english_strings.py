@@ -213,6 +213,7 @@ ENGLISH_STRINGS = {
     "FILENAME_FILTER_WILDCARD_NOT_ALLOWED": "Filename filters do not support wildcard or pattern characters (*, ?, [, ], \\).",
     "RESULT_FILTER_FILE_PLACEHOLDER": "Filter files...",
     "RESULT_COMPACT_ROWS": "Compact lists",
+    "LOG_CFG_CORRUPT_BACKUP": "[Settings] Kept a copy of the unreadable settings file: {}",
     "FILTER_LAYOUT_LABEL": "Extension and filename filters",
     "FILTER_LAYOUT_STACKED": "Stacked panels",
     "FILTER_LAYOUT_TABS": "Tabs",

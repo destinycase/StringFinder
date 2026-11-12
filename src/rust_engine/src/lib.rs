@@ -2734,6 +2734,8 @@ fn build_search_matchers(
     ));
     let mut seen = HashSet::new();
     patterns.retain(|pattern| seen.insert(pattern.clone()));
+    // 두 묶음을 합친 뒤에도 긴 변형이 먼저 오도록 순서를 고정합니다(검수 D-3).
+    patterns.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
     let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
         .match_kind(MatchKind::LeftmostFirst)

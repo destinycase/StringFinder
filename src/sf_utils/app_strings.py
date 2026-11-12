@@ -125,6 +125,7 @@ class AppStrings:
     CLEAR_ALL_DATA_BTN = "모든 데이터 삭제"
     CLEAR_ALL_DATA_CONFIRM = "모든 설정과 기록을 삭제하시겠습니까?"
     COMBO_ENABLE = "사용"
+    LOG_CFG_CORRUPT_BACKUP = "[설정] 읽을 수 없는 설정 파일을 보관했습니다: {}"
     COMBO_DISABLE = "사용 안 함"
     COMBO_LOCKED = "잠금"
     COMBO_UNLOCKED = "해제"

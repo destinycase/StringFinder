@@ -104,7 +104,23 @@ class SearchResultModel(QAbstractTableModel):
 
     def sort(self, column, order=Qt.SortOrder.AscendingOrder):
         """비동기 방식으로 데이터를 정렬합니다."""
-        self._start_sort(lambda row: row[column], order == Qt.SortOrder.DescendingOrder)
+        self.sort_all(column, order)
+
+    def sort_all(self, column, order=Qt.SortOrder.AscendingOrder):
+        """전체 결과(모든 쪽)를 머리글 열 기준으로 정렬합니다. 숫자는 값으로, 글자는 대소문자 없이 비교합니다."""
+        if column not in (0, 1, 2):
+            return
+
+        def key(row):
+            value = row[column] if len(row) > column else None
+            if column == 0:
+                try:
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+            return str(value or "").lower()
+
+        self._start_sort(key, order == Qt.SortOrder.DescendingOrder)
 
     def _start_sort(self, key, reverse=False):
         if not self._result_buffer:
@@ -493,7 +509,7 @@ class MatchDetailModel(QAbstractTableModel):
                 else:
                     # 텍스트: 줄 번호 | [하이라이팅된내용]
                     val = str(row_data.content if row_data.content is not None else "")
-                    if row_data.position == "-1":
+                    if row_data.position in ("-1", "-2"):
                         # 상한 도달 메시지는 굵은 빨간색으로 강조 표시합니다.
                         return f"<html><span style='color: #d9534f; font-weight: bold;'>⚠️ {escape(val)}</span></html>"
                         
@@ -659,6 +675,16 @@ class MatchDetailModel(QAbstractTableModel):
         if matches:
             mode_upper = str(search_mode or "").upper()
             for m in matches:
+                # 파일당 상한·부분 검색 안내 행(-1/-2)은 어느 모드든 안내 문구 하나로 보여 줍니다.
+                # Excel 칸 나누기 등에 들어가 "-1!안내 | 안내"나 None으로 깨지지 않게 합니다(검수 U-7).
+                if len(m) >= 2 and str(m[0]) in {"-1", "-2"}:
+                    notice = str(m[1] or "")
+                    if Constants.MODE_EXCEL.upper() in mode_upper:
+                        normalized_matches.append(SearchMatchSchema(position=notice, content="", extra_1=""))
+                    else:
+                        normalized_matches.append(SearchMatchSchema(
+                            position=str(m[0]), content=notice, extra_1="", extra_2="", extra_3=""))
+                    continue
                 # Rust/구버전 세션은 Excel 필드를 content 하나에 탭(또는 " | ")으로 묶을 수 있습니다.
                 # UI 모델 진입 시 한 번만 분리하여 목록·필터·미리보기가 동일한 스키마를 사용하게 합니다.
                 if is_excel_file and len(m) >= 2 and isinstance(m[1], str):

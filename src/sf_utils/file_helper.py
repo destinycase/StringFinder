@@ -187,6 +187,10 @@ def open_in_external_editor(
             line_number = 1
 
         if editor_type in {"vscode", "cursor"}:
+            # code.cmd·cursor.cmd는 배치 파일이라 명령 해석기가 인자의 %·^를 다시 해석해 다른 경로가 열립니다.
+            # 이런 이름은 줄 이동 없이 기본 앱으로 정확한 파일을 엽니다(검수 U-11).
+            if str(executable).lower().endswith((".cmd", ".bat")) and any(c in str(file_path) for c in "%^"):
+                return fallback()
             command = [executable, "--goto", f"{file_path}:{line_number}"]
         elif editor_type == "notepadpp":
             command = [executable, file_path, f"-n{line_number}"]

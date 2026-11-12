@@ -1,5 +1,6 @@
 use encoding_rs::{Encoding, EUC_KR, UTF_16BE, UTF_16LE, UTF_8};
-use simdutf8::basic::from_utf8 as simd_from_utf8;
+// 잘못된 바이트에서 바로 멈추는 검증입니다(basic은 끝까지 읽어 큰 바이너리 파일에서 느림, 검수 S-1).
+use simdutf8::compat::from_utf8 as simd_from_utf8;
 use std::collections::HashSet;
 use unicode_normalization::UnicodeNormalization;
 
@@ -360,7 +361,11 @@ pub fn generate_search_patterns(keyword: &str, is_xml: bool, is_json: bool) -> V
             patterns.insert(v);
         }
     }
-    patterns.into_iter().collect()
+    // 해시 집합의 순서는 실행마다 달라질 수 있습니다. "먼저 등록한 패턴 우선" 탐색기에서 같은 자리의
+    // 긴 변형(&amp; 등)이 늘 이기도록 길이가 긴 순, 같으면 글자 순으로 고정합니다(검수 D-3).
+    let mut ordered: Vec<String> = patterns.into_iter().collect();
+    ordered.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+    ordered
 }
 
 fn push_json_unicode_escape(output: &mut String, value: char, uppercase: bool) {

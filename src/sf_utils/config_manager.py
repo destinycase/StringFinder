@@ -33,6 +33,9 @@ class ConfigManager:
         """설정 경로, 기본값, 저장 타이머를 초기화한다."""
         if getattr(self, "_initialized", False):
             return
+        # "모든 데이터 삭제" 직후 참입니다. 이후 새 세션을 저장하기 전까지 종료할 때 열린 탭을
+        # 다시 저장하지 않게 하는 데 씁니다(검수 U-9).
+        self.data_cleared = False
         # 초기화 중 예외가 발생하면 차후 재시도가 가능하도록 인스턴스를 초기화합니다.
         try:
             self._init_body()
@@ -248,13 +251,30 @@ class ConfigManager:
                     )
                     merged = self._apply_default_version_updates(merged, data)
                     return merged
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning(AppStrings.LOG_CFG_LOAD_FAIL.format(e))
+                self._backup_unreadable_config()
             except (IOError, OSError) as e:
                 logger.error(AppStrings.LOG_CFG_READ_ERROR.format(e))
             except Exception as e:
                 logger.error(AppStrings.LOG_CFG_UNEXPECTED_LOAD_ERROR.format(e))
         return copy.deepcopy(self._defaults)
+
+    def _backup_unreadable_config(self) -> None:
+        """읽지 못한 설정 파일을 기본값으로 덮어쓰기 전에 옆에 보관합니다(검수 E-1).
+
+        폴더·필터·검색 기록을 손으로 되살릴 수 있도록 `설정파일.corrupt-날짜시각`으로 복사합니다.
+        """
+        try:
+            import shutil
+            import time as _time
+
+            backup = f"{self.config_path}.corrupt-{_time.strftime('%Y%m%d-%H%M%S')}"
+            if not os.path.exists(backup):
+                shutil.copy2(self.config_path, backup)
+            logger.warning(AppStrings.LOG_CFG_CORRUPT_BACKUP.format(backup))
+        except OSError as error:
+            logger.error(AppStrings.LOG_CFG_READ_ERROR.format(error))
 
     def _apply_default_version_updates(self, merged: dict, loaded: dict) -> dict:
         """Reset only settings whose shipped default version advanced.
@@ -656,6 +676,7 @@ class ConfigManager:
 
     def save_session(self, name, data):
         """세션 데이터를 파일로 원자적으로 저장한다."""
+        self.data_cleared = False
         file_path = self._resolve_session_file_path(name, for_write=True)
         temp_path = file_path + Constants.TEMP_FILE_SUFFIX
         try:
@@ -813,6 +834,7 @@ class ConfigManager:
         with self._config_lock:
             self._config = copy.deepcopy(self._defaults)
         self.save()
+        self.data_cleared = True
         logger.info(AppStrings.LOG_CFG_ALL_DATA_CLEARED)
 
 

@@ -722,7 +722,15 @@ def _normalize_rust_matches(
     res: List[Any] = []
     bin_cnt = 0
     sheet_skips: List[Tuple[str, str]] = []  # [(file_path, sheet_name), ...]
+    # 일반 검색의 보통 일치(대부분의 결과)는 바로 담습니다. 일치가 많은 검색에서 결과 정리가
+    # 검색 시간보다 오래 걸리던 문제를 줄입니다(검수 S-2). 표식(__SF_)이 있는 내용은 아래에서 처리합니다.
+    plain_mode = not special_mode
     for m in matches:
+        if plain_mode and getattr(m, "kind", None) == "match":
+            content = m.content
+            if not content.startswith("__SF_"):
+                res.append((m.line, content, m.offset, m.length))
+                continue
         try:
             # Rust 엔진은 (라인, 내용, 오프셋, 길이)를 반환합니다.
             c = _rust_match_field(m, 1, "content", "")
@@ -842,9 +850,18 @@ def _visible_match_count(matches: List[Any]) -> int:
     )
 
 
+def _metadata_items(matches: Any) -> List[Any]:
+    """보통 일치를 뺀 항목(파일 단위 표식·오류)만 고릅니다.
+
+    엔진의 보통 일치(kind == "match")는 표식이 아니므로 표식 검사에서 뺍니다. 그러면 일치가 많을 때 검사가
+    빨라지고, 내용이 우연히 "ERR_…|"로 시작하는 실제 일치를 오류로 잘못 읽지도 않습니다(검수 S-2).
+    """
+    return [m for m in matches or [] if getattr(m, "kind", None) != "match"]
+
+
 def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
     """엑셀 마커 전용 결과뿐만 아니라, 모든 모드의 일반 오류를 스킵 사유로 추출합니다."""
-    for m in matches:
+    for m in _metadata_items(matches):
         structured_kind = getattr(m, "kind", None)
         structured_code = getattr(m, "code", None)
         structured_detail = getattr(m, "detail", None)
@@ -898,7 +915,7 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
     reasons: List[str] = []
     failed_sheets: List[str] = []
 
-    for match in matches or []:
+    for match in _metadata_items(matches):
         line = _rust_match_field(match, 0, "line")
         content = str(_rust_match_field(match, 1, "content", ""))
         kind = getattr(match, "kind", None)
