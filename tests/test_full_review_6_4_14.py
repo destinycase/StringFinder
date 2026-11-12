@@ -302,3 +302,49 @@ def test_f4_json_keys_with_slashes_stay_distinguishable(tmp_path):
     result = se.search_directory_fast([str(tmp_path)], "needle", ["json"], special_mode=C.MODE_JSON + " (부분 일치)")
     keys = sorted(row[1] for _path, _count, rows in result["results"] for row in rows)
     assert keys == ["/lead", "a.b", "a/b", "t~x"]
+
+
+def test_s3_search_finish_saves_in_background_and_close_waits(qtbot, mock_config_manager, monkeypatch):
+    import threading
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    tab = window.tab_widget.widget(0)
+    release = threading.Event()
+    threads = []
+    original = mock_config_manager._save_session_locked
+
+    def slow_save(name, data):
+        threads.append(threading.current_thread().name)
+        release.wait(5)
+        return original(name, data)
+
+    monkeypatch.setattr(mock_config_manager, "_save_session_locked", slow_save)
+    window._on_search_finished_in_tab(tab)  # 저장이 끝나지 않아도 바로 돌아옵니다.
+    assert not release.is_set()
+    release.set()
+    mock_config_manager.wait_for_session_saves(5)
+    assert threads and threads[0] != threading.main_thread().name
+    assert os.listdir(mock_config_manager.sessions_dir)
+    window.close()
+
+
+def test_s3_clear_all_data_waits_for_pending_saves(mock_config_manager, monkeypatch):
+    import threading
+    import time
+
+    started = threading.Event()
+    original = mock_config_manager._save_session_locked
+
+    def slow_save(name, data):
+        started.set()
+        time.sleep(0.3)
+        return original(name, data)
+
+    monkeypatch.setattr(mock_config_manager, "_save_session_locked", slow_save)
+    mock_config_manager.save_session_async("late", {"results": []})
+    started.wait(5)
+    mock_config_manager.clear_all_data()
+    # 늦게 끝난 저장이 지운 세션을 되살리지 않습니다.
+    assert os.listdir(mock_config_manager.sessions_dir) == []

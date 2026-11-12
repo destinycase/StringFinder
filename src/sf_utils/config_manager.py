@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Any, Dict, List, Optional, cast
 
 from sf_utils.app_strings import AppStrings
@@ -374,6 +375,7 @@ class ConfigManager:
 
     def stop(self) -> bool:
         """종료 시점에 예약 저장을 취소하고 즉시 저장하며 성공 여부를 반환한다."""
+        self.wait_for_session_saves()
         self.cancel_start()
         return self.save_immediately()
 
@@ -707,8 +709,44 @@ class ConfigManager:
         suffix = self._session_name_hash(name)
         return os.path.join(self.sessions_dir, f"{safe_name}_{suffix}{Constants.JSON_EXTENSION}")
 
+    def _session_io_lock(self) -> threading.RLock:
+        """세션 파일 쓰기·지우기를 한 번에 하나씩 하게 하는 잠금입니다."""
+        return cast(threading.RLock, self.__dict__.setdefault("_session_io_rlock", threading.RLock()))
+
+    def save_session_async(self, name, data, on_failed=None) -> Future:
+        """세션을 백그라운드에서 저장합니다(검수 S-3). 결과가 많아도 화면이 멈추지 않습니다.
+
+        ``data``는 호출한 쪽이 만든 사본이어야 합니다(저장 도중 바뀌지 않게). 저장은 넣은 순서대로
+        하나씩 하며, 종료·데이터 삭제·세션 삭제 전에는 ``wait_for_session_saves``로 끝나기를 기다립니다.
+        실패하면 ``on_failed(name)``를 백그라운드 스레드에서 부릅니다.
+        """
+        executor = self.__dict__.get("_session_executor")
+        if executor is None:
+            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sf-session-save")
+            self._session_executor = executor
+        pending = self.__dict__.setdefault("_pending_session_saves", set())
+
+        def job():
+            if not self.save_session(name, data) and on_failed is not None:
+                on_failed(name)
+
+        future = executor.submit(job)
+        pending.add(future)
+        future.add_done_callback(pending.discard)
+        return future
+
+    def wait_for_session_saves(self, timeout: Optional[float] = None) -> None:
+        """대기 중인 백그라운드 세션 저장이 끝날 때까지 기다립니다."""
+        pending = list(self.__dict__.get("_pending_session_saves", ()))
+        if pending:
+            wait(pending, timeout=timeout)
+
     def save_session(self, name, data):
         """세션 데이터를 파일로 원자적으로 저장한다."""
+        with self._session_io_lock():
+            return self._save_session_locked(name, data)
+
+    def _save_session_locked(self, name, data):
         self.data_cleared = False
         file_path = self._resolve_session_file_path(name, for_write=True)
         temp_path = file_path + Constants.TEMP_FILE_SUFFIX
@@ -767,6 +805,8 @@ class ConfigManager:
 
     def delete_session(self, name):
         """세션 파일을 삭제한다."""
+        # 앞서 맡긴 백그라운드 저장이 지운 파일을 되살리지 않게 먼저 끝냅니다.
+        self.wait_for_session_saves()
         file_path = self._resolve_session_file_path(name)
         if not os.path.exists(file_path):
             return
@@ -849,6 +889,7 @@ class ConfigManager:
 
     def clear_all_data(self):
         """설정/세션/로그를 초기화한다."""
+        self.wait_for_session_saves()
         self.clear_all_logs()
         try:
             import shutil

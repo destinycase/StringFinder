@@ -4,7 +4,7 @@ import time
 import warnings
 
 import qdarktheme
-from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer
+from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,10 +42,13 @@ class MainWindow(QMainWindow):
     검색 탭, 창 상태, 테마 및 애플리케이션 종료 처리를 담당합니다.
     """
     _startup_paint_observer: QObject  # Retain the Python wrapper until window teardown.
+    # 백그라운드 세션 저장 실패를 화면 스레드로 넘깁니다(다른 스레드에서 emit해도 화면 스레드에서 처리).
+    _session_save_failed = Signal(str)
 
     def __init__(self):
         """메인 윈도우를 초기화하고 필요한 시스템 설정을 수행합니다."""
         super().__init__()
+        self._session_save_failed.connect(self._on_background_session_save_failed)
         self.config_manager = ConfigManager()
         if os.name == "nt":
             # Constants.APP_VERSION은 raw 버전을 반환하므로 명시적으로 v를 붙여 AppID 생성
@@ -120,6 +123,10 @@ class MainWindow(QMainWindow):
                     getattr(tab, "stop_search")()
                 except Exception as e:
                     logger.warning(AppStrings.LOG_WKR_BATCH_ERROR.format(e))
+        # 백그라운드 저장이 끝난 뒤 최종 상태를 저장해, 늦게 끝난 저장이 덮어쓰지 않게 합니다.
+        wait_saves = getattr(self.config_manager, "wait_for_session_saves", None)
+        if callable(wait_saves):
+            wait_saves()
         # "모든 데이터 삭제" 뒤 새로 저장한 세션이 없으면, 지운 탭·창 상태를 종료하면서 되살리지 않습니다(검수 U-9).
         if not getattr(self.config_manager, "data_cleared", False):
             self.config_manager.set_window_state(self.saveGeometry(), self.saveState())
@@ -258,11 +265,17 @@ class MainWindow(QMainWindow):
         return new_tab
 
     def _on_search_finished_in_tab(self, tab):
-        """탭에서 검색이 완료되었을 때 호출되어 상태와 순서를 저장합니다."""
+        """탭에서 검색이 완료되었을 때 호출되어 상태와 순서를 저장합니다.
+
+        결과가 많으면 파일 쓰기가 1초 넘게 걸리므로 백그라운드에서 저장합니다(검수 S-3).
+        """
         index = self.tab_widget.indexOf(tab)
         if index >= 0:
-            self._save_tab(index)
+            self._save_tab(index, background=True)
             self._save_tab_order()
+
+    def _on_background_session_save_failed(self, name):
+        self._show_search_notice(AppStrings.ERROR_SESSION_SAVE.format(name), 3000)
 
     def _set_ui_locked(self, locked):
         """검색 중 UI 상호작용을 제한하거나 해제합니다."""
@@ -342,8 +355,8 @@ class MainWindow(QMainWindow):
         menu.addAction(close_action)
         menu.exec(self.tab_widget.tabBar().mapToGlobal(pos))
 
-    def _save_tab(self, index):
-        """특정 탭의 데이터를 파일로 저장합니다."""
+    def _save_tab(self, index, background=False):
+        """특정 탭의 데이터를 파일로 저장합니다. ``background``이면 저장을 맡기고 바로 돌아옵니다."""
         if index < 0:
             return
         tab = self.tab_widget.widget(index)
@@ -351,6 +364,13 @@ class MainWindow(QMainWindow):
         if isinstance(tab, SearchTab):
             state = tab.get_state()
             state["title"] = name
+            if background and hasattr(self.config_manager, "save_session_async"):
+                # 다음 검색이 같은 목록에 결과를 덧붙이므로, 저장할 결과 목록은 지금 사본을 떠 둡니다.
+                results = state.get(Constants.PAYLOAD_RESULTS)
+                if isinstance(results, list):
+                    state[Constants.PAYLOAD_RESULTS] = list(results)
+                self.config_manager.save_session_async(name, state, self._session_save_failed.emit)
+                return True
             if not self.config_manager.save_session(name, state):
                 self._show_search_notice(AppStrings.ERROR_SESSION_SAVE.format(name), 3000)
                 return False
