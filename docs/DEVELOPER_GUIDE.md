@@ -262,7 +262,7 @@ Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니�
 
 구조 검색의 기본 `content` 직렬화 형식은 JSON/XML의 경우 `path\tvalue`, Excel의 경우 `sheet\tcell\tvalue`입니다. UE 현지화 archive는 값에 탭·줄바꿈이 있어도 필드가 섞이지 않도록 항상 `ARCHIVE_FIELDS|[Namespace, Key, 원문, 번역문]` JSON 배열을 쓰며, Python 정규화 후 결과 행은 `(Key 줄 번호, Namespace, Key, 원문, 번역문, offset, length)`이며 화면에는 줄번호·Namespace·Key·원문·번역문 다섯 열로 표시합니다. 구조 오류 코드는 `ERR_ARCHIVE_FORMAT|<문제 위치 경로>`입니다. JSON 키에 탭이 있으면 필드를 모호하게 나누지 않도록 `JSON_FIELDS|` 접두부와 JSON 배열로 경로·값을 전달합니다. 이는 오류 마커가 아닌 정상 결과 형식입니다. Python의 `_normalize_rust_matches()`가 이 값을 UI 모델용 튜플로 변환하므로 형식 변경 시 Rust 생성부, Python 정규화 계층, UI 모델과 세션 회귀 테스트를 함께 수정해야 합니다. 구버전 세션·확장 모듈이 사용한 Excel `sheet | cell | value` 형식도 계속 읽으며, 시트 이름에 ` | `가 들어갈 수 있으므로 오른쪽의 셀·값 필드부터 분리합니다.
 
-XML 단일 파일 결과도 같은 정규화 계층을 사용합니다. `_visible_match_count()`는 제한 메타데이터를 결과 수에 포함하지 않으며, 정상 결과와 부분 검색 안내는 별도 스트림으로 전달합니다. 관련 실패 주입·문자열 표시·XML 제한 회귀는 `tests/test_storage_preview_and_packaging_boundaries.py`로 확인합니다.
+XML 결과도 같은 정규화 계층을 사용합니다. `_visible_match_count()`는 제한 메타데이터를 결과 수에 포함하지 않으며, 정상 결과와 부분 검색 안내는 별도 스트림으로 전달합니다. 관련 실패 주입·문자열 표시·XML 제한 회귀는 `tests/test_storage_preview_and_packaging_boundaries.py`로 확인합니다.
 
 메모리 매핑 실패의 프로토콜 코드는 `ERR_MMAP`입니다. 정의되지 않은 코드나 잘못 표기된 코드는 다른 코드로 추정 변환하지 않습니다. 저장 세션 복원 시 형식·코드 검증에 실패한 스킵 항목과 오염된 로그 레코드는 제외합니다. 세션 파일 자체의 제거·보존 조건은 [구현 정책 3.4절](IMPLEMENTATION_POLICY.md#34-설정-현지화-ui-모델의-함정)을 따릅니다.
 
