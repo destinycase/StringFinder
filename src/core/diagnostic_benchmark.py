@@ -37,14 +37,11 @@ ONE_GIB_BYTES = 1024**3
 DEFAULT_MAX_SECONDS = 7200
 RESOURCE_SAMPLE_INTERVAL_SECONDS = 30
 MAX_RESOURCE_SAMPLES_PER_SCENARIO = 600
-# 검색 방식은 하나입니다(6.4.6에서 Python 글자 변형 검색 경로 제거).
-SCENARIOS = (
-    ("normal_no_match", False),
-)
+# 검색 방식은 하나라 시나리오도 하나입니다.
+SCENARIOS = ("normal_no_match",)
 
 SCENARIO_LABELS = {
     "normal_no_match": "Normal search - no match",
-    "miss_prevention_no_match": "Miss-prevention search - no match",
 }
 
 LATENCY_BUCKETS = (0.001, 0.005, 0.025, 0.1, 1.0, 10.0)
@@ -535,7 +532,7 @@ def run(
     stop_status: str | None = None
     budget_limited = False
 
-    for scenario_index, (name, precise) in enumerate(SCENARIOS):
+    for scenario_index, name in enumerate(SCENARIOS):
         scenario_started = time.perf_counter()
         scenario_deadline = (
             None
@@ -823,8 +820,8 @@ def run(
         scenario: Scenario = {
             "name": name,
             "display_name": SCENARIO_LABELS[name],
-            "search_mode": "miss_prevention" if precise else "normal",
-            "engine_route": "Python compatibility/search path" if precise else "Rust fast-search path (Excel uses its specialized parser)",
+            "search_mode": "normal",
+            "engine_route": "Rust fast-search path (Excel uses its specialized parser)",
             "status": scenario_status,
             "time_budget_seconds": round(
                 max(0.0, scenario_deadline - scenario_started), 3
