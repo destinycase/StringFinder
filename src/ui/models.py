@@ -110,6 +110,9 @@ class SearchResultModel(QAbstractTableModel):
         """전체 결과(모든 쪽)를 머리글 열 기준으로 정렬합니다. 숫자는 값으로, 글자는 대소문자 없이 비교합니다."""
         if column not in (0, 1, 2):
             return
+        # 검색 중에 누른 기준은 결과가 계속 들어와 바로 적용되지 않으므로 기억했다가,
+        # 검색이 끝날 때의 정렬(sort_results)에 씁니다. 머리글 화살표와 같은 기준을 유지합니다.
+        self._header_sort = (column, order)
 
         def key(row):
             value = row[column] if len(row) > column else None
@@ -248,6 +251,10 @@ class SearchResultModel(QAbstractTableModel):
     def sort_results(self):
         """전체 데이터를 전역 규칙에 따라 정렬합니다 (비동기)."""
         if not self._result_buffer:
+            return
+        header_sort = getattr(self, "_header_sort", None)
+        if header_sort is not None:
+            self.sort_all(*header_sort)
             return
         # 동기 정렬 대신 성능을 위해 비동기 전역 정렬 메서드를 호출합니다.
         self.sort_globally()
@@ -467,6 +474,13 @@ class MatchDetailModel(QAbstractTableModel):
             if search_mode == Constants.MODE_NORMAL:
                 is_excel = (self.current_file_path or "").lower().endswith((".xlsx", ".xlsm", ".xls", ".xlsb", ".ods"))
 
+                # 파일당 상한·부분 검색 안내 행은 Excel 파일이어도 `시트!셀 | 값` 틀에 넣지 않습니다(검수 U-7).
+                if row_data.position in ("-1", "-2"):
+                    notice = str(row_data.content if row_data.content is not None else "")
+                    if role == Qt.ItemDataRole.EditRole:
+                        return notice
+                    return f"<html><span style='color: #d9534f; font-weight: bold;'>⚠️ {escape(notice)}</span></html>"
+
                 # EditRole: 필터링용 순수 텍스트
                 if role == Qt.ItemDataRole.EditRole:
                     if is_excel:
@@ -511,10 +525,6 @@ class MatchDetailModel(QAbstractTableModel):
                 else:
                     # 텍스트: 줄 번호 | [하이라이팅된내용]
                     val = str(row_data.content if row_data.content is not None else "")
-                    if row_data.position in ("-1", "-2"):
-                        # 상한 도달 메시지는 굵은 빨간색으로 강조 표시합니다.
-                        return f"<html><span style='color: #d9534f; font-weight: bold;'>⚠️ {escape(val)}</span></html>"
-                        
                     rendered_val = self._render_highlighted(val)
                     return f"<html>{escape(row_data.position)} | {rendered_val}</html>"
 

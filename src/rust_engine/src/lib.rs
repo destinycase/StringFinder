@@ -601,7 +601,11 @@ fn search_file(
     let _ = include_junctions; // No traversal in the single-file entry point.
     let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
     let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
-    let (matcher, ac) = build_search_matchers(&pattern, is_xml, is_json || is_archive)?;
+    let (matcher, ac) = build_search_matchers(
+        exact_search_pattern(&pattern, is_exact),
+        is_xml,
+        is_json || is_archive,
+    )?;
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     // 검색 중에는 100ms 간격의 취소 확인을 유지하되, 정상 완료 시 채널로 즉시 깨워
@@ -1969,7 +1973,11 @@ pub fn search_dir(
     let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
     let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
     let common_file_size_limit = max_json_size.unwrap_or(DEFAULT_MAX_SEARCH_FILE_SIZE_BYTES);
-    let (matcher, ac) = build_search_matchers(&pattern, is_xml, is_json || is_archive)?;
+    let (matcher, ac) = build_search_matchers(
+        exact_search_pattern(&pattern, is_exact),
+        is_xml,
+        is_json || is_archive,
+    )?;
     let matcher = Arc::new(matcher);
     let ac = Arc::new(ac);
 
@@ -2422,6 +2430,20 @@ fn detect_file_encoding(
 /// 비교(일치 여부)는 항상 비교기(`key()` 기준)가 정합니다. 자동자는 원본 바이트에서 위치를 찾거나
 /// 바이너리 파일의 일치 개수를 셀 때만 쓰며, `key(검색어)`와 정규화한 검색어의 표기
 /// (대소문자·XML 엔티티·JSON 이스케이프 변형)를 모두 담습니다.
+/// 정확히 일치에서는 검색어 앞뒤 공백을 검색기를 만들기 전에 지웁니다(검수 F-1).
+///
+/// 값 쪽도 앞뒤 공백을 지우고 비교하므로, 줄을 고르는 앞 단계까지 같은 검색어를 써야
+/// `␠a`가 `a`와 같은 결과를 냅니다. 공백뿐인 검색어는 그대로 두어 지금처럼 아무것과도
+/// 일치하지 않게 합니다(`Matcher::equals_trimmed`).
+fn exact_search_pattern(pattern: &str, is_exact: bool) -> &str {
+    let trimmed = pattern.trim();
+    if is_exact && !trimmed.is_empty() {
+        trimmed
+    } else {
+        pattern
+    }
+}
+
 fn build_search_matchers(
     pattern: &str,
     is_xml: bool,

@@ -348,3 +348,53 @@ def test_s3_clear_all_data_waits_for_pending_saves(mock_config_manager, monkeypa
     mock_config_manager.clear_all_data()
     # 늦게 끝난 저장이 지운 세션을 되살리지 않습니다.
     assert os.listdir(mock_config_manager.sessions_dir) == []
+
+
+@pytest.mark.parametrize("encoding,word", [("utf-8", "a"), ("cp949", "가"), ("utf-16", "a")])
+@pytest.mark.parametrize("query_form", ["{w}", " {w}", "{w} ", "\t{w}"])
+def test_f1_exact_query_spaces_on_text_files(tmp_path, encoding, word, query_form):
+    from core import search_engine as se
+
+    other = "A" if word == "a" else word
+    lines = [word, " " + word, "  " + word + " ", other, "x" + word, "b " + word]
+    path = tmp_path / "t.txt"
+    path.write_bytes("\r\n".join(lines).encode(encoding))
+    query = query_form.format(w=word)
+    found = sorted(m.line for m in sf_engine.search_file(str(path), query, C.RUST_MODE_EXACT) if m.kind == "match")
+    assert found == [1, 2, 3, 4]
+    result = se.search_directory_fast([str(tmp_path)], query, ["txt"], special_mode=C.MODE_EXACT)
+    assert sorted(row[0] for _p, _c, rows in result["results"] for row in rows) == [1, 2, 3, 4]
+
+
+def test_f1_partial_mode_and_blank_exact_query_unchanged(tmp_path):
+    path = tmp_path / "t.txt"
+    path.write_text("a\n a\n  a \nA\nxa\nb a\n", encoding="utf-8")
+    assert sorted(m.line for m in sf_engine.search_file(str(path), " a", 0) if m.kind == "match") == [2, 3, 6]
+    assert not sf_engine.search_file(str(path), "   ", C.RUST_MODE_EXACT)
+
+
+@pytest.mark.parametrize("position", [-1, -2])
+def test_u7_excel_notice_rows_in_normal_search(position):
+    from ui.models import MatchDetailModel
+
+    model = MatchDetailModel()
+    model.set_matches("C:/t/a.xlsx", [(3, "Sheet1\tA3\tabc", None, None), (position, "LIMIT-MSG", None, None)],
+                      "abc", C.MODE_NORMAL)
+    shown = model.data(model.index(1, 0))
+    assert shown.count("LIMIT-MSG") == 1 and "-1!" not in shown and "-2!" not in shown and " | " not in shown
+    assert model.data(model.index(1, 0), Qt.ItemDataRole.EditRole) == "LIMIT-MSG"
+    first = model.data(model.index(0, 0))
+    assert first.startswith("<html>Sheet1!A3 | ") and "abc</span>" in first
+
+
+def test_header_sort_clicked_during_search_is_applied_at_finish(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    model = view.result_model
+    model.add_results([(f"d/n{i:03d}.txt", 300 - i, [(1, "x", None, None)]) for i in range(300)])
+    # 검색 중 결과가 더 들어와 정렬이 버려지는 상황을 흉내 냅니다.
+    view.proxy_model.sort(1, Qt.SortOrder.DescendingOrder)
+    model.add_results([("d/zzz.txt", 1, [(1, "x", None, None)])])
+    qtbot.wait(200)
+    with qtbot.waitSignal(model.sort_completed, timeout=5000):
+        model.sort_results()
+    assert model.get_all_results()[0][1] == "zzz.txt"
