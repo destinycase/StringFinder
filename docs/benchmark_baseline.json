@@ -225,7 +225,7 @@
    "digest": "4b34c29849c336c0"
   },
   "S-ascii": {
-   "what": "50MB, 일치 약 70만 건(ASCII)",
+   "what": "50MB, 일치 약 86만 건(ASCII)",
    "median_ms": 322.79,
    "min_ms": 297.16,
    "max_ms": 391.32,
@@ -233,7 +233,7 @@
    "digest": "f8f05304d53fdf60"
   },
   "S-ko": {
-   "what": "50MB, 일치 수십만 건(한글)",
+   "what": "50MB, 일치 약 2.7만 건(한글)",
    "median_ms": 60.03,
    "min_ms": 56.07,
    "max_ms": 83.9,
