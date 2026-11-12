@@ -1,10 +1,12 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 1.53 (StringFinder v6.4.1 안정 버전 기준)
-- **최종 수정일:** 2026-11-06
+- **문서 버전:** 2.0 (StringFinder v7.1.1 안정 버전 기준)
+- **최종 수정일:** 2026-11-13
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 6.4.1 (stable)** · Updated: **2026-11-06**
+> Documentation baseline: **StringFinder 7.1.1 (stable)** · Updated: **2026-11-13**
+>
+> 7 버전부터 검색은 Rust 엔진 하나로만 합니다. 그 전의 설계 경위·측정·검토 기록은 [v7 이전 기록](archive/before-v7/README.md)에 보관했습니다.
 
 ## 문서별 역할과 읽는 순서
 
@@ -14,8 +16,8 @@
 
 1. 환경·빌드·테스트는 **6절**, 구조·책임·FFI는 **1–4절**을 읽습니다.
 2. 현재 설계를 선택한 배경은 아래 **현재 설계로 이어진 결정**을 확인합니다.
-3. 준수 계약은 [구현 정책](IMPLEMENTATION_POLICY.md), 반려·보류한 방식과 이유는 [설계 검토 기록](DESIGN_REVIEW_HISTORY.md)에 있습니다.
-4. 과거 측정은 [성능 개선 기록](PERFORMANCE_HISTORY.md), 버전별 변경은 [개발 히스토리](DEVELOPMENT_HISTORY.md)에 있습니다.
+3. 준수 계약은 [구현 정책](IMPLEMENTATION_POLICY.md)에 있습니다. v7 이전에 반려·보류한 방식과 이유는 [설계 검토 기록(보관)](archive/before-v7/DESIGN_REVIEW_HISTORY.md)에 있습니다.
+4. 성능 기준값은 [벤치마크 기준선](BENCHMARK_BASELINE.md), 측정 이력은 [성능 기록](PERFORMANCE_HISTORY.md), 버전별 변경은 [개발 히스토리](DEVELOPMENT_HISTORY.md)에 있습니다.
 
 ## 1. 프로젝트 개요 및 기술 스택
 
@@ -42,7 +44,7 @@
 
 ## 2. 시스템 아키텍처 및 데이터 흐름 (Architecture)
 
-StringFinder의 검색은 **Rust 엔진 하나**로 수행합니다(6.4.6부터. 그 전에는 글자 변형 검색이 Python 경로를 썼습니다):
+StringFinder의 검색은 **Rust 엔진 하나**로 수행합니다. Python은 화면·작업 조정·결과 정리를 맡습니다:
 - **검색 경로:** Rust 네이티브 엔진(`sf_engine`)을 호출하여 GIL을 해제하고 Rayon 병렬 파일 순회 및 Aho-Corasick SIMD 매칭, crossbeam 채널 기반 생산자-소비자 스트리밍을 수행합니다. Python 콜백 호출이나 감시 스레드의 취소 이벤트 조회 등 Python 객체에 접근하는 구간에서는 GIL을 다시 획득합니다.
 - **비교 기준:** 모든 형식(일반 텍스트·JSON·XML·Excel·UE 현지화 archive)이 Rust `textkey.rs`의 `key(x) = NFC(casefold(NFC(x)))`로 비교합니다. 대소문자 접기는 Unicode 17.0 CaseFolding(C+F), 정규화는 같은 버전의 NFC입니다. 변환이 필요 없는 줄·값은 원본에서 바로 찾고, 변환이 필요한 줄·값만 변환합니다(위치는 원본 그대로 찾은 경우에만 보고). 줄바꿈은 LF·CRLF·CR입니다. 인코딩 자동 감지·디코딩(UTF-16·CP949 등)도 Rust가 합니다. Rust가 결과를 내지 않으면 결과가 없는 것이며, 다른 인코딩이나 Python으로 다시 검색하는 대체 경로는 없습니다.
 
@@ -155,7 +157,7 @@ UI (src/ui)
 ```
 
 - **UI 계층**은 검색 입력·표시·사용자 동작을 책임집니다. `SearchTab`은 탭 상태와 검색 패널을 연결하고, `ResultView`는 결과 표시·미리보기·내보내기를, `models.py`는 테이블 데이터 모델을 담당합니다. UI에서 파일 탐색이나 문서 파싱을 직접 하지 않습니다.
-- **작업 오케스트레이션**은 `core/worker.py`의 `SearchWorker`가 맡습니다. 진행·결과·스킵·오류·완료를 Qt 시그널로 전달하고, 중지와 전체 결과 제한을 조정합니다. Python 프로세스 풀은 쓰지 않습니다(6.4.6에서 제거).
+- **작업 오케스트레이션**은 `core/worker.py`의 `SearchWorker`가 맡습니다. 진행·결과·스킵·오류·완료를 Qt 시그널로 전달하고, 중지와 전체 결과 제한을 조정합니다. Python 프로세스 풀은 쓰지 않습니다.
 - **검색 정책/어댑터**는 `core/search_engine.py`가 맡습니다. 검색 옵션 정규화, Rust 모드 비트 변환, Rust 결과의 Python 계약 변환, 스킵 사유 번역, 구조화 문서 메모리 예측 검사가 여기에 모입니다. 검색 자체는 하지 않습니다.
 - **Rust 엔진**은 파일 순회와 기본 검색 구현을 담당합니다. PyO3 진입점은 `lib.rs`, 공통 데이터 형식은 `types.rs`, 인코딩·패턴 처리는 `utils.rs`, 구조화 파서는 `json_search.rs`, `xml_search.rs`, `excel_search.rs`에 둡니다.
 - **공통 유틸리티**는 UI와 코어 간 순환 의존을 만들지 않습니다. `settings_defaults.py`는 기본값과 버전, `constants.py`는 설정 키와 모드 계약, `config_manager.py`는 저장·검증·마이그레이션을 담당합니다. 현지화 카탈로그는 UI 모듈보다 먼저 적용되어야 합니다.
@@ -216,7 +218,7 @@ UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한�
 
 예상 밖 워커 예외는 `search_finished` 없이 `finished`만 전달될 수 있습니다. UI는 오류 여부와 요약 확정 여부를 별도로 추적하고, 이 경우 마지막 결과 버퍼를 비우기 전에 실패 요약을 확정해야 합니다. 일반 완료 경로를 중복 실행하지 않도록 확정 상태는 새 검색 시작 시 초기화합니다. 실패 주입 테스트는 오류 문구뿐 아니라 부분 결과 보존과 입력 잠금 해제도 함께 확인해야 합니다.
 
-검색 경로의 값 표현·선별 계약은 다음과 같습니다. `tests/test_candidate_encoding_and_value_parity.py`에서 실제 네이티브 엔진과 Python 경로를 비교합니다.
+검색 경로의 값 표현·선별 계약은 다음과 같습니다. `tests/test_candidate_encoding_and_value_parity.py`에서 폴더 검색과 파일 하나 검색의 결과를 비교합니다.
 
 - `include_junctions` 기본값은 false입니다. Python은 `os.path.isjunction()`으로 정션을 구분하고, Rust는 Windows reparse tag로 정션과 심볼릭 링크를 구분합니다. 포함 시 실제 경로를 등록하여 순환·중복 탐색을 방어합니다. Rust 등록 집합은 병렬 순회 및 모든 검색 루트가 공유합니다. 심볼릭 링크까지 무조건 허용하는 옵션으로 바꾸지 않습니다.
 - `search_encoding`은 자동/UTF-8/CP949/UTF-16 LE/BE 중 하나입니다. 필터가 아니라 디코딩 정책이며, 검색 시작 시 설정 스냅샷과 Rust SearchOptions에 전달합니다. 지정 모드에서는 다른 인코딩으로 자동 재시도하지 않습니다. Excel 바이너리 파서에는 적용하지 않습니다. 자동 UTF-16 보완은 UTF-8 및 유효 CP949와 충돌하지 않는 한글 중심 표본만 사용하며, 모호한 파일의 완전 자동 판별을 보장하지 않습니다.
@@ -230,13 +232,11 @@ UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한�
 - Excel은 정수 값에 불필요한 `.0`을 붙이지 않고, 실수의 작은 소수부를 허용 오차로 반올림해 제거하지 않습니다. Boolean은 `true`/`false`, 날짜는 `YYYY-MM-DD`, 시간이 있는 날짜는 `YYYY-MM-DD HH:MM:SS`, 시간은 `HH:MM:SS`로 비교합니다. 밀리초가 있으면 6자리 소수부로 표현합니다. 문자열 셀의 내용은 변환하지 않습니다. 날짜의 숫자 저장·ISO 저장 및 1900/1904 날짜 체계를 구분해야 합니다.
 - 완료된 배치의 건너뛴 파일 안내는 그 배치의 결과를 전체 상한에 맞춰 자르기 **전에** 전달·집계합니다. 상한에 도달했다고 이미 확보한 오류 안내를 버리지 않습니다.
 
-중복 검사 비용은 `tools/benchmark_json_policy.py`로 분리 측정합니다. 같은 코드에서 허용·금지를 번갈아 실행하며, `--compare-engine`에 저장한 바이너리를 전달하면 두 엔진·두 정책을 번갈아 측정합니다. 준비 실행은 제외하고, 결과 내용·오프셋·길이의 지문이 같음을 검증합니다. `--backend native`는 Rust 호출, `normal`은 Python 결과 변환까지 포함합니다(`precise`는 6.4.6에서 제거). 서로 다른 측정 경로의 시간을 직접 비교하거나 전체 수정 전후 증가분을 중복 검사 하나의 비용으로 해석하지 않습니다.
-
 `results_callback`을 사용하는 디렉터리/파일 목록 검색에서는 callback이 결과의 단일 전달 경로입니다. callback에는 `(path, matches)` 배치가 전달되고, 동기 반환 목록은 중복 메모리 보관을 피하기 위해 비워질 수 있습니다. callback 없이 호출하면 동기 반환 목록을 사용할 수 있습니다. callback 예외는 Rust 검색 오류로 호출자에게 전파됩니다.
 
 파일 단위 결과 제한은 `__SF_TRUNCATED__`, JSON 깊이 제한은 `__SF_JSON_DEPTH_LIMIT__|<limit>` 메타데이터로 전달합니다. 이 신호들은 치명적 오류가 아니므로 정상 매치를 제거하지 않습니다. Python 계층은 같은 파일에서 발생한 부분 검색 사유를 하나로 합쳐 `skipped` 스트림에도 전달하며, UI는 기존 **건너뛴 파일 수** 패널과 목록 팝업을 재사용합니다. 제한만 발생해 정상 매치가 없어도 해당 파일은 `skipped` 안내에 포함되어야 합니다.
 
-6.1.6에서 존재 확인 전용 검색을 제거했습니다. Python 키워드 인자와 Rust 옵션·비트·파일명 전용 API도 함께 제거했으므로 Rust 엔진을 다시 빌드해야 합니다(`API_VERSION=8`). 오래된 엔진을 현재 Python 코드와 섞어 실행하지 않습니다. 일반 텍스트의 `_quick_text_probe()`는 전체 검색 전에 명백한 무결과 파일을 거르는 내부 검사로 유지하며, 결과를 1건으로 줄이는 사용자 기능이 아닙니다. 명시적으로 존재 확인 결과라고 저장된 예전 세션은 입력 조건만 살리고 결과·요약을 비운 뒤 재검색을 안내합니다. 일반 결과나 메타데이터 없는 실제 내용은 임의로 변환하지 않습니다.
+Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니다. API를 바꾸면 Rust 엔진을 다시 빌드해야 합니다. 오래된 엔진을 현재 Python 코드와 섞어 실행하지 않습니다. 일반 텍스트의 `_quick_text_probe()`는 전체 검색 전에 명백한 무결과 파일을 거르는 내부 검사로 유지하며, 결과를 1건으로 줄이는 사용자 기능이 아닙니다. 명시적으로 존재 확인 결과라고 저장된 예전 세션은 입력 조건만 살리고 결과·요약을 비운 뒤 재검색을 안내합니다. 일반 결과나 메타데이터 없는 실제 내용은 임의로 변환하지 않습니다.
 
 파일명 묶음은 UI에서 쉼표로 나누고 앞뒤 공백을 제거한 뒤 검색기로 전달합니다. 체크한 묶음의 합집합을 검색하며, 겹치는 조건은 대소문자를 무시하고 한 번만 셉니다. 빈 구분 항목이나 와일드카드가 있으면 묶음 전체를 거절합니다. 상태 표시줄은 현재 탭의 검색 모드·폴더·실제 적용 확장자·파일명 목록을 ` | `로 구분해 표시하고 폴더가 없으면 경고 아이콘을 표시합니다.
 
@@ -266,7 +266,7 @@ XML 단일 파일 결과도 같은 정규화 계층을 사용합니다. `_visibl
 
 ### 4.3 검색 모드 선택과 표시
 
-검색줄 왼쪽의 **검색 모드** 콤보 박스(일반, 편집 불가)로 값만 검색 형식을 고릅니다(6.4.11에서 체크 메뉴 버튼을 대체). 첫 선택지 **기본**은 확장자 필터를 그대로 쓰는 일반 검색입니다. 항목 데이터는 기존 `special_mode` 저장값(`SPECIAL_SEARCH_ITEMS`)이고, 표시 문구는 `SPECIAL_SEARCH_MENU_ITEMS`이므로 표시 이름을 바꿔도 세션·엔진 값은 바뀌지 않습니다. 예전 세션의 `use_complex_search`는 불러올 때 무시하며 다시 저장하지 않습니다. 표시 순서는 JSON → XML → Excel → UE 현지화 archive이지만 저장값을 위치로 해석하지 않습니다. 이전 `끄기`·`기본`·`Default`·`Off` 저장값은 기본으로 복원합니다. 사용자가 고르면(`activated`) 모드를 바꾸고 확장자 필터와 연결하며, 세션 복원 등 코드로 바꿀 때는 선택만 맞춥니다. 검색 중에는 열린 목록을 닫고 콤보 박스를 잠급니다. 관련 UI·세션·검색 전달 검증은 `tests/test_search_settings_menu.py`를 확인합니다.
+검색줄 왼쪽의 **검색 모드** 콤보 박스(일반, 편집 불가)로 값만 검색 형식을 고릅니다. 첫 선택지 **기본**은 확장자 필터를 그대로 쓰는 일반 검색입니다. 항목 데이터는 기존 `special_mode` 저장값(`SPECIAL_SEARCH_ITEMS`)이고, 표시 문구는 `SPECIAL_SEARCH_MENU_ITEMS`이므로 표시 이름을 바꿔도 세션·엔진 값은 바뀌지 않습니다. 예전 세션의 `use_complex_search`는 불러올 때 무시하며 다시 저장하지 않습니다. 표시 순서는 JSON → XML → Excel → UE 현지화 archive이지만 저장값을 위치로 해석하지 않습니다. 이전 `끄기`·`기본`·`Default`·`Off` 저장값은 기본으로 복원합니다. 사용자가 고르면(`activated`) 모드를 바꾸고 확장자 필터와 연결하며, 세션 복원 등 코드로 바꿀 때는 선택만 맞춥니다. 검색 중에는 열린 목록을 닫고 콤보 박스를 잠급니다. 관련 UI·세션·검색 전달 검증은 `tests/test_search_settings_menu.py`를 확인합니다.
 
 검색줄은 검색 모드 라벨·검색 모드 콤보 박스·검색할 문자열·입력 칸·검색 버튼 순서입니다. 콤보 박스 폭은 가장 긴 선택지에 맞춰 고정하므로 선택을 바꿔도 배치가 흔들리지 않습니다. 입력·모드·검색·중지 컨트롤의 높이는 통일합니다. 좁은 창에서는 모드 아래에 입력과 검색을 배치하고 두 라벨의 폭을 맞춥니다. 한 줄로 돌아오면 고정 폭을 해제하며 전환 기준에는 각 라벨의 자연 폭 합을 사용합니다. 상태 표시줄 맨 앞에는 콤보 박스의 현재 표시 문구가 나옵니다. 화면 표시 문구를 엔진에 직접 넘기지 않습니다.
 
@@ -288,11 +288,11 @@ XML 단일 파일 결과도 같은 정규화 계층을 사용합니다. `_visibl
 
 ### 5.1 Excel 실제 셀 읽기 설계
 
-6.1.2는 일반 Excel 셀 비교에서 문자열을 차용하고 정수·소수·날짜/기간의 변환 버퍼를 재사용하며, ASCII 정확 일치의 중간 대소문자 문자열을 제거합니다. 값 표현·Unicode 검색어 정책·시트별 실패 및 결과 한도는 유지합니다. 6.4.2부터 비ASCII 셀은 공통 비교 기준(`key()`)으로 비교합니다. 세부 계약은 [구현 정책 1.4절](IMPLEMENTATION_POLICY.md#14-엑셀-파싱-라이브러리-패닉-격리), 측정과 보류한 NFC 후보는 [성능 개선 기록](PERFORMANCE_HISTORY.md)을 참조합니다.
+일반 Excel 셀 비교는 문자열을 차용하고 정수·소수·날짜/기간의 변환 버퍼를 재사용하며, ASCII 정확 일치의 중간 대소문자 문자열을 제거합니다. 값 표현·Unicode 검색어 정책·시트별 실패 및 결과 한도는 유지합니다. 6.4.2부터 비ASCII 셀은 공통 비교 기준(`key()`)으로 비교합니다. 세부 계약은 [구현 정책 1.4절](IMPLEMENTATION_POLICY.md#14-엑셀-파싱-라이브러리-패닉-격리), 측정과 보류한 NFC 후보는 [성능 개선 기록](archive/before-v7/PERFORMANCE_HISTORY.md)을 참조합니다.
 
 Rust `SheetReader`는 XLSX/XLSM에 실제 셀 벡터, XLS/XLSB에 기존 `Range`를 사용합니다. 순서대로 유일한 좌표는 정렬을 생략하고 나머지는 안정 정렬·중복 제거로 행·열순과 마지막 비어 있지 않은 값의 계약을 보존합니다. 시트 전체 파싱 후 검색하므로 첫 매치나 상세 상한이 손상 시트 검증을 생략하지 않습니다.
 
-Rust 확장에는 예전 Python 경로가 쓰던 `SparseExcelWorkbook`(시트 단위 셀 읽기)이 남아 있지만 앱은 더 쓰지 않습니다. 과거 측정·한계는 [성능 개선 기록 5절](PERFORMANCE_HISTORY.md#5-v603-xlsxxlsm-빈-영역-배열-할당-제거)에 보존합니다.
+Rust 확장에는 예전 Python 경로가 쓰던 `SparseExcelWorkbook`(시트 단위 셀 읽기)이 남아 있지만 앱은 더 쓰지 않습니다. 과거 측정·한계는 [성능 개선 기록 5절](archive/before-v7/PERFORMANCE_HISTORY.md#5-v603-xlsxxlsm-빈-영역-배열-할당-제거)에 보존합니다.
 
 ## 6. 개발 환경 설정 및 빌드/테스트 가이드
 
@@ -384,7 +384,7 @@ python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp d
 
 ### 6.5 성능 벤치마크 실행
 
-대표 경로·Excel·공식 A–J의 명령과 기록 위치는 **7.3절**에 모았습니다. 측정값과 비교 조건은 [현재 검색 성능 기준](ENGINE_PERFORMANCE_BASELINE.md)을 따릅니다.
+벤치마크 명령과 기록 위치는 **7.3절**에 모았습니다. 기준값과 판정 규칙은 [벤치마크 기준선](BENCHMARK_BASELINE.md)을 따릅니다.
 
 개발 환경을 처음 구성했거나 빌드 오류 원인을 확인할 때는 다음 사전 점검을 실행합니다.
 
@@ -462,35 +462,18 @@ python tools/diagnostic_benchmark.py <폴더> --repeats 5
 
 ### 7.3 벤치마크와 릴리스 검증
 
-대표 엔진 경로는 다음 명령으로 측정합니다. 현재 기준값·판정 규칙은 [검색 성능 기준](ENGINE_PERFORMANCE_BASELINE.md)에, 최적화 시도·채택 여부·과거 비교 근거는 [성능 개선 기록](PERFORMANCE_HISTORY.md)에, A–J 실행별 원본은 [벤치마크 히스토리](benchmark_history.md)에 기록합니다. 일반 기능 변경·QA 결과·배포 검증은 [개발 이력](DEVELOPMENT_HISTORY.md)에서 관리합니다.
+엔진 성능은 `tools/benchmark.py` 하나로 측정합니다. 표본 만들기·측정·기준선 비교를 모두 이 도구가 합니다. 표본 목록·기준값·판정 규칙은 [벤치마크 기준선](BENCHMARK_BASELINE.md)에, 측정할 때마다의 결과와 해석은 [성능 기록](PERFORMANCE_HISTORY.md)에 남깁니다.
 
 ```bash
-python tools/benchmark_engine.py
+python tools/benchmark.py prepare          # 표본 생성(data/benchmark/v7, 약 2.3GB, Git 제외)
+python tools/benchmark.py run              # 16회차 측정 후 docs/benchmark_baseline.json과 비교
+python tools/benchmark.py run --only K-LF-h,N-h --rounds 8
 ```
 
-대량 문자열 셀을 가진 Excel의 기본 검색 경로는 다음 전용 benchmark로 측정합니다. 파싱 비용과 셀 매칭 비용이 함께 포함되므로 여러 번 교차 측정하고, 결과가 일관되지 않으면 최적화를 유지하지 않습니다.
-
-```bash
-python tools/benchmark_excel.py
-```
-
-Excel 보완 세트는 아래 명령으로 측정합니다. 기존 밀집 Rust 전용 도구와 달리 앱과 같은 폴더 검색 경로(`tools/app_search.py`, Excel 검색 모드)를 사용하여 **전체 결과**를 측정합니다. 기본값은 표본별 준비 실행 후 조합당 5회이며 16개 조합의 결과 수·전체 결과의 시트/좌표/값을 매회 검사합니다. 검증 실패나 부분 검색은 정상 측정으로 기록하지 않습니다.
-
-```powershell
-python tools/benchmark_excel_suite.py --repeats 5 --output docs_dev/qa_excel_suite/results.json --record-tag v6.1.2-excel
-```
-
-- 표본은 밀집 문자열 10만 셀, 실제 값 2개가 있는 1억 셀 직사각형 범위, 캐시된 수식 결과 10만 셀, 날짜/시간 10만 셀의 XLSX입니다. 각 표본에서 첫 위치·끝 위치·2건 적중·무결과를 검사합니다. `--rows`/`--columns`를 바꾸면 다른 크기의 측정이므로 기본 기준선과 구분한 태그를 사용합니다.
-- CLI는 별도 `APPDATA`의 기본 설정과 임시 표본을 사용합니다. 사용자의 설정·원본 문서를 변경하지 않으며 표본은 종료 시 제거합니다. JSON 보고서는 앱/엔진 버전·엔진 및 표본 SHA-256·표본 크기·실행별 시간/RSS를 보관합니다.
-- 측정 대상은 같은 프로세스에서 호출한 **파일 검색 함수**입니다. UI·다수 Excel 동시성·폴더 탐색 비용을 포함하지 않습니다. 수식은 알고 있는 계산 결과 캐시를 넣은 표본이며 프로그램이 수식을 계산한다는 뜻이 아닙니다. XLS/XLSB/XLSM을 검증한 것으로 확대하지 않습니다.
-- `--record-tag`를 지정해야 기존 히스토리에 실행별 기록을 추가합니다. 태그와 `Excel …` 세트 이름으로 A–J와 분리하며 시간 합계에 섞지 않습니다. 동기 함수이므로 히스토리의 Latency는 함수 반환 시간이고 Jitter는 진행 이벤트 미측정으로 0입니다. RSS는 10ms 간격의 현재 프로세스 관측값으로, 이전 표본·준비 실행의 잔류 메모리와 런타임을 포함하며 프로세스별 독립 할당량이 아닙니다.
-- 기존 A–J 임계값을 임의로 재사용하지 않습니다. 추가 세트는 결과 계약을 필수 판정하고 시간·범위를 기준선에 기록하여 이후 동일 조건에서 비교합니다. 보편적인 성능 합격선을 새로 확정한 것은 아닙니다. 표본/검증기 회귀 테스트는 `tests/test_benchmark_excel_suite.py`입니다.
-
-Set A–J 통합 benchmark와 이력 누적은 다음 명령으로 수행합니다.
-
-```bash
-python scripts/benchmark_performance.py
-```
+- 측정 대상은 엔진의 폴더 검색(`sf_engine.search_dir`)입니다. 앱의 결과 정리·화면 갱신·세션 저장은 포함하지 않습니다.
+- 한 회차에 모든 표본을 번갈아 한 번씩 돌고 첫 회차는 버립니다. 표본마다 중앙값·최소·최대, 일치 수, 결과 지문을 남깁니다.
+- 결과 지문이 기준선과 다르면 "결과 다름", 중앙값이 기준선의 1.15배를 넘으면 "느려짐"으로 표시하고 종료 코드 1을 돌려줍니다. 같은 컴퓨터·같은 표본에서만 비교합니다.
+- 기준선은 안정 버전을 선언할 때 `--write-baseline`으로 다시 저장합니다. 도구의 회귀 테스트는 `tests/test_benchmark_tool.py`입니다.
 
 릴리스 전에는 Python/Rust 테스트와 정적 검사를 수행하고 **6.6절**의 `python build.py`로 배포본을 생성합니다. `release/StringFinder-vX.Y.Z.exe`와 `src/rust_engine/sf_engine.pyd`의 버전·포함 코드 일치를 확인합니다. 안정 버전은 태그 `vX.Y.Z`와 고정 문서 `docs/master-baseline-vX.Y.Z.md`(기준 커밋, 실행 파일 크기·SHA-256, 직전 안정 버전 이후 기능)로 선언합니다. 빌드가 엔진을 다시 생성하므로 최종 엔진을 사용하는 회귀 테스트도 확인합니다.
 
@@ -502,8 +485,8 @@ cargo clippy --release --manifest-path src/rust_engine/Cargo.toml -- -D warnings
 기본 pytest 실행은 stress·chaos·실제 클립보드 연동(`os_clipboard`)을 제외합니다. 릴리스 추가 검증에서는 다음처럼 명시적으로 실행하고, 결과 수뿐 아니라 테스트의 실제 단언 범위를 확인합니다.
 
 ```powershell
-python -m pytest -m "stress or chaos" -p no:cacheprovider --basetemp .qa_release_stress
-python -m pytest -o addopts= -q -p no:cacheprovider --basetemp .qa_release_all
+python -m pytest -m "stress or chaos" -p no:cacheprovider --basetemp scratch/qa_release_stress
+python -m pytest -o addopts= -q -p no:cacheprovider --basetemp scratch/qa_release_all
 python tools/validate_parallel_resources.py
 ```
 
@@ -511,7 +494,7 @@ python tools/validate_parallel_resources.py
 
 ### 7.4 검색 계약 회귀 검증
 
-검색은 Rust 한 경로이며, 폴더·파일 목록·단일 파일 진입점이 같은 결과를 내도록 다음 계약을 테스트로 고정합니다. Python 검색기를 지운 뒤 예전 글자 변형 검색으로만 찾던 경우는 `tests/test_unified_key_search.py`(Rust 직접 호출)와 `tests/test_rust_only_golden.py`(앱 경로)가 맡습니다.
+검색은 Rust 한 경로이며, 폴더·단일 파일 진입점이 같은 결과를 내도록 다음 계약을 테스트로 고정합니다. Python 검색기를 지운 뒤 예전 글자 변형 검색으로만 찾던 경우는 `tests/test_unified_key_search.py`(Rust 직접 호출)와 `tests/test_rust_only_golden.py`(앱 경로)가 맡습니다.
 
 - 검색 결과의 파일 경로·검색 결과 수·구조화 데이터 직렬화 형식
 - `max_per_file`, 취소 시 이미 수집된 결과 보존
@@ -531,7 +514,7 @@ python tools/validate_parallel_resources.py
 
 | 변경 | 최소 함께 확인할 테스트/검증 |
 | --- | --- |
-| 파일 후보 필터·순회 | 폴더·파일 목록·단일 파일 진입점의 같은 fixture, 숨김·dotfile·ignore 파일·루트 중복·symlink·빈 확장자 |
+| 파일 후보 필터·순회 | 폴더·단일 파일 진입점의 같은 fixture, 숨김·dotfile·ignore 파일·루트 중복·symlink·빈 확장자 |
 | JSON/XML/Excel 파서 | 형식별 Rust 경로, 잘못된 입력, 제한 marker, 매치 위치/미리보기 |
 | 결과 callback·중지 | callback/동기 반환 차이, 중지 시 queued 결과 보존, total/per-file 제한 구분 |
 | 설정 키·기본값 | 기본값/허용 범위, 수동 손상 JSON, default-version 초기화, schema migration |
@@ -544,14 +527,14 @@ python tools/validate_parallel_resources.py
 
 ### 7.6 테스트를 추가하거나 찾는 방법
 
-새 검사는 사건명 대신 지키는 기능에 맞는 파일에 추가합니다. 사건의 배경은 테스트 설명이나 Git 이력에 남깁니다. 기존 파일을 옮길 때에는 검사 본문뿐 아니라 fixture의 범위·자동 적용·마커·언어 복구와 수집 목록까지 대조합니다. 파일 이름이 달라도 입력·검색 경로·오류 경계가 다르면 중복 검사가 아닙니다. 이번 정리는 모듈 전체를 이동하여 기존 fixture 범위를 유지하며, 검사 수를 줄이기 위해 회귀 조건을 삭제하지 않습니다.
+새 검사는 사건명 대신 지키는 기능에 맞는 파일에 추가합니다. 사건의 배경은 테스트 설명이나 Git 이력에 남깁니다. 기존 파일을 옮길 때에는 검사 본문뿐 아니라 fixture의 범위·자동 적용·마커·언어 복구와 수집 목록까지 대조합니다. 파일 이름이 달라도 입력·검색 경로·오류 경계가 다르면 중복 검사가 아닙니다. 검사를 지울 때는 같은 조건을 다른 검사가 대신하는지 확인합니다. 7.1.1 정리에서 같은 Rust 경로를 두 번 돌리던 매개변수와 Python 검색기 시절의 정책 검사를 정리했습니다.
 
 | 확인할 기능 | 관련 테스트 파일 예시 |
 | --- | --- |
 | 검색 경로 간 후보·내용 일치 | `test_search_path_matrix.py`, `test_candidate_encoding_and_value_parity.py` |
 | JSON 정책·검색 완료 | `test_json_policy_and_search_completion.py`, `test_structured_validation_and_localization.py` |
 | 구조화 값·부분 실패 | `test_structured_value_and_failure_contracts.py` |
-| Excel 검색 경로 전달 | `test_excel_search_mode_routing.py` |
+| Excel 검색 경로 전달 | `test_excel_signature.py`, `test_candidate_encoding_and_value_parity.py` |
 | 네이티브 텍스트 인코딩·미리보기 | `test_native_text_encoding_and_preview.py` |
 | 워커·감시 스레드 종료 | `test_worker_completion_and_monitor.py` |
 | 설정 저장·실제 열린 JSON의 크기 제한 | `test_config_storage_and_json_open_limits.py` |
@@ -560,6 +543,11 @@ python tools/validate_parallel_resources.py
 | 필터·파일 열기·자가 진단 안내 | `test_filter_open_and_diagnostic_feedback.py` |
 | 설정·대소문자 및 검색 방식·내보내기 | `test_configuration_and_case_policy.py`, `test_profile_and_export_contracts.py` |
 | 엔진 오류·Unicode 정책 | `test_engine_error_and_unicode_policy.py` |
+| 결과 목록·정렬·강조 | `test_result_list_behaviour.py` |
+| 검색 비교·상한·정확히 일치 | `test_search_comparison_and_limits.py`, `test_unified_key_search.py` |
+| 세션 저장·설정 복구 | `test_session_save_and_settings_recovery.py`, `test_sessions.py` |
+| 내보내기·외부 편집기 | `test_export_and_editor_launch.py`, `test_editor_and_syntax.py` |
+| 벤치마크 도구 | `test_benchmark_tool.py` |
 | 실제 클립보드 연동 / CI 엔진 검증 | `test_clipboard_integration.py`, `test_ci_engine_gate.py` |
 
 EXE·개발용 엔진의 Git 보관과 작업별 배포 규칙은 소유자의 결정에 따라 유지합니다. 이번 자동 검사 구성은 배포 정책 전환이나 대형 모듈 분할을 포함하지 않습니다.

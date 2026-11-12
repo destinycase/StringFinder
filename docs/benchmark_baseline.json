@@ -1,0 +1,277 @@
+{
+ "measured_at": "2026-11-13 07:19:17 +0900",
+ "engine_version": "7.1.1",
+ "rounds": 16,
+ "machine": {
+  "platform": "Windows-11-10.0.26300-SP0",
+  "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+  "cpu_count": 20
+ },
+ "samples": {
+  "A": {
+   "what": "작은 텍스트 파일 1만 개(파일 순회 비용)",
+   "median_ms": 398.11,
+   "min_ms": 331.46,
+   "max_ms": 434.78,
+   "hits": 100,
+   "digest": "26206e073f3e33af"
+  },
+  "B": {
+   "what": "50MB 2개 + 1MB 8개 텍스트",
+   "median_ms": 31.94,
+   "min_ms": 27.84,
+   "max_ms": 38.26,
+   "hits": 1,
+   "digest": "3be9430cdab99111"
+  },
+  "C": {
+   "what": "바이너리·텍스트 반반 500개",
+   "median_ms": 25.53,
+   "min_ms": 22.08,
+   "max_ms": 31.05,
+   "hits": 54,
+   "digest": "b7b3f5f64042ccf6"
+  },
+  "D": {
+   "what": "500MB, 첫 줄에 일치(전체 읽기)",
+   "median_ms": 206.81,
+   "min_ms": 191.7,
+   "max_ms": 279.29,
+   "hits": 1,
+   "digest": "513ed74b91d7d2e3"
+  },
+  "E": {
+   "what": "100MB ASCII, 끝에 일치",
+   "median_ms": 57.46,
+   "min_ms": 52.36,
+   "max_ms": 71.5,
+   "hits": 1,
+   "digest": "d279f9e6e6486e94"
+  },
+  "F": {
+   "what": "30MB JSON 일반 검색",
+   "median_ms": 17.11,
+   "min_ms": 14.28,
+   "max_ms": 21.83,
+   "hits": 1,
+   "digest": "e6ca880135c0a268"
+  },
+  "G": {
+   "what": "깊이 1000 XML + 50MB 한 줄",
+   "median_ms": 23.47,
+   "min_ms": 21.25,
+   "max_ms": 35.14,
+   "hits": 1,
+   "digest": "9dd0488316df3979"
+  },
+  "H": {
+   "what": "96MB 대부분 0바이트, 끝에 일치",
+   "median_ms": 40.76,
+   "min_ms": 38.54,
+   "max_ms": 53.33,
+   "hits": 1,
+   "digest": "57fd8c557146cb24"
+  },
+  "I": {
+   "what": "50MB 줄바꿈 없음",
+   "median_ms": 27.09,
+   "min_ms": 23.35,
+   "max_ms": 35.25,
+   "hits": 1,
+   "digest": "7d2cb20b11d08819"
+  },
+  "J": {
+   "what": "XLSX 두 시트 값 검색",
+   "median_ms": 15.95,
+   "min_ms": 12.81,
+   "max_ms": 19.77,
+   "hits": 2,
+   "digest": "6797bde4e92bd247"
+  },
+  "K-LF-a": {
+   "what": "한글 위주 238MB(LF), 영문 검색어",
+   "median_ms": 145.86,
+   "min_ms": 137.72,
+   "max_ms": 202.19,
+   "hits": 1,
+   "digest": "63514376687b81ef"
+  },
+  "K-LF-h": {
+   "what": "한글 위주 238MB(LF), 한글 검색어",
+   "median_ms": 161.09,
+   "min_ms": 155.63,
+   "max_ms": 201.46,
+   "hits": 1,
+   "digest": "63514376687b81ef"
+  },
+  "K-CRLF-h": {
+   "what": "한글 위주 240MB(CRLF), 한글 검색어",
+   "median_ms": 159.41,
+   "min_ms": 154.45,
+   "max_ms": 200.51,
+   "hits": 1,
+   "digest": "94ca76da5513dd6f"
+  },
+  "N-a": {
+   "what": "CP949 50MB, 영문 검색어",
+   "median_ms": 330.12,
+   "min_ms": 323.9,
+   "max_ms": 399.51,
+   "hits": 1,
+   "digest": "d8223c9162254a05"
+  },
+  "N-h": {
+   "what": "CP949 50MB, 한글 검색어",
+   "median_ms": 333.8,
+   "min_ms": 324.89,
+   "max_ms": 367.31,
+   "hits": 1,
+   "digest": "d8223c9162254a05"
+  },
+  "O-a": {
+   "what": "UTF-16LE 33MB, 영문 검색어",
+   "median_ms": 62.41,
+   "min_ms": 56.46,
+   "max_ms": 69.5,
+   "hits": 1,
+   "digest": "4f6ad966394fdb2d"
+  },
+  "O-h": {
+   "what": "UTF-16LE 33MB, 한글 검색어",
+   "median_ms": 62.64,
+   "min_ms": 57.07,
+   "max_ms": 82.36,
+   "hits": 1,
+   "digest": "4f6ad966394fdb2d"
+  },
+  "P-json": {
+   "what": "한글 값 JSON 52MB, 값만 검색",
+   "median_ms": 191.45,
+   "min_ms": 181.15,
+   "max_ms": 280.68,
+   "hits": 2,
+   "digest": "feffb11dbf11ef2a"
+  },
+  "P-json-x": {
+   "what": "같은 JSON, 정확히 일치",
+   "median_ms": 355.96,
+   "min_ms": 334.17,
+   "max_ms": 519.83,
+   "hits": 1,
+   "digest": "e54be0a05e36e726"
+  },
+  "P-xml": {
+   "what": "한글 값 XML 45MB, 값만 검색",
+   "median_ms": 217.31,
+   "min_ms": 213.65,
+   "max_ms": 305.37,
+   "hits": 2,
+   "digest": "4c1b4d54fe3b1115"
+  },
+  "P-xml-x": {
+   "what": "같은 XML, 정확히 일치",
+   "median_ms": 351.21,
+   "min_ms": 338.95,
+   "max_ms": 424.75,
+   "hits": 1,
+   "digest": "d768476383d37a91"
+  },
+  "P-xlsx": {
+   "what": "한글 값 XLSX 6MB, 값만 검색",
+   "median_ms": 309.24,
+   "min_ms": 286.86,
+   "max_ms": 360.04,
+   "hits": 2,
+   "digest": "9871d03c80315c13"
+  },
+  "P-xlsx-x": {
+   "what": "같은 XLSX, 정확히 일치",
+   "median_ms": 328.91,
+   "min_ms": 316.86,
+   "max_ms": 499.96,
+   "hits": 1,
+   "digest": "59641c4394de0193"
+  },
+  "R-a": {
+   "what": "4KiB 긴 줄 246MB(CRLF), 영문 검색어",
+   "median_ms": 131.23,
+   "min_ms": 126.17,
+   "max_ms": 188.72,
+   "hits": 1,
+   "digest": "4db5d5a00b91ecda"
+  },
+  "R-h": {
+   "what": "4KiB 긴 줄 246MB(CRLF), 한글 검색어",
+   "median_ms": 149.38,
+   "min_ms": 143.97,
+   "max_ms": 219.06,
+   "hits": 1,
+   "digest": "4db5d5a00b91ecda"
+  },
+  "Q": {
+   "what": "폴더 세 개(A·B·C) 동시 검색",
+   "median_ms": 458.05,
+   "min_ms": 391.72,
+   "max_ms": 650.15,
+   "hits": 155,
+   "digest": "e9a652020cc98057"
+  },
+  "Q-h": {
+   "what": "큰 파일 폴더 세 개(K·R·N) 동시 검색, 한글",
+   "median_ms": 651.81,
+   "min_ms": 623.06,
+   "max_ms": 731.33,
+   "hits": 3,
+   "digest": "4b34c29849c336c0"
+  },
+  "S-ascii": {
+   "what": "50MB, 일치 약 70만 건(ASCII)",
+   "median_ms": 322.79,
+   "min_ms": 297.16,
+   "max_ms": 391.32,
+   "hits": 856154,
+   "digest": "f8f05304d53fdf60"
+  },
+  "S-ko": {
+   "what": "50MB, 일치 수십만 건(한글)",
+   "median_ms": 60.03,
+   "min_ms": 56.07,
+   "max_ms": 83.9,
+   "hits": 27000,
+   "digest": "27c326d883c16531"
+  },
+  "S-ascii-cap": {
+   "what": "S-ascii, 파일당 1만 건 상한",
+   "median_ms": 6.96,
+   "min_ms": 4.8,
+   "max_ms": 10.18,
+   "hits": 10001,
+   "digest": "8b45e83496651fab"
+  },
+  "S-ko-cap": {
+   "what": "S-ko, 파일당 1만 건 상한",
+   "median_ms": 38.25,
+   "min_ms": 36.56,
+   "max_ms": 52.49,
+   "hits": 10001,
+   "digest": "83c64c446707d5ae"
+  },
+  "T-bin-h": {
+   "what": "바이너리 300MB + 텍스트 소량, 바이너리 제외·한글",
+   "median_ms": 8.36,
+   "min_ms": 7.36,
+   "max_ms": 9.84,
+   "hits": 4,
+   "digest": "8b924a484d56c398"
+  },
+  "U-archive": {
+   "what": "UE 현지화 archive 40MB, 값만 검색",
+   "median_ms": 408.01,
+   "min_ms": 373.02,
+   "max_ms": 492.69,
+   "hits": 1,
+   "digest": "82f31942265f71cd"
+  }
+ },
+ "app_version": "7.1.1"
+}
