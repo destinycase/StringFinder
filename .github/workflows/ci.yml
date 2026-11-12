@@ -58,7 +58,7 @@ jobs:
       - name: Python lint
         run: python -m ruff check src tests tools
       - name: Product and diagnostic type checks
-        run: python -m mypy src tools/diagnostic_benchmark.py --cache-dir docs_dev/ci/mypy_cache
+        run: python -m mypy src tools/diagnostic_benchmark.py tools/benchmark.py --cache-dir docs_dev/ci/mypy_cache
       - name: Rust formatting
         run: cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
       - name: Rust lint

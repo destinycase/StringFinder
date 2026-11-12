@@ -52,7 +52,7 @@ def cleanup():
 
     dirs_to_remove = [
         "build",
-        "dist",
+        # dist/는 지우지 않습니다: dist/StringFinder.exe는 Git으로 관리하는 안정 버전 실행 파일입니다.
         ".pytest_cache",
         ".mypy_cache",
         ".ruff_cache",

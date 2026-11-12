@@ -87,28 +87,30 @@ sequenceDiagram
 StringFinder/
 ├── src/
 │   ├── sf_main.py                 # 애플리케이션 진입점, 싱글톤 잠금, 경고 필터
-│   ├── core/                      # Python 코어 계층
-│   │   ├── search_engine.py       # Rust FFI 연동 래퍼, 검색 디스패치 및 폴백 로직
-│   │   ├── excel_sparse.py        # XLSX/XLSM 실제 셀·절대 좌표 열거, 기존 Excel 행 어댑터
+│   ├── core/                      # Python 코어 계층 (검색 자체는 하지 않음)
+│   │   ├── search_engine.py       # Rust FFI 래퍼: 옵션·모드 비트 변환, 결과 정규화, 스킵 사유 번역
 │   │   ├── search_query.py        # 검색어 길이 검증과 입력 오류 계약
-│   │   ├── json_policy.py         # 중복 키 정책과 깊은 JSON의 Python 디코딩
-│   │   ├── excel_date_formats.py  # XLSX/XLSM 1904 첫날의 날짜·시간 형식 구분
-│   │   ├── skip_reason_codes.py   # 검색 경로 공통 스킵 코드 계약
+│   │   ├── skip_reason_codes.py   # 공통 스킵 코드 계약
 │   │   ├── skip_reason_formatter.py # 내부 스킵 사유를 사용자 언어로 변환
-│   │   ├── worker.py              # 백그라운드 SearchWorker, 풀 관리 및 시그널
+│   │   ├── worker.py              # 백그라운드 SearchWorker와 진행·결과 시그널
+│   │   ├── app_search.py          # 진단·벤치마크용: 파일 하나를 앱과 같은 폴더 검색 경로로 검색
+│   │   ├── diagnostic_benchmark.py # 설정의 성능 진단(사용자 폴더 측정·보고서)
 │   │   ├── system_manager.py      # 애플리케이션 로그 보관·정리 정책
 │   │   └── doctor.py              # 시스템 자가 진단 및 진단 리포트
 │   ├── rust_engine/               # Rust 네이티브 크레이트 (sf_engine)
 │   │   ├── Cargo.toml             # Rust 의존성 및 cdylib 라이브러리 설정
-│   │   ├── sf_engine.pyd          # 컴파일된 단일 SSOT 네이티브 바이너리
+│   │   ├── sf_engine.pyd          # 컴파일된 네이티브 바이너리
 │   │   └── src/
-│   │       ├── lib.rs             # FFI 진입점, mmap 검색기, 결과 디스패처
+│   │       ├── lib.rs             # FFI 진입점(search_dir, search_file), mmap 검색기, 결과 디스패처
 │   │       ├── types.rs           # SearchMatch, SearchOptions, 비트플래그 정의
-│   │       ├── utils.rs           # 인코딩 감지, 유니코드 정규화, 패턴 생성
+│   │       ├── textkey.rs         # 공통 비교 기준 key(x) = NFC(casefold(NFC(x)))와 Matcher
+│   │       ├── casefold_table.rs  # Unicode CaseFolding 표 (tools/gen_casefold_table.py로 생성)
+│   │       ├── utils.rs           # 인코딩 감지, 숫자 표기, 보조 함수
 │   │       ├── json_search.rs     # serde_json Visitor 기반 스트리밍 탐색기
 │   │       ├── xml_search.rs      # quick-xml 기반 계층 경로 탐색기
 │   │       ├── excel_search.rs    # calamine 기반 셀/시트 탐색 및 패닉 격리
-│   │       └── excel_date_formats.rs # 모호한 1904 셀의 날짜 형식 지연 확인
+│   │       ├── excel_date_formats.rs # 모호한 1904 셀의 날짜 형식 지연 확인
+│   │       └── ue_archive_search.rs # UE 현지화 archive 값만 검색
 │   ├── ui/                        # PySide6 GUI 계층
 │   │   ├── main_window.py         # 메인 윈도우, 다중 탭 관리, 상태 표시줄 버튼
 │   │   ├── search_tab.py          # 검색 탭 위젯, 도크 패널 배치, 세션 연동
@@ -122,6 +124,8 @@ StringFinder/
 │   │   ├── startup.py             # 첫 Paint 이후 준비 콜백의 1회 실행
 │   │   └── syntax_highlighter.py  # 미리보기 구문 강조
 │   └── sf_utils/                  # 설정, 공통 자원, 로깅, 현지화 유틸리티
+│       ├── _version.py            # 제품 버전 (VERSION)
+│       ├── version_helper.py      # 실행 환경별 버전 조회
 │       ├── settings_defaults.py   # 설정 스키마/기본값/기본값 버전
 │       ├── constants.py           # 설정 키와 검색 모드·한도 계약
 │       ├── config_manager.py      # 설정/세션 JSON 입출력 및 검증
@@ -135,8 +139,8 @@ StringFinder/
 │       ├── english_strings.py     # 영어 문자열 카탈로그
 │       └── localization.py        # UI import 전 언어 선택과 문자열 적용
 ├── tests/                         # pytest 단위·통합·GUI·회귀 테스트
-├── tools/                         # 벤치마크, 진단, 환경 검사 도구
-├── scripts/                       # 벤치마크 이력 등 보조 스크립트
+├── tools/                         # 벤치마크(benchmark.py), 진단, 환경 검사, casefold 표 생성
+├── scripts/                       # 개발 폴더 정리(cleanup_project.py), DLL 잠금 해제(unlock_dll.py)
 ├── build.py                       # Rust + PyInstaller 릴리스 빌드/스모크 테스트
 ├── build_rust.py                  # Rust 확장 모듈 빌드 및 안전 교체
 ├── build_support.py               # 배포 런타임 검증 지원
@@ -178,7 +182,7 @@ UI (src/ui)
 
 설정 저장은 같은 디렉터리의 고유 `.config_*.tmp` 파일에 직렬화하고 닫은 뒤 기존 설정을 교체합니다. 실패한 시도의 임시 파일만 정리하며, 기존 설정 파일과 다른 프로세스의 임시 파일은 삭제하지 않습니다. 잠겨서 삭제할 수 없는 임시 파일은 로그를 남기되 다음 저장을 막지 않습니다. 최종 설정 파일 자체가 잠기면 저장은 실패할 수 있습니다. 기본 저장 폴더 생성이 실패해 임시 폴더로 전환되면 `uses_temporary_storage`가 참이며, 메인 창에서 한글·영문 경고를 한 번 표시합니다. `APPDATA` 미설정 시의 사용자 홈 폴더 대체 경로는 임시 저장으로 취급하지 않습니다.
 
-Python JSON 읽기는 열린 파일의 크기를 확인하고, 읽기·메모리 매핑 전에 공통 크기 상한을 다시 검사합니다. 경로 크기 조회를 줄이는 최적화에서도 열린 파일 기준의 검사는 제거하지 않습니다. 메모리 가드의 실패 주입 범위는 **7.5절**을 따릅니다.
+검색 대상 파일은 Rust 엔진만 읽습니다. 엔진은 열린 파일의 크기를 확인하고, 읽기·메모리 매핑 전에 공통 크기 상한을 다시 검사합니다. 경로 크기 조회를 줄이는 최적화에서도 열린 파일 기준의 검사는 제거하지 않습니다. 메모리 가드의 실패 주입 범위는 **7.5절**을 따릅니다.
 
 ---
 
@@ -208,9 +212,9 @@ options = sf_engine.SearchOptions(
 )
 ```
 
-설정 화면의 파일명 필터는 `*`, `?`, `[`, `]`, `\`를 패턴 문법으로 해석하지 않고 입력 단계에서 거부합니다. 파일명 조건은 리터럴 이름 조각으로만 추가하며, 세션 복원 경로도 같은 검증을 통과해야 합니다. 이 UI 정책을 바꿀 때는 폴더·파일 목록 검색의 후보 파일 집합이 같은지 회귀 테스트를 갱신합니다.
+설정 화면의 파일명 필터는 `*`, `?`, `[`, `]`, `\`를 패턴 문법으로 해석하지 않고 입력 단계에서 거부합니다. 파일명 조건은 리터럴 이름 조각으로만 추가하며, 세션 복원 경로도 같은 검증을 통과해야 합니다. 이 UI 정책을 바꿀 때는 폴더 검색과 파일 하나 검색의 후보 파일 집합이 같은지 회귀 테스트를 갱신합니다.
 
-JSON 값만 검색은 `allow_duplicate_json_keys` 설정(기본 `False`)을 사용합니다. Rust 모드 비트 `MODE_ALLOW_DUPLICATE_JSON_KEYS`와 Python 검색 설정 스냅샷에 동일 정책을 전달합니다. 중복 판정은 객체별로 디코딩된 키를 비교하며, 결과를 찾았거나 결과·깊이 제한에 도달한 뒤에도 문서 검증을 계속합니다. 허용 시 Python의 `ObjectPairs`로 중복 값을 보존합니다. `core/json_policy.py`의 스택 기반 디코더는 깊은 문서에서도 Python의 NFC·casefold 비교 정책을 유지하기 위한 폴백이며, Rust 기본 검색으로 바꿔 재검색해서는 안 됩니다.
+JSON 값만 검색은 `allow_duplicate_json_keys` 설정(기본 `False`)을 사용합니다. 검색 설정 스냅샷의 값을 Rust 모드 비트 `MODE_ALLOW_DUPLICATE_JSON_KEYS`로 전달합니다. 중복 판정은 객체별로 디코딩된 키를 비교하며, 결과를 찾았거나 결과·깊이 제한에 도달한 뒤에도 문서 검증을 계속합니다. 허용하면 중복된 키의 값도 각각 검색합니다. 중복 키 판정과 깊은 문서 처리는 모두 Rust가 합니다.
 
 파일 순회의 접근 실패는 Rust가 건너뜀 사유로 돌려주며 워커의 건너뛴 목록·최종 건수에 전달합니다. 후보 선별 정책은 [구현 정책 2.2절](IMPLEMENTATION_POLICY.md#22-검색-정책오류취소-계약), Excel 셀 열거·좌표 처리는 **5절의 Excel 설계**를 따릅니다.
 
@@ -220,27 +224,27 @@ UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한�
 
 검색 경로의 값 표현·선별 계약은 다음과 같습니다. `tests/test_candidate_encoding_and_value_parity.py`에서 폴더 검색과 파일 하나 검색의 결과를 비교합니다.
 
-- `include_junctions` 기본값은 false입니다. Python은 `os.path.isjunction()`으로 정션을 구분하고, Rust는 Windows reparse tag로 정션과 심볼릭 링크를 구분합니다. 포함 시 실제 경로를 등록하여 순환·중복 탐색을 방어합니다. Rust 등록 집합은 병렬 순회 및 모든 검색 루트가 공유합니다. 심볼릭 링크까지 무조건 허용하는 옵션으로 바꾸지 않습니다.
+- `include_junctions` 기본값은 false입니다. 검색 루트는 Python이 `os.path.isjunction()`으로 걸러 내고, 그 아래는 Rust가 Windows reparse tag로 정션과 심볼릭 링크를 구분합니다. 포함 시 실제 경로를 등록하여 순환·중복 탐색을 방어합니다. Rust 등록 집합은 병렬 순회 및 모든 검색 루트가 공유합니다. 심볼릭 링크까지 무조건 허용하는 옵션으로 바꾸지 않습니다.
 - `search_encoding`은 자동/UTF-8/CP949/UTF-16 LE/BE 중 하나입니다. 필터가 아니라 디코딩 정책이며, 검색 시작 시 설정 스냅샷과 Rust SearchOptions에 전달합니다. 지정 모드에서는 다른 인코딩으로 자동 재시도하지 않습니다. Excel 바이너리 파서에는 적용하지 않습니다. 자동 UTF-16 보완은 UTF-8 및 유효 CP949와 충돌하지 않는 한글 중심 표본만 사용하며, 모호한 파일의 완전 자동 판별을 보장하지 않습니다.
-- JSON 큰 정수는 serde_json의 arbitrary_precision 경로에서 자릿수를 보존합니다. synthetic Number map과 실제 같은 이름의 객체 키는 원본 문자열 참조 여부로 구별하며, 이스케이프된 키도 회귀 검사합니다. 정수 `-0`은 `0`, 실수 `-0.0`은 그대로 유지합니다. 유한 범위를 넘는 실수는 두 경로 모두 문서 오류로 반환합니다.
+- JSON 큰 정수는 serde_json의 arbitrary_precision 경로에서 자릿수를 보존합니다. synthetic Number map과 실제 같은 이름의 객체 키는 원본 문자열 참조 여부로 구별하며, 이스케이프된 키도 회귀 검사합니다. 정수 `-0`은 `0`, 실수 `-0.0`은 그대로 유지합니다. 유한 범위를 넘는 실수는 문서 오류로 반환합니다.
 - 1904 날짜 체계의 serial 0 이상 1 미만은 날짜와 시간 모두 가능합니다. XLSX/XLSM의 모호한 값에서만 styles·worksheet 메타데이터를 지연 조회하여 날짜 형식 셀을 복구합니다. 일반 날짜·시간 및 다른 파일 형식은 기존 경로를 유지합니다. 조회 실패를 검색 결과 없음으로 숨기지 않습니다. `tests/test_search_encoding_junctions.py`에서 후보·숫자·디코딩·날짜 경계를 검증합니다.
 - 파일명 필터는 대소문자를 무시하는 **문자 그대로의 부분 문자열**입니다. Rust의 GlobSet은 필터 문자를 `globset::escape()`로 이스케이프한 뒤 내부 구현에만 사용합니다. `{a,b}` 등을 패턴으로 해석하거나 과거 저장값을 와일드카드로 실행하지 않습니다.
-- UTF-8/CP949 판정을 ASCII 접두부만으로 확정하지 않습니다. Python 텍스트 검색은 strict UTF-8 실패 시 CP949로 처음부터 재시도하여 중간 결과를 중복 누적하지 않습니다. 두 인코딩 모두 읽을 수 없는 일반 텍스트는 기존 치환 정책을 유지하며, 구조화 Python 문서는 strict 디코딩을 사용합니다. UTF-8 BOM과 UTF-16 판정은 우선합니다.
+- UTF-8/CP949 판정을 ASCII 접두부만으로 확정하지 않습니다. 앞부분만 보고 UTF-8로 정했더라도 해석하지 못한 바이트를 만나면 파일 전체로 다시 판정합니다. 두 인코딩 모두 읽을 수 없는 일반 텍스트는 치환 문자로 읽고 "일부 해석 실패" 안내를 붙이며, 구조화 문서는 strict 디코딩을 사용합니다. UTF-8 BOM과 UTF-16 판정은 우선합니다.
 - Rust 일반 ASCII 부분 검색은 샘플 판정과 결과 문자열의 UTF-8 검증을 함께 사용합니다. 치환 문자가 포함된 결과는 전체 인코딩을 재검증하고 필요하면 결과를 다시 생성합니다. 비 ASCII 검색어·정확히 일치·구조화 검색은 전체 입력을 판정합니다.
 - CP949/UTF-16 일반 부분 검색도 한 줄의 **각 검색 위치**를 집계합니다. 디코딩된 위치를 원본 파일 바이트 오프셋으로 오인하지 않으며, 긴 결과 문자열은 검색 위치 주변으로 제한합니다. 파일당 상한과 결과 제한 안내는 유지합니다.
-- JSON 실수는 Python의 해석된 숫자 표현과 동일하게 비교합니다(`1.0`, `1e+20`, `1e-05`). Rust는 `serde_json/float_roundtrip`으로 변환 정확도를 보존합니다. 원문 숫자의 표기와 해석된 표현이 다를 때 원문에 없는 검색어 위치를 추정하지 않습니다.
+- JSON 실수는 해석된 숫자 표현으로 비교합니다(`1.0`, `1e+20`, `1e-05`. Python `repr(float)`와 같은 표기). Rust는 `serde_json/float_roundtrip`으로 변환 정확도를 보존합니다. 원문 숫자의 표기와 해석된 표현이 다를 때 원문에 없는 검색어 위치를 추정하지 않습니다.
 - Excel은 정수 값에 불필요한 `.0`을 붙이지 않고, 실수의 작은 소수부를 허용 오차로 반올림해 제거하지 않습니다. Boolean은 `true`/`false`, 날짜는 `YYYY-MM-DD`, 시간이 있는 날짜는 `YYYY-MM-DD HH:MM:SS`, 시간은 `HH:MM:SS`로 비교합니다. 밀리초가 있으면 6자리 소수부로 표현합니다. 문자열 셀의 내용은 변환하지 않습니다. 날짜의 숫자 저장·ISO 저장 및 1900/1904 날짜 체계를 구분해야 합니다.
 - 완료된 배치의 건너뛴 파일 안내는 그 배치의 결과를 전체 상한에 맞춰 자르기 **전에** 전달·집계합니다. 상한에 도달했다고 이미 확보한 오류 안내를 버리지 않습니다.
 
-`results_callback`을 사용하는 디렉터리/파일 목록 검색에서는 callback이 결과의 단일 전달 경로입니다. callback에는 `(path, matches)` 배치가 전달되고, 동기 반환 목록은 중복 메모리 보관을 피하기 위해 비워질 수 있습니다. callback 없이 호출하면 동기 반환 목록을 사용할 수 있습니다. callback 예외는 Rust 검색 오류로 호출자에게 전파됩니다.
+`results_callback`을 사용하는 폴더 검색(`search_dir`)에서는 callback이 결과의 단일 전달 경로입니다. callback에는 `(path, matches)` 배치가 전달되고, 동기 반환 목록은 중복 메모리 보관을 피하기 위해 비워질 수 있습니다. callback 없이 호출하면 동기 반환 목록을 사용할 수 있습니다. callback 예외는 Rust 검색 오류로 호출자에게 전파됩니다.
 
 파일 단위 결과 제한은 `__SF_TRUNCATED__`, JSON 깊이 제한은 `__SF_JSON_DEPTH_LIMIT__|<limit>` 메타데이터로 전달합니다. 이 신호들은 치명적 오류가 아니므로 정상 매치를 제거하지 않습니다. Python 계층은 같은 파일에서 발생한 부분 검색 사유를 하나로 합쳐 `skipped` 스트림에도 전달하며, UI는 기존 **건너뛴 파일 수** 패널과 목록 팝업을 재사용합니다. 제한만 발생해 정상 매치가 없어도 해당 파일은 `skipped` 안내에 포함되어야 합니다.
 
-Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니다. API를 바꾸면 Rust 엔진을 다시 빌드해야 합니다. 오래된 엔진을 현재 Python 코드와 섞어 실행하지 않습니다. 일반 텍스트의 `_quick_text_probe()`는 전체 검색 전에 명백한 무결과 파일을 거르는 내부 검사로 유지하며, 결과를 1건으로 줄이는 사용자 기능이 아닙니다. 명시적으로 존재 확인 결과라고 저장된 예전 세션은 입력 조건만 살리고 결과·요약을 비운 뒤 재검색을 안내합니다. 일반 결과나 메타데이터 없는 실제 내용은 임의로 변환하지 않습니다.
+Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니다. API를 바꾸면 Rust 엔진을 다시 빌드해야 합니다. 오래된 엔진을 현재 Python 코드와 섞어 실행하지 않습니다. 명시적으로 존재 확인 결과라고 저장된 예전 세션은 입력 조건만 살리고 결과·요약을 비운 뒤 재검색을 안내합니다. 일반 결과나 메타데이터 없는 실제 내용은 임의로 변환하지 않습니다.
 
 파일명 묶음은 UI에서 쉼표로 나누고 앞뒤 공백을 제거한 뒤 검색기로 전달합니다. 체크한 묶음의 합집합을 검색하며, 겹치는 조건은 대소문자를 무시하고 한 번만 셉니다. 빈 구분 항목이나 와일드카드가 있으면 묶음 전체를 거절합니다. 상태 표시줄은 현재 탭의 검색 모드·폴더·실제 적용 확장자·파일명 목록을 ` | `로 구분해 표시하고 폴더가 없으면 경고 아이콘을 표시합니다.
 
-성능 진단은 검색 방식이 하나라 시나리오 하나를 5회 실행합니다. 보고서 형식 버전은 7입니다(6에서 글자 변형 시나리오를 뺌). 삭제된 시나리오를 새 측정으로 재해석하지 않습니다. A–J의 D는 큰 파일 전체 검색으로 바뀌었으므로 과거 조기 종료 D와 직접 비교하지 않습니다. 이전 A–J 표본을 재사용한다면 `python scripts/benchmark_performance.py --force-gen`으로 새 표본을 생성한 뒤 측정하세요.
+성능 진단은 검색 방식이 하나라 시나리오 하나를 5회 실행합니다. 보고서 형식 버전은 7입니다(6에서 글자 변형 시나리오를 뺌). 삭제된 시나리오를 새 측정으로 재해석하지 않습니다.
 
 ### 4.2 `SearchMatch` (Structured Match Object)
 
@@ -253,7 +257,7 @@ Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니�
 | `offset` | `Option<usize>` | 매치 시작 바이트 오프셋 |
 | `length` | `Option<usize>` | 매치 바이트 길이 |
 | `kind` | `String` | `"match"`, `"partial"`, `"binary"`, `"long_line"`, `"truncated"`, `"sheet_error"`, `"error"` |
-| `code` | `Option<String>` | 에러/안내 코드 (`ERR_MMAP`, `ERR_JSON_SIZE_LIMIT`, `JSON_DEPTH_LIMIT` 등; `EXCEL_CELL_LIMIT`은 구버전 바이너리 호환용) |
+| `code` | `Option<String>` | 에러/안내 코드 (`ERR_MMAP`, `ERR_JSON_SIZE_LIMIT`, `JSON_DEPTH_LIMIT` 등) |
 | `detail` | `Option<String>` | 상세 메시지 |
 
 구조 검색의 기본 `content` 직렬화 형식은 JSON/XML의 경우 `path\tvalue`, Excel의 경우 `sheet\tcell\tvalue`입니다. UE 현지화 archive는 값에 탭·줄바꿈이 있어도 필드가 섞이지 않도록 항상 `ARCHIVE_FIELDS|[Namespace, Key, 원문, 번역문]` JSON 배열을 쓰며, Python 정규화 후 결과 행은 `(Key 줄 번호, Namespace, Key, 원문, 번역문, offset, length)`이며 화면에는 줄번호·Namespace·Key·원문·번역문 다섯 열로 표시합니다. 구조 오류 코드는 `ERR_ARCHIVE_FORMAT|<문제 위치 경로>`입니다. JSON 키에 탭이 있으면 필드를 모호하게 나누지 않도록 `JSON_FIELDS|` 접두부와 JSON 배열로 경로·값을 전달합니다. 이는 오류 마커가 아닌 정상 결과 형식입니다. Python의 `_normalize_rust_matches()`가 이 값을 UI 모델용 튜플로 변환하므로 형식 변경 시 Rust 생성부, Python 정규화 계층, UI 모델과 세션 회귀 테스트를 함께 수정해야 합니다. 구버전 세션·확장 모듈이 사용한 Excel `sheet | cell | value` 형식도 계속 읽으며, 시트 이름에 ` | `가 들어갈 수 있으므로 오른쪽의 셀·값 필드부터 분리합니다.
@@ -277,22 +281,22 @@ XML 단일 파일 결과도 같은 정규화 계층을 사용합니다. `_visibl
 
 | 결정 | 이유·범위 | 현재 계약 |
 | --- | --- | --- |
-| Rust 단일 검색 엔진 · 6.4.2~6.4.6 | 모든 형식이 같은 비교 기준(`key()`). 두 경로의 결과 차이·Python 경로의 속도 문제 해소 | 2절·3.2절 |
+| Rust 단일 검색 엔진 · 6.4.2~6.4.6 | 모든 형식이 같은 비교 기준(`key()`). 예전 Python 검색 경로와의 결과 차이·속도 문제 해소 | 2절·3.2절 |
 | JSON/XML 전체 검증 후 결과 확정 | 앞부분 매치만으로 손상 문서를 정상 처리하지 않음. 상한 이후에도 검증 유지 | 구현 정책 1절·8.6절 |
 | Excel 시트별 실패 격리 | 정상 시트 결과 보존과 부분 검색 안내. 읽지 못한 시트를 파일별 안내에 남김 | 구현 정책 3.5절 |
 | XLSX/XLSM 실제 셀 저장 · 6.0.3 | 직사각형 빈 영역 할당 회피. 실제 셀 수에 비례하는 저장이며 상수 메모리 스트리밍이 아님 | 아래 Excel 설계 |
 | 검색 설정 스냅샷 · 5.9.21 | 검색 중 정책 변경·파일별 반복 조회 방지. 다음 검색부터 변경 적용 | 구현 정책 2.1절 |
 | 스킵·부분 검색·전체 제한 분리 | 정상 결과와 처리 실패·완전성을 구분 | 4절, 구현 정책 2.2절 |
 | 한영 문자열 카탈로그 | 상수명·자리표시자 계약 유지 | 구현 정책 3.4절 |
-| 현재 성능 기준과 과거 측정 분리 | 작업본 결과와 배포 버전·현재 기준의 혼동 방지 | 문서 안내·성능 기준·성능 개선 기록 |
+| 현재 성능 기준과 과거 측정 분리 | 작업본 결과와 배포 버전·현재 기준의 혼동 방지 | 문서 안내·벤치마크 기준선·성능 기록 |
 
 ### 5.1 Excel 실제 셀 읽기 설계
 
-일반 Excel 셀 비교는 문자열을 차용하고 정수·소수·날짜/기간의 변환 버퍼를 재사용하며, ASCII 정확 일치의 중간 대소문자 문자열을 제거합니다. 값 표현·Unicode 검색어 정책·시트별 실패 및 결과 한도는 유지합니다. 6.4.2부터 비ASCII 셀은 공통 비교 기준(`key()`)으로 비교합니다. 세부 계약은 [구현 정책 1.4절](IMPLEMENTATION_POLICY.md#14-엑셀-파싱-라이브러리-패닉-격리), 측정과 보류한 NFC 후보는 [성능 개선 기록](archive/before-v7/PERFORMANCE_HISTORY.md)을 참조합니다.
+일반 Excel 셀 비교는 문자열을 차용하고 정수·소수·날짜/기간의 변환 버퍼를 재사용하며, ASCII 정확 일치의 중간 대소문자 문자열을 제거합니다. 값 표현·Unicode 검색어 정책·시트별 실패 및 결과 한도는 유지합니다. 비ASCII 셀은 공통 비교 기준(`key()`)으로 비교합니다. 세부 계약은 [구현 정책 1.4절](IMPLEMENTATION_POLICY.md#14-엑셀-파싱-라이브러리-패닉-격리), 측정과 보류한 NFC 후보는 [성능 개선 기록](archive/before-v7/PERFORMANCE_HISTORY.md)을 참조합니다.
 
 Rust `SheetReader`는 XLSX/XLSM에 실제 셀 벡터, XLS/XLSB에 기존 `Range`를 사용합니다. 순서대로 유일한 좌표는 정렬을 생략하고 나머지는 안정 정렬·중복 제거로 행·열순과 마지막 비어 있지 않은 값의 계약을 보존합니다. 시트 전체 파싱 후 검색하므로 첫 매치나 상세 상한이 손상 시트 검증을 생략하지 않습니다.
 
-Rust 확장에는 예전 Python 경로가 쓰던 `SparseExcelWorkbook`(시트 단위 셀 읽기)이 남아 있지만 앱은 더 쓰지 않습니다. 과거 측정·한계는 [성능 개선 기록 5절](archive/before-v7/PERFORMANCE_HISTORY.md#5-v603-xlsxxlsm-빈-영역-배열-할당-제거)에 보존합니다.
+XLSX/XLSM 실제 셀 저장 방식의 과거 측정·한계는 [성능 개선 기록 5절](archive/before-v7/PERFORMANCE_HISTORY.md#5-v603-xlsxxlsm-빈-영역-배열-할당-제거)에 보존합니다.
 
 ## 6. 개발 환경 설정 및 빌드/테스트 가이드
 
@@ -369,7 +373,7 @@ $env:APPDATA = Join-Path $PWD "docs_dev/ci_local/appdata"
 python build_rust.py
 python tools/check_dev_environment.py --require-engine
 python -m ruff check src tests tools
-python -m mypy src tools/diagnostic_benchmark.py --cache-dir docs_dev/ci_local/mypy_cache
+python -m mypy src tools/diagnostic_benchmark.py tools/benchmark.py --cache-dir docs_dev/ci_local/mypy_cache
 cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
 cargo clippy --manifest-path src/rust_engine/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src/rust_engine/Cargo.toml --locked
@@ -494,7 +498,7 @@ python tools/validate_parallel_resources.py
 
 ### 7.4 검색 계약 회귀 검증
 
-검색은 Rust 한 경로이며, 폴더·단일 파일 진입점이 같은 결과를 내도록 다음 계약을 테스트로 고정합니다. Python 검색기를 지운 뒤 예전 글자 변형 검색으로만 찾던 경우는 `tests/test_unified_key_search.py`(Rust 직접 호출)와 `tests/test_rust_only_golden.py`(앱 경로)가 맡습니다.
+검색은 Rust 한 경로입니다. 앱은 폴더 검색(`search_dir`)만 쓰고, 시험은 파일 하나를 넘겨 같은 경로로 검사합니다(`tests/folder_search_helper.py`). 다음 계약을 테스트로 고정합니다. Python 검색기를 지운 뒤 예전 글자 변형 검색으로만 찾던 경우는 `tests/test_unified_key_search.py`(Rust 직접 호출)와 `tests/test_rust_only_golden.py`(앱 경로)가 맡습니다.
 
 - 검색 결과의 파일 경로·검색 결과 수·구조화 데이터 직렬화 형식
 - `max_per_file`, 취소 시 이미 수집된 결과 보존
@@ -514,7 +518,7 @@ python tools/validate_parallel_resources.py
 
 | 변경 | 최소 함께 확인할 테스트/검증 |
 | --- | --- |
-| 파일 후보 필터·순회 | 폴더·단일 파일 진입점의 같은 fixture, 숨김·dotfile·ignore 파일·루트 중복·symlink·빈 확장자 |
+| 파일 후보 필터·순회 | 폴더 검색과 파일 하나 검색의 같은 fixture, 숨김·dotfile·ignore 파일·루트 중복·symlink·빈 확장자 |
 | JSON/XML/Excel 파서 | 형식별 Rust 경로, 잘못된 입력, 제한 marker, 매치 위치/미리보기 |
 | 결과 callback·중지 | callback/동기 반환 차이, 중지 시 queued 결과 보존, total/per-file 제한 구분 |
 | 설정 키·기본값 | 기본값/허용 범위, 수동 손상 JSON, default-version 초기화, schema migration |
@@ -561,4 +565,4 @@ EXE·개발용 엔진의 Git 보관과 작업별 배포 규칙은 소유자의 �
 결과 필터는 원본 모델의 `set_filters`·`set_column_filter`를 사용하고 프록시는 뷰 연결·정렬만 맡습니다. 시그널 전송 실패의 진단은 수신 함수 예외 처리와 구분합니다. 삭제된 Qt 객체의 종료 신호와 종료 중 로그 실패는 무시하되 다른 전송 오류는 기록합니다.
 설정 저장 재시도는 원본 보존을 위해 유지합니다. 인코딩 선택·재시도 조건과 전역 패닉 훅은 유지합니다. 보조 스레드 패닉은 모든 스레드 정리 후 오류로 전달하며, 첫 인코딩 확인 실패는 검색을 계속하고 후속 호환 읽기 실패는 파일 건너뜀으로 구분합니다. 넓은 예외 처리의 일괄 축소는 별도 검증 없이 수행하지 않습니다.
 
-실패 경로 검증은 `tests/test_failure_path_integrity.py`와 Rust의 보조 스레드 정리 단위 테스트를 확인합니다. Rust 단일 파일 API는 비정상 감시 스레드 종료를 예외로 반환하지만 Python의 파일별 래퍼는 기존 정책대로 그 파일의 건너뜀으로 변환합니다. 폴더·파일 목록 배치 API의 실패는 이미 전달한 결과를 보존하고 검색 실패 요약으로 표시합니다. 테스트용 패닉은 Rust `cfg(test)` 안에만 두며 배포 빌드의 환경 변수나 기능 플래그로 주입하지 않습니다.
+실패 경로 검증은 `tests/test_failure_path_integrity.py`와 Rust의 보조 스레드 정리 단위 테스트를 확인합니다. Rust 파일 하나 API(`search_file`)는 비정상 감시 스레드 종료를 예외로 반환합니다. 폴더 검색의 실패는 이미 전달한 결과를 보존하고 검색 실패 요약으로 표시합니다. 테스트용 패닉은 Rust `cfg(test)` 안에만 두며 배포 빌드의 환경 변수나 기능 플래그로 주입하지 않습니다.
