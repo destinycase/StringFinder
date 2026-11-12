@@ -5,6 +5,7 @@ import zipfile
 
 import pytest
 from core import search_engine as se
+import folder_search_helper
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
@@ -19,7 +20,7 @@ def search_policy():
 def test_precise_json_existence_matches_decoded_values(tmp_path, content, query):
     path = tmp_path / "sample.json"
     path.write_text(content, encoding="utf-8")
-    result = se.search_in_json_special(str(path), query)
+    result = folder_search_helper.search_in_json_special(str(path), query)
     assert result and result[0] == str(path) and result[1] == 1
 
 
@@ -28,7 +29,7 @@ def test_duplicate_json_keys_policy(tmp_path, allow):
     path = tmp_path / "duplicate.json"
     path.write_text('{"v":"needle","\\u0076":"needle"}', encoding="utf-8")
     with se.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
-        result = se.search_in_json_special(str(path), "needle")
+        result = folder_search_helper.search_in_json_special(str(path), "needle")
     assert result
     if allow:
         assert result[0] == str(path) and result[1] == 2
@@ -40,7 +41,7 @@ def test_duplicate_json_keys_policy(tmp_path, allow):
 def test_precise_deep_json_search_keeps_unicode(tmp_path):
     path = tmp_path / "deep.json"
     path.write_text('[' * 3000 + '"ß"' + ']' * 3000, encoding="utf-8")
-    assert se.search_in_json_special(str(path), "ss")[1] == 1
+    assert folder_search_helper.search_in_json_special(str(path), "ss")[1] == 1
 
 
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
@@ -49,7 +50,7 @@ def test_short_no_bom_utf16_is_text_in_all_paths(tmp_path, encoding, query):
     path = tmp_path / "short.txt"
     path.write_bytes(query.encode(encoding))
     for precise in (False, True):
-        assert se.search_in_file(str(path), query, exclude_binary=True)
+        assert folder_search_helper.search_in_file(str(path), query, exclude_binary=True)
 
 
 @pytest.mark.parametrize("fragment", ["nee<![CDATA[dle]]>", "nee<!--comment-->dle", "nee<?test abc?>dle"])
@@ -83,7 +84,7 @@ def test_excel_coordinates_and_sheet_failure(tmp_path):
     book.active["D5"] = "needle"
     book.create_sheet("broken")["A1"] = "needle"
     book.save(path)
-    result = se.search_in_excel_special(str(path), "needle")
+    result = folder_search_helper.search_in_excel_special(str(path), "needle")
     assert result and result[1] == 2
     assert ("Sheet", "D5") in [(row[1], row[2]) for row in result[2]]
     corrupt = tmp_path / "corrupt.xlsx"
@@ -91,14 +92,15 @@ def test_excel_coordinates_and_sheet_failure(tmp_path):
         for name in source.namelist():
             if name != "xl/worksheets/sheet1.xml":
                 destination.writestr(name, source.read(name))
-    result = se.search_in_excel_special(str(corrupt), "needle")
-    assert result and (result[0] == Constants.STATUS_SKIPPED or any(row[0] == -2 for row in result[2]))
+    result = folder_search_helper.search_in_excel_special(str(corrupt), "needle")
+    # 폴더 검색은 일부 시트 실패 안내를 결과와 별도로 건너뛴 목록에 보냅니다.
+    assert result and (result[0] == Constants.STATUS_SKIPPED or folder_search_helper.last_skipped)
 
 
 def test_json_exact_trims_only_outer_whitespace(tmp_path):
     path = tmp_path / "exact.json"
     path.write_text(json.dumps({"value": " needle "}))
-    assert se.search_in_json_special(str(path), "needle", exact_match=True)
+    assert folder_search_helper.search_in_json_special(str(path), "needle", exact_match=True)
 
 
 def test_excel_exact_keeps_internal_whitespace(tmp_path):
@@ -107,8 +109,8 @@ def test_excel_exact_keeps_internal_whitespace(tmp_path):
     book = Workbook()
     book.active["A1"] = "a b"
     book.save(path)
-    assert se.search_in_excel_special(str(path), "ab", exact_match=True) is None
-    assert se.search_in_excel_special(str(path), "a b", exact_match=True)
+    assert folder_search_helper.search_in_excel_special(str(path), "ab", exact_match=True) is None
+    assert folder_search_helper.search_in_excel_special(str(path), "a b", exact_match=True)
 
 
 def test_native_git_exclude_is_not_a_search_filter(tmp_path):
@@ -163,12 +165,11 @@ def test_duplicate_setting_invalid_type_uses_default(mock_config_manager, value)
 
 
 @pytest.mark.parametrize("allow", [False, True])
-@pytest.mark.parametrize("entrypoint", ["search_files_list"])
-def test_duplicate_policy_other_native_entrypoints(tmp_path, allow, entrypoint):
+def test_duplicate_policy_other_native_entrypoints(tmp_path, allow):
     path = tmp_path / "duplicate.json"
     path.write_text('{"v":"needle","v":"other"}')
     bits = Constants.RUST_MODE_JSON | (Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS if allow else 0)
-    found, skipped = se.sf_engine.search_files_list(file_list=[str(path)], search_string="needle", mode_bits=bits)
+    found, skipped = se.sf_engine.search_dir(root_paths=[str(path)], pattern="needle", mode_bits=bits)
     assert bool(found) is allow and bool(skipped) is not allow
 
 
@@ -196,14 +197,14 @@ def test_duplicate_setting_combo_persists_and_resets(qtbot, mock_config_manager)
 def test_duplicate_keys_in_separate_objects_are_not_duplicates(tmp_path):
     path = tmp_path / "separate.json"
     path.write_text('[{"v":"needle"},{"v":"needle"}]', encoding="utf-8")
-    result = se.search_in_json_special(str(path), "needle")
+    result = folder_search_helper.search_in_json_special(str(path), "needle")
     assert result and result[0] == str(path) and result[1] == 2
 
 
 def test_duplicate_policy_does_not_restrict_plain_text_search(tmp_path):
     path = tmp_path / "plain.json"
     path.write_text('{"v":"needle","v":"needle"}', encoding="utf-8")
-    result = se.search_in_file(str(path), "needle")
+    result = folder_search_helper.search_in_file(str(path), "needle")
     assert result and result[0] == str(path)
 
 

@@ -60,7 +60,12 @@ def run_search(engine, case, allow, backend):
         search_engine.sf_engine = engine
 
         with search_engine.use_search_settings_snapshot({Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS: allow}):
-            return search_engine.search_in_json_special(str(path), query)
+            try:
+                from tools.app_search import search_file_like_app
+            except ImportError:  # 도구 폴더에서 직접 실행할 때
+                from app_search import search_file_like_app  # type: ignore[no-redef]
+
+            return search_file_like_app(str(path), query, special_mode=Constants.MODE_JSON)
     bits = Constants.RUST_MODE_JSON
     if allow:
         bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS

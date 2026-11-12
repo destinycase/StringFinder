@@ -1,4 +1,3 @@
-import multiprocessing
 import os
 import sys
 
@@ -266,7 +265,6 @@ sys.excepthook = global_exception_handler
 
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()
     try:
         # 앱 실행 — main() 내부에서 sys.exit()이 호출되어 이 줄 이후는 실행되지 않습니다.
         # 리소스 정리는 app.aboutToQuit → cleanup_on_exit 콜백에서 처리됩니다.

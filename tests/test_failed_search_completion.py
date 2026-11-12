@@ -12,10 +12,9 @@ from ui.search_tab import SearchTab
 
 
 @pytest.mark.parametrize("language", ["ko", "en"])
-@pytest.mark.parametrize("file_list", [False, True])
 @pytest.mark.parametrize("partial", [False, True])
 def test_native_failure_completion(
-    qtbot, mock_config_manager, monkeypatch, caplog, language, file_list, partial
+    qtbot, mock_config_manager, monkeypatch, caplog, language, partial
 ):
     previous_language = get_language()
     set_language(language)
@@ -25,8 +24,6 @@ def test_native_failure_completion(
         tab.scan_start_time = time.time()
         tab.search_state = Constants.SearchState.SEARCHING
         params = {"search_paths": ["unused"], "search_string": "needle"}
-        if file_list:
-            params["file_list"] = [("partial.txt", 100)]
         worker = SearchWorker(params)
         tab.worker = worker
         completions = []
@@ -47,8 +44,7 @@ def test_native_failure_completion(
                 ])
             raise RuntimeError("Injected native batch failure")
 
-        api = "search_files_list_fast" if file_list else "search_directory_fast"
-        monkeypatch.setattr(f"core.search_engine.{api}", fail)
+        monkeypatch.setattr("core.search_engine.search_directory_fast", fail)
         with caplog.at_level("INFO"):
             worker.run()
 

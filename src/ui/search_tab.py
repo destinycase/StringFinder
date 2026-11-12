@@ -756,9 +756,7 @@ class SearchTab(QMainWindow):
             self.skipped_count_updated.emit(0)
             self._search_failed = False
             self._search_finalized = False
-            self.scan_start_time = time.time()
             self._load_histories()
-            special_mode = self.ext_panel.get_special_mode()
             selected_filenames = self.current_filename_filters
             logger.info(AppStrings.LOG_SCH_STARTED)
             logger.info(AppStrings.LOG_SCH_COND_QUERY.format(search_text))
@@ -772,7 +770,6 @@ class SearchTab(QMainWindow):
 
             exclude_hidden = self.search_panel.is_exclude_hidden()
             exclude_binary = self.config_manager.get_exclude_binary()
-            self.result_view_panel.clear()
             self.result_view_panel.set_searching_state(True)  # 검색 중 버튼 비활성화
             self.result_view_panel.show_empty_message(
                 AppStrings.RESULT_SEARCHING_MSG.format(search_text), emphasized=True

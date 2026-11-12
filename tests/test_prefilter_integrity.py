@@ -1,6 +1,6 @@
 import os
 import unittest
-from core.search_engine import search_in_json_special
+from folder_search_helper import search_in_json_special
 
 class TestPrefilterIntegrity(unittest.TestCase):
     def setUp(self):

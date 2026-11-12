@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QMessageBox, QFileIconProvider
 from sf_utils.constants import Constants
 from ui.panels import SearchOptionsPanel
-from core.search_engine import search_in_excel_special
+from folder_search_helper import search_in_excel_special
 from ui.result_view import ResultView
 from sf_utils.config_manager import ConfigManager
 

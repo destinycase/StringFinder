@@ -25,7 +25,7 @@ class MockSignals:
 def mock_worker():
     # SearchWorker는 params 딕셔너리를 인자로 받음
     params = {
-        Constants.PAYLOAD_FILE_LIST: [("dummy_path", 100)],
+        Constants.PAYLOAD_SEARCH_PATHS: ["dummy_path"],
         Constants.PAYLOAD_SEARCH_STRING: "search_term",
         Constants.PAYLOAD_USE_COMPLEX_SEARCH: True  # Python/Batch 경로 강제 진입
     }

@@ -138,9 +138,12 @@ def cases_for(fixture: ExcelFixture) -> list[ExcelCase]:
 
 
 def _run(path: Path, case: ExcelCase):
-    from core.search_engine import search_in_excel_special
+    try:
+        from tools.app_search import excel_mode, search_file_like_app
+    except ImportError:  # 도구 폴더에서 직접 실행할 때
+        from app_search import excel_mode, search_file_like_app  # type: ignore[no-redef]
 
-    return search_in_excel_special(str(path), case.query)
+    return search_file_like_app(str(path), case.query, special_mode=excel_mode())
 
 
 def validate_result(result, case: ExcelCase) -> None:

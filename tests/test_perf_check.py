@@ -13,6 +13,7 @@
 """
 
 import time
+import folder_search_helper
 from core import search_engine
 from sf_utils.constants import Constants
 
@@ -32,7 +33,7 @@ def test_performance_many_matches_on_one_line(tmp_path, monkeypatch):
 
     # 2. 검색 수행 시간 측정
     start_time = time.time()
-    result = search_engine.search_in_file(str(file_path), "target")
+    result = folder_search_helper.search_in_file(str(file_path), "target")
     duration = time.time() - start_time
 
     print(f"\nSearch duration: {duration:.4f}s")
@@ -56,5 +57,5 @@ def test_panic_regression_check(tmp_path):
     with open(xml_path, "wb") as f:
         f.write(b"\xff\xfe" + chunk.encode("utf-16-le") + "Target</Root>".encode("utf-16-le"))
 
-    result = search_engine.search_in_file(str(xml_path), "Target")
+    result = folder_search_helper.search_in_file(str(xml_path), "Target")
     assert result is not None

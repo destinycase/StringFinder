@@ -7,6 +7,7 @@ import pytest
 from openpyxl import Workbook
 
 from core import search_engine as se
+import folder_search_helper
 from sf_utils.constants import Constants as C
 
 
@@ -27,7 +28,7 @@ def native(path, query, mode=None, **kwargs):
 def test_korean_after_ascii_prefix(tmp_path, prefix_size):
     path = tmp_path / "korean.txt"
     path.write_bytes(b"a" * prefix_size + "\nneedle 가나다\n".encode("cp949"))
-    result = se.search_in_file(str(path), "가나다",
+    result = folder_search_helper.search_in_file(str(path), "가나다",
                                )
     assert result and result[0] == str(path) and result[1] == 1
 
@@ -45,7 +46,7 @@ def test_ascii_scan_rechecks_late_cp949_without_false_hits(tmp_path, query, tail
     assert sum(row[1] for row in output["results"]) == expected
     for result in output["results"]:
         assert all("�" not in match[1] for match in result[2])
-    precise = se.search_in_file(str(path), query)
+    precise = folder_search_helper.search_in_file(str(path), query)
     assert (precise[1] if precise else 0) == expected
 
 
@@ -56,7 +57,7 @@ def test_ascii_scan_rechecks_late_cp949_without_false_hits(tmp_path, query, tail
 def test_structured_korean_after_ascii_prefix(tmp_path, mode, suffix, content):
     path = tmp_path / ("korean." + suffix)
     path.write_bytes(content.encode("cp949"))
-    result = se.search_in_file(str(path), "가나다", special_mode=mode)
+    result = folder_search_helper.search_in_file(str(path), "가나다", special_mode=mode)
     assert result and result[0] == str(path) and result[1] == 1
 
 
@@ -66,7 +67,7 @@ def test_repeated_occurrences_have_same_count(tmp_path, encoding, newline):
     path = tmp_path / "repeated.txt"
     path.write_bytes(("needle needle needle 한글" + newline).encode(encoding))
     for precise in [False, True]:
-        result = se.search_in_file(str(path), "needle")
+        result = folder_search_helper.search_in_file(str(path), "needle")
         assert result and result[0] == str(path) and result[1] == 3
 
 
@@ -77,7 +78,7 @@ def test_json_float_value_text_agrees(tmp_path, number):
     query = str(float(number))
     output = native(path, query, C.MODE_JSON)
     assert len(output["results"]) == 1 and not output["skipped"]
-    precise = se.search_in_file(str(path), query, special_mode=C.MODE_JSON)
+    precise = folder_search_helper.search_in_file(str(path), query, special_mode=C.MODE_JSON)
     assert precise and precise[1] == 1
 
 
@@ -108,7 +109,7 @@ def test_excel_typed_values_agree(tmp_path, value, query, iso_dates):
     wb.save(path)
     output = native(path, query, C.MODE_EXCEL)
     assert len(output["results"]) == 1 and not output["skipped"]
-    precise = se.search_in_file(str(path), query, special_mode=C.MODE_EXCEL)
+    precise = folder_search_helper.search_in_file(str(path), query, special_mode=C.MODE_EXCEL)
     assert precise and precise[0] == str(path) and precise[1] == 1
     assert output["results"][0][2][0][3] == precise[2][0][3]
 

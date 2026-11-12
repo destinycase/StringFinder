@@ -16,7 +16,7 @@
 
 import json
 
-from core.search_engine import search_in_json_special
+from folder_search_helper import search_in_json_special
 from sf_utils.constants import Constants
 from sf_utils.app_strings import AppStrings
 

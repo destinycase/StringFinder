@@ -26,13 +26,20 @@ from typing import Callable, NotRequired, Protocol, TypedDict, cast
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.search_engine import is_hidden_path, search_in_file, use_search_settings_snapshot  # noqa: E402
+from core import search_engine  # noqa: E402
+from core.search_engine import is_hidden_path, use_search_settings_snapshot  # noqa: E402
 from core.skip_reason_codes import TEMPLATE_NAMES, decode_skip_reason  # noqa: E402
 from sf_utils.app_strings import AppStrings  # noqa: E402
 from sf_utils.constants import Constants  # noqa: E402
 from sf_utils.version_helper import get_app_version  # noqa: E402
 
+try:
+    from tools.app_search import search_file_like_app  # noqa: E402
+except ImportError:  # 도구 폴더에서 직접 실행할 때
+    from app_search import search_file_like_app  # type: ignore[no-redef]  # noqa: E402
+
 ONE_GIB_BYTES = 1024**3
+
 DEFAULT_MAX_SECONDS = 7200
 RESOURCE_SAMPLE_INTERVAL_SECONDS = 30
 MAX_RESOURCE_SAMPLES_PER_SCENARIO = 600
@@ -416,7 +423,7 @@ def _runtime_environment() -> RuntimeEnvironment:
             info["memory_available_mb_at_start"] = round(memory.available / (1024 * 1024), 2)
     except (ImportError, OSError):
         pass
-    engine = getattr(search_in_file, "__globals__", {}).get("sf_engine")
+    engine = getattr(search_engine, "sf_engine", None)
     info["rust_engine"] = {
         "available": bool(engine),
         "version": getattr(engine, "ENGINE_VERSION", None) if engine else None,
@@ -599,10 +606,9 @@ def run(
                 file_started = time.perf_counter()
                 try:
                     with use_search_settings_snapshot(search_policy["advanced_settings"]):
-                        result = search_in_file(
+                        result = search_file_like_app(
                             str(path),
                             diagnostic_query,
-                            file_size=file_size,
                             exclude_binary=bool(search_policy["exclude_binary"]),
                         )
                     if isinstance(result, tuple) and result and result[0] == Constants.STATUS_SKIPPED:
@@ -894,7 +900,7 @@ def run(
         "workload": {
             "query": "randomized 192-bit negative-match query (query text redacted)",
             "match_behavior": "A fresh high-entropy query is generated per report and is expected not to occur in the target. Any match requires review.",
-            "execution_model": "Files are measured sequentially through search_in_file; this is not end-to-end parallel directory-search timing.",
+            "execution_model": "Files are measured one at a time through the app's folder-search function (search_directory_fast with the file as the search root); this is not the wall time of one parallel folder search.",
             "file_order": "Randomized once per report and shared by all scenarios and repeats; paths and random seed are not exported.",
             "scenario_scheduling": "The total time budget is divided into cumulative equal time slices so later scenarios receive measurement time even when earlier scenarios are slow.",
             "query_strategy": "One cryptographically random 192-bit URL-safe token per report; the token and random source are not exported.",
@@ -985,7 +991,7 @@ def _markdown(report: DiagnosticReport) -> str:
         "## Interpretation",
         "",
         "A fresh random 192-bit query is intended to be absent. Any match makes that scenario REVIEW REQUIRED.",
-        "This diagnostic calls `search_in_file` sequentially; it is not the wall time of parallel folder search.",
+        "This diagnostic searches each file through the app's folder-search function (`search_directory_fast`) one at a time; it is not the wall time of one parallel folder search.",
         "Throughput is nominal input size divided by elapsed time, not guaranteed physical disk throughput.",
         "All scenarios share one randomized file order and receive cumulative equal time slices, so a timeout still attempts every mode.",
         f"Process and system resources are sampled every {config['resource_sample_interval_seconds']} seconds; samples contain no paths or file contents.",

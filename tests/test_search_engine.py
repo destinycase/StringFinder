@@ -19,7 +19,7 @@ import os
 
 import openpyxl
 
-from core.search_engine import search_in_file
+from folder_search_helper import search_in_file
 from sf_utils.constants import Constants
 
 
@@ -62,17 +62,13 @@ def test_search_not_found(sample_text_file):
 
 
 def test_search_empty_file(temp_dir):
-    from sf_utils.app_strings import AppStrings
-    from sf_utils.constants import Constants
-
     path = os.path.join(temp_dir, "empty.txt")
     with open(path, "w") as _:
         pass
     result = search_in_file(path, "anything")
 
-    assert result is not None
-    assert result[0] == Constants.STATUS_SKIPPED
-    assert result[1] == AppStrings.SKIP_EMPTY_FILE
+    # 앱의 폴더 검색은 빈 파일을 일치 없음으로 처리하고 건너뛴 목록에 넣지 않습니다.
+    assert result is None
 
 
 def test_search_in_excel(temp_dir):

@@ -8,6 +8,7 @@ from openpyxl import Workbook
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 
 from core import search_engine as se
+import folder_search_helper
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants as C
 
@@ -21,7 +22,7 @@ def snapshot():
 def compare(path, query, mode=None):
     native = se.search_directory_fast([str(path)], query, [], special_mode=mode,
                                      exclude_hidden=False, exclude_binary=True)
-    precise = se.search_in_file(str(path), query, special_mode=mode, exclude_binary=True)
+    precise = folder_search_helper.search_in_file(str(path), query, special_mode=mode, exclude_binary=True)
     assert not native['skipped']
     assert precise is None or precise[0] != C.STATUS_SKIPPED
     return sum(r[1] for r in native['results']), precise[1] if precise else 0
@@ -50,7 +51,7 @@ def test_explicit_encoding_all_paths(tmp_path, encoding, mode, suffix, content):
     path.write_bytes(content.encode(encoding))
     with se.use_search_settings_snapshot({C.CONFIG_KEY_SEARCH_ENCODING: encoding}):
         assert compare(path, '한글', mode) == (1, 1)
-        listed = se.search_files_list_fast([str(path)], '한글', special_mode=mode)
+        listed = se.search_directory_fast([str(path)], '한글', special_mode=mode)
         assert len(listed['results']) == 1 and not listed['skipped']
 
 
@@ -84,7 +85,7 @@ def test_json_overflow_is_explicitly_skipped(tmp_path):
     path.write_text('{"v":1e400}', encoding='utf-8')
     output = se.search_directory_fast([str(path)], 'inf', [], special_mode=C.MODE_JSON)
     assert not output['results'] and output['skipped']
-    result = se.search_in_file(str(path), 'inf', special_mode=C.MODE_JSON)
+    result = folder_search_helper.search_in_file(str(path), 'inf', special_mode=C.MODE_JSON)
     assert result[0] == C.STATUS_SKIPPED
 
 
@@ -166,5 +167,5 @@ def test_selected_encoding_does_not_filter_or_fallback(tmp_path):
     with se.use_search_settings_snapshot({C.CONFIG_KEY_SEARCH_ENCODING: 'utf-8'}):
         normal = se.search_directory_fast([str(tmp_path)], '한글', [])
         assert len(normal['results']) == 1 and len(normal['skipped']) == 1
-        precise = se.search_in_file(str(bad), '한글')
+        precise = folder_search_helper.search_in_file(str(bad), '한글')
         assert precise[0] == C.STATUS_SKIPPED

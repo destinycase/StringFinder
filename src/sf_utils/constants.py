@@ -74,7 +74,6 @@ class Constants:
     STATE_KEY_FILENAME = "filename"
     PAYLOAD_SEARCH_STRING = "search_string"
     PAYLOAD_SEARCH_PATHS = "search_paths"
-    PAYLOAD_FILE_LIST = "file_list"
     PAYLOAD_SPECIAL_MODE = "special_mode"
     PAYLOAD_EXTENSIONS = "extensions"
     PAYLOAD_SKIPPED = "skipped"

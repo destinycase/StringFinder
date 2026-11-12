@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from core.worker import SearchWorker
+import folder_search_helper
 from core import search_engine
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
@@ -163,46 +164,6 @@ def test_memory_error_is_emitted_once():
     assert not worker.is_running.is_set()
 
 
-def test_structured_search_preflight_returns_memory_skip(tmp_path, monkeypatch):
-    file_path = tmp_path / "guarded.json"
-    file_path.write_text('{"value": "needle"}', encoding="utf-8")
-    monkeypatch.setattr(resource_guard, "memory_pressure_detected", lambda _snapshot: True)
-
-    result = search_engine.search_in_json_special(str(file_path), "needle")
-
-    assert result == (Constants.STATUS_SKIPPED, AppStrings.ERROR_MEMORY_CRITICAL)
-
-
-def test_projected_structured_memory_is_a_local_skip(tmp_path, monkeypatch):
-    file_path = tmp_path / "projected.json"
-    file_path.write_text('{"value": "needle"}', encoding="utf-8")
-    monkeypatch.setattr(
-        resource_guard,
-        "memory_snapshot",
-        lambda: {
-            "available": 600 * MIB,
-            "total": 8 * GIB,
-            "process_rss": 100 * MIB,
-            "system_percent": 93,
-            "valid": 1,
-        },
-    )
-
-    # 6.4.6부터 구조화 문서는 Rust만 읽으므로 Rust 추정값이 예산을 넘는 경우로 시험합니다.
-    monkeypatch.setattr(resource_guard, "estimate_structured_memory_bytes", lambda *_args: 2 * GIB)
-    result = search_engine.search_in_json_special(
-        str(file_path),
-        "needle",
-    )
-
-    assert result is not None
-    assert result[0] == Constants.STATUS_SKIPPED
-    assert result[1].startswith(AppStrings.SKIP_REASON_RESOURCE_BUDGET.split("{", 1)[0])
-    assert AppStrings.SKIP_DETAIL_RESOURCE_BUDGET in result[1]
-    assert result[1] != AppStrings.ERROR_MEMORY_CRITICAL
-    assert not SearchWorker._is_memory_skip([(str(file_path), result[1])])
-
-
 def test_configured_json_size_limit_precedes_projected_budget(tmp_path, monkeypatch):
     file_path = tmp_path / "configured-limit.json"
     # 설정한 파일 크기 상한(1MB)보다 실제로 큰 파일입니다(Rust는 실제 크기로 판정).
@@ -224,7 +185,7 @@ def test_configured_json_size_limit_precedes_projected_budget(tmp_path, monkeypa
         },
     )
 
-    result = search_engine.search_in_json_special(
+    result = folder_search_helper.search_in_json_special(
         str(file_path),
         "needle",
     )

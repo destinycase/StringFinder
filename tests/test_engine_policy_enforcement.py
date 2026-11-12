@@ -1,7 +1,7 @@
 from unittest.mock import patch
-from core.search_engine import search_in_file
-from sf_utils.constants import Constants
-from sf_utils.app_strings import AppStrings
+import pytest
+
+from folder_search_helper import fake_dir_engine, search_in_file
 
 """
 [test_engine_policy_enforcement.py]
@@ -16,22 +16,13 @@ from sf_utils.app_strings import AppStrings
 
 
 def test_policy_no_python_fallback_on_rust_error(tmp_path):
-    """정책 검증: Rust 엔진 오류 시 Python으로 폴백하지 않고 STATUS_SKIPPED 반환"""
+    """정책 검증: Rust 엔진 오류 시 Python으로 폴백하지 않고 오류를 그대로 알림(워커가 검색 실패로 표시)"""
     test_file = tmp_path / "rust_error.txt"
     test_file.write_text("dummy content", encoding="utf-8")
 
-    # 1. Rust 엔진은 존재하지만 작동 중 예외가 발생하는 상황 시뮬레이션
-    with patch("core.search_engine.HAS_RUST_ENGINE", True):
-        with patch("core.search_engine.sf_engine.search_file", side_effect=RuntimeError("Rust Engine Crash")):
-            # 2. search_in_file 호출 (복합 검색 아님)
-            result = search_in_file(str(test_file), "dummy")
-
-            # 3. 정책에 따라 STATUS_SKIPPED(2-tuple)가 반환되어야 함 (Python으로 넘어가지 않음)
-            assert result is not None
-            assert isinstance(result, tuple)
-            assert len(result) == 2
-            assert result[0] == Constants.STATUS_SKIPPED
-            assert AppStrings.ERROR_TITLE in result[1] or "오류" in result[1]
+    with patch("core.search_engine.sf_engine", fake_dir_engine(error=RuntimeError("Rust Engine Crash"))):
+        with pytest.raises(RuntimeError, match="Rust Engine Crash"):
+            search_in_file(str(test_file), "dummy")
 
 
 def test_policy_python_allowed_in_complex_mode(tmp_path):

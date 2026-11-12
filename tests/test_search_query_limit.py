@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from core import search_engine as se
+import folder_search_helper
 from core.search_query import validate_search_query
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
@@ -62,7 +63,7 @@ def test_localized_length_feedback(language, qtbot):
         set_language(previous)
 
 
-@pytest.mark.parametrize("entry", ["file", "directory", "files"])
+@pytest.mark.parametrize("entry", ["file", "directory"])
 def test_native_entry_points_enforce_same_limit(entry, tmp_path):
     if not se.HAS_RUST_ENGINE:
         pytest.skip("Rust engine unavailable")
@@ -70,7 +71,6 @@ def test_native_entry_points_enforce_same_limit(entry, tmp_path):
     calls = {
         "file": lambda q: se.sf_engine.search_file(str(tmp_path / "missing"), q),
         "directory": lambda q: se.sf_engine.search_dir([], q),
-        "files": lambda q: se.sf_engine.search_files_list([], q),
     }
     with pytest.raises(ValueError, match="1000"):
         calls[entry]("😀" * 1001)
@@ -81,5 +81,5 @@ def test_limit_length_query_is_searched_without_truncation(tmp_path, complex_sea
     p = tmp_path / "valid.txt"
     query = "가" * 1000
     p.write_text(query + "\n", encoding="utf-8")
-    result = se.search_in_file(str(p), query)
+    result = folder_search_helper.search_in_file(str(p), query)
     assert result[1] == 1

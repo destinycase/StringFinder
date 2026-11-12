@@ -53,7 +53,7 @@ def test_worker_emits_global_limit_for_result_banner():
 def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
     worker = SearchWorker(
         {
-            "file_list": [("limited.txt", 100)],
+            "search_paths": ["unused"],
             "search_string": "needle",
         }
     )
@@ -78,7 +78,7 @@ def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
         )
         return {"results": [], "skipped": []}
 
-    monkeypatch.setattr("core.search_engine.search_files_list_fast", fake_search)
+    monkeypatch.setattr("core.search_engine.search_directory_fast", fake_search)
     worker.run()
 
     assert results_received[0][0] == "limited.txt"

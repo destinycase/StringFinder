@@ -131,7 +131,7 @@ def test_malformed_xml_is_skipped_in_app_paths(tmp_path, monkeypatch):
         [str(tmp_path)], "needle", ["xml"], special_mode=Constants.MODE_XML)
     assert result["results"] == []
     assert len(result["skipped"]) == 1
-    result = search_engine.search_files_list_fast(
+    result = search_engine.search_directory_fast(
         [str(path)], "needle", special_mode=Constants.MODE_XML)
     assert result["results"] == []
     assert len(result["skipped"]) == 1

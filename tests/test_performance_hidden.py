@@ -20,11 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from core.search_engine import (
-    search_directory_fast,
-    search_files_list_fast,
-    search_in_file,
-)
+from core.search_engine import search_directory_fast
+from folder_search_helper import search_in_file
 
 
 def set_hidden(path):
@@ -65,29 +62,6 @@ def test_rust_engine_exclude_hidden(hidden_test_env):
 
     res = search_directory_fast([str(hidden_test_env)], "find", extensions=["txt"], exclude_hidden=False)
     results = res.get("results", [])
-    assert len(results) == 2
-
-
-def test_rust_files_list_exclude_hidden(hidden_test_env):
-    """Validate exclude_hidden behavior for explicit file list scans."""
-
-    normal_dir = hidden_test_env / "normal_dir"
-    hidden_dir = hidden_test_env / "hidden_dir"
-    hidden_file = hidden_dir / "target.txt"
-    set_hidden(hidden_file)
-    files = [str(normal_dir / "target.txt"), str(hidden_file)]
-
-    res = search_files_list_fast(files, "find", exclude_hidden=True)
-    results = res.get("results", [])
-    paths = [r[0] for r in results]
-    assert any("normal_dir" in p for p in paths)
-    assert not any("hidden_dir" in p for p in paths)
-
-    res = search_files_list_fast(files, "find", exclude_hidden=False)
-    results = res.get("results", [])
-    paths = [r[0] for r in results]
-    assert any("normal_dir" in p for p in paths)
-    assert any("hidden_dir" in p for p in paths)
     assert len(results) == 2
 
 

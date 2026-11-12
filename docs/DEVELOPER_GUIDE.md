@@ -59,7 +59,7 @@ sequenceDiagram
     participant Model as SearchResultModel (Qt Model)
 
     User->>Worker: 검색 시작 (Start Search)
-    Worker->>Engine: search_dir / search_files_list 호출 (GIL 해제)
+    Worker->>Engine: search_dir 호출 (GIL 해제)
     Engine->>Dispatcher: crossbeam bounded channel 생성
     Engine->>Rayon: 병렬 디렉토리 순회 및 mmap 파일 탐색
     loop 파일별 병렬 검색
@@ -168,7 +168,7 @@ UI (src/ui)
 | 전체 텍스트 | Rust 확장 | 병렬 파일 순회와 배치 결과 전달을 사용합니다. |
 | JSON/XML/Excel/UE 현지화 archive | Rust 형식별 파서 | JSON/XML/archive 파싱·구조 오류는 앞부분의 결과도 폐기합니다. Excel은 정상 시트 결과를 보존하고 읽지 못한 시트를 부분 검색 안내로 보고합니다. |
 
-폴더 검색(`search_directory_fast`)·파일 목록 검색(`search_files_list_fast`)·단일 파일 검색(`search_in_file`)은 같은 Rust 비교 기준을 쓰며, 같은 파일에 대한 결과가 같아야 합니다. 도트로 시작하는 파일, 숨김 옵션, `.gitignore`/`.ignore`, 겹치는 루트, 심볼릭 링크, 빈 확장자 필터, 휴지통, 파일 크기 상한을 회귀 검증합니다(`tests/test_search_path_matrix.py`, `tests/test_rust_only_golden.py`).
+앱의 검색 경로는 폴더 검색(`search_directory_fast`) 하나입니다. 파일 하나를 검색할 때도 그 파일을 검색 대상으로 넘겨 같은 경로를 씁니다(테스트는 `tests/folder_search_helper.py`, 도구는 `tools/app_search.py`). Rust 엔진 결과를 화면용 결과로 정리하는 규칙은 `format_file_matches` 한곳에 있고, 폴더 검색과 워커의 실시간 결과 처리가 함께 씁니다. 도트로 시작하는 파일, 숨김 옵션, `.gitignore`/`.ignore`, 겹치는 루트, 심볼릭 링크, 빈 확장자 필터, 휴지통, 파일 크기 상한을 회귀 검증합니다(`tests/test_search_path_matrix.py`, `tests/test_rust_only_golden.py`).
 
 세션 복원은 저장된 폴더·확장자·파일명 목록과 체크 상태를 재구성합니다. 현재 전역 필터와 병합하면 대상 파일 집합이 달라지므로 병합하지 않습니다. 복원 중 패널 시그널을 차단해 다른 탭의 전역 설정에 중간 상태를 저장하지 않습니다. 필터 항목은 비어 있지 않은 문자열, 체크 상태는 bool만 허용하며 잘못된 항목은 제외합니다.
 
@@ -453,7 +453,7 @@ python tools/diagnostic_benchmark.py <폴더> --repeats 5
 
 **해석 시 주의**
 
-- 파일별 순차 `search_in_file` 측정은 앱의 병렬 폴더 검색 전체 시간과 다릅니다. 리포트별 난수 검색어도 동일하지 않습니다.
+- 성능 진단은 파일마다 앱과 같은 폴더 검색 함수(`search_directory_fast`)를 하나씩 부르므로, 앱의 병렬 폴더 검색 전체 시간과 다릅니다. 리포트별 난수 검색어도 동일하지 않습니다.
 - 진단 호출은 `special_mode`를 지정하지 않습니다. JSON/XML은 일반 텍스트 검색이며 Excel은 확장자에 따른 전용 파서로 처리됩니다. JSON/XML 값만 검색의 파싱 비용을 평가하려면 별도 형식별 측정이 필요합니다.
 - `nominal_mb_per_second`는 입력 크기 합계로 계산한 명목치이며 실제 읽은 바이트 수가 아닙니다. 캐시·결과 제한·건너뛴 파일의 영향을 구분합니다.
 - 예외·건너뛴 파일이 있으면 원인부터 확인합니다. 커버리지 100% 미만의 완료 반복만으로 전체 실행시간을 추정하지 않습니다.
@@ -474,7 +474,7 @@ python tools/benchmark_engine.py
 python tools/benchmark_excel.py
 ```
 
-Excel 보완 세트는 아래 명령으로 측정합니다. 기존 밀집 Rust 전용 도구와 달리 제품의 `search_in_excel_special()`을 사용하여 **전체 결과**를 측정합니다. 기본값은 표본별 준비 실행 후 조합당 5회이며 16개 조합의 결과 수·전체 결과의 시트/좌표/값을 매회 검사합니다. 검증 실패나 부분 검색은 정상 측정으로 기록하지 않습니다.
+Excel 보완 세트는 아래 명령으로 측정합니다. 기존 밀집 Rust 전용 도구와 달리 앱과 같은 폴더 검색 경로(`tools/app_search.py`, Excel 검색 모드)를 사용하여 **전체 결과**를 측정합니다. 기본값은 표본별 준비 실행 후 조합당 5회이며 16개 조합의 결과 수·전체 결과의 시트/좌표/값을 매회 검사합니다. 검증 실패나 부분 검색은 정상 측정으로 기록하지 않습니다.
 
 ```powershell
 python tools/benchmark_excel_suite.py --repeats 5 --output docs_dev/qa_excel_suite/results.json --record-tag v6.1.2-excel

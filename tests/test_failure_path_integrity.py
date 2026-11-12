@@ -2,7 +2,6 @@
 import builtins
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -37,9 +36,8 @@ def fail_open_number(monkeypatch, path, number, error):
     return calls
 
 
-@pytest.mark.parametrize("file_list", [False, True])
 def test_native_error_after_delivery_keeps_results_and_marks_ui_failed(
-    qtbot, mock_config_manager, tmp_path, monkeypatch, language, file_list
+    qtbot, mock_config_manager, tmp_path, monkeypatch, language
 ):
     path = tmp_path / "partial.txt"
     tab = SearchTab(mock_config_manager)
@@ -47,8 +45,7 @@ def test_native_error_after_delivery_keeps_results_and_marks_ui_failed(
     tab.search_state = C.SearchState.SEARCHING
     tab.scan_start_time = time.time()
     tab.search_panel.search_combo.set_current_text("needle")
-    worker = SearchWorker({"search_paths": [str(tmp_path)], "search_string": "needle",
-                           "file_list": [(str(path), 6)] if file_list else []})
+    worker = SearchWorker({"search_paths": [str(tmp_path)], "search_string": "needle"})
     worker.signals.results_found.connect(tab._on_results_found)
     worker.signals.error.connect(tab._on_search_error)
     worker.signals.search_finished.connect(tab._on_search_finished)
@@ -59,7 +56,7 @@ def test_native_error_after_delivery_keeps_results_and_marks_ui_failed(
         kwargs["results_callback"]([(str(path), [(1, "needle", 0, 6)])])
         raise RuntimeError("results dispatcher terminated unexpectedly; monitor thread terminated unexpectedly")
 
-    monkeypatch.setattr(engine, "search_files_list_fast" if file_list else "search_directory_fast", failed_search)
+    monkeypatch.setattr(engine, "search_directory_fast", failed_search)
     worker.run()
     tab._on_worker_finished()
     assert errors and "results dispatcher terminated unexpectedly" in errors[0]
@@ -70,10 +67,3 @@ def test_native_error_after_delivery_keeps_results_and_marks_ui_failed(
     assert tab.result_view_panel.summary_label.text().startswith(AppStrings.SUMMARY_PREFIX_FAILED)
     assert Path(tab.result_view_panel.result_model.get_item(0)[0]) == path
 
-
-def test_single_file_native_runtime_error_remains_file_level_skip(tmp_path, monkeypatch, language):
-    path = tmp_path / "single.txt"
-    path.write_text("needle", encoding="utf-8")
-    with patch.object(engine.sf_engine, "search_file", side_effect=RuntimeError("monitor thread terminated unexpectedly")):
-        result = engine.search_in_file(str(path), "needle")
-    assert result and result[0] == C.STATUS_SKIPPED

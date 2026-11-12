@@ -7,6 +7,7 @@ from openpyxl import Workbook
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 
 from core import search_engine as se
+import folder_search_helper
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
@@ -19,16 +20,14 @@ def search_policy():
         yield
 
 
-def native(path, query, mode, entry="directory"):
+def native(path, query, mode):
     if not se.HAS_RUST_ENGINE:
         pytest.skip("native engine unavailable")
-    if entry == "directory":
-        return se.search_directory_fast([str(path)], query, [], special_mode=mode)
-    return se.search_files_list_fast([str(path)], query, special_mode=mode)
+    return se.search_directory_fast([str(path)], query, [], special_mode=mode)
 
 
 def precise(path, query, mode):
-    return se.search_in_file(str(path), query, special_mode=mode)
+    return folder_search_helper.search_in_file(str(path), query, special_mode=mode)
 
 
 def partial_reason(rows):
@@ -38,16 +37,16 @@ def partial_reason(rows):
 
 @pytest.mark.parametrize("mode", [C.MODE_JSON, C.MODE_XML])
 @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be", "utf-8"])
-@pytest.mark.parametrize("entry", ["directory", "files", "single"])
+@pytest.mark.parametrize("entry", ["directory", "single"])
 def test_damaged_structured_encoding_skips_whole_document(tmp_path, mode, encoding, entry):
     extension, content = ("json", '{"v":"needle\ud800"}') if mode == C.MODE_JSON else ("xml", '<root>needle\ud800</root>')
     bom = {"utf-16-le": b"\xff\xfe", "utf-16-be": b"\xfe\xff", "utf-8": b"\xef\xbb\xbf"}[encoding]
     p = tmp_path / ("damaged." + extension)
     p.write_bytes(bom + content.encode(encoding, errors="surrogatepass"))
     if entry == "single":
-        assert se.search_in_file(str(p), "needle", special_mode=mode) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
+        assert folder_search_helper.search_in_file(str(p), "needle", special_mode=mode) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
     else:
-        result = native(p, "needle", mode, entry)
+        result = native(p, "needle", mode)
         assert result["results"] == []
         assert result["skipped"][0][1] == AppStrings.ERROR_DOCUMENT_ENCODING
     assert precise(p, "needle", mode) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
@@ -87,12 +86,11 @@ def broken_workbook(path, broken_count=1, broken_first=False):
     wb.close()
 
 
-@pytest.mark.parametrize("entry", ["directory", "files"])
 @pytest.mark.parametrize("query", ["needle", "1904-01-01", "not found"])
-def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, entry, query):
+def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, query):
     p = tmp_path / "partial.xlsx"
     broken_workbook(p, broken_first=True)
-    result = native(p, query, C.MODE_EXCEL, entry=entry)
+    result = native(p, query, C.MODE_EXCEL)
     assert len(result["skipped"]) == 1
     assert "Broken0" in result["skipped"][0][1]
     answer = precise(p, query, C.MODE_EXCEL)
@@ -115,16 +113,16 @@ def test_excel_errors_do_not_consume_cap_or_disappear_on_hit(tmp_path):
     answer = precise(p, "needle", C.MODE_EXCEL)
     assert answer[1] == 1
     assert partial_reason(answer[2])
-    direct = se.search_in_excel_special(str(p), "needle")
+    direct = folder_search_helper.search_in_excel_special(str(p), "needle")
     assert direct[1] == 1
     assert partial_reason(direct[2])
 
 
-@pytest.mark.parametrize("entry", ["directory", "files", "single"])
+@pytest.mark.parametrize("entry", ["directory", "single"])
 def test_json_tab_key_keeps_value(tmp_path, entry):
     p = tmp_path / "tab.json"
     p.write_text('{"a\\tb":"needle\\tvalue"}', encoding="utf-8")
-    answer = se.search_in_json_special(str(p), "needle") if entry == "single" else native(p, "needle", C.MODE_JSON, entry=entry)["results"][0]
+    answer = folder_search_helper.search_in_json_special(str(p), "needle") if entry == "single" else native(p, "needle", C.MODE_JSON)["results"][0]
     assert answer[2][0][1:3] == ("a\tb", "needle\tvalue")
     assert precise(p, "needle", C.MODE_JSON)[2][0][1:3] == ("a\tb", "needle\tvalue")
 

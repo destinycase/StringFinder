@@ -13,6 +13,7 @@ import pytest
 from openpyxl import Workbook
 
 from core import search_engine as engine
+import folder_search_helper
 from sf_utils.constants import Constants as C
 
 
@@ -121,7 +122,7 @@ def test_decoded_values_are_intentionally_different_from_raw_search(
     path = tmp_path / f"encoded.{suffix}"
     path.write_text(content, encoding="utf-8")
     for special, expected_count in [(None, 0), (mode, 1)]:
-        single = engine.search_in_file(str(path), QUERY, special_mode=special)
+        single = folder_search_helper.search_in_file(str(path), QUERY, special_mode=special)
         if expected_count:
             assert single and single[0] == str(path) and single[1] == 1
         else:
@@ -137,11 +138,11 @@ def test_decoded_values_are_intentionally_different_from_raw_search(
 def test_json_key_only_is_not_a_structured_value_result(tmp_path):
     path = tmp_path / "key.json"
     path.write_text('{"needle":"quiet"}', encoding="utf-8")
-    raw = engine.search_in_file(str(path), QUERY,
+    raw = folder_search_helper.search_in_file(str(path), QUERY,
                                 )
     assert raw and raw[1] == 1
-    special = engine.search_in_file(str(path), QUERY, special_mode=C.MODE_JSON)
+    special = folder_search_helper.search_in_file(str(path), QUERY, special_mode=C.MODE_JSON)
     assert special is None
-    native = engine.search_files_list_fast([str(path)], QUERY, special_mode=C.MODE_JSON,
+    native = engine.search_directory_fast([str(path)], QUERY, special_mode=C.MODE_JSON,
                                            )
     assert native == {"results": [], "skipped": []}

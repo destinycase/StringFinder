@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QPlainTextEdit
 
 from core import search_engine as engine
+import folder_search_helper
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants as C
 from ui.models import MatchDetailModel
@@ -111,7 +112,7 @@ def test_long_preview_uses_original_character_indices(qapp, prefix):
 def test_query_bom_is_preserved(tmp_path, query, content, found):
     path = tmp_path / "bom.txt"
     path.write_text(content, encoding="utf-8")
-    direct = engine.search_in_file(str(path), query)
+    direct = folder_search_helper.search_in_file(str(path), query)
     assert bool(direct) == found
     if engine.HAS_RUST_ENGINE:
         batch = engine.search_directory_fast([str(tmp_path)], query, ["txt"], exclude_hidden=False)

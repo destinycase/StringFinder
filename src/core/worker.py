@@ -32,7 +32,6 @@ class SearchWorker(QRunnable):
         super().__init__()
         self.signals = WorkerSignals()
         self.setAutoDelete(True)
-        self.file_list: List[Any] = params.get(Constants.PAYLOAD_FILE_LIST, [])
         self.search_string = params.get(Constants.PAYLOAD_SEARCH_STRING, "")
         self.special_mode = params.get(Constants.PAYLOAD_SPECIAL_MODE)
         self.search_paths = params.get(Constants.PAYLOAD_SEARCH_PATHS, [])
@@ -214,7 +213,7 @@ class SearchWorker(QRunnable):
         self.all_skipped = []
         self.skipped_sheets_list: List[Any] = []  # [(file_path, sheet_name), ...] 시트 스킵 목록
         try:
-            if self.search_paths or self.file_list:
+            if self.search_paths:
                 # [H-04 Fix] 하드코딩된 상수 문자열 대신 직접 속성 참조
                 self._run_rust_search(exclude_hidden=self.exclude_hidden, exclude_binary=self.exclude_binary)
             else:
@@ -229,8 +228,8 @@ class SearchWorker(QRunnable):
             self._safe_emit(self.signals.finished)
 
     def _run_rust_search(self, exclude_hidden: bool = True, exclude_binary: bool = True):
-        from core.search_engine import search_directory_fast, search_files_list_fast
-        total_files = len(self.file_list) if self.file_list else 100
+        from core.search_engine import search_directory_fast
+        total_files = 100
         self._rust_found_files = 0
         self._rust_total_matches = 0
 
@@ -261,39 +260,24 @@ class SearchWorker(QRunnable):
             # 검색 중지 직후에도 Rust 디스패처가 이미 발견한 마지막 배치를 전달할 수 있습니다.
             # 중지 플래그만으로 이 배치를 버리면 사용자에게 부분 검색 결과가 유실됩니다.
             # logger.debug(f"[Worker] results_callback received batch of {len(batch)}")
-            from core.search_engine import (
-                _extract_marker_skip_reason,
-                _extract_partial_skip_reason,
-                _normalize_rust_matches,
-                _visible_match_count,
-            )
+            from core.search_engine import format_file_matches
+
             formatted_batch = []
             skipped_batch = []
             current_batch_matches = 0
             for path, matches in batch:
-                skip_reason = _extract_marker_skip_reason(matches)
-                if skip_reason:
-                    skipped_batch.append((path, skip_reason))
+                result, file_skips, sheet_skips = format_file_matches(path, matches, self.special_mode)
+                if file_skips:
+                    skipped_batch.extend(file_skips)
                     if hasattr(self, "all_skipped"):
-                        self.all_skipped.append((path, skip_reason))
-                    continue
-                partial_reason = _extract_partial_skip_reason(matches)
-                if partial_reason:
-                    skipped_batch.append((path, partial_reason))
-                    if hasattr(self, "all_skipped"):
-                        self.all_skipped.append((path, partial_reason))
-                match_tuples, marker_binary_count, sheet_skips = _normalize_rust_matches(matches, self.special_mode)
+                        self.all_skipped.extend(file_skips)
                 # 시트 스킵 정보를 별도 목록에 수집 (파일 스킵과 구분)
                 if sheet_skips and hasattr(self, "skipped_sheets_list"):
                     for sheet_name, detail in sheet_skips:
                         self.skipped_sheets_list.append((path, sheet_name, detail))
-                if marker_binary_count > 0:
-                    formatted_batch.append((path, marker_binary_count, [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)]))
-                    current_batch_matches += marker_binary_count
-                elif match_tuples:
-                    visible_count = _visible_match_count(match_tuples)
-                    formatted_batch.append((path, visible_count, match_tuples))
-                    current_batch_matches += visible_count
+                if result is not None:
+                    formatted_batch.append(result)
+                    current_batch_matches += result[1]
             
             if not formatted_batch and not skipped_batch:
                 return
@@ -323,38 +307,22 @@ class SearchWorker(QRunnable):
                 process_results_batch(batch)
 
         try:
-            if hasattr(self, Constants.PAYLOAD_FILE_LIST) and self.file_list:
-                paths_only = [f[0] for f in self.file_list]
-                from core.search_engine import use_search_settings_snapshot
+            logger.info(AppStrings.LOG_WKR_RUST_ACT.format(len(self.search_paths)))
+            from core.search_engine import use_search_settings_snapshot
 
-                with use_search_settings_snapshot(self.search_settings_snapshot):
-                    search_res = search_files_list_fast(
-                        paths_only,
-                        self.search_string,
-                        special_mode=self.special_mode,
-                        exclude_hidden=self.exclude_hidden,
-                        exclude_binary=self.exclude_binary,
-                        stop_event=self.stop_event,
-                        progress_callback=progress_callback,
-                        results_callback=results_callback,
-                        )
-            else:
-                logger.info(AppStrings.LOG_WKR_RUST_ACT.format(len(self.search_paths)))
-                from core.search_engine import use_search_settings_snapshot
-
-                with use_search_settings_snapshot(self.search_settings_snapshot):
-                    search_res = search_directory_fast(
-                        self.search_paths,
-                        self.search_string,
-                        self.extensions,
-                        filename_filter=self.filename_filter,
-                        special_mode=self.special_mode,
-                        exclude_hidden=self.exclude_hidden,
-                        exclude_binary=self.exclude_binary,
-                        stop_event=self.stop_event,
-                        progress_callback=progress_callback,
-                        results_callback=results_callback,
-                        )
+            with use_search_settings_snapshot(self.search_settings_snapshot):
+                search_res = search_directory_fast(
+                    self.search_paths,
+                    self.search_string,
+                    self.extensions,
+                    filename_filter=self.filename_filter,
+                    special_mode=self.special_mode,
+                    exclude_hidden=self.exclude_hidden,
+                    exclude_binary=self.exclude_binary,
+                    stop_event=self.stop_event,
+                    progress_callback=progress_callback,
+                    results_callback=results_callback,
+                    )
         except Exception as e:
             error_msg = AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format("SearchWorker.Batch", e)
             logger.error(error_msg, exc_info=True)

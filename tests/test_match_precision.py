@@ -17,7 +17,8 @@ from typing import cast
 
 import openpyxl
 
-from core.search_engine import SearchResult, search_in_file
+from core.search_engine import SearchResult
+from folder_search_helper import search_in_file
 from sf_utils.constants import Constants
 
 

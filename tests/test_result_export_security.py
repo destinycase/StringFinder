@@ -1,6 +1,6 @@
 import openpyxl
 
-from core.search_engine import search_in_file
+from folder_search_helper import search_in_file
 from sf_utils.constants import Constants
 from ui.result_view import ResultView, _sanitize_excel_cell
 

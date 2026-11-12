@@ -5,6 +5,7 @@ import json
 import pytest
 
 from core import search_engine as engine
+import folder_search_helper
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
@@ -88,7 +89,7 @@ def test_retired_feature_has_no_live_ui_or_api(qtbot, language):
     # 검색 모드(기본/글자 변형) 메뉴도 검색 방식 통합으로 없어졌습니다.
     assert not hasattr(panel, "profile_menu") and not hasattr(panel, "set_complex_search")
     assert C.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
-    assert "existence_only" not in inspect.signature(engine.search_in_file).parameters
+    assert "existence_only" not in inspect.signature(folder_search_helper.search_in_file).parameters
     assert not hasattr(engine, "find_files_with_keyword_fast")
     assert not hasattr(engine.sf_engine, "find_files_with_keyword")
     assert engine.sf_engine.API_VERSION == 8

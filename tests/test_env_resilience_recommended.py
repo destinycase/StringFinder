@@ -26,12 +26,9 @@ from typing import Any, cast
 
 import pytest
 
-from core.search_engine import (
-    format_excel_panic_reason,
-    search_directory_fast,
-    search_files_list_fast,
-    search_in_file,
-)
+from core.search_engine import format_excel_panic_reason, search_directory_fast
+import folder_search_helper
+from folder_search_helper import search_in_file
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -52,7 +49,6 @@ def test_engine_api_version_mismatch_fallback(monkeypatch, api_version):
     fake_engine = types.SimpleNamespace(
         search_file=lambda *args, **kwargs: [],
         search_dir=lambda *args, **kwargs: ([], []),
-        search_files_list=lambda *args, **kwargs: ([], []),
     )
     if api_version is not None:
         fake_engine.API_VERSION = api_version
@@ -88,7 +84,7 @@ def test_rust_binary_marker_is_mapped_to_appstrings(tmp_path):
         offset=None,
         length=3,
     )
-    fake_engine = types.SimpleNamespace(search_file=lambda *_args, **_kwargs: [fake_match])
+    fake_engine = folder_search_helper.fake_dir_engine([fake_match])
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("core.search_engine.HAS_RUST_ENGINE", True)
@@ -111,7 +107,7 @@ def test_rust_long_line_marker_is_mapped_to_appstrings(tmp_path):
         offset=None,
         length=None,
     )
-    fake_engine = types.SimpleNamespace(search_file=lambda *_args, **_kwargs: [fake_match])
+    fake_engine = folder_search_helper.fake_dir_engine([fake_match])
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("core.search_engine.HAS_RUST_ENGINE", True)
@@ -142,26 +138,6 @@ def test_rust_search_dir_binary_marker_is_mapped():
     assert result["results"][0][2][0][1] == AppStrings.MSG_BINARY_MATCH.format(2)
 
 
-def test_rust_search_files_list_long_line_marker_is_mapped():
-    preview = "preview-content"
-    fake_match = types.SimpleNamespace(
-        line=11,
-        content=f"__SF_LONG_LINE__|{preview}",
-        offset=None,
-        length=None,
-    )
-    fake_engine = types.SimpleNamespace(search_files_list=lambda *_args, **_kwargs: ([("a.txt", [fake_match])], []))
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("core.search_engine.HAS_RUST_ENGINE", True)
-        mp.setattr("core.search_engine.sf_engine", fake_engine, raising=False)
-        result = search_files_list_fast(["a.txt"], "KEYWORD")
-
-    assert result["results"][0][1] == 1
-    assert result["results"][0][2][0][0] == 11
-    assert result["results"][0][2][0][1] == AppStrings.MSG_LONG_LINE_PREVIEW.format(preview)
-
-
 def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
     fake_match = types.SimpleNamespace(
         line=0,
@@ -178,24 +154,6 @@ def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
 
     assert result["results"] == []
     assert result["skipped"] == [("panic.xlsx", format_excel_panic_reason("xlsx"))]
-
-
-def test_rust_search_files_list_excel_panic_marker_maps_to_skipped():
-    fake_match = types.SimpleNamespace(
-        line=0,
-        content="__SF_EXCEL_PANIC__|xls",
-        offset=None,
-        length=None,
-    )
-    fake_engine = types.SimpleNamespace(search_files_list=lambda *_args, **_kwargs: ([("panic.xls", [fake_match])], []))
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("core.search_engine.HAS_RUST_ENGINE", True)
-        mp.setattr("core.search_engine.sf_engine", fake_engine, raising=False)
-        result = search_files_list_fast(["panic.xls"], "KEYWORD", special_mode=Constants.MODE_EXCEL)
-
-    assert result["results"] == []
-    assert result["skipped"] == [("panic.xls", format_excel_panic_reason("xls"))]
 
 
 def test_mainwindow_qtimer_after_destroy(qtbot, mock_config_manager):
@@ -219,13 +177,12 @@ def test_binary_placeholder_contract_rust_enabled(tmp_path):
     assert "\uc774\uc9c4 \ud30c\uc77c" in str(search_result[2][0][1])
 
 
-def test_searchworker_without_file_list_path_scan(tmp_path):
+def test_searchworker_path_scan(tmp_path):
     p = tmp_path / "scan_me.txt"
     p.write_text("needle", encoding="utf-8")
 
     worker = SearchWorker(
         {
-            "file_list": [],
             "search_paths": [str(tmp_path)],
             "search_string": "needle",
             "extensions": ["txt"],
@@ -257,28 +214,6 @@ def test_windows_long_path_unicode_search(tmp_path):
     long_path = "\\\\?\\" + str(f.resolve())
     search_result = _require_search_result(search_in_file(long_path, "\ud0a4\uc6cc\ub4dc"))
     assert search_result[1] >= 1
-
-
-@pytest.mark.skipif(os.name != "nt", reason="Windows-only lock behavior")
-def test_windows_file_lock_sharing_violation_skip(monkeypatch, tmp_path):
-    p = tmp_path / "locked.txt"
-    p.write_text("keyword", encoding="utf-8")
-
-    real_open = open
-
-    def fake_open(path, mode="r", *args, **kwargs):
-        if os.fspath(path) == str(p):
-            raise PermissionError("Sharing violation")
-        return real_open(path, mode, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.open", fake_open)
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("core.search_engine.HAS_RUST_ENGINE", False)
-        result = search_in_file(str(p), "keyword")
-
-    assert isinstance(result, tuple) and len(result) == 2
-    assert result[0] == Constants.STATUS_SKIPPED
 
 
 def _assert_concurrent_replace_is_safe(tmp_path, *, truncate: bool) -> None:

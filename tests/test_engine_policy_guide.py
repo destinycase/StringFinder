@@ -5,8 +5,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from core.search_engine import search_in_file
-from sf_utils.constants import Constants
+from folder_search_helper import search_in_file
 
 """
 [test_engine_policy_guide.py]
@@ -61,10 +60,10 @@ def test_engine_isolation_policy_guide_rust_error(tmp_path):
     test_file = tmp_path / "iso_test.txt"
     test_file.write_text("keyword", encoding="utf-8")
 
-    with patch("core.search_engine.HAS_RUST_ENGINE", True):
-        with patch("core.search_engine.sf_engine.search_file", side_effect=RuntimeError("Crash")):
-            result = search_in_file(str(test_file), "keyword")
-            # Rust 예외 → SKIPPED 반환 (Python 폴백 없음)
-            assert result is not None
-            assert result[0] == Constants.STATUS_SKIPPED or result is None
+    from folder_search_helper import fake_dir_engine
+
+    with patch("core.search_engine.sf_engine", fake_dir_engine(error=RuntimeError("Crash"))):
+        # Rust 예외 → 오류를 그대로 알림 (Python 폴백 없음)
+        with pytest.raises(RuntimeError, match="Crash"):
+            search_in_file(str(test_file), "keyword")
 

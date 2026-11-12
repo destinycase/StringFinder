@@ -13,7 +13,7 @@ from core import search_engine as engine
 from sf_utils.constants import Constants as C
 
 
-@pytest.mark.parametrize("api", ["file", "directory", "file_list"])
+@pytest.mark.parametrize("api", ["file", "directory"])
 def test_invalid_utf8_line_cannot_match_internal_sentinel(tmp_path, api):
     path = tmp_path / "broken.txt"
     path.write_bytes(b"\xef\xbb\xbfvalid\ninvalid_utf8\n\xff\n")
@@ -23,8 +23,7 @@ def test_invalid_utf8_line_cannot_match_internal_sentinel(tmp_path, api):
     if api == "file":
         matches = native.search_file(str(path), "invalid_utf8", mode_bits=C.RUST_MODE_EXACT)
     else:
-        rows, skipped = (native.search_dir if api == "directory" else native.search_files_list)(
-            [str(tmp_path if api == "directory" else path)], "invalid_utf8", mode_bits=C.RUST_MODE_EXACT)
+        rows, skipped = native.search_dir([str(tmp_path)], "invalid_utf8", mode_bits=C.RUST_MODE_EXACT)
         assert skipped == []
         assert len(rows) == 1
         matches = rows[0][1]
@@ -33,16 +32,15 @@ def test_invalid_utf8_line_cannot_match_internal_sentinel(tmp_path, api):
     assert [match.code for match in matches if match.line == 0] == ["DECODE_PARTIAL"]
 
 
-@pytest.mark.parametrize("api", ["directory", "file_list"])
 @pytest.mark.parametrize("cancel", [False, True])
-def test_dispatcher_drains_bounded_queue_and_last_batch(tmp_path, api, cancel):
+def test_dispatcher_drains_bounded_queue_and_last_batch(tmp_path, cancel):
     native = engine.sf_engine
     if native is None:
         pytest.skip("real native engine required")
     for index in range(41):
         (tmp_path / f"{index}.txt").write_text(f"needle {index}", encoding="utf-8")
-    paths = [str(tmp_path)] if api == "directory" else [str(p) for p in tmp_path.iterdir()]
-    search = native.search_dir if api == "directory" else native.search_files_list
+    paths = [str(tmp_path)]
+    search = native.search_dir
     expected, skipped = search(paths, "needle")
     assert not skipped
     event = threading.Event()
@@ -77,8 +75,7 @@ def test_dispatcher_drains_bounded_queue_and_last_batch(tmp_path, api, cancel):
         assert all(row in signatures(expected) for row in signatures(batches))
 
 
-@pytest.mark.parametrize("api", ["directory", "file_list"])
-def test_dispatcher_disconnect_preserves_callback_error(tmp_path, api):
+def test_dispatcher_disconnect_preserves_callback_error(tmp_path):
     native = engine.sf_engine
     if native is None:
         pytest.skip("real native engine required")
@@ -88,13 +85,12 @@ def test_dispatcher_disconnect_preserves_callback_error(tmp_path, api):
     def broken_callback(batch):
         raise ValueError("callback probe")
 
-    search = native.search_dir if api == "directory" else native.search_files_list
     with pytest.raises(RuntimeError, match="callback probe"):
-        search([str(tmp_path if api == "directory" else path)], "needle",
+        native.search_dir([str(tmp_path)], "needle",
                results_callback=broken_callback, _flush_ms=1000)
 
 
-@pytest.mark.parametrize("api", ["search_dir", "search_files_list"])
+@pytest.mark.parametrize("api", ["search_dir"])
 @pytest.mark.parametrize("hit", [True, False], ids=["hit", "no_match"])
 def test_dispatcher_shutdown_does_not_wait_for_flush_interval(tmp_path, api, hit):
     """A leaked sender must not restore the 1s idle wait or hang pytest."""
@@ -124,11 +120,7 @@ def test_dispatcher_shutdown_does_not_wait_for_flush_interval(tmp_path, api, hit
         spec.loader.exec_module(native)
         search = getattr(native, api)
         root = Path(directory)
-        files = sorted(root.glob("*.txt"))
-        if query == "needle":
-            hit_path = root / "000_hit.txt"
-            files = [hit_path] + [path for path in files if path != hit_path]
-        paths = [str(root)] if api == "search_dir" else [str(path) for path in files]
+        paths = [str(root)]
 
         def values(rows):
             return sorted((path, [(m.line, m.content, m.offset, m.length, m.kind)

@@ -2,6 +2,7 @@
 import unicodedata
 
 from core import search_engine as se
+import folder_search_helper
 from ui.result_view import _detect_text_encoding, _read_context_lines_from_file
 
 
@@ -10,7 +11,7 @@ def test_preview_encoding_follows_the_engine_for_late_cp949(tmp_path):
     path = tmp_path / "late_cp949.txt"
     path.write_bytes(b"a" * 70_000 + b"\r\n" + "검색어 여기\r\n".encode("cp949"))
     assert _detect_text_encoding(str(path)) == "cp949"
-    result = se.search_in_file(str(path), "검색어")
+    result = folder_search_helper.search_in_file(str(path), "검색어")
     assert result and result[2][0][0] == 2
     lines = _read_context_lines_from_file(str(path), 2, 0, 0)
     assert lines == [(2, "검색어 여기")]

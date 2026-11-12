@@ -2,7 +2,7 @@
 import pytest
 from PySide6.QtGui import QValidator
 
-from core import search_engine as se
+import folder_search_helper
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
@@ -77,5 +77,5 @@ def test_search_text_special_characters_still_literal(tmp_path, qtbot, query):
     assert panel.get_search_text() == query
     file = tmp_path / "literal.txt"
     file.write_text("prefix " + query + " suffix\n", encoding="utf-8")
-    result = se.search_in_file(str(file), query)
+    result = folder_search_helper.search_in_file(str(file), query)
     assert result and result[0] == str(file) and result[1] == 1

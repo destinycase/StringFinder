@@ -18,7 +18,7 @@ from typing import Any, List
 
 import pytest
 
-from core.search_engine import search_in_file, search_in_json_special, search_in_xml_special
+from folder_search_helper import search_in_file, search_in_json_special, search_in_xml_special
 
 
 @pytest.fixture

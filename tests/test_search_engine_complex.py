@@ -19,10 +19,8 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from core.search_engine import (
-    SearchResult,
-    search_in_file,
-)
+from core.search_engine import SearchResult
+from folder_search_helper import search_in_file
 from sf_utils.constants import Constants
 
 

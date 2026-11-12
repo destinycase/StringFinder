@@ -17,7 +17,7 @@ def test_only_supported_modes_run_five_times(tmp_path, monkeypatch):
         calls.append(kwargs)
         return None
 
-    monkeypatch.setattr(diagnostic, "search_in_file", search)
+    monkeypatch.setattr(diagnostic, "search_file_like_app", search)
     monkeypatch.setattr(diagnostic, "_diagnostic_search_policy", lambda: {
         "exclude_hidden": True, "exclude_binary": True, "advanced_settings": {},
     })
@@ -33,7 +33,7 @@ def test_only_supported_modes_run_five_times(tmp_path, monkeypatch):
 
 def test_timeout_returns_a_readable_partial_report(tmp_path, monkeypatch):
     (tmp_path / "not-searched.txt").write_text("data", encoding="utf-8")
-    monkeypatch.setattr(diagnostic, "search_in_file", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(diagnostic, "search_file_like_app", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         diagnostic,
         "_diagnostic_search_policy",
@@ -62,7 +62,7 @@ def test_time_slicing_samples_every_mode_before_global_timeout(tmp_path, monkeyp
         return None
 
     monkeypatch.setattr(diagnostic.time, "perf_counter", fake_clock)
-    monkeypatch.setattr(diagnostic, "search_in_file", fake_search)
+    monkeypatch.setattr(diagnostic, "search_file_like_app", fake_search)
     monkeypatch.setattr(
         diagnostic,
         "_diagnostic_search_policy",
@@ -86,7 +86,7 @@ def test_short_durations_are_reported_in_milliseconds():
 
 def test_unexpected_fixed_query_match_requires_review(tmp_path, monkeypatch):
     (tmp_path / "needle.txt").write_text("data", encoding="utf-8")
-    monkeypatch.setattr(diagnostic, "search_in_file", lambda *_args, **_kwargs: ("OK", 1))
+    monkeypatch.setattr(diagnostic, "search_file_like_app", lambda *_args, **_kwargs: ("OK", 1))
     monkeypatch.setattr(
         diagnostic,
         "_diagnostic_search_policy",
@@ -103,7 +103,7 @@ def test_unknown_skip_details_are_reduced_to_safe_categories(tmp_path, monkeypat
     source.write_text("data", encoding="utf-8")
     monkeypatch.setattr(
         diagnostic,
-        "search_in_file",
+        "search_file_like_app",
         lambda *_args, **_kwargs: (
             Constants.STATUS_SKIPPED,
             "ERR_UNKNOWN|PermissionError: access denied C:/private/secret.txt",
@@ -129,7 +129,7 @@ def test_report_counts_files_larger_than_one_gib(tmp_path, monkeypatch):
     with large.open("wb") as stream:
         stream.seek(1024**3)
         stream.write(b"x")
-    monkeypatch.setattr(diagnostic, "search_in_file", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(diagnostic, "search_file_like_app", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         diagnostic,
         "_diagnostic_search_policy",
@@ -157,7 +157,7 @@ def test_hidden_files_and_directories_follow_effective_policy(tmp_path, monkeypa
     hidden_dir = tmp_path / ".private"
     hidden_dir.mkdir()
     (hidden_dir / "nested.txt").write_text("hidden", encoding="utf-8")
-    monkeypatch.setattr(diagnostic, "search_in_file", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(diagnostic, "search_file_like_app", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         diagnostic,
         "_diagnostic_search_policy",
@@ -193,7 +193,7 @@ def test_report_includes_actionable_aggregates_and_private_file_ids(tmp_path, mo
             return (Constants.STATUS_SKIPPED, "ERR_TOO_LARGE|1073741825 bytes")
         return None
 
-    monkeypatch.setattr(diagnostic, "search_in_file", fake_search)
+    monkeypatch.setattr(diagnostic, "search_file_like_app", fake_search)
     report = diagnostic.run(tmp_path, repeats=1, progress_callback=lambda *args: progress.append(args), max_seconds=None)
 
     assert report["diagnostic_version"] == 7
@@ -232,7 +232,7 @@ def test_report_round_trip_keeps_metrics_slow_files_and_markdown(tmp_path, monke
         return Constants.STATUS_SKIPPED, "ERR_OPEN|unavailable"
 
     monkeypatch.setattr(diagnostic.time, "perf_counter", lambda: clock["now"])
-    monkeypatch.setattr(diagnostic, "search_in_file", search)
+    monkeypatch.setattr(diagnostic, "search_file_like_app", search)
     monkeypatch.setattr(diagnostic, "_diagnostic_search_policy", lambda: {
         "exclude_hidden": True, "exclude_binary": False, "advanced_settings": {},
     })
@@ -265,3 +265,14 @@ def test_real_cancellation_event_keeps_partial_report_readable(tmp_path):
     assert report["verdict"] == "INCOMPLETE"
     assert report["diagnostic_config"]["completed_work_units"] == 0
     assert "INCOMPLETE" in diagnostic._markdown(report)
+
+
+def test_search_file_like_app_uses_folder_search(tmp_path):
+    """성능 진단은 앱과 같은 폴더 검색 함수로 파일을 검색합니다."""
+    hit = tmp_path / "hit.txt"
+    hit.write_text("one needle\n", encoding="utf-8")
+    miss = tmp_path / "miss.txt"
+    miss.write_text("nothing\n", encoding="utf-8")
+    result = diagnostic.search_file_like_app(str(hit), "needle", exclude_binary=True)
+    assert result is not None and result[0] == str(hit) and result[1] == 1
+    assert diagnostic.search_file_like_app(str(miss), "needle", exclude_binary=True) is None

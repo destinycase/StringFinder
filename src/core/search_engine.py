@@ -5,10 +5,8 @@ import logging
 import os
 import re
 import threading
-import time
 import unicodedata
-from os.path import splitext
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
@@ -20,11 +18,8 @@ from core.skip_reason_codes import (
     EXPAT_XML_DETAIL_TRANSLATION_NAMES,
     LEGACY_MARKERS,
     SKIP_CODE_CRITICAL,
-    SKIP_CODE_DECODING,
-    SKIP_CODE_ENCODING,
     SKIP_CODE_EXCEL_PANIC,
     SKIP_CODE_EXCEL_PROCESS,
-    SKIP_CODE_ARCHIVE_FORMAT,
     SKIP_CODE_JSON_PARSE,
     SKIP_CODE_JSON_SIZE_LIMIT,
     SKIP_CODE_MMAP,
@@ -64,24 +59,6 @@ def _get_adv_setting(key, default):
     if snapshot is not None:
         return snapshot.get(key, default)
     return ConfigManager().get_advanced_settings().get(key, default)
-
-
-def _max_search_file_size_bytes() -> int:
-    """Return the configured per-file size cap, bounded to the supported 1 GiB range."""
-    try:
-        configured_mb = int(
-            _get_adv_setting(
-                Constants.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB,
-                Constants.DEFAULT_MAX_SEARCH_FILE_SIZE_MB,
-            )
-        )
-    except (TypeError, ValueError):
-        configured_mb = Constants.DEFAULT_MAX_SEARCH_FILE_SIZE_MB
-    configured_mb = min(
-        max(1, configured_mb),
-        Constants.SETTING_MAX_SEARCH_FILE_SIZE_MB,
-    )
-    return configured_mb * 1024 * 1024
 
 
 def _get_rust_search_limits() -> Tuple[int, int, int]:
@@ -152,60 +129,6 @@ def _get_structured_memory_budget() -> int:
         logger.debug("Structured memory budget calculation failed: %s", exc)
     return Constants.MIN_AVAILABLE_MEMORY_BYTES
 
-
-def _memory_guard_result(
-    file_path: str,
-    document_kind: Literal["json", "xml"],
-    engine_kind: Literal["rust", "python"],
-) -> Optional[Tuple[str, str]]:
-    """Prevent an unsafe structured parse without conflating file and system limits."""
-    try:
-        from sf_utils.resource_guard import (
-            estimate_structured_memory_bytes,
-            memory_pressure_detected,
-            memory_pressure_message,
-            memory_snapshot,
-            projected_memory_pressure_reason,
-        )
-
-        snapshot = memory_snapshot()
-        if memory_pressure_detected(snapshot):
-            logger.warning(
-                "Structured search skipped for %s due to memory pressure (%s)",
-                file_path,
-                memory_pressure_message(snapshot),
-            )
-            return (Constants.STATUS_SKIPPED, AppStrings.ERROR_MEMORY_CRITICAL)
-        try:
-            file_size = os.path.getsize(file_path)
-        except OSError:
-            # The regular open/read path provides the localized I/O reason.
-            return None
-        if file_size > _max_search_file_size_bytes():
-            # Let the established parser-size check return its more specific
-            # file-size reason before applying a projected-memory reason.
-            return None
-        estimate = estimate_structured_memory_bytes(file_size, document_kind, engine_kind)
-        projection_reason = projected_memory_pressure_reason(snapshot, estimate)
-        if projection_reason:
-            logger.warning(
-                "Structured search skipped for %s due to projected memory budget "
-                "(engine=%s, document=%s, estimate=%dMB, reason=%s, %s)",
-                file_path,
-                engine_kind,
-                document_kind,
-                estimate // (1024 * 1024),
-                projection_reason,
-                memory_pressure_message(snapshot),
-            )
-            return (
-                Constants.STATUS_SKIPPED,
-                format_skip_reason(_build_skip_reason(SKIP_CODE_RESOURCE_BUDGET, estimate)),
-            )
-    except Exception as exc:
-        # Resource checks must never make an otherwise readable file fail.
-        logger.debug("Memory preflight check failed for %s: %s", file_path, exc)
-    return None
 
 EXCEL_EXTS = {f".{extension}" for extension in Constants.EXT_EXCEL}
 logger = logging.getLogger("StringFinder.SearchEngine")
@@ -406,15 +329,6 @@ def _localize_file_size_detail(detail: Any) -> str:
 def _localize_internal_error_detail(context: str, detail: Any) -> str:
     _log_raw_skip_detail(context, detail)
     return AppStrings.SKIP_DETAIL_INTERNAL_FAILURE
-
-
-def _known_rust_skip_reason(error: Any) -> Optional[str]:
-    """Rust가 ``코드|세부`` 형식으로 보낸 건너뜀 사유(파일 크기 초과 등)이면 번역한 문구를 돌려줍니다."""
-    raw = str(error)
-    code, separator, _detail = raw.partition("|")
-    if separator and code in _SKIP_REASON_TEMPLATE_NAMES:
-        return format_skip_reason(raw)
-    return None
 
 
 def format_skip_reason(reason: Any) -> str:
@@ -693,15 +607,8 @@ def _rust_match_field(match: Any, index: int, attribute: str, default: Any = Non
 
 
 def _split_excel_match_content(content: str) -> Tuple[str, str, str]:
-    """Split current tab-delimited and legacy pipe-delimited Excel results."""
-    if "\t" in content:
-        parts = content.split("\t", 2)
-    elif " | " in content:
-        # The old protocol did not escape pipes in sheet names. Splitting from
-        # the right preserves such names whenever cell and value are present.
-        parts = content.rsplit(" | ", 2)
-    else:
-        parts = [content]
+    """Excel 결과 ``시트\t셀\t값``을 세 칸으로 나눕니다."""
+    parts = content.split("\t", 2)
     parts.extend([""] * (3 - len(parts)))
     return parts[0], parts[1], parts[2]
 
@@ -731,20 +638,11 @@ def _normalize_rust_matches(
             if not content.startswith("__SF_"):
                 res.append((m.line, content, m.offset, m.length))
                 continue
-        try:
-            # Rust 엔진은 (라인, 내용, 오프셋, 길이)를 반환합니다.
-            c = _rust_match_field(m, 1, "content", "")
-        except (IndexError, TypeError):
-            # 이전 객체 스타일 매치에 대한 폴백 처리입니다.
-            c = getattr(m, "content", "")
-
-        # 내부 마커 처리 (LONG_LINE 포함)
-        try:
-            marker_line = _rust_match_field(m, 0, "line")
-            marker_offset = _rust_match_field(m, 2, "offset")
-            marker_length = _rust_match_field(m, 3, "length")
-        except (IndexError, TypeError):
-            marker_line, marker_offset, marker_length = None, None, None
+        # Rust 엔진은 (라인, 내용, 오프셋, 길이)를 반환합니다.
+        c = _rust_match_field(m, 1, "content", "")
+        marker_line = _rust_match_field(m, 0, "line")
+        marker_offset = _rust_match_field(m, 2, "offset")
+        marker_length = _rust_match_field(m, 3, "length")
 
         if c.startswith(RUST_MATCH_MARKER_LONG_LINE) and marker_line != 0 and marker_offset is None and marker_length is None:
             c = AppStrings.MSG_LONG_LINE_PREVIEW.format(c[len(RUST_MATCH_MARKER_LONG_LINE):])
@@ -773,8 +671,6 @@ def _normalize_rust_matches(
                 except Exception:
                     bin_cnt += 1
                 continue
-            elif c.startswith("ERR_") and "|" in c:
-                continue
             # EXCEL_SHEET_ERR 마커: 시트 스킵 정보를 추출하여 반환 목록에 추가
             elif c.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
                 payload = c[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):]
@@ -795,8 +691,7 @@ def _normalize_rust_matches(
 
             # Rust 엔진은 특수 모드(XML, JSON)에서
             # content 필드에 모든 필드를 \t로 합쳐서 반환함.
-            # search_directory_fast 경로에서는 search_in_xml_special 등이
-            # 호출되지 않으므로 이 함수에서 직접 분리해야 함.
+            # 앱의 검색 경로(폴더 검색)는 이 함수에서 직접 분리함.
             if special_mode:
                 mode_up = str(special_mode).upper()
 
@@ -1037,37 +932,6 @@ def is_hidden_path(path: str) -> bool:
     return name.startswith(".") and name not in {".", ".."} or is_hidden_windows(path)
 
 
-def _has_recycle_bin_component(path: str) -> bool:
-    return any(
-        component.casefold() == "$recycle.bin"
-        for component in re.split(r"[\\/]+", os.fspath(path))
-        if component
-    )
-
-
-def is_recycle_bin_path(path: str) -> bool:
-    """Return whether a file belongs to the Windows recycle bin or its root alias."""
-    if _has_recycle_bin_component(path):
-        return True
-    if os.name != "nt":
-        return False
-
-    normalized = os.path.normpath(path)
-    parent = os.path.dirname(normalized)
-    drive, tail = os.path.splitdrive(parent)
-    parent_parts = [part for part in re.split(r"[\\/]+", tail) if part]
-    if not drive or len(parent_parts) != 1:
-        return False
-
-    alias_target = os.path.join(f"{drive}{os.sep}", "$RECYCLE.BIN", parent_parts[0])
-    if not os.path.isdir(alias_target):
-        return False
-    try:
-        return _has_recycle_bin_component(os.path.realpath(path))
-    except OSError:
-        return False
-
-
 def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False) -> int:
     """검색 옵션에 따른 Rust 엔진 모드 비트 플래그를 생성하여 반환합니다."""
     bits = Constants.RUST_MODE_NORMAL
@@ -1090,161 +954,6 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
     return bits
 
 
-def _check_excel_signature(file_path: str) -> Tuple[bool, Optional[str]]:
-    """엑셀 파일의 이진 시그니처가 올바른지 확인합니다."""
-    try:
-        with open(file_path, "rb") as f:
-            header = f.read(8)
-            if header.startswith(b"\xd0\xcf\x11\xe0"):
-                return True, None
-            if header.startswith(b"PK\x03\x04"):
-                return True, None
-            return False, AppStrings.ERROR_EXCEL_SIGNATURE
-    except (IOError, OSError, PermissionError) as e:
-        return False, AppStrings.ERROR_EXCEL_ACCESS.format(_localize_io_error_detail(e))
-    except Exception as e:
-        logger.debug(AppStrings.ERROR_EXCEL_PROCESS.format(e))
-        return False, AppStrings.ERROR_EXCEL_PROCESS.format(
-            _localize_internal_error_detail("Excel signature", e)
-        )
-
-
-def search_in_excel_special(
-    file_path: str,
-    search_string: str,
-    exact_match: bool = False,
-    stop_event=None,
-) -> Optional[Union[SearchResult, SkippedResult]]:
-    """엑셀 파일 내의 텍스트를 검색하는 특수 엔진을 실행합니다."""
-    validate_search_query(search_string)
-    signature_ok, signature_error = _check_excel_signature(file_path)
-    if not signature_ok:
-        return (Constants.STATUS_SKIPPED, signature_error or AppStrings.ERROR_EXCEL_SIGNATURE)
-    try:
-        mode_bits = Constants.RUST_MODE_NORMAL | Constants.RUST_MODE_EXCEL
-        if exact_match:
-            mode_bits |= Constants.RUST_MODE_EXACT
-        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-        results = sf_engine.search_file(  # type: ignore
-            str(file_path),
-            search_string,
-            mode_bits,
-            max_per_file=max_per_file,
-            max_json_depth=max_json_depth,
-            max_json_size=max_json_size,
-            **_rust_policy_kwargs(),
-        )
-        if results:
-            error_reason = _extract_marker_skip_reason(results)
-            if error_reason:
-                return (Constants.STATUS_SKIPPED, error_reason)
-            partial_reason = _extract_partial_skip_reason(results)
-            processed, _binary_count, sheet_skips = _normalize_rust_matches(
-                results,
-                Constants.MODE_EXCEL,
-            )
-            sheet_errors = [
-                AppStrings.ERROR_SEARCH_EXCEL_SHEET.format(sheet_name, detail)
-                for sheet_name, detail in sheet_skips
-            ]
-            for sheet_error in sheet_errors:
-                logger.warning("[%s] %s", file_path, sheet_error)
-            if processed:
-                if partial_reason:
-                    processed.append((-2, partial_reason, "", ""))
-                return (file_path, _visible_match_count(processed), processed)
-            if sheet_errors:
-                return (Constants.STATUS_SKIPPED, sheet_errors[0])
-        # Rust가 결과를 내지 않으면 결과가 없는 것입니다(다른 검색 경로는 없음).
-        return None
-    except Exception as e:
-        logger.error(AppStrings.LOG_SCH_RUST_EXCEL_FAIL.format(file_path, e))
-        known_reason = _known_rust_skip_reason(e)
-        if known_reason:
-            return (Constants.STATUS_SKIPPED, known_reason)
-        raw_reason = str(e)
-        if raw_reason.startswith((f"{SKIP_CODE_EXCEL_PROCESS}|", f"{SKIP_CODE_EXCEL_PANIC}|")):
-            return (Constants.STATUS_SKIPPED, format_skip_reason(raw_reason))
-        return (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_SEARCH_EXCEL.format(
-                file_path,
-                _localize_internal_error_detail("Excel", e),
-            ),
-        )
-
-
-def search_in_json_special(
-    file_path: str,
-    search_string: str,
-    exact_match: bool = False,
-    stop_event=None,
-) -> Optional[Union[SearchResult, SkippedResult]]:
-    """
-    JSON 특수 검색을 수행합니다.
-    """
-    validate_search_query(search_string)
-    memory_result = _memory_guard_result(file_path, "json", "rust")
-    if memory_result:
-        return memory_result
-    try:
-        mode_bits = Constants.RUST_MODE_JSON
-        if _get_adv_setting(Constants.CONFIG_KEY_ALLOW_DUPLICATE_JSON_KEYS, False):
-            mode_bits |= Constants.RUST_MODE_ALLOW_DUPLICATE_JSON_KEYS
-        if exact_match:
-            mode_bits |= Constants.RUST_MODE_EXACT
-        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-        results = sf_engine.search_file(  # type: ignore
-            str(file_path),
-            search_string,
-            mode_bits,
-            max_per_file=max_per_file,
-            max_json_depth=max_json_depth,
-            max_json_size=max_json_size,
-            **_rust_policy_kwargs(),
-        )
-        if results:
-            skip_reason = _extract_marker_skip_reason(results)
-            if skip_reason:
-                return (Constants.STATUS_SKIPPED, skip_reason)
-            partial_reason = _extract_partial_skip_reason(results)
-            processed: List[SearchMatch] = []
-            for m in results:
-                content = _rust_match_field(m, 1, "content", "")
-                line = _rust_match_field(m, 0, "line", 1)
-                if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
-                    processed.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
-                        _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
-                    ), "", ""))
-                    continue
-                if line == 0 and content.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
-                    continue
-                if line == 0:
-                    line = ""
-                parts = _split_json_match_content(content)
-                # JSON 경로 정규화: /를 .으로 변경하고 시작 / 문자를 제거합니다.
-                json_path = parts[0].lstrip("/").replace("/", ".")
-                val = parts[1] if len(parts) > 1 else ""
-                processed.append((line, json_path, val, _rust_match_field(m, 2, "offset"), _rust_match_field(m, 3, "length")))
-            if partial_reason:
-                processed.append((-2, partial_reason, "", None, None))
-            return (file_path, _visible_match_count(processed), processed)
-    except Exception as e:
-        logger.error(AppStrings.LOG_SCH_RUST_JSON_FAIL.format(file_path, e))
-        known_reason = _known_rust_skip_reason(e)
-        if known_reason:
-            return (Constants.STATUS_SKIPPED, known_reason)
-        # [Policy] 자동 폴백 중단
-        reason = str(e)
-        if reason.startswith((f"{SKIP_CODE_JSON_PARSE}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
-            return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
-        return (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(reason)),
-        )
-    return None
-
-
 def _archive_fields_from_rust(content: str) -> Optional[List[str]]:
     """Rust의 ``ARCHIVE_FIELDS|[Namespace, Key, 원문, 번역문]`` 결과를 네 칸으로 나눕니다."""
     if not content.startswith(RUST_MATCH_MARKER_ARCHIVE_FIELDS):
@@ -1260,235 +969,34 @@ def _archive_fields_from_rust(content: str) -> Optional[List[str]]:
     return fields
 
 
-def search_in_archive_special(
-    file_path: str,
-    search_string: str,
-    exact_match: bool = False,
-    stop_event=None,
-) -> Optional[Union[SearchResult, SkippedResult]]:
-    """UE 현지화 archive의 원문·번역문·Key 값을 검색합니다.
-
-    결과 행은 ``(위치, Namespace, Key, 원문, 번역문, offset, length)``입니다.
-    archive의 구조 필드는 하나씩만 있어야 하므로 JSON 중복 키 설정과 관계없이 중복 키를 허용하지 않습니다.
-    """
-    validate_search_query(search_string)
-    memory_result = _memory_guard_result(file_path, "json", "rust")
-    if memory_result:
-        return memory_result
-    max_per_file = _positive_limit(
-        None,
-        Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-        Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-    )
-    limit_row = (-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(max_per_file), "", "", "", None, None)
-    try:
-        mode_bits = Constants.RUST_MODE_ARCHIVE
-        if exact_match:
-            mode_bits |= Constants.RUST_MODE_EXACT
-        rust_max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-        results = sf_engine.search_file(  # type: ignore
-            str(file_path),
-            search_string,
-            mode_bits,
-            max_per_file=rust_max_per_file,
-            max_json_depth=max_json_depth,
-            max_json_size=max_json_size,
-            **_rust_policy_kwargs(),
-        )
-    except Exception as e:
-        logger.error(AppStrings.LOG_SCH_RUST_ARCHIVE_FAIL.format(file_path, e))
-        known_reason = _known_rust_skip_reason(e)
-        if known_reason:
-            return (Constants.STATUS_SKIPPED, known_reason)
-        reason = str(e)
-        if reason.startswith((
-            f"{SKIP_CODE_ARCHIVE_FORMAT}|",
-            f"{SKIP_CODE_JSON_PARSE}|",
-            f"{SKIP_CODE_DECODING}|",
-            f"{SKIP_CODE_ENCODING}|",
-        )):
-            return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
-        return (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_UNEXPECTED_FILE.format(
-                file_path, _localize_internal_error_detail("UE localization archive", e)
-            ),
-        )
-    if not results:
-        return None
-    skip_reason = _extract_marker_skip_reason(results)
-    if skip_reason:
-        return (Constants.STATUS_SKIPPED, skip_reason)
-    processed: List[Any] = []
-    for m in results:
-        content = str(_rust_match_field(m, 1, "content", ""))
-        line = _rust_match_field(m, 0, "line", 0)
-        if content == RUST_MATCH_MARKER_TRUNCATED and line == 0:
-            processed.append(limit_row)
-            continue
-        fields = _archive_fields_from_rust(content)
-        if fields is None:
-            continue
-        processed.append((line, *fields, None, None))
-    if not processed:
-        return None
-    return (file_path, _visible_match_count(processed), processed)
-
-
-def search_in_xml_special(
-    file_path: str,
-    search_string: str,
-    exact_match: bool = False,
-    stop_event=None,
-) -> Optional[Union[SearchResult, SkippedResult]]:
-    """
-    XML 특수 검색을 수행합니다.
-    """
-    validate_search_query(search_string)
-    memory_result = _memory_guard_result(file_path, "xml", "rust")
-    if memory_result:
-        return memory_result
-    try:
-        mode_bits = Constants.RUST_MODE_XML
-        if exact_match:
-            mode_bits |= Constants.RUST_MODE_EXACT
-        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-        results = sf_engine.search_file(  # type: ignore
-            str(file_path),
-            search_string,
-            mode_bits,
-            max_per_file=max_per_file,
-            max_json_depth=max_json_depth,
-            max_json_size=max_json_size,
-            **_rust_policy_kwargs(),
-        )
-        if results:
-            skip_reason = _extract_marker_skip_reason(results)
-            if skip_reason:
-                return (Constants.STATUS_SKIPPED, skip_reason)
-            processed, _, _ = _normalize_rust_matches(results, Constants.MODE_XML)
-            partial_reason = _extract_partial_skip_reason(results)
-            if partial_reason:
-                processed.append((-2, partial_reason, None, None))
-            return (file_path, _visible_match_count(processed), processed)
-    except Exception as e:
-        logger.error(AppStrings.LOG_SCH_RUST_XML_FAIL.format(file_path, e))
-        known_reason = _known_rust_skip_reason(e)
-        if known_reason:
-            return (Constants.STATUS_SKIPPED, known_reason)
-        # [Policy] 자동 폴백 중단
-        reason = str(e)
-        if reason.startswith((f"{SKIP_CODE_XML_PARSE}|", f"{SKIP_CODE_XML_UNSUPPORTED_DTD}|", f"{SKIP_CODE_DECODING}|", f"{SKIP_CODE_ENCODING}|")):
-            return (Constants.STATUS_SKIPPED, format_skip_reason(reason))
-        return (
-            Constants.STATUS_SKIPPED,
-            format_skip_reason(_build_skip_reason(SKIP_CODE_XML_PARSE, reason)),
-        )
-    return None
-
-
-def search_in_file(
-    file_path: str,
-    search_string: str,
-    file_size: Optional[int] = None,
+def format_file_matches(
+    path: str,
+    matches: Any,
     special_mode: Optional[str] = None,
-    stop_event=None,
-    **kwargs,
-) -> Optional[Union[SearchResult, SkippedResult]]:
-    """파일 하나를 Rust 엔진으로 검색합니다. Excel·값만 검색 형식은 해당 경로로 보냅니다.
+) -> Tuple[Optional[SearchResult], List[Tuple[str, str]], List[Tuple[str, str]]]:
+    """Rust 엔진이 돌려준 파일 하나의 결과를 화면용 결과로 정리합니다.
 
-    검색 방식은 하나입니다(모든 형식이 Rust의 같은 비교 기준을 씀). Rust가 결과를 내지 않으면
-    결과가 없는 것이며, 다른 인코딩으로 다시 검색하는 Python 대체 경로는 없습니다(CP949·UTF-16 등은
-    Rust가 직접 디코딩).
+    폴더 검색과 워커의 실시간 결과 처리가 같은 규칙을 쓰도록 한곳에 둡니다.
+
+    돌려주는 값:
+    - 결과: ``(경로, 표시 일치 수, 일치 목록)`` 또는 표시할 일치가 없으면 ``None``
+    - 건너뜀 목록: 파일 전체를 건너뛴 사유 또는 일부만 검색한 안내 ``[(경로, 사유)]``
+    - 시트 실패 목록: Excel에서 읽지 못한 시트 ``[(시트, 사유)]``
     """
-    validate_search_query(search_string)
-    if is_recycle_bin_path(file_path):
-        return None
-    search_string_nfc = normalize_unicode(search_string)
-    ext = splitext(file_path)[1].lower()
-    if ext in EXCEL_EXTS:
-        is_exact = bool(special_mode and Constants.MODE_EXACT in special_mode)
-        return search_in_excel_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
-    if special_mode:
-        is_exact = Constants.MODE_EXACT in special_mode
-        if Constants.MODE_XML in special_mode and ext in (".xml", ".sf_xml"):
-            return search_in_xml_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
-        elif Constants.MODE_JSON in special_mode and ext == ".json":
-            return search_in_json_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
-        elif Constants.MODE_ARCHIVE in special_mode and ext == Constants.EXT_ARCHIVE:
-            return search_in_archive_special(file_path, search_string_nfc, is_exact, stop_event=stop_event)
-    if file_size is None:
-        try:
-            file_size = os.path.getsize(file_path)
-        except (OSError, IOError) as e:
-            logger.debug(AppStrings.LOG_SCH_BINARY_CHECK_ERROR.format(file_path, e))
-            return (
-                Constants.STATUS_SKIPPED,
-                AppStrings.ERROR_FILE_ACCESS_BINARY.format(_localize_io_error_detail(e)),
-            )
-    if file_size == 0:
-        return (Constants.STATUS_SKIPPED, AppStrings.SKIP_EMPTY_FILE)
-    if not HAS_RUST_ENGINE:
-        return (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_UNEXPECTED_FILE.format(
-                file_path, _localize_internal_error_detail("Rust file search", _RUST_ENGINE_ERROR)
-            ),
-        )
-    try:
-        exclude_binary = bool(kwargs.get("exclude_binary", False))
-        mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary)
-        started = time.time()
-        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-        rust_results = sf_engine.search_file(  # type: ignore
-            str(file_path),
-            search_string_nfc,
-            mode_bits,
-            stop_event=stop_event,
-            max_per_file=max_per_file,
-            max_json_depth=max_json_depth,
-            max_json_size=max_json_size,
-            **_rust_policy_kwargs(),
-        )
-        elapsed = time.time() - started
-        if not rust_results:
-            return None
-        skip_reason = _extract_marker_skip_reason(rust_results)
-        if skip_reason:
-            return (Constants.STATUS_SKIPPED, skip_reason)
-        normalize_started = time.time()
-        normalized, binary_count, _ = _normalize_rust_matches(rust_results, special_mode)
-        if len(rust_results) > 100 or elapsed > 0.1:
-            logger.debug(AppStrings.LOG_SCH_RUST_PERF_STATS.format(
-                len(rust_results), elapsed, time.time() - normalize_started))
-        if binary_count > 0:
-            return (
-                file_path,
-                binary_count,
-                [(1, AppStrings.MSG_BINARY_MATCH.format(binary_count), None, None)],
-            )
-        # 해석하지 못한 바이트 안내 등 파일 단위 부분 검색 안내입니다. 일치가 없어도 알립니다.
-        partial_reason = _extract_partial_skip_reason(rust_results)
-        if normalized:
-            if partial_reason:
-                normalized.append((-2, partial_reason, None, None))
-                return (file_path, _visible_match_count(normalized), normalized)
-            return (file_path, len(normalized), normalized)
-        if partial_reason:
-            return (Constants.STATUS_SKIPPED, partial_reason)
-        return None
-    except Exception as e:
-        known_reason = _known_rust_skip_reason(e)
-        if known_reason:
-            return (Constants.STATUS_SKIPPED, known_reason)
-        logger.error(AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format(file_path, e), exc_info=True)
-        return (
-            Constants.STATUS_SKIPPED,
-            AppStrings.ERROR_UNEXPECTED_FILE.format(
-                file_path,
-                _localize_internal_error_detail("Rust file search", e),
-            ),
-        )
+    skip_reason = _extract_marker_skip_reason(matches)
+    if skip_reason:
+        return None, [(path, skip_reason)], []
+    skipped: List[Tuple[str, str]] = []
+    partial_reason = _extract_partial_skip_reason(matches)
+    if partial_reason:
+        skipped.append((path, partial_reason))
+    match_tuples, binary_count, sheet_skips = _normalize_rust_matches(matches, special_mode)
+    if binary_count > 0:
+        binary_row = (1, AppStrings.MSG_BINARY_MATCH.format(binary_count), None, None)
+        return (path, binary_count, [binary_row]), skipped, sheet_skips
+    if match_tuples:
+        return (path, _visible_match_count(match_tuples), match_tuples), skipped, sheet_skips
+    return None, skipped, sheet_skips
 
 
 def _deduplicate_overlapping_roots(search_paths: List[str]) -> List[str]:
@@ -1609,26 +1117,12 @@ def search_directory_fast(
             # 여기서 전체 목록을 다시 정규화하는 중복 연산을 건너뜁니다.
             if not kwargs.get("results_callback"):
                 for path, matches in matches_list:
-                    skip_reason = _extract_marker_skip_reason(matches)
-                    if skip_reason:
-                        skipped_results.append((path, skip_reason))
-                        continue
-                    partial_reason = _extract_partial_skip_reason(matches)
-                    if partial_reason:
-                        skipped_results.append((path, partial_reason))
-                    match_tuples, marker_binary_count, _ = _normalize_rust_matches(
-                        matches, kwargs.get("special_mode"))
-                    if marker_binary_count > 0:
-                        formatted_results.append(
-                            (
-                                path,
-                                marker_binary_count,
-                                [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)],
-                            )
-                        )
-                    elif match_tuples:
-                        formatted_results.append((path, _visible_match_count(match_tuples), match_tuples))
-            
+                    result, file_skips, _sheet_skips = format_file_matches(
+                        path, matches, kwargs.get("special_mode"))
+                    skipped_results.extend(file_skips)
+                    if result is not None:
+                        formatted_results.append(result)
+
             for path, reason in skipped_list:
                 skipped_results.append((path, format_skip_reason(reason)))
         return {"results": formatted_results, "skipped": skipped_results}
@@ -1637,93 +1131,4 @@ def search_directory_fast(
         raise
     except BaseException as e:
         logger.critical(AppStrings.LOG_SCH_RUST_DIR_FATAL.format("SearchEngine.Directory", e), exc_info=True)
-        raise
-
-
-def search_files_list_fast(
-    file_list: List[str],
-    search_string: str,
-    special_mode: Optional[str] = None,
-    stop_event=None,
-    progress_callback=None,
-    **kwargs,
-) -> Dict[str, List]:
-    """Rust 엔진을 사용하여 파일 목록을 고속으로 검색합니다."""
-    validate_search_query(search_string)
-    if not file_list:
-        return {"results": [], "skipped": []}
-    try:
-        rust_pattern = normalize_unicode(search_string)
-        search_func = getattr(sf_engine, "search_files_list", None)
-        if not search_func:
-            # Rust API에서 인수 부락 시 타입 예외 발생 (없는 결과 반환 등)
-            raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("search_files_list"))
-        exclude_hidden = bool(kwargs.get("exclude_hidden", False))
-        # 파일 리스트 검색 시에도 바이너리 제외 옵션을 존중하도록 처리합니다.
-        exclude_binary = bool(kwargs.get("exclude_binary", True))
-        mode_bits = get_rust_mode_bits(special_mode, exclude_binary=exclude_binary)
-        max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()
-        rust_options = _build_rust_options(
-            mode_bits=mode_bits,
-            exclude_hidden=exclude_hidden,
-            stop_event=stop_event,
-            progress_callback=progress_callback,
-            results_callback=kwargs.get("results_callback"),
-            batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
-            flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
-            max_per_file=max_per_file,
-            max_json_depth=max_json_depth,
-            max_json_size=max_json_size,
-            structured_memory_budget=_get_structured_memory_budget(),
-        )
-        if rust_options is not None:
-            raw_ret = search_func(file_list=file_list, search_string=rust_pattern, options=rust_options)
-        else:
-            raw_ret = search_func(
-                file_list=file_list,
-                search_string=rust_pattern,
-                mode_bits=mode_bits,
-                exclude_hidden=exclude_hidden,
-                stop_event=stop_event,
-                progress_callback=progress_callback,
-                results_callback=kwargs.get("results_callback"),
-                batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
-                _flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
-                max_per_file=max_per_file,
-                max_json_depth=max_json_depth,
-                max_json_size=max_json_size,
-                options=_build_rust_options(),
-            )
-        formatted_results = []
-        skipped_results = []
-        if raw_ret:
-            matches_list, skipped_list = raw_ret
-            # [Optim] results_callback이 제공된 경우 중복 처리 건너뜁니다.
-            if not kwargs.get("results_callback"):
-                for path, matches in matches_list:
-                    skip_reason = _extract_marker_skip_reason(matches)
-                    if skip_reason:
-                        skipped_results.append((path, skip_reason))
-                        continue
-                    partial_reason = _extract_partial_skip_reason(matches)
-                    if partial_reason:
-                        skipped_results.append((path, partial_reason))
-                    match_tuples, marker_binary_count, _ = _normalize_rust_matches(
-                        matches, special_mode)
-                    if marker_binary_count > 0:
-                        formatted_results.append(
-                            (
-                                path,
-                                marker_binary_count,
-                                [(1, AppStrings.MSG_BINARY_MATCH.format(marker_binary_count), None, None)],
-                            )
-                        )
-                    elif match_tuples:
-                        formatted_results.append((path, _visible_match_count(match_tuples), match_tuples))
-            
-            for path, reason in skipped_list:
-                skipped_results.append((path, format_skip_reason(reason)))
-        return {"results": formatted_results, "skipped": skipped_results}
-    except BaseException as e:
-        logger.critical(AppStrings.LOG_SCH_RUST_FILELIST_FATAL.format("SearchEngine.FileList", e), exc_info=True)
         raise

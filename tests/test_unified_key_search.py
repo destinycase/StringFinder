@@ -1,7 +1,7 @@
 """
 단일 비교 기준(key = NFC(casefold(NFC(x))))과 줄 정의(LF·CRLF·CR) 회귀 테스트.
 
-Python 대체 경로가 Rust의 누락을 가리지 않도록 Rust 엔진의 search_dir·search_files_list를
+Python 대체 경로가 Rust의 누락을 가리지 않도록 Rust 엔진의 search_dir를
 직접 호출합니다(검수 I-3). 검수 결함 I-1(비ASCII 대소문자 누락)과 I-2(XML 정확히 일치의
 NFC 누락)의 재현 사례를 형식 × 부분/정확 일치로 확인합니다.
 """
@@ -156,13 +156,13 @@ def test_reported_positions_always_point_at_the_original_match(tmp_path):
                 assert reference_key(piece) == reference_key(query), (query, piece)
 
 
-def test_files_list_entry_point_uses_the_same_comparison(tmp_path):
+def test_single_file_root_uses_the_same_comparison(tmp_path):
     target = tmp_path / "list.txt"
     target.write_text("ΣΟΦΊΑ\n", encoding="utf-8")
-    results, _ = sf_engine.search_files_list([str(target)], "σοφία")
+    results, _ = sf_engine.search_dir([str(target)], "σοφία")
     assert lines_of(results) == [1]
 
 
 def test_query_that_normalizes_to_nothing_is_an_input_error():
     with pytest.raises(ValueError):
-        sf_engine.search_files_list([], "")
+        sf_engine.search_dir([], "")

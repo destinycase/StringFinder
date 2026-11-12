@@ -3,13 +3,8 @@ import json
 import pytest
 
 from core import search_engine
-from core.search_engine import (
-    format_skip_reason,
-    search_directory_fast,
-    search_files_list_fast,
-    search_in_json_special,
-    search_in_xml_special,
-)
+from core.search_engine import format_skip_reason, search_directory_fast
+from folder_search_helper import search_in_json_special, search_in_xml_special
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
@@ -52,7 +47,7 @@ def test_file_list_reports_malformed_json(tmp_path):
     file_path = tmp_path / "broken.json"
     file_path.write_text('{"value":"needle",', encoding="utf-8")
 
-    list_result = search_files_list_fast(
+    list_result = search_directory_fast(
         [str(file_path)],
         "needle",
         special_mode=Constants.MODE_JSON,

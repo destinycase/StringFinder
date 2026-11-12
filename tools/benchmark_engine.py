@@ -19,7 +19,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.search_engine import search_in_file  # noqa: E402
+try:
+    from tools.app_search import search_file_like_app  # noqa: E402
+except ImportError:  # 도구 폴더에서 직접 실행할 때
+    from app_search import search_file_like_app  # type: ignore[no-redef]  # noqa: E402
 from sf_utils.constants import Constants  # noqa: E402
 
 
@@ -54,7 +57,7 @@ def _measure(
     stop_event = threading.Event() if with_stop_event else None
 
     def run_search():
-        return search_in_file(
+        return search_file_like_app(
             str(path),
             query,
             special_mode=special_mode,

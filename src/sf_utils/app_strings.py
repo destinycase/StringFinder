@@ -504,7 +504,6 @@ class AppStrings:
     LOG_WKR_SIGNAL_EMIT_FAIL = "[워커] 상태 신호 전송 실패 ({}): {}"
     LOG_SYS_RUST_PATH = "[시스템] 로드된 Rust 엔진 경로: {}"
     LOG_SYS_RUST_HASH = "[시스템] Rust 엔진 무결성 체크(SHA-256): {}"
-    LOG_SCH_RUST_PERF_STATS = "[성능] Rust 원시 통계: Count={}, Call={:.4f}s, Norm={:.4f}s"
     # =========================================================================
     # [12] 에러 메시지 (Error Messages) - 형식: [오류] 메시지
     # =========================================================================
@@ -567,14 +566,8 @@ class AppStrings:
     ERR_CRITICAL_SYSTEM = "[시스템] 치명적인 도구 내부 오류 발생: {}"
     LOG_SCH_ERROR = "[오류] 검색 엔진 일반 오류: {}"
     LOG_SCH_RUST_ENGINE_ERROR = "[오류] Rust 코어 엔진 실행 오류 ('{}'): {}"
-    LOG_SCH_RUST_JSON_FAIL = "[오류] Rust 기반 JSON 검색 실패 ('{}'): {}"
-    LOG_SCH_RUST_ARCHIVE_FAIL = "[오류] Rust 기반 UE 현지화 archive 검색 실패 ('{}'): {}"
     LOG_SCH_RUST_DIR_SEARCH_ERROR = "[오류] Rust 디렉토리 탐색 오류 ('{}'): {}"
-    LOG_SCH_BINARY_CHECK_ERROR = "[오류] 바이너리 무결성 점검 오류: {}"
     LOG_SCH_RUST_DIR_FATAL = "[오류] Rust 디렉토리 검색 중 치명적 예외 ('{}'): {}"
-    LOG_SCH_RUST_FILELIST_FATAL = "[오류] Rust 파일 목록 생성 중 치명적 예외 ('{}'): {}"
-    LOG_SCH_RUST_EXCEL_FAIL = "[오류] Rust 기반 Excel 검색 실패 ('{}'): {}"
-    LOG_SCH_RUST_XML_FAIL = "[오류] Rust 기반 XML 검색 실패 ('{}'): {}"
     LOG_SCH_STOP_THREAD_ERR = "[오류] 작업 스레드 중지 처리 실패: {}"
     LOG_SCH_SEARCH_THREAD_ERROR = "[오류] 검색 스레드 종료 절차 중 오류 수신: {}"
     LOG_SCH_EXCEL_ENGINE_PANIC = "[엔진] Excel 코어 치명적 패닉: {}"

@@ -86,7 +86,7 @@ class TestRegressions(unittest.TestCase):
 
     def test_case_insensitivity_regression(self):
         """[상] 대소문자 무감각 검색 무결성 결함 리그레션 테스트"""
-        from core.search_engine import search_in_file
+        from folder_search_helper import search_in_file
 
         # 1. 파일=소문자, 검색어=대문자 케이스
         test_file_lower = os.path.join(self.test_dir, "case_test_lower.txt")

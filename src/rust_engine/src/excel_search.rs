@@ -92,8 +92,7 @@ struct ExcelCtx<'a> {
     date_cells: std::cell::RefCell<
         std::collections::HashMap<String, Result<crate::excel_date_formats::DateCells, String>>,
     >,
-    /// 값 읽기 전용(시트 읽기 API)일 때는 비교기가 없습니다.
-    matcher: Option<&'a crate::textkey::Matcher>,
+    matcher: &'a crate::textkey::Matcher,
     is_exact: bool,
     stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     max_per_file: usize,
@@ -184,7 +183,7 @@ pub fn search_excel_file(
     let ctx = ExcelCtx {
         path,
         date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
-        matcher: Some(matcher),
+        matcher,
         is_exact,
         stop_flag: stop_flag.clone(),
         max_per_file,
@@ -284,99 +283,78 @@ fn search_cell_text<'a>(
             write_excel_datetime(buffer, value).expect("writing to String cannot fail");
             Some(Cow::Borrowed(buffer))
         }
-        _ => cell_text(cell, sheet, row, col, ctx).map(Cow::Owned),
+        // 0 이상 1 미만의 날짜 값(시각만 있는 값)입니다. 1904 날짜 체계 표시를 확인합니다.
+        Data::DateTime(value) => Some(Cow::Owned(
+            date_1904_text(value, sheet, row, col, ctx)
+                .unwrap_or_else(|| format_excel_datetime(value)),
+        )),
+        // 날짜/기간/오류 셀도 사용자가 확인할 수 있는 값으로 변환하여 검색 대상에 포함합니다.
+        Data::DateTimeIso(value) if value.is_empty() => None,
+        Data::DateTimeIso(value) => Some(Cow::Owned(format_iso_datetime(value))),
+        Data::DurationIso(value) if value.is_empty() => None,
+        Data::DurationIso(value) => Some(Cow::Borrowed(value)),
+        Data::Error(value) => Some(Cow::Owned(format!("{value:?}"))),
+        _ => None,
     }
 }
 
-/// Convert cell values while preserving date-style handling.
-fn cell_text(
-    cell: &Data,
+/// 1904 날짜 체계 통합 문서에서 날짜 서식을 가진 셀이면 1904-01-01 기준 표시를 돌려줍니다.
+fn date_1904_text(
+    value: &calamine::ExcelDateTime,
     sheet: &str,
     row: usize,
     col: usize,
     ctx: &ExcelCtx<'_>,
 ) -> Option<String> {
-    if let Data::DateTime(value) = cell {
-        let (year, month, day, hour, minute, second, millis) = value.to_ymd_hms_milli();
-        if year == 1904
-            && month == 1
-            && day == 1
-            && (0.0..1.0).contains(&value.as_f64())
-            && ctx
-                .path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("xlsx") || e.eq_ignore_ascii_case("xlsm"))
+    let (year, month, day, hour, minute, second, millis) = value.to_ymd_hms_milli();
+    if year == 1904
+        && month == 1
+        && day == 1
+        && (0.0..1.0).contains(&value.as_f64())
+        && ctx
+            .path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("xlsx") || e.eq_ignore_ascii_case("xlsm"))
+    {
+        if let Ok(cells) = ctx
+            .date_cells
+            .borrow_mut()
+            .entry(sheet.to_owned())
+            .or_insert_with(|| crate::excel_date_formats::read_date_cells(ctx.path, sheet))
         {
-            if let Ok(cells) = ctx
-                .date_cells
-                .borrow_mut()
-                .entry(sheet.to_owned())
-                .or_insert_with(|| crate::excel_date_formats::read_date_cells(ctx.path, sheet))
-            {
-                let mut letters = String::new();
-                let mut index = col + 1;
-                while index > 0 {
-                    index -= 1;
-                    letters.insert(0, (b'A' + (index % 26) as u8) as char);
-                    index /= 26;
+            let mut letters = String::new();
+            let mut index = col + 1;
+            while index > 0 {
+                index -= 1;
+                letters.insert(0, (b'A' + (index % 26) as u8) as char);
+                index /= 26;
+            }
+            if cells.contains(&(sheet.to_owned(), format!("{letters}{}", row + 1))) {
+                if hour == 0 && minute == 0 && second == 0 && millis == 0 {
+                    return Some("1904-01-01".to_owned());
                 }
-                if cells.contains(&(sheet.to_owned(), format!("{letters}{}", row + 1))) {
-                    if hour == 0 && minute == 0 && second == 0 && millis == 0 {
-                        return Some("1904-01-01".to_owned());
-                    }
-                    let fraction = if millis == 0 {
-                        String::new()
-                    } else {
-                        format!(".{:06}", millis * 1000)
-                    };
-                    return Some(format!(
-                        "1904-01-01 {hour:02}:{minute:02}:{second:02}{fraction}"
-                    ));
-                }
+                let fraction = if millis == 0 {
+                    String::new()
+                } else {
+                    format!(".{:06}", millis * 1000)
+                };
+                return Some(format!(
+                    "1904-01-01 {hour:02}:{minute:02}:{second:02}{fraction}"
+                ));
             }
         }
     }
-    cell_to_string(cell)
+    None
 }
 
 /// 문자열 값의 패턴 매치 여부 확인 공통 로직
 fn cell_matches_val(val: &str, ctx: &ExcelCtx<'_>) -> bool {
     // 모든 형식이 같은 비교 기준(textkey)을 씁니다.
-    let Some(matcher) = ctx.matcher else {
-        return false;
-    };
     if ctx.is_exact {
-        matcher.equals_trimmed(val)
+        ctx.matcher.equals_trimmed(val)
     } else {
-        matcher.contains(val)
-    }
-}
-
-/// 셀 데이터를 검색·표시용 문자열로 변환합니다.
-fn cell_to_string(cell: &Data) -> Option<String> {
-    let s = match cell {
-        Data::String(s) => s.to_string(),
-        Data::Float(f) => {
-            if f.fract() == 0.0 {
-                format!("{:.0}", f)
-            } else {
-                crate::utils::format_float(*f)
-            }
-        }
-        Data::Int(i) => i.to_string(),
-        Data::Bool(b) => b.to_string(),
-        // 날짜/기간/오류 셀도 사용자가 확인할 수 있는 값으로 변환하여 검색 대상에 포함합니다.
-        Data::DateTime(value) => format_excel_datetime(value),
-        Data::DateTimeIso(value) => format_iso_datetime(value),
-        Data::DurationIso(value) => value.to_string(),
-        Data::Error(value) => format!("{:?}", value),
-        _ => return None,
-    };
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
+        ctx.matcher.contains(val)
     }
 }
 
@@ -472,21 +450,14 @@ mod tests {
         let ctx = ExcelCtx {
             path: Path::new("test.xlsx"),
             date_cells: std::cell::RefCell::new(std::collections::HashMap::new()),
-            matcher: Some(&matcher),
+            matcher: &matcher,
             is_exact: exact,
             stop_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             max_per_file: 5_000,
         };
-        assert_eq!(
-            cell_text(&cell, "Sheet", 0, 0, &ctx).is_some_and(|v| cell_matches_val(&v, &ctx)),
-            expected
-        );
         let mut buffer = String::with_capacity(64);
         let text = search_cell_text(&cell, "Sheet", 0, 0, &ctx, &mut buffer);
-        assert_eq!(
-            text.as_deref(),
-            cell_text(&cell, "Sheet", 0, 0, &ctx).as_deref()
-        );
+        assert_eq!(text.as_deref(), reference_text(&cell).as_deref());
         assert_eq!(
             text.as_deref().is_some_and(|v| cell_matches_val(v, &ctx)),
             expected
@@ -496,16 +467,49 @@ mod tests {
         }
     }
 
+    /// 예전 표시 변환(1904 날짜 서식이 없는 경우)과 같은 기준값입니다.
+    fn reference_text(cell: &Data) -> Option<String> {
+        let s = match cell {
+            Data::String(s) => s.to_string(),
+            Data::Float(f) if f.fract() == 0.0 => format!("{:.0}", f),
+            Data::Float(f) => crate::utils::format_float(*f),
+            Data::Int(i) => i.to_string(),
+            Data::Bool(b) => b.to_string(),
+            Data::DateTime(value) => format_excel_datetime(value),
+            Data::DateTimeIso(value) => format_iso_datetime(value),
+            Data::DurationIso(value) => value.to_string(),
+            Data::Error(value) => format!("{:?}", value),
+            _ => return None,
+        };
+        (!s.is_empty()).then_some(s)
+    }
+
+    fn text_of(cell: &Data) -> Option<String> {
+        let matcher = crate::textkey::Matcher::new("needle").unwrap();
+        let ctx = ExcelCtx {
+            path: Path::new("test.xlsx"),
+            date_cells: Default::default(),
+            matcher: &matcher,
+            is_exact: false,
+            stop_flag: Default::default(),
+            max_per_file: 10,
+        };
+        let mut buffer = String::new();
+        search_cell_text(cell, "Sheet", 0, 0, &ctx, &mut buffer).map(Cow::into_owned)
+    }
+
     #[test]
     fn iso_date_and_duration_cells_are_searchable() {
         assert_eq!(
-            cell_to_string(&Data::DateTimeIso("2026-08-28T12:30:00".to_string())),
+            text_of(&Data::DateTimeIso("2026-08-28T12:30:00".to_string())),
             Some("2026-08-28 12:30:00".to_string())
         );
         assert_eq!(
-            cell_to_string(&Data::DurationIso("PT1H30M".to_string())),
+            text_of(&Data::DurationIso("PT1H30M".to_string())),
             Some("PT1H30M".to_string())
         );
+        assert_eq!(text_of(&Data::DurationIso(String::new())), None);
+        assert_eq!(text_of(&Data::Empty), None);
         assert_eq!(
             format_iso_datetime("2026-08-28T12:30:00.000"),
             "2026-08-28 12:30:00"
@@ -519,7 +523,7 @@ mod tests {
 
     #[test]
     fn empty_string_cells_stay_excluded() {
-        assert!(cell_to_string(&Data::String(String::new())).is_none());
+        assert!(text_of(&Data::String(String::new())).is_none());
     }
 
     #[test]
@@ -579,7 +583,7 @@ mod tests {
         let ctx = ExcelCtx {
             path: Path::new("test.xlsx"),
             date_cells: Default::default(),
-            matcher: Some(&matcher),
+            matcher: &matcher,
             is_exact: false,
             stop_flag: Default::default(),
             max_per_file: 10_000,
@@ -591,7 +595,7 @@ mod tests {
             bits ^= bits >> 7;
             bits ^= bits << 17;
             let cell = Data::Float(f64::from_bits(bits));
-            let expected = cell_to_string(&cell);
+            let expected = reference_text(&cell);
             assert_eq!(
                 search_cell_text(&cell, "Sheet", 0, 0, &ctx, &mut buffer).as_deref(),
                 expected.as_deref(),
@@ -612,7 +616,7 @@ mod tests {
             let cell = Data::Float(value);
             assert_eq!(
                 search_cell_text(&cell, "Sheet", 0, 0, &ctx, &mut buffer).as_deref(),
-                cell_to_string(&cell).as_deref()
+                reference_text(&cell).as_deref()
             );
         }
     }

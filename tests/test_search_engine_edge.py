@@ -15,7 +15,7 @@
 
 import os
 
-from core.search_engine import search_in_file
+from folder_search_helper import search_in_file
 
 
 def test_search_extremely_long_line(tmp_path):
@@ -41,25 +41,4 @@ def test_unknown_encoding_fallback(tmp_path):
 
     result = search_in_file(str(test_file), "any")
     assert result is None or (isinstance(result, tuple) and len(result) == 3)
-
-
-def test_search_empty_file_skip_reason(tmp_path):
-    """빈 파일 스킵 시의 상태 및 메시지 검증"""
-    from core.search_engine import search_in_file
-    from sf_utils.app_strings import AppStrings
-    from sf_utils.constants import Constants
-
-    # 1. 鍮??뚯씪 ?앹꽦
-    zero_file = tmp_path / "zero_byte.txt"
-    zero_file.touch()
-
-    # 2. 寃???ㅽ뻾
-    result = search_in_file(str(zero_file), "any")
-
-    assert result is not None, "빈 파일은 None이 아니라 SkippedResult를 반환해야 합니다"
-    assert isinstance(result, tuple)
-    assert len(result) == 2
-    assert result[0] == Constants.STATUS_SKIPPED
-    assert result[1] == AppStrings.SKIP_EMPTY_FILE
-
 

@@ -14,7 +14,8 @@
 
 from typing import Any, List
 
-from core.search_engine import search_in_json_special, search_in_xml_special
+import folder_search_helper
+from folder_search_helper import search_in_json_special, search_in_xml_special
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 
@@ -34,7 +35,7 @@ def test_json_size_limit_code_is_handled_as_file_skip(tmp_path, monkeypatch):
         return [MockMatch("ERR_JSON_SIZE_LIMIT|Size exceeds limit")]
 
     import core.search_engine
-    monkeypatch.setattr(core.search_engine, "sf_engine", type("obj", (object,), {"search_file": mock_search_file}))
+    monkeypatch.setattr(core.search_engine, "sf_engine", folder_search_helper.fake_dir_engine(mock_search_file(None, None, 0)))
 
     result = search_in_json_special(str(file_path), "value")
 
@@ -64,9 +65,9 @@ def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch, caplo
         return [MockMatch("ERR_PANIC|Simulated engine crash")]
 
     import core.search_engine
-    monkeypatch.setattr(core.search_engine, "sf_engine", type("obj", (object,), {"search_file": mock_search_file}))
+    monkeypatch.setattr(core.search_engine, "sf_engine", folder_search_helper.fake_dir_engine(mock_search_file(None, None, 0)))
 
-    result = core.search_engine.search_in_file(str(file_path), "query")
+    result = folder_search_helper.search_in_file(str(file_path), "query")
 
     assert result is not None
     assert isinstance(result, tuple)

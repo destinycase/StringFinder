@@ -1,6 +1,6 @@
 """Python 검색기를 지운 뒤의 앱 검색 경로 골든 테스트입니다(제안서 7.3).
 
-앱이 실제로 쓰는 경로(``search_directory_fast``·``search_files_list_fast``·``search_in_file`` → Rust)를
+앱이 실제로 쓰는 경로(``search_directory_fast`` → Rust, 파일 하나는 ``folder_search_helper``로 같은 경로)를
 지나며, 예전에 글자 변형 검색(Python)으로만 찾던 경우를 포함해 형식마다 기대 결과를 고정합니다.
 """
 import json
@@ -12,6 +12,7 @@ import pytest
 from openpyxl import Workbook
 
 from core import search_engine as se
+import folder_search_helper
 from sf_utils.constants import Constants as C
 
 NFD_KOREAN = unicodedata.normalize("NFD", "목표단어")
@@ -72,23 +73,16 @@ def test_structured_values_use_the_same_comparison(corpus, mode, query, expected
     extension = "json" if mode == C.MODE_JSON else "xml"
     result = se.search_directory_fast([str(corpus)], query, [extension], special_mode=mode)
     assert [count for _path, count, _rows in result["results"]] == [expected]
-    single = se.search_in_file(str(corpus / ("data.json" if mode == C.MODE_JSON else "data.xml")),
+    single = folder_search_helper.search_in_file(str(corpus / ("data.json" if mode == C.MODE_JSON else "data.xml")),
                                query, special_mode=mode)
     assert single and single[1] == expected
 
 
 @pytest.mark.parametrize("query,cell", [("strasse", "B2"), ("목표단어", "C3")])
 def test_excel_cells_use_the_same_comparison(corpus, query, cell):
-    result = se.search_in_file(str(corpus / "data.xlsx"), query, special_mode=C.MODE_EXCEL)
+    result = folder_search_helper.search_in_file(str(corpus / "data.xlsx"), query, special_mode=C.MODE_EXCEL)
     assert result and result[1] == 1
     assert result[2][0][2] == cell
-
-
-def test_file_list_entry_matches_directory_entry(corpus):
-    files = [str(path) for path in sorted(corpus.glob("*.txt"))]
-    listed = se.search_files_list_fast(files, "목표단어")
-    walked = se.search_directory_fast([str(corpus)], "목표단어", ["txt"])
-    assert _lines(listed) == _lines(walked)
 
 
 def test_oversized_single_file_reports_a_size_reason(tmp_path, monkeypatch):
@@ -96,7 +90,7 @@ def test_oversized_single_file_reports_a_size_reason(tmp_path, monkeypatch):
     path.write_text("needle " + "x" * (2 * 1024 * 1024), encoding="utf-8")
     monkeypatch.setattr(se.ConfigManager, "get_advanced_settings",
                         lambda _self: {C.CONFIG_KEY_MAX_SEARCH_FILE_SIZE_MB: 1})
-    result = se.search_in_file(str(path), "needle")
+    result = folder_search_helper.search_in_file(str(path), "needle")
     assert result and result[0] == C.STATUS_SKIPPED
     assert str(path.stat().st_size) in result[1]
 
@@ -115,10 +109,10 @@ def test_random_and_malformed_bytes_never_break_the_search(tmp_path):
         (tmp_path / name).write_bytes(data)
         files.append(tmp_path / name)
     for query in ("needle", "목표단어", "ß"):
-        result = se.search_files_list_fast([str(path) for path in files], query)
+        result = se.search_directory_fast([str(tmp_path)], query, [])
         assert set(result) >= {"results", "skipped"}
         for path in files:
-            single = se.search_in_file(str(path), query)
+            single = folder_search_helper.search_in_file(str(path), query)
             assert single is None or isinstance(single, tuple)
 
 
@@ -168,10 +162,10 @@ def test_undecodable_bytes_are_reported_even_without_matches(decode_corpus, quer
 
 def test_single_file_entry_reports_the_notice(decode_corpus):
     path = decode_corpus / "bad_cp949_mid.txt"
-    result = se.search_in_file(str(path), "검색")
+    result = folder_search_helper.search_in_file(str(path), "검색")
     # 일치가 없어도 부분 검색 안내로 알립니다.
     assert result and result[0] == C.STATUS_SKIPPED and _decode_notice(result[1])
-    hit = se.search_in_file(str(decode_corpus / "bad_utf8.txt"), "target")
+    hit = folder_search_helper.search_in_file(str(decode_corpus / "bad_utf8.txt"), "target")
     assert hit and hit[1] == 1
     assert any(str(row[0]) == "-2" and _decode_notice(row[1]) for row in hit[2])
 
@@ -198,7 +192,7 @@ def test_valid_cp949_after_ascii_prefix_is_not_a_decode_failure(tmp_path, query)
     path.write_bytes(b"ascii only line\n" * 5000 + "한글 줄 needle\n다른 줄\n".encode("cp949"))
     result = se.search_directory_fast([str(tmp_path)], query, ["txt"])
     assert result["skipped"] == []
-    single = se.search_in_file(str(path), query)
+    single = folder_search_helper.search_in_file(str(path), query)
     assert single is None or single[0] != C.STATUS_SKIPPED
     if query == "needle":
         rows = result["results"][0][2]

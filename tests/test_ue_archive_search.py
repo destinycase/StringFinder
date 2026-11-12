@@ -9,6 +9,7 @@ import pytest
 from PySide6.QtCore import Qt
 
 from core import search_engine as engine
+import folder_search_helper
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
@@ -68,7 +69,7 @@ def write_archive(tmp_path, document, name="Game.archive", encoding="utf-8"):
 
 
 def search(path, query, precise, exact=False):
-    return engine.search_in_archive_special(str(path), query, exact)
+    return folder_search_helper.search_in_archive_special(str(path), query, exact)
 
 
 def rows(result):
@@ -198,7 +199,7 @@ def test_directory_and_file_list_paths_return_archive_rows(tmp_path):
     (tmp_path / "plain.txt").write_text("needle Proceed", encoding="utf-8")
     mode = AppStrings.SPECIAL_SEARCH_ITEMS[7]
     directory = engine.search_directory_fast([str(tmp_path)], "proceed", [C.EXT_ARCHIVE], special_mode=mode)
-    listed = engine.search_files_list_fast([str(path)], "proceed", special_mode=mode)
+    listed = engine.search_directory_fast([str(path)], "proceed", special_mode=mode)
     for outcome in (directory, listed):
         assert outcome["skipped"] == []
         assert [(row[0], row[1]) for row in outcome["results"]] == [(str(path), 1)]
@@ -208,7 +209,7 @@ def test_directory_and_file_list_paths_return_archive_rows(tmp_path):
 
 def test_values_only_off_searches_archive_files_as_plain_text(tmp_path):
     path = write_archive(tmp_path, SAMPLE)
-    result = engine.search_in_file(str(path), "System_UI")
+    result = folder_search_helper.search_in_file(str(path), "System_UI")
     assert result is not None and result[1] == 1
 
 
