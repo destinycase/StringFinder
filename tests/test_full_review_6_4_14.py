@@ -398,3 +398,26 @@ def test_header_sort_clicked_during_search_is_applied_at_finish(qtbot, mock_conf
     with qtbot.waitSignal(model.sort_completed, timeout=5000):
         model.sort_results()
     assert model.get_all_results()[0][1] == "zzz.txt"
+
+
+def test_default_sort_breaks_ties_by_path_without_header_clicks(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    model = view.result_model
+    rows = [(f"d/f{i:04d}.txt", 1 + (i % 2), [(1, "x", None, None)]) for i in range(600)]
+    model.add_results(list(reversed(rows)))
+    with qtbot.waitSignal(model.sort_completed, timeout=5000):
+        model.sort_results()
+    paths = [row[3] for row in model.get_all_results()]
+    expected = sorted((p for p, c, _m in rows if c == 2)) + sorted((p for p, c, _m in rows if c == 1))
+    assert paths == expected
+
+
+def test_name_sort_orders_same_names_by_path(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    model = view.result_model
+    model.add_results([(f"d{i:03d}/same.txt", 1, [(1, "x", None, None)]) for i in reversed(range(200))])
+    for order in (Qt.SortOrder.AscendingOrder, Qt.SortOrder.DescendingOrder):
+        with qtbot.waitSignal(model.sort_completed, timeout=5000):
+            view.proxy_model.sort(1, order)
+        paths = [row[3] for row in model.get_all_results()]
+        assert paths == sorted(paths)

@@ -81,11 +81,12 @@ class SearchResultModel(QAbstractTableModel):
         finished = Signal(int, int, object)
 
     class SortWorker(QRunnable):
-        def __init__(self, data, key, reverse, request, revision, callback):
+        def __init__(self, data, key, reverse, request, revision, callback, tie_key=None):
             super().__init__()
             self.setAutoDelete(True)
             self.data = data
             self.key = key
+            self.tie_key = tie_key
             self.reverse = reverse
             self.request = request
             self.revision = revision
@@ -96,6 +97,9 @@ class SearchResultModel(QAbstractTableModel):
         def run(self):
             # 대규모 데이터 정렬 수행 (메모리 중복 방지를 위해 in-place 정렬 시도)
             try:
+                if self.tie_key is not None:
+                    # 먼저 경로순으로 놓고 안정 정렬하면, 값이 같은 행은 내림차순이어도 경로순으로 남습니다.
+                    self.data.sort(key=self.tie_key)
                 self.data.sort(key=self.key, reverse=self.reverse)
                 self.signals.finished.emit(self.request, self.revision, self.data)
             except Exception as e:
@@ -113,6 +117,11 @@ class SearchResultModel(QAbstractTableModel):
         # 검색 중에 누른 기준은 결과가 계속 들어와 바로 적용되지 않으므로 기억했다가,
         # 검색이 끝날 때의 정렬(sort_results)에 씁니다. 머리글 화살표와 같은 기준을 유지합니다.
         self._header_sort = (column, order)
+        if column == 0 and order == Qt.SortOrder.DescendingOrder:
+            # 기본 정렬(매치 수 많은 순, 같으면 경로순)과 같아야 합니다. 표를 만들 때 Qt가 이 기준으로
+            # 한 번 부르므로, 여기서 다르게 정렬하면 검색마다 같은 건수 파일의 순서가 바뀝니다.
+            self.sort_globally()
+            return
 
         def key(row):
             value = row[column] if len(row) > column else None
@@ -123,20 +132,25 @@ class SearchResultModel(QAbstractTableModel):
                     return 0
             return str(value or "").lower()
 
-        self._start_sort(key, order == Qt.SortOrder.DescendingOrder)
+        def path_key(row):
+            path = str(row[3]).lower() if len(row) > 3 else ""
+            name = str(row[1]).lower() if len(row) > 1 else ""
+            return (path, name)
 
-    def _start_sort(self, key, reverse=False):
+        self._start_sort(key, order == Qt.SortOrder.DescendingOrder, tie_key=path_key)
+
+    def _start_sort(self, key, reverse=False, tie_key=None):
         if not self._result_buffer:
             return
         if self._is_sorting:
-            self._pending_sort = (key, reverse)
+            self._pending_sort = (key, reverse, tie_key)
             return
         self._sort_request += 1
         self._active_sort = self._sort_request
         self._is_sorting = True
         self._sort_worker = self.SortWorker(
             list(self._result_buffer), key, reverse, self._sort_request,
-            self._data_revision, self._on_sort_finished,
+            self._data_revision, self._on_sort_finished, tie_key,
         )
         self._sort_workers[self._sort_request] = self._sort_worker
         QThreadPool.globalInstance().start(self._sort_worker)
