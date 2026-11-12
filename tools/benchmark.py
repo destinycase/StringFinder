@@ -283,7 +283,7 @@ def prepare(force: bool) -> None:
 
 def _engine():
     sys.path.insert(0, str(ROOT / "src" / "rust_engine"))
-    from rust_engine import sf_engine  # noqa: PLC0415
+    from rust_engine import sf_engine  # type: ignore[attr-defined]  # noqa: PLC0415
 
     return sf_engine
 

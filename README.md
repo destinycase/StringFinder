@@ -2,7 +2,7 @@
 
 StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색하는 데스크톱 애플리케이션입니다.
 
-현재 안정 버전은 **6.4.1**, 개발 버전은 **6.4.20**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB, UE 현지화 archive 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
+현재 안정 버전은 **6.4.1**, 개발 버전은 **7.1.1**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB, UE 현지화 archive 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -16,7 +16,7 @@ StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색�
 
 ## 실행
 
-바로 쓰는 실행 파일은 `dist/StringFinder.exe`이며, 항상 마지막 안정 버전입니다. 버전별 빌드 결과는 `python build.py`로 만드는 `release/StringFinder-vX.Y.Z.exe`(Git 제외)입니다. 안정 버전 목록과 각 실행 파일의 SHA-256은 `docs/master-baseline-v*.md`에 있습니다(현재 1차 안정 버전: [v6.4.1](docs/master-baseline-v6.4.1.md)). 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
+바로 쓰는 실행 파일은 `dist/StringFinder.exe`이며, 항상 마지막 안정 버전입니다. 버전별 빌드 결과는 `python build.py`로 만드는 `release/StringFinder-vX.Y.Z.exe`(Git 제외)입니다. 안정 버전 목록과 각 실행 파일의 SHA-256은 `docs/master-baseline-v*.md`에 있습니다(현재 1차 안정 버전: [v6.4.1](docs/archive/before-v7/master-baseline-v6.4.1.md)). 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
 
 ```powershell
 python run.py
@@ -39,8 +39,7 @@ python run.py
 - [사용자 가이드](docs/USER_GUIDE.md) — 화면, 검색 방식, 설정, 결과 및 문제 해결
 - [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 채택한 설계의 배경, 개발·검증 절차
 - [구현 정책](docs/IMPLEMENTATION_POLICY.md) — 현재 검색·설정·UI 계약
-- [설계 검토 기록](docs/DESIGN_REVIEW_HISTORY.md) — 반려·보류한 접근과 이유
-- [성능 개선 기록](docs/PERFORMANCE_HISTORY.md) — 과거 실험, 개선 효과와 한계
-- [검색 성능 기준](docs/ENGINE_PERFORMANCE_BASELINE.md) — 6.1.1 기준값·측정 범위·판정 규칙
-- [벤치마크 히스토리](docs/benchmark_history.md) — 실행별 A–J 측정 원본
-- [개발 이력](docs/DEVELOPMENT_HISTORY.md) — 버전별 기능 변경과 수정 내역
+- [개발 히스토리](docs/DEVELOPMENT_HISTORY.md) — 7.1.1부터의 버전별 기능 변경
+- [벤치마크 기준선](docs/BENCHMARK_BASELINE.md) — 7.1.1 성능 기준값·표본·판정 규칙
+- [성능 기록](docs/PERFORMANCE_HISTORY.md) — 기준선과 비교한 측정 결과
+- [v7 이전 기록](docs/archive/before-v7/README.md) — 6.x까지의 이력·성능 기록·설계 검토
