@@ -6,7 +6,7 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -620,6 +620,39 @@ class ConfigManager:
         return os.path.join(self.sessions_dir, f"{safe_name}{Constants.JSON_EXTENSION}")
 
     def _read_session_title(self, file_path: str) -> Optional[str]:
+        """세션 파일의 탭 이름입니다(검수 S-3).
+
+        6.4.17부터 이름을 파일 맨 앞에 쓰므로 앞부분만 읽습니다. 이름이 끝에 있는 예전 파일은
+        한 번만 전체를 해석하고, 파일 시각·크기가 같으면 기억해 둔 이름을 다시 씁니다.
+        """
+        try:
+            stat = os.stat(file_path)
+        except OSError:
+            return None
+        cache_key = (stat.st_mtime_ns, stat.st_size)
+        cache = self.__dict__.setdefault("_session_title_cache", {})
+        cached = cache.get(file_path)
+        if cached is not None and cached[0] == cache_key:
+            return cast(Optional[str], cached[1])
+        title = self._read_session_title_from_head(file_path)
+        if title is None:
+            title = self._read_session_title_full(file_path)
+        cache[file_path] = (cache_key, title)
+        return title
+
+    def _read_session_title_from_head(self, file_path: str) -> Optional[str]:
+        prefix = "{" + json.dumps(self._SESSION_NAME_META_KEY) + ":"
+        try:
+            with open(file_path, "r", encoding=Constants.ENC_UTF8) as f:
+                head = f.read(65536)
+            if not head.startswith(prefix):
+                return None
+            value, _end = json.JSONDecoder().raw_decode(head, len(prefix))
+        except (OSError, UnicodeDecodeError, ValueError):
+            return None
+        return value if isinstance(value, str) and value.strip() else None
+
+    def _read_session_title_full(self, file_path: str) -> Optional[str]:
         try:
             with open(file_path, "r", encoding=Constants.ENC_UTF8) as f:
                 payload = json.load(f)
@@ -684,9 +717,8 @@ class ConfigManager:
                 os.makedirs(self.sessions_dir, exist_ok=True)
             # Search results are immutable after completion.  A shallow top-level
             # copy is enough to add metadata without duplicating every match.
-            payload = dict(data) if isinstance(data, dict) else data
-            if isinstance(payload, dict):
-                payload[self._SESSION_NAME_META_KEY] = str(name)
+            # 탭 이름을 맨 앞에 두어 목록을 만들 때 파일 앞부분만 읽게 합니다(검수 S-3).
+            payload = {self._SESSION_NAME_META_KEY: str(name), **data} if isinstance(data, dict) else data
 
             with open(temp_path, "w", encoding=Constants.ENC_UTF8) as f:
                 json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))

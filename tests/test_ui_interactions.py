@@ -155,7 +155,10 @@ def test_memory_error_shows_user_popup(search_tab_fixture):
     from sf_utils.app_strings import AppStrings
 
     with patch("ui.search_tab.QMessageBox.warning") as warning:
+        # 오류 문구가 아니라 워커의 전용 신호로 알립니다(검수 D-4). 두 번 와도 한 번만 띄웁니다.
         search_tab_fixture._on_search_error(AppStrings.ERROR_MEMORY_CRITICAL)
+        search_tab_fixture._on_memory_critical()
+        search_tab_fixture._on_memory_critical()
 
     warning.assert_called_once_with(
         search_tab_fixture,

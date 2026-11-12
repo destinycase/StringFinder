@@ -1164,18 +1164,19 @@ class ResultView(QWidget):
 
     def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix=""):
         """상단 요약 정보를 업데이트합니다."""
-        if file_count > 0 or skip_count > 0 or AppStrings.SUMMARY_PREFIX_FAILED in state_prefix:
+        # 요약 색은 문구 일부가 아니라 정해진 상태 접두어와 같은지로 정합니다(검수 D-4).
+        state = {
+            AppStrings.SUMMARY_PREFIX_SEARCHING: "searching",
+            AppStrings.SUMMARY_PREFIX_STOPPED: "stopped",
+            AppStrings.SUMMARY_PREFIX_FAILED: "stopped",
+        }.get(state_prefix, "finished")
+        if file_count > 0 or skip_count > 0 or state_prefix == AppStrings.SUMMARY_PREFIX_FAILED:
             summary_text = AppStrings.RESULT_SUMMARY_FORMAT.format(
                 file_count=file_count,
                 match_count=match_count,
                 skip_count=skip_count,
                 duration=f"{duration:.2f}",
             )
-            state = "finished"
-            if AppStrings.SUMMARY_PREFIX_SEARCHING in state_prefix:
-                state = "searching"
-            elif AppStrings.SUMMARY_PREFIX_STOPPED in state_prefix or AppStrings.SUMMARY_PREFIX_FAILED in state_prefix:
-                state = "stopped"
             self.summary_label.setStyleSheet(
                 UIStyles.get_summary_label_style(self._is_dark_theme(), state)
             )

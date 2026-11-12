@@ -239,3 +239,66 @@ def test_s1_binary_files_are_excluded_quickly_for_any_query(tmp_path, query):
         handle.write(b"\x00\xff" * 512)
         handle.write(bytes(range(256)) * 4096 * 8)
     assert sf_engine.search_file(str(path), query, C.RUST_MODE_EXCLUDE_BINARY) == []
+
+
+@pytest.mark.parametrize("text,query,marked", [
+    ("주소 Straße 끝", "strasse", "Straße"),
+    ("x " + __import__("unicodedata").normalize("NFD", "목표") + " y", "목표",
+     __import__("unicodedata").normalize("NFD", "목표")),
+])
+def test_f3_highlight_follows_the_search_comparison(text, query, marked):
+    from ui.models import MatchDetailModel
+
+    model = MatchDetailModel()
+    model.set_matches("a.txt", [(1, text, None, None)], query, C.MODE_NORMAL)
+    html = model._render_highlighted(text)
+    assert f"font-weight: bold;'>{marked}</span>" in html
+
+
+def test_s6_engine_stops_producing_after_the_total_limit(tmp_path):
+    from core import search_engine as se
+
+    for index in range(300):
+        (tmp_path / f"f{index:03d}.txt").write_text("e\n" * 50, encoding="utf-8")
+    batches = []
+    result = se.search_directory_fast([str(tmp_path)], "e", ["txt"], results_callback=batches.append,
+                                      batch_size=1, max_total_matches=100)
+    delivered = sum(len(rows) for batch in batches for _path, rows in batch) + sum(
+        count for _path, count, _rows in result["results"])
+    # 상한(100)을 넘긴 뒤에는 엔진이 멈추므로 300파일 × 50건을 다 만들지 않습니다.
+    assert 100 < delivered < 300 * 50
+
+
+def test_s3_session_title_is_read_from_the_head(mock_config_manager, monkeypatch):
+    mock_config_manager.save_session("탭 이름", {"results": [["a", 1, []]] * 10, "title": "탭 이름"})
+    path = mock_config_manager._find_existing_session_file("탭 이름")
+    with open(path, encoding="utf-8") as handle:
+        assert handle.read(40).startswith('{"__sf_session_name":"탭 이름"')
+    monkeypatch.setattr(mock_config_manager, "_read_session_title_full",
+                        lambda _p: (_ for _ in ()).throw(AssertionError("full parse")))
+    mock_config_manager.__dict__.pop("_session_title_cache", None)
+    assert mock_config_manager.get_all_session_names() == ["탭 이름"]
+    assert mock_config_manager.load_session("탭 이름")["title"] == "탭 이름"
+
+
+def test_s3_old_session_files_are_parsed_once(mock_config_manager, monkeypatch):
+    path = os.path.join(mock_config_manager.sessions_dir, "old.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"results": [], "title": "old", "__sf_session_name": "old"}, handle)
+    calls = []
+    original = mock_config_manager._read_session_title_full
+    monkeypatch.setattr(mock_config_manager, "_read_session_title_full", lambda p: calls.append(p) or original(p))
+    for _ in range(3):
+        assert mock_config_manager.get_all_session_names() == ["old"]
+    assert mock_config_manager.load_session("old") is not None
+    assert len(calls) == 1
+
+
+def test_f4_json_keys_with_slashes_stay_distinguishable(tmp_path):
+    from core import search_engine as se
+
+    (tmp_path / "a.json").write_text(json.dumps(
+        {"a/b": "needle1", "a": {"b": "needle2"}, "/lead": "needle3", "t~x": "needle4"}), encoding="utf-8")
+    result = se.search_directory_fast([str(tmp_path)], "needle", ["json"], special_mode=C.MODE_JSON + " (부분 일치)")
+    keys = sorted(row[1] for _path, _count, rows in result["results"] for row in rows)
+    assert keys == ["/lead", "a.b", "a/b", "t~x"]

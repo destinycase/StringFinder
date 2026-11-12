@@ -43,7 +43,7 @@ class DiagnosticThread(QThread):
 
     def run(self):
         try:
-            from tools.diagnostic_benchmark import run
+            from core.diagnostic_benchmark import run
             from pathlib import Path
             report = run(Path(self.folder), self.repeats, progress_callback=self.progress.emit,
                          cancel_event=self.cancel_event, max_seconds=7200)
@@ -525,7 +525,7 @@ class SettingsDialog(QDialog):
         import json
         import threading
         from pathlib import Path
-        from tools.diagnostic_benchmark import _markdown
+        from core.diagnostic_benchmark import _markdown
 
         progress = QProgressDialog(AppStrings.PERFORMANCE_DIAGNOSTIC_PREPARING, AppStrings.PERFORMANCE_DIAGNOSTIC_CANCEL, 0, 100, self)
         progress.setWindowTitle(AppStrings.PERFORMANCE_DIAGNOSTIC_RUNNING)

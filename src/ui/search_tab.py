@@ -838,6 +838,7 @@ class SearchTab(QMainWindow):
         self.worker.signals.search_finished.connect(self._on_search_finished)
         self.worker.signals.total_match_limit_reached.connect(self._on_total_match_limit_reached)
         self.worker.signals.error.connect(self._on_search_error)
+        self.worker.signals.memory_critical.connect(self._on_memory_critical)
         self.worker.signals.finished.connect(self._on_worker_finished)
 
     def set_search_allowed(self, allowed: bool):
@@ -1055,6 +1056,17 @@ class SearchTab(QMainWindow):
         except (TypeError, ValueError):
             self.total_match_limit_count = 0
 
+    def _on_memory_critical(self):
+        """메모리 부족 중지는 워커의 전용 신호로 받아 한 번만 알립니다(검수 D-4)."""
+        if self._memory_alert_shown:
+            return
+        self._memory_alert_shown = True
+        QMessageBox.warning(
+            self,
+            AppStrings.ERROR_MEMORY_CRITICAL_TITLE,
+            AppStrings.ERROR_MEMORY_CRITICAL_DETAIL,
+        )
+
     def _on_search_error(self, error_msg):
         """작업 도중 발생하는 치명적 오류를 처리하고 사용자에게 알립니다."""
         try:
@@ -1062,13 +1074,6 @@ class SearchTab(QMainWindow):
             self._search_failed = True
             logger.error(AppStrings.LOG_SCH_ERROR.format(error_text))
             self.status_message_requested.emit(f"{AppStrings.STATUS_ERROR_PREFIX}{error_text}", 5000)
-            if AppStrings.ERROR_MEMORY_CRITICAL in error_text and not self._memory_alert_shown:
-                self._memory_alert_shown = True
-                QMessageBox.warning(
-                    self,
-                    AppStrings.ERROR_MEMORY_CRITICAL_TITLE,
-                    AppStrings.ERROR_MEMORY_CRITICAL_DETAIL,
-                )
         finally:
             # Keep the running worker and inputs locked until its finished signal.
             self._search_failed = True

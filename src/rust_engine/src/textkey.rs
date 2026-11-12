@@ -466,6 +466,72 @@ pub fn find_key_match_char(text: &str, pattern: &str, start_char: usize) -> Opti
     None
 }
 
+/// 강조용: `text`에서 `key(검색어)`와 일치하는 구간들을 (시작 글자 번호, 글자 수)로 돌려줍니다.
+///
+/// 검색과 같은 비교 기준이라 `strasse`는 `Straße`, 합친 한글은 분해형 한글 구간을 강조합니다.
+/// 구간은 겹치지 않고 앞에서부터 고르며, 최대 `limit`개까지만 찾습니다.
+pub fn find_key_match_spans(text: &str, pattern: &str, limit: usize) -> Vec<(usize, usize)> {
+    let pattern_key = key(pattern);
+    let mut byte_spans: Vec<(usize, usize)> = Vec::new();
+    if pattern_key.is_empty() || limit == 0 {
+        return Vec::new();
+    }
+    let plen = pattern_key.len();
+    let finder = memchr::memmem::Finder::new(pattern_key.as_bytes());
+    let overlap_chars = pattern.chars().count() * 3 + 8;
+    let mut next_allowed = 0usize;
+    let mut chunk_start = 0usize;
+    'outer: while chunk_start < text.len() {
+        let mut chunk_end = (chunk_start + 65_536).min(text.len());
+        while !text.is_char_boundary(chunk_end) {
+            chunk_end += 1;
+        }
+        chunk_end = segment_start_at_or_after(text, chunk_end);
+        let mut window_end = chunk_end;
+        for c in text[chunk_end..].chars().take(overlap_chars) {
+            window_end += c.len_utf8();
+        }
+        window_end = segment_start_at_or_after(text, window_end);
+        let window = &text[chunk_start..window_end];
+        let converted = key(window);
+        let mut search_from = 0usize;
+        while let Some(found) = finder.find(&converted.as_bytes()[search_from..]) {
+            let pos = search_from + found;
+            let start = chunk_start + original_byte_of(window, pos);
+            // 다음 묶음이 다시 찾을 구간(이 묶음 끝 이후 시작)은 건너뜁니다.
+            if start >= chunk_end && chunk_end < text.len() {
+                break;
+            }
+            let last = original_byte_of(window, pos + plen - 1);
+            let last_char = window[last..].chars().next().map_or(0, char::len_utf8);
+            let end = chunk_start + segment_start_at_or_after(window, last + last_char);
+            if start >= next_allowed {
+                byte_spans.push((start, end));
+                next_allowed = end;
+                if byte_spans.len() >= limit {
+                    break 'outer;
+                }
+            }
+            search_from = pos + 1;
+        }
+        if chunk_end >= text.len() {
+            break;
+        }
+        chunk_start = chunk_end;
+    }
+    let mut out = Vec::with_capacity(byte_spans.len());
+    let mut chars_before = 0usize;
+    let mut counted_to = 0usize;
+    for (start, end) in byte_spans {
+        chars_before += text[counted_to..start].chars().count();
+        let len = text[start..end].chars().count();
+        out.push((chars_before, len));
+        chars_before += len;
+        counted_to = end;
+    }
+    out
+}
+
 /// `text`가 첫소리+가운뎃소리[+끝소리] 자모로 시작하고 그 뒤 글자가 나눌 수 있는 글자이면
 /// (합친 음절, 사용한 바이트 수)를 돌려줍니다. 뒤에 다른 결합 글자가 오면 None(정의대로 계산).
 fn compose_hangul(text: &str) -> Option<(char, usize)> {
@@ -1236,6 +1302,27 @@ mod key_into_tests {
             from += found + 1;
         }
         None
+    }
+
+    #[test]
+    fn find_key_match_spans_follow_the_search_key() {
+        assert_eq!(
+            find_key_match_spans("a Straße b strasse", "strasse", 10),
+            vec![(2, 6), (11, 7)]
+        );
+        let nfd = "\u{1106}\u{1169}\u{11a8}\u{1111}\u{116d}";
+        let text = format!("x {nfd} y");
+        assert_eq!(
+            find_key_match_spans(&text, "\u{baa9}\u{d45c}", 10),
+            vec![(2, 5)]
+        );
+        assert_eq!(find_key_match_spans("aaaa", "aa", 10), vec![(0, 2), (2, 2)]);
+        assert_eq!(find_key_match_spans("aaaa", "aa", 1), vec![(0, 2)]);
+        assert!(find_key_match_spans("abc", "", 10).is_empty());
+        let long = format!("{}needle", "x".repeat(70_000));
+        assert_eq!(find_key_match_spans(&long, "NEEDLE", 10), vec![(70_000, 6)]);
+        let edge = format!("{}needle{}", "x".repeat(65_533), "y".repeat(10));
+        assert_eq!(find_key_match_spans(&edge, "needle", 10), vec![(65_533, 6)]);
     }
 
     /// 미리보기 위치 찾기가 나누지 않고 찾은 기준과 같은지 무작위로 확인합니다.

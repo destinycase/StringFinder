@@ -53,6 +53,9 @@ pub struct SearchOptions {
     pub max_json_size: Option<u64>,
     #[pyo3(get)]
     pub structured_memory_budget: Option<u64>,
+    /// 전체 일치 상한. 넘으면 엔진이 더 찾지 않고 멈춥니다(검수 S-6). 정확한 자르기는 Python이 합니다.
+    #[pyo3(get)]
+    pub max_total_matches: Option<u64>,
 }
 
 #[pymethods]
@@ -75,6 +78,7 @@ impl SearchOptions {
         structured_memory_budget=None,
         include_junctions=false,
         encoding=None,
+        max_total_matches=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -94,6 +98,7 @@ impl SearchOptions {
         structured_memory_budget: Option<u64>,
         include_junctions: bool,
         encoding: Option<String>,
+        max_total_matches: Option<u64>,
     ) -> Self {
         Self {
             include_junctions,
@@ -112,6 +117,7 @@ impl SearchOptions {
             max_json_depth,
             max_json_size,
             structured_memory_budget,
+            max_total_matches,
         }
     }
 

@@ -168,6 +168,10 @@ impl<'data> JsonSearchState<'data> {
         for component in &self.path {
             path.push('/');
             match component {
+                // 키 안의 `~`·`/`는 JSON Pointer처럼 `~0`·`~1`로 적어 경로 구분자와 섞이지 않게 합니다(검수 F-4).
+                PathComponent::ObjectKey(key) if key.contains(['~', '/']) => {
+                    path.push_str(&key.replace('~', "~0").replace('/', "~1"));
+                }
                 PathComponent::ObjectKey(key) => path.push_str(key),
                 PathComponent::ArrayIndex(index) => path.push_str(&index.to_string()),
             }

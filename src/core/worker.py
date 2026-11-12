@@ -24,6 +24,8 @@ class WorkerSignals(QObject):
     search_finished = Signal(int, int, int)
     total_match_limit_reached = Signal(int)
     error = Signal(str)
+    # 메모리 부족으로 멈춘 사실을 문구 비교 없이 알립니다(검수 D-4).
+    memory_critical = Signal()
     finished = Signal()
 
 
@@ -81,6 +83,7 @@ class SearchWorker(QRunnable):
         if not self._memory_alert_emitted:
             self._memory_alert_emitted = True
             logger.warning("%s%s", AppStrings.ERROR_MEMORY_CRITICAL, f" ({diagnostic})" if diagnostic else "")
+            self._safe_emit(self.signals.memory_critical)
             self._safe_emit(self.signals.error, AppStrings.ERROR_MEMORY_CRITICAL)
 
     @staticmethod
@@ -322,6 +325,11 @@ class SearchWorker(QRunnable):
                     stop_event=self.stop_event,
                     progress_callback=progress_callback,
                     results_callback=results_callback,
+                    max_total_matches=_get_adv_setting(
+                        Constants.CONFIG_KEY_MAX_TOTAL_MATCHES,
+                        Constants.DEFAULT_MAX_TOTAL_MATCHES,
+                        self.search_settings_snapshot,
+                    ),
                     )
         except Exception as e:
             error_msg = AppStrings.LOG_SCH_RUST_ENGINE_ERROR.format("SearchWorker.Batch", e)

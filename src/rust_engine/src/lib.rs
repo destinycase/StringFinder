@@ -1916,10 +1916,12 @@ pub fn search_dir(
     let mut structured_memory_budget = None;
     let mut encoding = None;
     let mut include_junctions = false;
+    let mut max_total_matches: Option<u64> = None;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
         encoding = crate::utils::requested_encoding(config.encoding.as_deref());
         include_junctions = config.include_junctions;
+        max_total_matches = config.max_total_matches;
         if config.extensions.is_some() {
             extensions = config.extensions.clone();
         }
@@ -2097,6 +2099,8 @@ pub fn search_dir(
     let results = Arc::new(Mutex::new(Vec::new()));
     let skipped = Arc::new(Mutex::new(Vec::new()));
     let tx_main = results_dispatcher.as_ref().map(|(tx, _)| tx.clone());
+    // 전체 상한을 넘을 만큼 보냈으면 더 찾지 않습니다(검수 S-6). 대기열에 쌓이는 결과를 줄입니다.
+    let sent_matches = Arc::new(AtomicU64::new(0));
 
     let thread_error = py.allow_threads(|| {
         for root_path in root_paths {
@@ -2117,6 +2121,7 @@ pub fn search_dir(
                     let glob_s = filename_glob_set.clone();
                     let file_counter = processed_files.clone(); // M4: 카운터 공유
                     let limiter_ref = structured_limiter.clone();
+                    let sent_ref = sent_matches.clone();
 
                     Box::new(move |entry| {
                         if stop_ref.load(Ordering::Relaxed) {
@@ -2261,6 +2266,18 @@ pub fn search_dir(
                             match r {
                                 Ok(matches) => {
                                     if !matches.is_empty() {
+                                        if let Some(limit) = max_total_matches {
+                                            let real = matches
+                                                .iter()
+                                                .filter(|m| !m.1.starts_with("__SF_"))
+                                                .count()
+                                                as u64;
+                                            let total =
+                                                sent_ref.fetch_add(real, Ordering::Relaxed) + real;
+                                            if total > limit {
+                                                stop_ref.store(true, Ordering::SeqCst);
+                                            }
+                                        }
                                         if let Some(tx) = &tx_worker {
                                             let _ = tx.send((f_path, matches));
                                         } else {
@@ -2334,6 +2351,18 @@ fn find_key_match_char(
     start_char: usize,
 ) -> Option<usize> {
     py.allow_threads(|| textkey::find_key_match_char(&text, &pattern, start_char))
+}
+
+/// 강조용: 검색과 같은 비교 기준으로 일치 구간을 (시작 글자 번호, 글자 수) 목록으로 돌려줍니다.
+#[pyfunction]
+#[pyo3(signature = (text, pattern, limit=1000))]
+fn find_key_match_spans(
+    py: Python<'_>,
+    text: String,
+    pattern: String,
+    limit: usize,
+) -> Vec<(usize, usize)> {
+    py.allow_threads(|| textkey::find_key_match_spans(&text, &pattern, limit))
 }
 
 /// 미리보기용: 엔진의 일반 텍스트 인코딩 판정(파일 전체 기준)을 Python 코덱 이름으로 돌려줍니다.
@@ -2434,6 +2463,7 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search_file, m)?)?;
     m.add_function(wrap_pyfunction!(search_dir, m)?)?;
     m.add_function(wrap_pyfunction!(find_key_match_char, m)?)?;
+    m.add_function(wrap_pyfunction!(find_key_match_spans, m)?)?;
     m.add_function(wrap_pyfunction!(detect_file_encoding, m)?)?;
     m.add("API_VERSION", 8)?;
     m.add("MAX_SEARCH_QUERY_LENGTH", MAX_SEARCH_QUERY_LENGTH)?;

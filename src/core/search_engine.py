@@ -106,7 +106,17 @@ def _build_rust_options(**values: Any) -> Optional[Any]:
         values.setdefault("encoding", encoding)
     elif include_junctions or encoding != "auto":
         raise RuntimeError("The Rust engine must be rebuilt to support junction and encoding options")
+    if values.get("max_total_matches") is None or not hasattr(options_type, "max_total_matches"):
+        values.pop("max_total_matches", None)
     return options_type(**values)
+
+
+def _positive_int_or_none(value: Any) -> Optional[int]:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def _rust_policy_kwargs() -> dict[str, Any]:
@@ -706,7 +716,7 @@ def _normalize_rust_matches(
                 if "JSON" in mode_up and ("\t" in c or c.startswith("JSON_FIELDS|")):
                     # 예) "/root/key\tvalue" -> (line, "root.key", "value", offset, length)
                     pts = _split_json_match_content(c)
-                    json_path = pts[0].lstrip("/").replace("/", ".")
+                    json_path = json_path_for_display(pts[0])
                     val = pts[1] if len(pts) > 1 else ""
                     position = "" if line == 0 else line
                     res.append((position, json_path, val, offset, length))
@@ -794,6 +804,18 @@ def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
     return None
 
 
+def json_path_for_display(raw_path: str) -> str:
+    """엔진의 JSON 경로(`/a/b~1c`)를 화면 표기(`a.b/c`)로 바꿉니다(검수 F-4).
+
+    엔진은 키 안의 `~`·`/`를 `~0`·`~1`로 적습니다. 그래서 키 `a/b`는 `a/b`로, 중첩 `a` → `b`는
+    `a.b`로 구분되어 보이고, `/`로 시작하는 키도 글자가 사라지지 않습니다.
+    """
+    text = str(raw_path)
+    if not text.startswith("/"):
+        return text
+    return ".".join(part.replace("~1", "/").replace("~0", "~") for part in text[1:].split("/"))
+
+
 def _positive_limit(value: Any, key: str, default: int) -> int:
     """Return a safe positive limit from a marker or the active settings."""
     try:
@@ -877,6 +899,14 @@ def find_key_match_char(text: str, query: str, start_char: int = 0) -> Optional[
     if not query or not HAS_RUST_ENGINE:
         return None
     return cast(Optional[int], sf_engine.find_key_match_char(text, query, max(0, int(start_char))))  # type: ignore
+
+
+def find_key_match_spans(text: str, query: str, limit: int = 1000) -> List[Tuple[int, int]]:
+    """강조용: 검색과 같은 비교 기준으로 일치 구간 (시작 글자 번호, 끝 글자 번호) 목록입니다(검수 F-3)."""
+    if not query or not text or not HAS_RUST_ENGINE:
+        return []
+    spans = sf_engine.find_key_match_spans(text, query, max(0, int(limit)))  # type: ignore
+    return [(int(start), int(start) + int(length)) for start, length in spans]
 
 
 def detect_preview_encoding(file_path: str) -> str:
@@ -1088,6 +1118,7 @@ def search_directory_fast(
             max_json_depth=max_json_depth,
             max_json_size=max_json_size,
             structured_memory_budget=_get_structured_memory_budget(),
+            max_total_matches=_positive_int_or_none(kwargs.get("max_total_matches")),
         )
         if rust_options is not None:
             raw_ret = search_dir_func(root_paths=search_paths, pattern=rust_pattern, options=rust_options)

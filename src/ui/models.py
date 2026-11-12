@@ -432,6 +432,8 @@ class MatchDetailModel(QAbstractTableModel):
         self.search_text = ""
         self.search_mode = Constants.MODE_NORMAL
         self.highlight_pattern: Optional[re.Pattern] = None
+        # 강조는 검색과 같은 비교 기준(엔진)으로 찾습니다. 엔진이 없을 때만 highlight_pattern을 씁니다.
+        self.highlight_query = ""
         self._filters: Dict[int, str] = {}
         self._filtered_buffer: List[SearchMatchSchema] = []
 
@@ -541,6 +543,17 @@ class MatchDetailModel(QAbstractTableModel):
             return self.current_file_path
         return None
 
+    def _highlight_spans(self, text: str, limit: int = 1000) -> List[tuple]:
+        """강조할 (시작, 끝) 글자 구간입니다. 검색처럼 `strasse`→`Straße`, 분해형 한글도 강조합니다(검수 F-3)."""
+        if self.highlight_query:
+            from core.search_engine import HAS_RUST_ENGINE, find_key_match_spans
+
+            if HAS_RUST_ENGINE:
+                return find_key_match_spans(text, self.highlight_query, limit)
+        if self.highlight_pattern:
+            return [match.span() for _, match in zip(range(limit), self.highlight_pattern.finditer(text))]
+        return []
+
     def _render_highlighted(self, val: str) -> str:
         """데이터에 하이라이팅 및 이스케이프를 적용하여 반환합니다."""
         if not self.search_text:
@@ -552,8 +565,8 @@ class MatchDetailModel(QAbstractTableModel):
         context_limit = 8192
         if len(display_val) > context_limit:
             try:
-                first_match = self.highlight_pattern.search(display_val) if self.highlight_pattern else None
-                center = first_match.start() if first_match else 0
+                first_spans = self._highlight_spans(display_val, 1)
+                center = first_spans[0][0] if first_spans else 0
                 start = max(0, center - context_limit // 2)
                 end = min(len(display_val), start + context_limit)
                 start = max(0, end - context_limit)
@@ -570,14 +583,16 @@ class MatchDetailModel(QAbstractTableModel):
             if display_val.strip().lower() == self.search_text.strip().lower():
                 return f"<span style='color: #ff9900; font-weight: bold;'>{escape(display_val)}</span>"
         else:
-            if self.highlight_pattern:
+            if self.highlight_query or self.highlight_pattern:
                 try:
                     parts = []
                     last_end = 0
-                    for match in self.highlight_pattern.finditer(display_val):
-                        parts.append(escape(display_val[last_end : match.start()]))
-                        parts.append(f"<span style='color: #ff9900; font-weight: bold;'>{escape(match.group())}</span>")
-                        last_end = match.end()
+                    for start, end in self._highlight_spans(display_val):
+                        parts.append(escape(display_val[last_end:start]))
+                        parts.append(
+                            f"<span style='color: #ff9900; font-weight: bold;'>{escape(display_val[start:end])}</span>"
+                        )
+                        last_end = end
                     parts.append(escape(display_val[last_end:]))
                     return "".join(parts)
                 except Exception:
@@ -628,6 +643,8 @@ class MatchDetailModel(QAbstractTableModel):
 
     def set_matches(self, file_path, matches, search_text="", search_mode=Constants.MODE_NORMAL):
         """검색 모드에 따라 컬럼 수와 헤더를 조정하고 데이터를 설정합니다."""
+        from core.search_engine import json_path_for_display
+
         if search_mode == AppStrings.SPECIAL_SEARCH_OFF or not search_mode:
             search_mode = Constants.MODE_NORMAL
 
@@ -660,6 +677,7 @@ class MatchDetailModel(QAbstractTableModel):
         self._data = []
         self._current_page = 1
 
+        self.highlight_query = search_text if search_text and Constants.MODE_EXACT not in search_mode else ""
         if search_text and Constants.MODE_EXACT not in search_mode:
             try:
                 self.highlight_pattern = re.compile(re.escape(search_text), re.IGNORECASE)
@@ -776,7 +794,7 @@ class MatchDetailModel(QAbstractTableModel):
                         if Constants.MODE_XML.upper() in mode_upper:
                             key_part = key_part.lstrip("/").replace("/", " > ")
                         else:
-                            key_part = key_part.lstrip("/").replace("/", ".")
+                            key_part = json_path_for_display(key_part)
                         normalized_matches.append(
                             SearchMatchSchema(
                                 position=str(m[0]),
@@ -800,7 +818,7 @@ class MatchDetailModel(QAbstractTableModel):
                         if Constants.MODE_XML.upper() in mode_upper:
                             key_part = key_part.lstrip("/").replace("/", " > ")
                         else:
-                            key_part = key_part.lstrip("/").replace("/", ".")
+                            key_part = json_path_for_display(key_part)
                         normalized_matches.append(
                             SearchMatchSchema(
                                 position=str(m[0]),
