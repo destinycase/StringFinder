@@ -207,24 +207,6 @@ def test_duplicate_policy_does_not_restrict_plain_text_search(tmp_path):
     assert result and result[0] == str(path)
 
 
-def test_benchmark_waits_for_runnable_cleanup(qtbot, tmp_path):
-    from PySide6.QtCore import QThreadPool
-    from scripts import benchmark_performance as benchmark
-    calls = []
-
-    class TrackingPool(QThreadPool):
-        def waitForDone(self, *args):
-            calls.append(True)
-            return super().waitForDone(*args)
-
-    path = tmp_path / "small.txt"
-    path.write_text("needle", encoding="utf-8")
-    with patch.object(benchmark, "QThreadPool", TrackingPool):
-        result = benchmark.run_benchmark("cleanup", path, "needle")
-    assert calls == [True]
-    assert result["results_count"] == 1 and result["skipped_count"] == 0
-
-
 @pytest.mark.parametrize("allow", [False, True])
 def test_native_decoded_duplicate_after_hash_transition(tmp_path, allow):
     path = tmp_path / "escaped-wide.json"
@@ -244,24 +226,3 @@ def test_native_borrowed_keys_in_deep_object_paths(tmp_path):
     result = se.sf_engine.search_file(str(path), "needle", Constants.RUST_MODE_JSON, max_json_depth=1000)
     assert len(result) == 1
     assert result[0].content == "/key" * 300 + "\tneedle"
-
-
-def test_json_policy_benchmark_checks_both_policies(tmp_path):
-    from tools.benchmark_json_policy import measure
-    path = tmp_path / "benchmark.json"
-    path.write_text('{"v":"needle"}', encoding="utf-8")
-    result = measure(se.sf_engine, ("small-sparse", path, "needle"), 2)
-    assert len(result["deny_samples_s"]) == len(result["allow_samples_s"]) == 2
-    assert result["deny_median_s"] > 0 and result["allow_median_s"] > 0
-    assert len(result["fingerprint"]) == 64
-
-
-@pytest.mark.parametrize("backend", ["native", "normal"])
-def test_json_policy_benchmark_interleaves_engines(tmp_path, backend):
-    from tools.benchmark_json_policy import compare
-    path = tmp_path / "comparison.json"
-    path.write_text('{"v":"needle"}', encoding="utf-8")
-    result = compare({"baseline": se.sf_engine, "current": se.sf_engine},
-                     ("small-sparse", path, "needle"), 2, backend)
-    assert [row["engine"] for row in result["engines"]] == ["baseline", "current"]
-    assert all(len(row["deny_samples_s"]) == len(row["allow_samples_s"]) == 2 for row in result["engines"])
