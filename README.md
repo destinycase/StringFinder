@@ -2,7 +2,7 @@
 
 StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색하는 데스크톱 애플리케이션입니다.
 
-현재 안정 버전은 **6.4.1**, 개발 버전은 **7.1.1**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB, UE 현지화 archive 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
+현재 안정 버전은 **7.1.1**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB, UE 현지화 archive 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -16,7 +16,7 @@ StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색�
 
 ## 실행
 
-바로 쓰는 실행 파일은 `dist/StringFinder.exe`이며, 항상 마지막 안정 버전입니다. 버전별 빌드 결과는 `python build.py`로 만드는 `release/StringFinder-vX.Y.Z.exe`(Git 제외)입니다. 안정 버전 목록과 각 실행 파일의 SHA-256은 `docs/master-baseline-v*.md`에 있습니다(현재 1차 안정 버전: [v6.4.1](docs/archive/before-v7/master-baseline-v6.4.1.md)). 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
+바로 쓰는 실행 파일은 `dist/StringFinder.exe`이며, 항상 마지막 안정 버전입니다. 버전별 빌드 결과는 `python build.py`로 만드는 `release/StringFinder-vX.Y.Z.exe`(Git 제외)입니다. 안정 버전 목록과 각 실행 파일의 SHA-256은 `docs/master-baseline-v*.md`에 있습니다(현재 2차 안정 버전: [v7.1.1](docs/master-baseline-v7.1.1.md), 1차: [v6.4.1](docs/archive/before-v7/master-baseline-v6.4.1.md)). 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
 
 ```powershell
 python run.py
