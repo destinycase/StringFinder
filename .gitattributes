@@ -1,0 +1,13 @@
+# 줄바꿈을 LF로 통일합니다(Windows의 core.autocrlf 설정과 관계없이 작업 폴더도 LF).
+* text=auto eol=lf
+
+# 바이너리
+*.exe binary
+*.pyd binary
+*.dll binary
+*.ico binary
+*.png binary
+*.xlsx binary
+*.xls binary
+*.xlsb binary
+*.xlsm binary
