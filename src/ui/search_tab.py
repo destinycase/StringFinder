@@ -573,6 +573,18 @@ class SearchTab(QMainWindow):
                 return code
         return Constants.MODE_NORMAL
 
+    def _session_folder_groups(self, inputs):
+        """세션의 폴더 그룹입니다. 세션에 그룹이 없으면 설정에 저장된 그룹을 씁니다.
+
+        세션은 검색 끝·정상 종료 때만 저장되고, 그룹은 바꿀 때마다 설정에 저장됩니다. 검색 뒤에 그룹을
+        만들고 정상 종료 없이 꺼지면 세션에는 그룹이 없으므로, 그대로 복원하면 그룹이 지워집니다.
+        """
+        groups = inputs.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
+        if isinstance(groups, list) and groups:
+            return groups
+        config_groups = self.config_manager.get_filters().get(Constants.CONFIG_KEY_FOLDER_GROUPS)
+        return config_groups if isinstance(config_groups, list) and config_groups else groups
+
     def load_state(self, state):
         """저장된 세션 상태를 불러와 UI 항목들을 복원합니다."""
         if not isinstance(state, dict) or not state:
@@ -590,9 +602,7 @@ class SearchTab(QMainWindow):
             self.ext_panel.load_state(inputs)
             self.filename_panel.load_state(inputs)
             if Constants.CONFIG_KEY_FOLDERS in inputs:
-                self.folder_panel.load_state(
-                    inputs[Constants.CONFIG_KEY_FOLDERS], inputs.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
-                )
+                self.folder_panel.load_state(inputs[Constants.CONFIG_KEY_FOLDERS], self._session_folder_groups(inputs))
 
         # Restore result-producing conditions separately from editable drafts.
         search_text = self.search_panel.search_combo.currentText()

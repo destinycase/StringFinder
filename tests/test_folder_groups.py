@@ -291,3 +291,26 @@ def test_values_only_notice_uses_notice_box(qtbot):
     qtbot.addWidget(widget)
     assert widget.values_only_notice.styleSheet() == UIStyles.STYLE_NOTICE_BOX
     assert widget.values_only_notice.contentsMargins().top() >= UIStyles.GUIDE_BOX_PADDING[1]
+
+
+@pytest.mark.parametrize("session_groups", ["missing", "empty"])
+def test_stale_session_without_groups_keeps_groups_from_config(qtbot, mock_config_manager, session_groups):
+    """검색 뒤에 만든 그룹은 설정에만 있습니다. 정상 종료 없이 꺼져 세션이 예전 상태로 남아도
+    다음 시작 때 탭 복원이 그룹을 지우면 안 됩니다(6.3.9부터 있던 문제, 7.1.3 수정)."""
+    from ui.search_tab import SearchTab
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    tab.folder_panel.restore_state(dict(FOLDERS), [])
+    stale = json.loads(json.dumps(tab.get_state()))  # 검색 끝에 저장된 세션: 그룹 없음
+    if session_groups == "missing":
+        stale[C.PAYLOAD_INPUTS].pop(C.CONFIG_KEY_FOLDER_GROUPS)
+    tab.folder_panel.restore_state(dict(FOLDERS), json.loads(json.dumps(GROUPS)))
+    tab._sync_filters_to_config()  # 그룹은 설정 파일에만 저장됨
+    restored = SearchTab(mock_config_manager)
+    qtbot.addWidget(restored)
+    restored.load_state(stale)
+    assert restored.folder_panel.get_group_state() == GROUPS
+    assert restored.folder_panel.get_state() == tab.folder_panel.get_state()
+    for widget in (tab, restored):
+        widget.close()
