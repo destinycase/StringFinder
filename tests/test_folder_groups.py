@@ -333,3 +333,22 @@ def test_new_session_with_no_groups_is_not_given_groups_from_config(qtbot, mock_
     assert restored.folder_panel.get_group_state() == []
     for widget in (tab, restored):
         widget.close()
+
+
+def test_old_session_does_not_get_groups_made_only_of_other_folders(qtbot, mock_config_manager):
+    """예전 형식 세션에 설정의 그룹을 쓸 때, 그 탭에 없는 폴더로만 된 그룹은 빈 채로 붙이지 않습니다(검수 4.3)."""
+    from ui.search_tab import SearchTab
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    tab.folder_panel.restore_state({"C:/loose": True}, [])
+    old = json.loads(json.dumps(tab.get_state()))
+    old[C.PAYLOAD_INPUTS].pop(C.STATE_KEY_INPUTS_TRACKED)
+    tab.folder_panel.restore_state(dict(FOLDERS), json.loads(json.dumps(GROUPS)))
+    tab._sync_filters_to_config()
+    restored = SearchTab(mock_config_manager)
+    qtbot.addWidget(restored)
+    restored.load_state(old)
+    assert restored.folder_panel.get_group_state() == []
+    for widget in (tab, restored):
+        widget.close()

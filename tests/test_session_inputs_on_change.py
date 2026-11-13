@@ -82,3 +82,53 @@ def test_filter_change_without_search_survives_abnormal_exit(qtbot, mock_config_
     assert restored.folder_panel.get_group_state() == [{"name": "G", "collapsed": False, "folders": ["C:/new"]}]
     assert "md" in restored.ext_panel.get_state().get(C.CONFIG_KEY_EXTENSIONS, {})
     restored.close()
+
+
+def test_inputs_save_does_not_wait_for_a_running_session_save(qtbot, mock_config_manager):
+    """큰 결과를 저장하는 동안 필터를 바꿔도 화면 스레드가 기다리지 않습니다(검수 4.1)."""
+    import threading
+    import time
+
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    tab = window.tab_widget.widget(0)
+    name = window.tab_widget.tabText(0)
+    lock = mock_config_manager._session_io_lock()
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold():
+        with lock:
+            held.set()
+            release.wait(5)
+
+    worker = threading.Thread(target=hold)
+    worker.start()
+    held.wait(5)
+    started = time.perf_counter()
+    window._save_tab_inputs(tab)
+    elapsed = time.perf_counter() - started
+    release.set()
+    worker.join()
+    mock_config_manager.wait_for_session_saves()
+    assert elapsed < 0.5
+    assert os.path.exists(mock_config_manager._resolve_session_file_path(name) + C.SESSION_INPUTS_SUFFIX)
+
+
+def test_new_tab_discards_leftover_inputs_with_the_same_name(qtbot, mock_config_manager):
+    """복원되지 못한 탭의 입력값 파일이 같은 이름의 새 탭에 붙지 않습니다(검수 4.2)."""
+    from ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    first = window.tab_widget.tabText(0)
+    from sf_utils.app_strings import AppStrings
+    next_name = AppStrings.SEARCH_TAB_TITLE_TEMPLATE.format(AppStrings.SEARCH_TAB_DEFAULT_TITLE, 2)
+    assert next_name != first
+    mock_config_manager.save_session_inputs(next_name, NEW_INPUTS)
+    window.add_new_tab()
+    assert window.tab_widget.tabText(1) == next_name
+    mock_config_manager.wait_for_session_saves()
+    assert not os.path.exists(mock_config_manager._resolve_session_file_path(next_name) + C.SESSION_INPUTS_SUFFIX)

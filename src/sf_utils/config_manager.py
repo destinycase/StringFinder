@@ -720,16 +720,38 @@ class ConfigManager:
         하나씩 하며, 종료·데이터 삭제·세션 삭제 전에는 ``wait_for_session_saves``로 끝나기를 기다립니다.
         실패하면 ``on_failed(name)``를 백그라운드 스레드에서 부릅니다.
         """
+        def job():
+            if not self.save_session(name, data) and on_failed is not None:
+                on_failed(name)
+
+        return self._submit_session_job(job)
+
+    def save_session_inputs_async(self, name, inputs) -> Future:
+        """입력값 저장도 세션 저장과 같은 백그라운드 순서로 합니다(검수 4.1).
+
+        큰 결과를 저장하는 동안 필터를 바꿔도 화면 스레드가 그 저장을 기다리지 않습니다.
+        """
+        return self._submit_session_job(lambda: self.save_session_inputs(name, inputs))
+
+    def discard_session_inputs_async(self, name) -> Future:
+        """이름이 같은 옛 입력값 파일을 지웁니다. 새 탭을 만들 때 씁니다(검수 4.2)."""
+        def job():
+            with self._session_io_lock():
+                path = self._resolve_session_file_path(name) + Constants.SESSION_INPUTS_SUFFIX
+                if os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError as e:
+                        logger.error(AppStrings.LOG_SES_DELETE_FAIL.format(name, e))
+
+        return self._submit_session_job(job)
+
+    def _submit_session_job(self, job) -> Future:
         executor = self.__dict__.get("_session_executor")
         if executor is None:
             executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sf-session-save")
             self._session_executor = executor
         pending = self.__dict__.setdefault("_pending_session_saves", set())
-
-        def job():
-            if not self.save_session(name, data) and on_failed is not None:
-                on_failed(name)
-
         future = executor.submit(job)
         pending.add(future)
         future.add_done_callback(pending.discard)

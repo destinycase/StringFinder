@@ -598,7 +598,14 @@ class SearchTab(QMainWindow):
             # 7.1.4부터는 필터를 바꿀 때마다 입력값을 저장하므로 세션 값을 그대로 믿습니다.
             return groups
         config_groups = self.config_manager.get_filters().get(Constants.CONFIG_KEY_FOLDER_GROUPS)
-        return config_groups if isinstance(config_groups, list) and config_groups else groups
+        folders = inputs.get(Constants.CONFIG_KEY_FOLDERS)
+        names = set(folders) if isinstance(folders, (dict, list)) else set()
+        # 이 탭에 없는 폴더로만 된 그룹은 빈 그룹으로 붙이지 않습니다(검수 4.3).
+        usable = [
+            group for group in config_groups if isinstance(group, dict)
+            and any(folder in names for folder in group.get("folders", []) if isinstance(folder, str))
+        ] if isinstance(config_groups, list) else []
+        return usable or groups
 
     def load_state(self, state):
         """저장된 세션 상태를 불러와 UI 항목들을 복원합니다."""

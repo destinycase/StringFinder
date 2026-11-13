@@ -261,6 +261,11 @@ class MainWindow(QMainWindow):
             while tab_title in existing:
                 tab_count += 1
                 tab_title = AppStrings.SEARCH_TAB_TITLE_TEMPLATE.format(AppStrings.SEARCH_TAB_DEFAULT_TITLE, tab_count)
+        if not state:
+            # 복원되지 못한 예전 탭의 입력값 파일이 같은 이름의 새 탭에 붙지 않게 지웁니다(검수 4.2).
+            discard = getattr(self.config_manager, "discard_session_inputs_async", None)
+            if callable(discard):
+                discard(tab_title)
         self.tab_widget.addTab(new_tab, tab_title)
         self.tab_widget.setCurrentWidget(new_tab)
         return new_tab
@@ -361,7 +366,7 @@ class MainWindow(QMainWindow):
         index = self.tab_widget.indexOf(tab)
         if index < 0 or getattr(self.config_manager, "data_cleared", False):
             return
-        save_inputs = getattr(self.config_manager, "save_session_inputs", None)
+        save_inputs = getattr(self.config_manager, "save_session_inputs_async", None)
         if callable(save_inputs):
             save_inputs(self.tab_widget.tabText(index), tab.get_inputs())
 
