@@ -302,7 +302,8 @@ def test_stale_session_without_groups_keeps_groups_from_config(qtbot, mock_confi
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
     tab.folder_panel.restore_state(dict(FOLDERS), [])
-    stale = json.loads(json.dumps(tab.get_state()))  # 검색 끝에 저장된 세션: 그룹 없음
+    stale = json.loads(json.dumps(tab.get_state()))  # 예전 버전이 검색 끝에 저장한 세션: 그룹 없음
+    stale[C.PAYLOAD_INPUTS].pop(C.STATE_KEY_INPUTS_TRACKED)
     if session_groups == "missing":
         stale[C.PAYLOAD_INPUTS].pop(C.CONFIG_KEY_FOLDER_GROUPS)
     tab.folder_panel.restore_state(dict(FOLDERS), json.loads(json.dumps(GROUPS)))
@@ -312,5 +313,23 @@ def test_stale_session_without_groups_keeps_groups_from_config(qtbot, mock_confi
     restored.load_state(stale)
     assert restored.folder_panel.get_group_state() == GROUPS
     assert restored.folder_panel.get_state() == tab.folder_panel.get_state()
+    for widget in (tab, restored):
+        widget.close()
+
+
+def test_new_session_with_no_groups_is_not_given_groups_from_config(qtbot, mock_config_manager):
+    """7.1.4부터 저장한 세션은 그룹을 비운 상태도 그대로 복원합니다(다른 탭의 그룹이 붙지 않음)."""
+    from ui.search_tab import SearchTab
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    tab.folder_panel.restore_state(dict(FOLDERS), [])
+    no_groups = json.loads(json.dumps(tab.get_state()))
+    tab.folder_panel.restore_state(dict(FOLDERS), json.loads(json.dumps(GROUPS)))
+    tab._sync_filters_to_config()
+    restored = SearchTab(mock_config_manager)
+    qtbot.addWidget(restored)
+    restored.load_state(no_groups)
+    assert restored.folder_panel.get_group_state() == []
     for widget in (tab, restored):
         widget.close()

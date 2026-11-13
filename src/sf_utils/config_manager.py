@@ -762,6 +762,7 @@ class ConfigManager:
                 json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
 
             os.replace(temp_path, file_path)
+            self._drop_inputs_file_if_saved(file_path, data)
             return True
         except Exception as e:
             if os.path.exists(temp_path):
@@ -793,7 +794,66 @@ class ConfigManager:
             self._remove_invalid_session_file(file_path, name)
             return None
         payload.pop(self._SESSION_NAME_META_KEY, None)
+        newer_inputs = self._read_inputs_file(file_path + Constants.SESSION_INPUTS_SUFFIX)
+        if newer_inputs is not None:
+            inputs = payload.get(Constants.PAYLOAD_INPUTS)
+            payload[Constants.PAYLOAD_INPUTS] = {**(inputs if isinstance(inputs, dict) else {}), **newer_inputs}
         return payload
+
+    def save_session_inputs(self, name, inputs) -> bool:
+        """탭의 입력값(폴더·그룹·필터·검색 모드)만 세션 옆 파일에 저장합니다.
+
+        세션 파일은 결과까지 담아 검색 끝·정상 종료 때만 씁니다. 그 사이에 필터를 바꾸고 정상 종료 없이
+        꺼져도 바꾼 값을 잃지 않도록, 바꿀 때마다 이 작은 파일만 씁니다. ``load_session``이 덮어 읽습니다.
+        """
+        if not isinstance(inputs, dict):
+            return False
+        with self._session_io_lock():
+            file_path = self._resolve_session_file_path(name, for_write=True) + Constants.SESSION_INPUTS_SUFFIX
+            temp_path = file_path + Constants.TEMP_FILE_SUFFIX
+            try:
+                os.makedirs(self.sessions_dir, exist_ok=True)
+                with open(temp_path, "w", encoding=Constants.ENC_UTF8) as f:
+                    json.dump({Constants.PAYLOAD_INPUTS: inputs}, f, ensure_ascii=False, separators=(",", ":"))
+                os.replace(temp_path, file_path)
+                return True
+            except Exception as e:
+                try:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except OSError:
+                    pass
+                logger.error(AppStrings.LOG_SES_SAVE_FAIL.format(name, e))
+                return False
+
+    @staticmethod
+    def _read_inputs_file(path: str) -> Optional[dict]:
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding=Constants.ENC_UTF8) as f:
+                inputs = json.load(f).get(Constants.PAYLOAD_INPUTS)
+        except (OSError, ValueError, AttributeError) as e:
+            logger.warning(AppStrings.LOG_SES_LOAD_FAIL.format(path, e))
+            return None
+        return inputs if isinstance(inputs, dict) else None
+
+    def _drop_inputs_file_if_saved(self, session_path: str, data) -> None:
+        """세션에 같은 입력값이 저장됐으면 입력값 파일을 지웁니다.
+
+        검색 끝의 백그라운드 저장이 늦게 끝나 더 오래된 입력값을 썼다면, 그 뒤에 바꾼 입력값 파일은 남깁니다.
+        """
+        path = session_path + Constants.SESSION_INPUTS_SUFFIX
+        newer = self._read_inputs_file(path)
+        if newer is None and not os.path.exists(path):
+            return
+        saved = data.get(Constants.PAYLOAD_INPUTS) if isinstance(data, dict) else None
+        if newer is not None and isinstance(saved, dict) and any(saved.get(k) != v for k, v in newer.items()):
+            return
+        try:
+            os.remove(path)
+        except OSError as e:
+            logger.debug(AppStrings.LOG_SES_TEMP_CLEANUP_FAIL.format(e))
 
     @staticmethod
     def _remove_invalid_session_file(file_path: str, name: str) -> None:
@@ -808,12 +868,13 @@ class ConfigManager:
         # 앞서 맡긴 백그라운드 저장이 지운 파일을 되살리지 않게 먼저 끝냅니다.
         self.wait_for_session_saves()
         file_path = self._resolve_session_file_path(name)
-        if not os.path.exists(file_path):
-            return
-        try:
-            os.remove(file_path)
-        except Exception as e:
-            logger.error(AppStrings.LOG_SES_DELETE_FAIL.format(name, e))
+        for path in (file_path + Constants.SESSION_INPUTS_SUFFIX, file_path):
+            if not os.path.exists(path):
+                continue
+            try:
+                os.remove(path)
+            except Exception as e:
+                logger.error(AppStrings.LOG_SES_DELETE_FAIL.format(name, e))
 
     def get_all_session_names(self):
         """저장된 모든 세션 이름 목록을 반환한다."""

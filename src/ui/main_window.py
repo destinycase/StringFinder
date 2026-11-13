@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
         new_tab = SearchTab(self.config_manager)
         new_tab.filter_status_changed.connect(lambda: self._sync_status_bar_with_active_tab(self.tab_widget.currentIndex()))
         new_tab.status_message_requested.connect(self._show_search_notice)
+        new_tab.inputs_changed.connect(lambda: self._save_tab_inputs(new_tab))
         new_tab.search_finished_with_data.connect(lambda: self._on_search_finished_in_tab(new_tab))
         new_tab.search_status_changed.connect(
             lambda locked, tab=new_tab: self._on_tab_search_status_changed(tab, locked)
@@ -354,6 +355,15 @@ class MainWindow(QMainWindow):
         menu.addAction(rename_action)
         menu.addAction(close_action)
         menu.exec(self.tab_widget.tabBar().mapToGlobal(pos))
+
+    def _save_tab_inputs(self, tab):
+        """검색하지 않아도 바꾼 필터가 남도록 탭의 입력값만 세션 옆에 저장합니다(7.1.4)."""
+        index = self.tab_widget.indexOf(tab)
+        if index < 0 or getattr(self.config_manager, "data_cleared", False):
+            return
+        save_inputs = getattr(self.config_manager, "save_session_inputs", None)
+        if callable(save_inputs):
+            save_inputs(self.tab_widget.tabText(index), tab.get_inputs())
 
     def _save_tab(self, index, background=False):
         """특정 탭의 데이터를 파일로 저장합니다. ``background``이면 저장을 맡기고 바로 돌아옵니다."""

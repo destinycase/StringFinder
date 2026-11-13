@@ -36,6 +36,7 @@ from ui.result_view import ResultView, normalize_skipped_files
 
 
 class SearchTab(QMainWindow):
+    INPUTS_SAVE_DELAY_MS = 500
     """
     개별 검색 세션에 해당하는 탭 위젯입니다.
     검색어 입력, 필터 설정, 결과 표시 및 미리보기 기능을 통합 제공합니다.
@@ -50,6 +51,8 @@ class SearchTab(QMainWindow):
     search_status_changed = Signal(bool)
     skipped_count_updated = Signal(int)
     filter_status_changed = Signal()
+    # 필터를 바꾼 뒤 잠시 지나 입력값만 세션에 저장하라는 신호입니다(7.1.4). 탭 이름은 메인 창이 압니다.
+    inputs_changed = Signal()
     DOCK_LAYOUT_VERSION = 2  # Pre-merge layouts contain two obsolete filter docks.
     LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
     _LOG_LEVEL_PATTERN = re.compile(r"\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]")
@@ -85,6 +88,10 @@ class SearchTab(QMainWindow):
         self._log_level_checkboxes: Dict[str, QCheckBox] = {}
         # 로그 스로틀링을 위한 버퍼 및 타이머
         self._pending_logs: List[Tuple[str, str]] = []
+        self._inputs_save_timer = QTimer(self)
+        self._inputs_save_timer.setSingleShot(True)
+        self._inputs_save_timer.setInterval(self.INPUTS_SAVE_DELAY_MS)
+        self._inputs_save_timer.timeout.connect(self.inputs_changed.emit)
         self._log_throttle_timer = QTimer(self)
         self._log_throttle_timer.setInterval(100)
         self._log_throttle_timer.timeout.connect(self._flush_pending_logs)
@@ -119,6 +126,7 @@ class SearchTab(QMainWindow):
         self.ext_panel = ExtensionFilterPanel()
         self.search_panel.special_mode_changed.connect(self.ext_panel.set_special_mode)
         self.ext_panel.special_mode_changed.connect(self.search_panel.set_special_mode)
+        self.ext_panel.special_mode_changed.connect(lambda _mode: self._inputs_save_timer.start())
         self.ext_panel.filter_changed.connect(self._sync_filters_to_config)
         self.filename_panel = FilenameFilterPanel()
         # 확장자·파일명 필터는 설정에 따라 탭(하나씩) 또는 위아래 패널(동시에 보임)로 표시합니다.
@@ -501,14 +509,7 @@ class SearchTab(QMainWindow):
         # 상태 저장 전 보류 중인 로그가 있다면 강제로 UI에 플러시하여 직렬화 누락 방지
         self._flush_pending_logs()
 
-        inputs = {}
-        inputs.update(self.search_panel.get_state())
-        inputs.update(self.ext_panel.get_state())
-        inputs.update(self.filename_panel.get_state())
-        inputs[Constants.CONFIG_KEY_FOLDERS] = self.folder_panel.get_state()
-        inputs[Constants.CONFIG_KEY_FOLDER_GROUPS] = self.folder_panel.get_group_state()
-        if Constants.PAYLOAD_FILENAME_FILTER in inputs:
-            inputs[Constants.STATE_KEY_FILENAME] = inputs[Constants.PAYLOAD_FILENAME_FILTER]
+        inputs = self.get_inputs()
         total_skipped = self.skipped_count
         return {
             Constants.PAYLOAD_INPUTS: inputs,
@@ -533,6 +534,19 @@ class SearchTab(QMainWindow):
             Constants.PAYLOAD_LOGS: self._serialize_logs(),
             Constants.PAYLOAD_TIMESTAMP: time.strftime("%Y-%m-%d %H:%M:%S"),
         }
+
+    def get_inputs(self):
+        """검색 조건 입력값(검색어·모드·폴더·그룹·확장자·파일명 필터)입니다."""
+        inputs = {}
+        inputs.update(self.search_panel.get_state())
+        inputs.update(self.ext_panel.get_state())
+        inputs.update(self.filename_panel.get_state())
+        inputs[Constants.CONFIG_KEY_FOLDERS] = self.folder_panel.get_state()
+        inputs[Constants.CONFIG_KEY_FOLDER_GROUPS] = self.folder_panel.get_group_state()
+        if Constants.PAYLOAD_FILENAME_FILTER in inputs:
+            inputs[Constants.STATE_KEY_FILENAME] = inputs[Constants.PAYLOAD_FILENAME_FILTER]
+        inputs[Constants.STATE_KEY_INPUTS_TRACKED] = True
+        return inputs
 
     def _normalize_state_result_row(self, row: Any):
         if not isinstance(row, (list, tuple)):
@@ -574,13 +588,14 @@ class SearchTab(QMainWindow):
         return Constants.MODE_NORMAL
 
     def _session_folder_groups(self, inputs):
-        """세션의 폴더 그룹입니다. 세션에 그룹이 없으면 설정에 저장된 그룹을 씁니다.
+        """세션의 폴더 그룹입니다. 예전 버전이 저장한 세션에 그룹이 없으면 설정에 저장된 그룹을 씁니다.
 
         세션은 검색 끝·정상 종료 때만 저장되고, 그룹은 바꿀 때마다 설정에 저장됩니다. 검색 뒤에 그룹을
         만들고 정상 종료 없이 꺼지면 세션에는 그룹이 없으므로, 그대로 복원하면 그룹이 지워집니다.
         """
         groups = inputs.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
-        if isinstance(groups, list) and groups:
+        if (isinstance(groups, list) and groups) or inputs.get(Constants.STATE_KEY_INPUTS_TRACKED) is True:
+            # 7.1.4부터는 필터를 바꿀 때마다 입력값을 저장하므로 세션 값을 그대로 믿습니다.
             return groups
         config_groups = self.config_manager.get_filters().get(Constants.CONFIG_KEY_FOLDER_GROUPS)
         return config_groups if isinstance(config_groups, list) and config_groups else groups
@@ -691,6 +706,7 @@ class SearchTab(QMainWindow):
             folders, extensions, filenames, folder_groups=self.folder_panel.get_group_state()
         )
         self._refresh_filter_ui()
+        self._inputs_save_timer.start()
 
     def _stop_existing_search(self):
         """현재 진행 중인 검색 워커를 중단시키고 상태를 STOPPING으로 변경합니다."""

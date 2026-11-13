@@ -24,6 +24,10 @@ class Constants:
     JSON_EXTENSION = ".json"
     LOG_FILE_GLOB = "*.log"
     TEMP_FILE_SUFFIX = ".tmp"
+    # 검색 없이 바꾼 탭 입력값(폴더·그룹·필터)을 세션 옆에 따로 두는 파일의 접미사입니다.
+    SESSION_INPUTS_SUFFIX = ".inputs"
+    # 7.1.4부터 저장한 탭 입력값에 붙는 표식입니다. 없으면 예전 버전이 저장한 세션입니다.
+    STATE_KEY_INPUTS_TRACKED = "inputs_saved_on_change"
     BACKUP_FILE_SUFFIX = ".old"
     # 하드코딩되었던 상수들은 고급 설정의 '기본값'으로 사용되며, 
     # UI 편집용 수치(MB 단위)와 내부 바이트 계산용 수치로 적절히 분리됩니다.
