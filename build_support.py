@@ -124,6 +124,8 @@ def isolated_packaging_path():
     return os.pathsep.join(str(p) for p in (
         windows / "System32", windows, Path(sys.executable).parent,
         Path(sys.prefix) / "DLLs", Path(sys.prefix) / "Scripts",
+        # 가상환경이면 표준 라이브러리 DLL은 원래 Python 폴더에 있습니다.
+        Path(sys.base_prefix) / "DLLs",
     ))
 
 

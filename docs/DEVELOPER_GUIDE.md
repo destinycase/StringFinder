@@ -140,7 +140,6 @@ StringFinder/
 │       └── localization.py        # UI import 전 언어 선택과 문자열 적용
 ├── tests/                         # pytest 단위·통합·GUI·회귀 테스트
 ├── tools/                         # 벤치마크(benchmark.py), 진단, 환경 검사, casefold 표 생성
-├── scripts/                       # 개발 폴더 정리(cleanup_project.py), DLL 잠금 해제(unlock_dll.py)
 ├── build.py                       # Rust + PyInstaller 릴리스 빌드/스모크 테스트
 ├── build_rust.py                  # Rust 확장 모듈 빌드 및 안전 교체
 ├── build_support.py               # 배포 런타임 검증 지원

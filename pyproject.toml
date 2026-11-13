@@ -7,7 +7,7 @@ name = "string-finder"
 version = "7.1.4"
 authors = [{ name = "N2" }]
 
-description = "Windows desktop search for text, JSON, XML, and Excel files, powered by Rust and Python with Korean and English interfaces."
+description = "Windows desktop search for text, JSON, XML, Excel, and Unreal Engine localization archive files, powered by Rust and Python with Korean and English interfaces."
 readme = "README.md"
 requires-python = ">=3.12"
 keywords = ["search", "string-finder", "mmap", "performance"]
@@ -16,14 +16,13 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Operating System :: Microsoft :: Windows",
     "Topic :: Utilities",
 ]
 
 dependencies = [
     "PySide6>=6.6.0",
-    "pyqtdarktheme>=0.1.7",
+    "pyqtdarktheme>=2.1.0",
     "psutil>=5.9.0",
     "openpyxl>=3.1.2",
 ]
@@ -44,10 +43,8 @@ packages = {find = {where = ["src"]}}
 dev = [
     "pytest>=7.4.0",
     "pytest-qt>=4.4.0",
-    "pytest-benchmark>=4.0.0",
     "ruff>=0.1.0",
     "pyinstaller>=6.3.0",
-    "maturin>=1.5.0",
     "mypy>=1.8.0",
     "Pillow>=10.0.0",  # build.py 아이콘 변환용
 ]

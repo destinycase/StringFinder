@@ -89,25 +89,26 @@ def build_rust_engine(clean_target=False):
     env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
     try:
-        # 1. Cargo를 사용하여 컴파일 실행 (단일 스레드 -j 1 및 5회 재시도 루프)
-        cargo_cmd = ["cargo", "build", "--release", "-j", "1"]
+        # 1. Cargo로 컴파일합니다. --locked: Cargo.lock을 빌드 중에 바꾸지 않습니다(CI와 같은 조건).
+        #    다른 프로세스가 파일을 잡고 있을 때(OS Error 32)만 다시 시도하고, 컴파일 오류는 바로 멈춥니다.
+        cargo_cmd = ["cargo", "build", "--release", "--locked", "-j", "1"]
         print(f"Running cargo: {' '.join(cargo_cmd)}")
 
-        retry_count = 0
         max_retries = 5
-
-        while retry_count < max_retries:
-            try:
-                subprocess.check_call(cargo_cmd, cwd=rust_dir, env=env)
+        for attempt in range(1, max_retries + 1):
+            result = subprocess.run(cargo_cmd, cwd=rust_dir, env=env, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace")
+            sys.stdout.write(result.stdout)
+            sys.stderr.write(result.stderr)
+            if result.returncode == 0:
                 break
-            except subprocess.CalledProcessError as e:
-                retry_count += 1
-                if retry_count < max_retries:
-                    print(f"[경고] 빌드 실패 (OS Error 32 가능성). {retry_count}회 재시도 중... 대기 중...")
-                    time.sleep(2)
-                else:
-                    print(f"Rust build failed after {max_retries} retries: {e}")
-                    raise
+            output = (result.stdout + result.stderr).lower()
+            locked = "os error 32" in output or "being used by another process" in output
+            if not locked or attempt == max_retries:
+                print(f"Rust build failed (exit {result.returncode}, attempt {attempt})")
+                raise subprocess.CalledProcessError(result.returncode, cargo_cmd, result.stdout, result.stderr)
+            print(f"[경고] 파일이 다른 프로세스에 잡혀 있습니다(OS Error 32). {attempt}회 재시도 중...")
+            time.sleep(2)
 
         # 2. 생성된 dll을 .pyd로 변경하여 단일 경로(src/rust_engine)로 복사 (SSOT)
         src_dll = os.path.join(rust_dir, "target", "release", "sf_engine.dll")

@@ -25,12 +25,13 @@ if not os.path.exists(os.path.join(PROJECT_ROOT, "pyproject.toml")) or not os.pa
     sys.exit(1)
 
 # [격리 강화] sys.path에서 현재 가상 환경 및 프로젝트 외부 경로 유입을 차단합니다.
-python_home_early = os.path.normpath(sys.prefix).lower()
+# 가상환경에서는 표준 라이브러리가 원래 Python 폴더(sys.base_prefix)에 있으므로 함께 허용합니다.
+python_homes_early = {os.path.normpath(home).lower() for home in (sys.prefix, sys.base_prefix)}
 isolated_initial_path = []
 for path in sys.path:
     norm_path = os.path.normpath(path).lower()
     # 파이썬 홈이나 현재 프로젝트 경로 내부에 있는 것만 허용
-    if is_path_within(norm_path, python_home_early) or is_path_within(norm_path, PROJECT_ROOT):
+    if any(is_path_within(norm_path, home) for home in python_homes_early) or is_path_within(norm_path, PROJECT_ROOT):
         isolated_initial_path.append(path)
     else:
         print(f"Purging external path from sys.path: {path}")
@@ -251,7 +252,7 @@ def build(clean_first=False):
     original_environment = os.environ.copy()
     try:
         # 안전한 경로 패턴: 파이썬 홈 디렉토리, 프로젝트 루트, 빌드 임시 디렉토리
-        python_home = os.path.normpath(sys.prefix).lower()
+        python_homes = {os.path.normpath(home).lower() for home in (sys.prefix, sys.base_prefix)}
         project_root = os.path.normpath(os.getcwd()).lower()
 
         isolated_path = []
@@ -260,7 +261,7 @@ def build(clean_first=False):
 
             # 화이트리스트: 현재 파이썬 환경(venv 포함) 내부이거나 프로젝트 소스 내부인 경우만 허용
             # 이를 통해 시스템 전역에 설치된 타 프로젝트의 site-packages나 사용자 레벨의 불필요한 경로를 차단합니다.
-            if is_path_within(norm_p, python_home) or is_path_within(norm_p, project_root):
+            if any(is_path_within(norm_p, home) for home in python_homes) or is_path_within(norm_p, project_root):
                 isolated_path.append(p)
 
         sys.path = isolated_path

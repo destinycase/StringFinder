@@ -23,6 +23,20 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QThreadPool
 
+# 시험이 실제 사용자 설정 폴더(%APPDATA%\StringFinder)를 읽거나 쓰지 않게, 제품 모듈을 읽기 전에
+# 설정 폴더를 실행마다 새로 만든 임시 폴더로 바꿉니다. 개별 시험은 필요하면 monkeypatch로 다시 바꿉니다.
+_TEST_APPDATA = tempfile.mkdtemp(prefix="sf_test_appdata_")
+os.environ["APPDATA"] = _TEST_APPDATA
+
+
+def _remove_test_appdata():
+    shutil.rmtree(_TEST_APPDATA, ignore_errors=True)
+
+
+import atexit  # noqa: E402
+
+atexit.register(_remove_test_appdata)
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 
