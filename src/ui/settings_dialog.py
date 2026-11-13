@@ -1,14 +1,12 @@
 import os
 import subprocess
 import sys
-import tempfile
-from PySide6.QtCore import QUrl, Signal, Qt, QThread
+from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
-    QProgressDialog,
     QFrame,
     QFileDialog,
     QGroupBox,
@@ -30,30 +28,7 @@ from sf_utils.logger import logger
 from ui.styles import UIStyles
 
 
-class DiagnosticThread(QThread):
-    progress = Signal(int, int, str, str)
-    finished_report = Signal(object)
-    failed = Signal(str)
-
-    def __init__(self, folder, repeats=5, cancel_event=None, parent=None):
-        super().__init__(parent)
-        self.folder = folder
-        self.repeats = repeats
-        self.cancel_event = cancel_event
-
-    def run(self):
-        try:
-            from core.diagnostic_benchmark import run
-            from pathlib import Path
-            report = run(Path(self.folder), self.repeats, progress_callback=self.progress.emit,
-                         cancel_event=self.cancel_event, max_seconds=7200)
-            self.finished_report.emit(report)
-        except Exception as exc:
-            self.failed.emit(str(exc))
-
-
 class SettingsDialog(QDialog):
-    doctor_finished = Signal(bool)
     display_density_changed = Signal()
 
     def __init__(self, config_manager, parent=None):
@@ -62,10 +37,6 @@ class SettingsDialog(QDialog):
         self.setWindowTitle(AppStrings.SETTINGS_TITLE)
         self.setMinimumSize(520, 560)
         self.resize(560, 720)
-        self._doctor_msg_box = None
-        self._doctor_running = False
-        self._doctor_wait_dismissed = False
-        self.doctor_finished.connect(self._on_doctor_finished)
         self._init_ui()
 
     def _init_ui(self):
@@ -432,16 +403,6 @@ class SettingsDialog(QDialog):
         tab_advanced_layout.addWidget(common_group)
 
 
-        diagnostic_group = QGroupBox(AppStrings.ADVANCED_DIAGNOSTICS_GROUP)
-        diagnostic_layout = QVBoxLayout(diagnostic_group)
-        self.doctor_btn = QPushButton(AppStrings.BTN_SYSTEM_DOCTOR)
-        self.doctor_btn.clicked.connect(self._run_system_doctor)
-        diagnostic_layout.addWidget(self.doctor_btn)
-        diagnostic_btn = QPushButton(AppStrings.BTN_PERFORMANCE_DIAGNOSTIC)
-        diagnostic_btn.clicked.connect(self._run_performance_diagnostic)
-        diagnostic_layout.addWidget(diagnostic_btn)
-        tab_advanced_layout.addWidget(diagnostic_group)
-
         tab_advanced_layout.addSpacing(10)
         reset_adv_btn = QPushButton(AppStrings.BTN_RESET_ADVANCED)
         reset_adv_btn.clicked.connect(self._reset_advanced_settings)
@@ -460,155 +421,6 @@ class SettingsDialog(QDialog):
             QUrl("https://github.com/destinycase/StringFinder/blob/main/docs/USER_GUIDE.md")
         )
 
-    def _run_system_doctor(self):
-        """시스템 자가 진단을 실행하고 결과를 보여줍니다."""
-        from core.doctor import run_doctor_and_open
-        import threading
-        
-        if self._doctor_running:
-            return
-        self._doctor_running = True
-        self._doctor_wait_dismissed = False
-        self.doctor_btn.setEnabled(False)
-        self._doctor_msg_box = QProgressDialog(
-            AppStrings.DOCTOR_WAIT_DESCRIPTION, AppStrings.DOCTOR_CLOSE_WAIT, 0, 0, self
-        )
-        self._doctor_msg_box.setWindowTitle(AppStrings.INFO_TITLE)
-        self._doctor_msg_box.setWindowModality(Qt.WindowModality.WindowModal)
-        self._doctor_msg_box.setMinimumDuration(0)
-        self._doctor_msg_box.canceled.connect(self._dismiss_doctor_wait)
-        self._doctor_msg_box.rejected.connect(self._dismiss_doctor_wait)
-        self._doctor_msg_box.show()
-
-        def thread_target():
-            try:
-                success = run_doctor_and_open()
-            except Exception as e:
-                logger.error(f"Doctor thread error: {e}")
-                success = False
-            try:
-                self.doctor_finished.emit(success)
-            except RuntimeError:
-                # Settings may have been destroyed while diagnostics finished.
-                pass
-        
-        try:
-            threading.Thread(target=thread_target, daemon=True).start()
-        except RuntimeError:
-            logger.exception("Failed to start system doctor thread")
-            self._on_doctor_finished(False)
-
-    def _dismiss_doctor_wait(self):
-        # Dismiss only the wait UI; do not forcefully terminate its Python thread.
-        self._doctor_wait_dismissed = True
-
-    def _on_doctor_finished(self, success):
-        """자가 진단 완료 시 호출되는 슬롯."""
-        if self._doctor_msg_box:
-            logger.debug("Closing system doctor progress popup via signal.")
-            self._doctor_msg_box.reset()
-            self._doctor_msg_box.deleteLater()
-            self._doctor_msg_box = None
-        self._doctor_running = False
-        self.doctor_btn.setEnabled(True)
-        if self._doctor_wait_dismissed or not self.isVisible():
-            return
-        if success:
-            QMessageBox.information(self, AppStrings.INFO_TITLE, AppStrings.LOG_SYS_DOCTOR_DONE)
-        else:
-            QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.LOG_SYS_DOCTOR_FAIL.format("Internal Error"))
-
-    def _run_performance_diagnostic(self):
-        folder = QFileDialog.getExistingDirectory(self, AppStrings.PERFORMANCE_DIAGNOSTIC_SELECT_FOLDER)
-        if not folder:
-            return
-        import json
-        import threading
-        from pathlib import Path
-        from core.diagnostic_benchmark import _markdown
-
-        progress = QProgressDialog(AppStrings.PERFORMANCE_DIAGNOSTIC_PREPARING, AppStrings.PERFORMANCE_DIAGNOSTIC_CANCEL, 0, 100, self)
-        progress.setWindowTitle(AppStrings.PERFORMANCE_DIAGNOSTIC_RUNNING)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setAutoClose(False)
-        progress.setMinimumDuration(0)
-        cancel_event = threading.Event()
-        thread = DiagnosticThread(folder, repeats=5, cancel_event=cancel_event, parent=self)
-        self._diagnostic_thread = thread
-
-        def update(done, total, scenario, path):
-            progress.setValue(min(99, int(done * 100 / max(1, total))))
-            progress.setLabelText(AppStrings.PERFORMANCE_DIAGNOSTIC_PROGRESS.format(scenario, done, total, path))
-
-        def cancel():
-            cancel_event.set()
-            progress.setLabelText(AppStrings.PERFORMANCE_DIAGNOSTIC_CANCEL_REQUESTED)
-            progress.setCancelButton(None)
-
-        def failed(message):
-            progress.close()
-            if message == "DIAGNOSTIC_CANCELLED":
-                QMessageBox.information(self, AppStrings.PERFORMANCE_DIAGNOSTIC_TITLE, AppStrings.PERFORMANCE_DIAGNOSTIC_CANCELLED)
-            elif message == "DIAGNOSTIC_TIMEOUT":
-                QMessageBox.warning(self, AppStrings.PERFORMANCE_DIAGNOSTIC_TITLE, AppStrings.PERFORMANCE_DIAGNOSTIC_TIMEOUT)
-            else:
-                QMessageBox.critical(self, AppStrings.PERFORMANCE_DIAGNOSTIC_FAILED, message)
-
-        def completed_localized(report):
-            is_complete = report.get("status") == "completed"
-            if is_complete:
-                progress.setValue(100)
-            progress.close()
-            suggested_name = "stringfinder_diagnostic.json" if is_complete else "stringfinder_diagnostic_partial.json"
-            target, _ = QFileDialog.getSaveFileName(
-                self, AppStrings.PERFORMANCE_DIAGNOSTIC_SAVE, suggested_name, "JSON (*.json)"
-            )
-            if not target:
-                return
-            output = Path(target)
-            try:
-                payloads = {
-                    output: json.dumps(report, ensure_ascii=False, indent=2),
-                    output.with_suffix(".md"): _markdown(report),
-                }
-                temporary_paths = []
-                replaced_destinations = []
-                for destination, content in payloads.items():
-                    with tempfile.NamedTemporaryFile(
-                        mode="w", encoding="utf-8", dir=destination.parent,
-                        prefix=f".{destination.stem}_", suffix=destination.suffix,
-                        delete=False,
-                    ) as temporary:
-                        temporary_paths.append((Path(temporary.name), destination))
-                        temporary.write(content)
-                for temporary_path, destination in temporary_paths:
-                    os.replace(temporary_path, destination)
-                    replaced_destinations.append(str(destination))
-            except OSError as exc:
-                for temporary, _ in locals().get("temporary_paths", []):
-                    try:
-                        temporary.unlink(missing_ok=True)
-                    except OSError:
-                        pass
-                logger.error("Performance diagnostic report save failed: %s", exc, exc_info=True)
-                QMessageBox.critical(
-                    self,
-                    AppStrings.PERFORMANCE_DIAGNOSTIC_FAILED,
-                    AppStrings.PERFORMANCE_DIAGNOSTIC_SAVE_FAILED.format(
-                        f"{exc}\n{AppStrings.PERFORMANCE_DIAGNOSTIC_SAVED_PATHS.format(', '.join(replaced_destinations) or '-')}"
-                    ),
-                )
-                return
-            title = AppStrings.PERFORMANCE_DIAGNOSTIC_DONE if is_complete else AppStrings.PERFORMANCE_DIAGNOSTIC_PARTIAL
-            QMessageBox.information(self, title, AppStrings.PERFORMANCE_DIAGNOSTIC_SAVED.format(output))
-
-        progress.canceled.connect(cancel)
-        thread.progress.connect(update)
-        thread.failed.connect(failed)
-        thread.finished_report.connect(completed_localized)
-        thread.finished.connect(lambda: progress.close() if not progress.wasCanceled() else None)
-        progress.show()
-        thread.start()
     def _on_display_density_changed(self, index):
         compact = self.compact_rows_combo.itemData(index)
         if not isinstance(compact, bool):

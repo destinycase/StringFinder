@@ -93,10 +93,7 @@ StringFinder/
 │   │   ├── skip_reason_codes.py   # 공통 스킵 코드 계약
 │   │   ├── skip_reason_formatter.py # 내부 스킵 사유를 사용자 언어로 변환
 │   │   ├── worker.py              # 백그라운드 SearchWorker와 진행·결과 시그널
-│   │   ├── app_search.py          # 진단·벤치마크용: 파일 하나를 앱과 같은 폴더 검색 경로로 검색
-│   │   ├── diagnostic_benchmark.py # 설정의 성능 진단(사용자 폴더 측정·보고서)
-│   │   ├── system_manager.py      # 애플리케이션 로그 보관·정리 정책
-│   │   └── doctor.py              # 시스템 자가 진단 및 진단 리포트
+│   │   └── system_manager.py      # 애플리케이션 로그 보관·정리 정책
 │   ├── rust_engine/               # Rust 네이티브 크레이트 (sf_engine)
 │   │   ├── Cargo.toml             # Rust 의존성 및 cdylib 라이브러리 설정
 │   │   ├── sf_engine.pyd          # 컴파일된 네이티브 바이너리
@@ -117,7 +114,7 @@ StringFinder/
 │   │   ├── result_view.py         # 결과 테이블, 문맥 미리보기, 구문 강조
 │   │   ├── models.py              # SearchResultModel, MatchDetailModel, 비동기 정렬
 │   │   ├── panels.py              # 폴더, 확장자, 파일명, 검색 조건 도크 패널
-│   │   ├── settings_dialog.py     # 일반/고급 설정과 성능 진단 UI
+│   │   ├── settings_dialog.py     # 일반/고급 설정 UI
 │   │   ├── proxies.py             # 결과 테이블 정렬·필터 프록시
 │   │   ├── widgets.py             # 공통 Qt 위젯
 │   │   ├── styles.py              # 앱 QSS 및 상태 색상
@@ -139,7 +136,7 @@ StringFinder/
 │       ├── english_strings.py     # 영어 문자열 카탈로그
 │       └── localization.py        # UI import 전 언어 선택과 문자열 적용
 ├── tests/                         # pytest 단위·통합·GUI·회귀 테스트
-├── tools/                         # 벤치마크(benchmark.py), 진단, 환경 검사, casefold 표 생성
+├── tools/                         # 벤치마크(benchmark.py), 환경 검사, casefold 표 생성
 ├── build.py                       # Rust + PyInstaller 릴리스 빌드/스모크 테스트
 ├── build_rust.py                  # Rust 확장 모듈 빌드 및 안전 교체
 ├── build_support.py               # 배포 런타임 검증 지원
@@ -242,8 +239,6 @@ UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한�
 Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니다. API를 바꾸면 Rust 엔진을 다시 빌드해야 합니다. 오래된 엔진을 현재 Python 코드와 섞어 실행하지 않습니다. 명시적으로 존재 확인 결과라고 저장된 예전 세션은 입력 조건만 살리고 결과·요약을 비운 뒤 재검색을 안내합니다. 일반 결과나 메타데이터 없는 실제 내용은 임의로 변환하지 않습니다.
 
 파일명 묶음은 UI에서 쉼표로 나누고 앞뒤 공백을 제거한 뒤 검색기로 전달합니다. 체크한 묶음의 합집합을 검색하며, 겹치는 조건은 대소문자를 무시하고 한 번만 셉니다. 빈 구분 항목이나 와일드카드가 있으면 묶음 전체를 거절합니다. 상태 표시줄은 현재 탭의 검색 모드·폴더·실제 적용 확장자·파일명 목록을 ` | `로 구분해 표시하고 폴더가 없으면 경고 아이콘을 표시합니다.
-
-성능 진단은 검색 방식이 하나라 시나리오 하나를 5회 실행합니다. 보고서 형식 버전은 7입니다(6에서 글자 변형 시나리오를 뺌). 삭제된 시나리오를 새 측정으로 재해석하지 않습니다.
 
 ### 4.2 `SearchMatch` (Structured Match Object)
 
@@ -359,7 +354,7 @@ XML 파서 변경 시에는 최소한 다음 회귀 조건도 확인합니다.
 
 `.github/workflows/ci.yml`은 main 푸시와 main 대상 PR, 수동 실행, 주간 예약 실행을 정의합니다. Python 3.12와 Rust 1.93.0을 준비하고 .github/ci-constraints.txt의 기준 버전으로 의존성을 설치한 뒤, 커밋된 엔진을 재사용하지 않고 `build_rust.py`로 현재 소스의 엔진을 빌드합니다. `check_dev_environment.py --require-engine`으로 활성화·공식 경로·앱 버전·API를 확인하여 네이티브 검사가 조용히 건너뛰어지는 것을 방지합니다. 검사 권한은 저장소 읽기이며 EXE 생성·자동 게시·Git 이력 변경은 하지 않습니다. pip·Cargo 캐시와 최신 커밋만 가져오는 checkout으로 반복 비용을 줄입니다.
 
-기본 작업은 Ruff, 제품·진단 도구 mypy, Rust 포맷·Clippy·테스트, 격리된 Python 기본 검사를 수행합니다. Qt는 `offscreen`으로 실행합니다. 주간·수동 실행은 stress/chaos와 실제 Windows Qt 클립보드 연동도 추가합니다. 예약 시각은 매주 일요일 UTC 00:00(한국 시간 09:00)입니다. 저장소의 Actions가 활성화되어야 하며, 설정 파일을 원격에 푸시한 후 실제 실행 결과를 확인해야 합니다. 로컬 통과를 GitHub 실행 성공으로 표기하지 않습니다.
+기본 작업은 Ruff, 제품·벤치마크 도구 mypy, Rust 포맷·Clippy·테스트, 격리된 Python 기본 검사를 수행합니다. Qt는 `offscreen`으로 실행합니다. 주간·수동 실행은 stress/chaos와 실제 Windows Qt 클립보드 연동도 추가합니다. 예약 시각은 매주 일요일 UTC 00:00(한국 시간 09:00)입니다. 저장소의 Actions가 활성화되어야 하며, 설정 파일을 원격에 푸시한 후 실제 실행 결과를 확인해야 합니다. 로컬 통과를 GitHub 실행 성공으로 표기하지 않습니다.
 
 로컬에서는 아래처럼 같은 검사를 재현합니다. 검증 자료는 Git에서 제외되는 `docs_dev/` 아래에 두고 사용자의 실제 설정과 분리합니다.
 
@@ -372,7 +367,7 @@ $env:APPDATA = Join-Path $PWD "docs_dev/ci_local/appdata"
 python build_rust.py
 python tools/check_dev_environment.py --require-engine
 python -m ruff check src tests tools
-python -m mypy src tools/diagnostic_benchmark.py tools/benchmark.py --cache-dir docs_dev/ci_local/mypy_cache
+python -m mypy src tools/benchmark.py --cache-dir docs_dev/ci_local/mypy_cache
 cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
 cargo clippy --manifest-path src/rust_engine/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src/rust_engine/Cargo.toml --locked
@@ -383,7 +378,7 @@ python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp d
 
 복사할 내용의 검사는 가짜 클립보드로 격리하고 Qt의 실제 붙여넣기·복사는 `os_clipboard`로 분리합니다. 실제 Windows 연동을 로컬에서 확인하려면 마지막 명령만 `QT_QPA_PLATFORM=windows`로 바꿔 전용 테스트 환경에서 실행하세요.
 
-제품과 진단 도구의 타입 검사는 위 명령을 합격 조건으로 사용합니다. 진단 보고서는 숫자·문자열·목록을 구분한 자료형을 수집부터 Markdown 출력까지 공유합니다. 진단 도구를 별도로 우회하던 `follow_imports=silent` 설정은 제거했으며, 일괄 `Any`나 오류 무시 설정으로 통과시키지 않습니다. 타입 검사 통과가 실행 시 결함 없음을 뜻하지는 않으므로 진단 실행·취소·보고서 생성 테스트도 함께 확인합니다.
+제품과 벤치마크 도구의 타입 검사는 위 명령을 합격 조건으로 사용합니다. 일괄 `Any`나 오류 무시 설정으로 통과시키지 않으며, 타입 검사 통과가 실행 시 결함 없음을 뜻하지는 않습니다.
 
 ### 6.5 성능 벤치마크 실행
 
@@ -415,7 +410,7 @@ python build.py
 
 ---
 
-## 7. 변경·진단·검증 절차
+## 7. 변경·검증 절차
 
 ### 7.1 변경 시 함께 확인할 계약
 
@@ -431,37 +426,9 @@ python build.py
 | 현지화 | [구현 정책 2절](IMPLEMENTATION_POLICY.md#2-코딩-컨벤션-및-기여-가이드), [구현 정책 3.4절](IMPLEMENTATION_POLICY.md#34-설정-현지화-ui-모델의-함정) |
 | 변경별 최소 검증 | **7.5절**, 릴리스 절차는 **7.3절** |
 
-### 7.2 실무 성능 진단
+### 7.2 파일 열기·필터 입력 확인
 
-설정 UI의 **시스템 자가 진단**과 **성능 진단** 실행 버튼은 고급 탭의 **진단 도구** 그룹에 있습니다.
-
-시스템 자가 진단 대기 창은 닫을 수 있지만 Python 진단 스레드를 강제로 중단하지 않습니다. 버튼·Esc·창 닫기를 모두 처리하며, 완료 전 중복 실행을 막습니다. 창을 닫은 뒤 완료되면 버튼 상태만 복구하고 완료 팝업은 다시 띄우지 않습니다. 설정 창이 파괴된 뒤 도착한 시그널은 안전하게 무시합니다.
-
-파일 열기·필터 입력의 UX 회귀는 `tests/test_filter_open_and_diagnostic_feedback.py`로 확인합니다. 실행 가능 파일의 확인·폴백 정책은 [구현 정책 2.2절](IMPLEMENTATION_POLICY.md#22-검색-정책오류취소-계약), 후보 필터 계약은 **4.1절**을 따릅니다.
-
-실무 폴더의 병목을 확인하려면 GUI의 **성능 진단** 또는 다음 명령을 사용합니다.
-
-```powershell
-python tools/diagnostic_benchmark.py <폴더> --repeats 5
-```
-
-**측정 방식**
-
-- 검색 시나리오 하나를 측정하고 JSON 상세 보고서와 Markdown 해설을 만듭니다.
-- 전체 시간 예산을 시나리오에 씁니다. 파일 순서는 보고서마다 무작위화하되 해당 실행의 시나리오·반복에서는 같게 유지합니다.
-- 검색어는 실행별 192비트 난수 토큰입니다. 원문은 저장하지 않으며, 우연한 검색 결과가 나오면 해당 시나리오는 기준 판정에 사용하지 않습니다.
-- 유효 설정, 표본 커버리지, 30초 간격 자원 표본, 형식·크기별 통계, `ERR_UNKNOWN` 원인 범주, 1GiB 초과 파일 수를 기록합니다. 원인 단서가 없으면 `unclassified`로 남깁니다.
-
-기본 전체 시간 예산은 `DEFAULT_MAX_SECONDS = 7200`이며 파일 열거 이후의 측정에 적용합니다. CLI의 `--max-seconds`로 변경하고 `0`으로 제한을 해제할 수 있습니다. GUI의 기본 실행과 예산을 다르게 설정한 CLI 기록을 같은 조건으로 비교하지 않습니다.
-
-**해석 시 주의**
-
-- 성능 진단은 파일마다 앱과 같은 폴더 검색 함수(`search_directory_fast`)를 하나씩 부르므로, 앱의 병렬 폴더 검색 전체 시간과 다릅니다. 리포트별 난수 검색어도 동일하지 않습니다.
-- 진단 호출은 `special_mode`를 지정하지 않습니다. JSON/XML은 일반 텍스트 검색이며 Excel은 확장자에 따른 전용 파서로 처리됩니다. JSON/XML 값만 검색의 파싱 비용을 평가하려면 별도 형식별 측정이 필요합니다.
-- `nominal_mb_per_second`는 입력 크기 합계로 계산한 명목치이며 실제 읽은 바이트 수가 아닙니다. 캐시·결과 제한·건너뛴 파일의 영향을 구분합니다.
-- 예외·건너뛴 파일이 있으면 원인부터 확인합니다. 커버리지 100% 미만의 완료 반복만으로 전체 실행시간을 추정하지 않습니다.
-- 자원 표본은 파일 호출 반환 후 수집되므로 단일 장기 처리의 순간 피크를 놓칠 수 있습니다. 취소·시간 예산도 호출 경계에서 확인해 즉시 중단을 보장하지 않습니다.
-- 시작 시 가용 메모리 경고를 해석에 반영합니다. 파일 경로·이름·본문·검색어·난수 시드는 보고서에서 제외하지만 컴퓨터 정보와 정확한 크기·자원량은 포함될 수 있으므로 공유 전에 검토합니다.
+파일 열기·필터 입력의 UX 회귀는 `tests/test_filter_open_feedback.py`로 확인합니다. 실행 가능 파일의 확인·폴백 정책은 [구현 정책 2.2절](IMPLEMENTATION_POLICY.md#22-검색-정책오류취소-계약), 후보 필터 계약은 **4.1절**을 따릅니다. 앱 안의 시스템 자가 진단·성능 진단은 7.1.6에서 없앴습니다. 성능은 **7.3절**의 `tools/benchmark.py`, 사용자 환경의 문제는 로그로 확인합니다.
 
 ### 7.3 벤치마크와 릴리스 검증
 
@@ -543,7 +510,7 @@ python tools/validate_parallel_resources.py
 | 설정 저장·실제 열린 JSON의 크기 제한 | `test_config_storage_and_json_open_limits.py` |
 | 파일 저장·미리보기·패키징 경계 | `test_storage_preview_and_packaging_boundaries.py` |
 | 정렬·설치·XML 계약 | `test_sort_install_and_xml_contracts.py` |
-| 필터·파일 열기·자가 진단 안내 | `test_filter_open_and_diagnostic_feedback.py` |
+| 필터·파일 열기 안내 | `test_filter_open_feedback.py` |
 | 설정·대소문자 및 검색 방식·내보내기 | `test_configuration_and_case_policy.py`, `test_profile_and_export_contracts.py` |
 | 엔진 오류·Unicode 정책 | `test_engine_error_and_unicode_policy.py` |
 | 결과 목록·정렬·강조 | `test_result_list_behaviour.py` |

@@ -1,9 +1,7 @@
 """Exercise actual UI events and exclusion feedback without changing search policy."""
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from PySide6.QtCore import Qt
 
 from core import search_engine as se
 from sf_utils.app_strings import AppStrings
@@ -11,7 +9,6 @@ from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
 from ui.panels import FilenameFilterPanel
 from ui.search_tab import SearchTab
-from ui.settings_dialog import SettingsDialog
 
 
 @pytest.fixture(params=["ko", "en"])
@@ -85,72 +82,3 @@ def test_saved_junction_reason_follows_language(language):
     set_language("en" if language == "ko" else "ko")
     assert se.is_supported_skip_reason(saved)
     assert se.localize_skip_reason_for_display(saved) == AppStrings.SKIP_ROOT_JUNCTION
-
-
-@pytest.mark.parametrize("dismiss", [None, "escape", "button", "close"])
-@pytest.mark.parametrize("success", [False, True])
-def test_doctor_dismiss_and_completion(qtbot, mock_config_manager, monkeypatch, language, dismiss, success):
-    callbacks = []
-    monkeypatch.setattr("threading.Thread", lambda target, **kw: SimpleNamespace(start=lambda: callbacks.append(target)))
-    run = Mock(return_value=success)
-    monkeypatch.setattr("core.doctor.run_doctor_and_open", run)
-    information, warning = Mock(), Mock()
-    monkeypatch.setattr("ui.settings_dialog.QMessageBox.information", information)
-    monkeypatch.setattr("ui.settings_dialog.QMessageBox.warning", warning)
-    dialog = SettingsDialog(mock_config_manager)
-    qtbot.addWidget(dialog)
-    dialog.show()
-    dialog._run_system_doctor()
-    dialog._run_system_doctor()
-    assert len(callbacks) == 1
-    assert not dialog.doctor_btn.isEnabled()
-    progress = dialog._doctor_msg_box
-    assert progress.labelText() == AppStrings.DOCTOR_WAIT_DESCRIPTION
-    if dismiss:
-        if dismiss == "escape":
-            qtbot.keyClick(progress, Qt.Key.Key_Escape)
-        elif dismiss == "close":
-            progress.close()
-        else:
-            from PySide6.QtWidgets import QPushButton
-            qtbot.mouseClick(progress.findChild(QPushButton), Qt.MouseButton.LeftButton)
-        assert not progress.isVisible()
-        assert dialog._doctor_wait_dismissed
-        assert dialog._doctor_running
-    callbacks[0]()
-    assert dialog.doctor_btn.isEnabled()
-    assert not dialog._doctor_running
-    assert dialog._doctor_msg_box is None
-    assert information.call_count == int(success and not dismiss)
-    assert warning.call_count == int(not success and not dismiss)
-    dialog._run_system_doctor()
-    assert len(callbacks) == 2
-    callbacks[1]()
-
-
-def test_doctor_thread_start_failure_recovers(qtbot, mock_config_manager, monkeypatch):
-    thread = SimpleNamespace(start=Mock(side_effect=RuntimeError("cannot start thread")))
-    monkeypatch.setattr("threading.Thread", lambda **kw: thread)
-    warning = Mock()
-    monkeypatch.setattr("ui.settings_dialog.QMessageBox.warning", warning)
-    dialog = SettingsDialog(mock_config_manager)
-    qtbot.addWidget(dialog)
-    dialog.show()
-    dialog._run_system_doctor()
-    assert dialog.doctor_btn.isEnabled()
-    assert not dialog._doctor_running
-    assert dialog._doctor_msg_box is None
-    warning.assert_called_once()
-
-
-def test_doctor_real_thread_completion(qtbot, mock_config_manager, monkeypatch):
-    monkeypatch.setattr("core.doctor.run_doctor_and_open", lambda: True)
-    notice = Mock()
-    monkeypatch.setattr("ui.settings_dialog.QMessageBox.information", notice)
-    dialog = SettingsDialog(mock_config_manager)
-    qtbot.addWidget(dialog)
-    dialog.show()
-    dialog._run_system_doctor()
-    qtbot.waitUntil(lambda: not dialog._doctor_running)
-    assert dialog.doctor_btn.isEnabled()
-    notice.assert_called_once()
