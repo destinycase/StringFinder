@@ -253,7 +253,7 @@ ENGLISH_STRINGS = {
     ),
     "RESULT_SUMMARY_FORMAT": "Files: {file_count} | Strings: {match_count} | Time: {duration}s",
     "RESULT_SUMMARY_SEARCHING_FORMAT": (
-        "{scanned_count} files checked · {file_count} files found · {match_count} strings · {elapsed} — results are still coming in"
+        "{scanned_count} files checked · {file_count} files found · {match_count} strings · {elapsed}"
     ),
     "SKIPPED_FILES_COUNT": "⚠ Skipped files: {}",
     "TOTAL_MATCH_LIMIT_REACHED": "⚠ result limit reached ({})",

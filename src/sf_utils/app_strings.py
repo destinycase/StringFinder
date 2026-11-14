@@ -289,7 +289,7 @@ class AppStrings:
     )
     RESULT_SUMMARY_FORMAT = "파일 수 : {file_count} | 문자열 수 : {match_count} | 시간 : {duration}s"
     RESULT_SUMMARY_SEARCHING_FORMAT = (
-        "파일 {scanned_count}개 확인 · 찾은 파일 {file_count}개 · 문자열 {match_count}개 · {elapsed} — 결과가 계속 늘어납니다"
+        "파일 {scanned_count}개 확인 · 찾은 파일 {file_count}개 · 문자열 {match_count}개 · {elapsed}"
     )
     SKIPPED_FILES_COUNT = "⚠ 건너뛴 파일 수: {}"
     TOTAL_MATCH_LIMIT_REACHED = "⚠ 결과 수량 제한 도달 ({})"

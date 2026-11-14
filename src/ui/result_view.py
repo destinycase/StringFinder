@@ -574,6 +574,12 @@ class ResultView(QWidget):
         self.searching_bar.setFixedHeight(4)
         self.searching_bar.setVisible(False)
         main_layout.addWidget(self.searching_bar)
+        # 검색 중 문구 앞에서 도는 표시입니다. 글자 기호를 바꿔 그려 별도 그림 파일이 필요 없습니다.
+        self._spinner_frame = 0
+        self._searching_text = ""
+        self._spinner_timer = QTimer(self)
+        self._spinner_timer.setInterval(self.SPINNER_INTERVAL_MS)
+        self._spinner_timer.timeout.connect(self._advance_spinner)
         main_layout.addLayout(self.result_filter_layout)
         main_layout.addWidget(self.result_splitter, 1)
         self.empty_label = QLabel(AppStrings.RESULT_EMPTY_MSG)
@@ -1190,6 +1196,21 @@ class ResultView(QWidget):
         QTimer.singleShot(300, self._update_pagination_ui)
         self.update_ui_visibility()
 
+    SPINNER_FRAMES = ("◐", "◓", "◑", "◒")
+    SPINNER_INTERVAL_MS = 150
+
+    def _render_searching_text(self):
+        frame = self.SPINNER_FRAMES[self._spinner_frame % len(self.SPINNER_FRAMES)]
+        self.summary_label.setText(f"{frame} {self._searching_text}")
+
+    def _advance_spinner(self):
+        self._spinner_frame = (self._spinner_frame + 1) % len(self.SPINNER_FRAMES)
+        self._render_searching_text()
+
+    def _stop_spinner(self):
+        self._spinner_timer.stop()
+        self._searching_text = ""
+
     def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix="", scanned_count=None):
         """상단 요약 정보를 업데이트합니다. 검색 중에는 확인한 파일 수·경과 시간을 보여 주고 막대를 움직입니다."""
         # 요약 색은 문구 일부가 아니라 정해진 상태 접두어와 같은지로 정합니다(검수 D-4).
@@ -1208,9 +1229,13 @@ class ResultView(QWidget):
                 elapsed=f"{seconds // 60:02d}:{seconds % 60:02d}",
             )
             self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(self._is_dark_theme(), state))
-            self.summary_label.setText(state_prefix + summary_text)
+            self._searching_text = state_prefix + summary_text
+            self._render_searching_text()
+            if not self._spinner_timer.isActive():
+                self._spinner_timer.start()
             self.summary_label.setVisible(True)
             return
+        self._stop_spinner()
         if file_count > 0 or skip_count > 0 or state_prefix == AppStrings.SUMMARY_PREFIX_FAILED:
             summary_text = AppStrings.RESULT_SUMMARY_FORMAT.format(
                 file_count=file_count,
@@ -1263,6 +1288,7 @@ class ResultView(QWidget):
 
     def clear(self):
         # [UI/UX] 검색 시작 시 이전 검색의 요약 정보를 숨깁니다.
+        self._stop_spinner()
         self.summary_label.setText("")
         self.summary_label.setVisible(False)
         self.searching_bar.setVisible(False)
