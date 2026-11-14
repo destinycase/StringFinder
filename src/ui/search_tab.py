@@ -548,6 +548,21 @@ class SearchTab(QMainWindow):
         inputs[Constants.STATE_KEY_INPUTS_TRACKED] = True
         return inputs
 
+    def inherit_conditions_from(self, source):
+        """새 탭이 지금 보고 있는 탭의 폴더·그룹·확장자·파일명 필터를 이어받습니다.
+
+        검색어와 결과는 가져오지 않고, 검색 모드는 기본으로 둡니다.
+        """
+        inputs = source.get_inputs()
+        with QSignalBlocker(self.ext_panel), QSignalBlocker(self.filename_panel), QSignalBlocker(self.folder_panel):
+            self.ext_panel.load_state({Constants.CONFIG_KEY_EXTENSIONS: inputs.get(Constants.CONFIG_KEY_EXTENSIONS, {})})
+            self.ext_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_OFF)
+            self.filename_panel.load_state(inputs)
+            self.folder_panel.load_state(
+                inputs.get(Constants.CONFIG_KEY_FOLDERS, {}), inputs.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
+            )
+        self._refresh_filter_ui()
+
     def _normalize_state_result_row(self, row: Any):
         if not isinstance(row, (list, tuple)):
             return None

@@ -131,4 +131,8 @@ def test_new_tab_discards_leftover_inputs_with_the_same_name(qtbot, mock_config_
     window.add_new_tab()
     assert window.tab_widget.tabText(1) == next_name
     mock_config_manager.wait_for_session_saves()
-    assert not os.path.exists(mock_config_manager._resolve_session_file_path(next_name) + C.SESSION_INPUTS_SUFFIX)
+    # 새 탭은 현재 탭 구성을 이어받아 저장하므로(7.1.7), 남은 파일의 값이 아니라 새 탭의 값이 남습니다.
+    saved = mock_config_manager._read_inputs_file(
+        mock_config_manager._resolve_session_file_path(next_name) + C.SESSION_INPUTS_SUFFIX
+    )
+    assert saved is None or saved.get(C.CONFIG_KEY_FOLDERS) != NEW_INPUTS[C.CONFIG_KEY_FOLDERS]

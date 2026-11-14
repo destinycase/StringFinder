@@ -233,7 +233,11 @@ class MainWindow(QMainWindow):
 
     def add_new_tab(self, name=None, state=None):
         """새로운 검색 세션(탭)을 추가하고 필요한 시그널을 연결합니다."""
+        source_tab = None if state else self.tab_widget.currentWidget()
         new_tab = SearchTab(self.config_manager)
+        if isinstance(source_tab, SearchTab):
+            # 새 탭은 지금 보이는 탭의 폴더·필터 구성을 이어받고 검색 모드는 기본으로 엽니다.
+            new_tab.inherit_conditions_from(source_tab)
         new_tab.filter_status_changed.connect(lambda: self._sync_status_bar_with_active_tab(self.tab_widget.currentIndex()))
         new_tab.status_message_requested.connect(self._show_search_notice)
         new_tab.inputs_changed.connect(lambda: self._save_tab_inputs(new_tab))
@@ -268,6 +272,8 @@ class MainWindow(QMainWindow):
                 discard(tab_title)
         self.tab_widget.addTab(new_tab, tab_title)
         self.tab_widget.setCurrentWidget(new_tab)
+        if isinstance(source_tab, SearchTab):
+            self._save_tab_inputs(new_tab)
         return new_tab
 
     def _on_search_finished_in_tab(self, tab):
