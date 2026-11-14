@@ -444,6 +444,7 @@ class SearchTab(QMainWindow):
         """모든 탭이 함께 쓰는 설정·검색 히스토리를 다시 읽습니다. 탭을 바꿔 볼 때 부릅니다."""
         self._load_histories()
         self.result_view_panel.reload_shared_settings()
+        self.restore_shared_layout()
 
     def _load_histories(self):
         """Reload saved search history without changing the current input."""
@@ -480,6 +481,22 @@ class SearchTab(QMainWindow):
             self.worker = None
         if hasattr(self, "result_view_panel"):
             self.result_view_panel.cleanup()
+
+    def save_shared_layout(self):
+        """이 탭의 도크 배치·결과 구분선·열 너비를 모든 탭이 함께 쓰는 설정에 저장합니다."""
+        self.config_manager.set_dock_state(self.saveState(self.DOCK_LAYOUT_VERSION))
+        self.save_splitter_states()
+
+    def restore_shared_layout(self):
+        """다른 탭에서 바꾼 도크 배치·결과 구분선·열 너비를 이 탭에 적용합니다."""
+        dock_state = self.config_manager.get_dock_state()
+        if dock_state:
+            try:
+                self.restoreState(QByteArray.fromHex(dock_state.encode()), self.DOCK_LAYOUT_VERSION)
+            except Exception:
+                logger.debug("dock layout restore failed", exc_info=True)
+        self._apply_lock_layout()
+        self.result_view_panel.restore_shared_layout()
 
     def save_splitter_states(self):
         """결과 뷰 내 스플리터(구분선)의 위치 상태를 저장합니다."""

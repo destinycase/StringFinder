@@ -577,6 +577,12 @@ class ConfigManager:
                 self._config[Constants.CONFIG_KEY_FILTER_SPLITTER_STATE] = filter_state.toHex().data().decode()
         self.save()
 
+    def set_dock_state(self, state):
+        """탭 안의 도크(검색 설정·폴더·필터 창) 배치를 저장한다. 모든 탭이 함께 쓴다."""
+        with self._config_lock:
+            self._config[Constants.CONFIG_KEY_DOCK_LAYOUT_STATE] = state.toHex().data().decode()
+        self.save()
+
     def get_dock_state(self):
         """저장된 도크 레이아웃 상태를 반환한다."""
         with self._config_lock:

@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
             self.resize(1200, 800)
         self.setMinimumSize(600, 400)
         self._search_lock_owner = None
+        self._layout_tab = None
         self._init_ui()
         from sf_utils.logger import qt_log_handler
 
@@ -130,10 +131,11 @@ class MainWindow(QMainWindow):
         # "모든 데이터 삭제" 뒤 새로 저장한 세션이 없으면, 지운 탭·창 상태를 종료하면서 되살리지 않습니다(검수 U-9).
         if not getattr(self.config_manager, "data_cleared", False):
             self.config_manager.set_window_state(self.saveGeometry(), self.saveState())
+            # 배치는 모든 탭이 함께 쓰므로 지금 보이는 탭의 배치를 저장합니다.
+            visible_tab = self.tab_widget.currentWidget()
+            if isinstance(visible_tab, SearchTab):
+                visible_tab.save_shared_layout()
             for i in range(self.tab_widget.count()):
-                current_tab = self.tab_widget.widget(i)
-                if isinstance(current_tab, SearchTab):
-                    current_tab.save_splitter_states()
                 self._save_tab(i)
             self._save_tab_order()
 
@@ -476,7 +478,16 @@ class MainWindow(QMainWindow):
             self._apply_theme()
 
     def _reload_shared_settings_in_tab(self, index):
+        """탭을 바꿀 때 떠나는 탭의 배치를 저장하고, 새 탭에 공통 설정·히스토리·배치를 적용합니다."""
+        previous = self._layout_tab
         tab = self.tab_widget.widget(index)
+        if isinstance(previous, SearchTab) and previous is not tab:
+            try:
+                if self.tab_widget.indexOf(previous) >= 0:
+                    previous.save_shared_layout()
+            except RuntimeError:
+                pass  # 이미 닫혀 삭제된 탭
+        self._layout_tab = tab if isinstance(tab, SearchTab) else None
         if isinstance(tab, SearchTab):
             tab.reload_shared_settings()
 
@@ -523,6 +534,10 @@ class MainWindow(QMainWindow):
             name = self.tab_widget.tabText(index)
             self.config_manager.delete_session(name)
             if isinstance(tab, SearchTab):
+                if tab is self._layout_tab:
+                    # 보이는 탭을 닫으면 그 탭에서 바꾼 배치를 다음 탭이 이어받게 먼저 저장합니다.
+                    tab.save_shared_layout()
+                    self._layout_tab = None
                 try:
                     # pylint: disable=protected-access
                     tab._stop_existing_search()

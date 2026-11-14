@@ -1326,6 +1326,9 @@ class ResultView(QWidget):
         self._save_column_widths(Constants.VIEW_RESULT)
         self._save_column_widths(Constants.VIEW_MATCH)
 
+    def restore_shared_layout(self):
+        self._restore_states()
+
     def _restore_states(self):
         _, result_state, _ = self.config_manager.get_splitter_states()
         if result_state:
