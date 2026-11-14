@@ -235,7 +235,7 @@ def test_legacy_saved_values_remain_engine_values(qtbot, language, precise, save
 
 def test_display_resources_do_not_use_retired_names(language):
     for key in ("SEARCH_MODE_LABEL", "SPECIAL_SEARCH_MENU_ITEMS",
-                "SEARCH_HELP_TEXT", "SEARCH_EDIT_PLACEHOLDER", "RESULT_EMPTY_NO_MATCH"):
+                "SEARCH_HELP_TEXT", "SEARCH_EDIT_PLACEHOLDER", "RESULT_EMPTY_NO_MATCH_TITLE"):
         value = str(getattr(AppStrings, key))
         for retired in ("누락 방지", "특수 검색", "값 만", "Miss-prevention", "Special search"):
             assert retired not in value
@@ -292,9 +292,7 @@ def test_layout_switch_uses_sum_of_natural_label_widths(qtbot, language):
         assert panel._toolbar_mode == expected
 
 
-def test_no_result_encoding_guidance_is_a_separate_paragraph(language):
-    paragraphs = AppStrings.RESULT_EMPTY_NO_MATCH.format("needle").split("\n\n")
-    assert len(paragraphs) == 3
-    assert "needle" in paragraphs[0]
-    assert "NFD" in paragraphs[1] and "ß" in paragraphs[1]
-    assert ("인코딩" if language == "ko" else "encoding") in paragraphs[2]
+def test_no_result_text_drops_nfd_and_case_paragraph(language):
+    text = AppStrings.RESULT_EMPTY_NO_MATCH_TITLE + AppStrings.RESULT_EMPTY_ENCODING_HINT
+    assert "NFD" not in text and "ß" not in text
+    assert ("인코딩" if language == "ko" else "encoding") in AppStrings.RESULT_EMPTY_ENCODING_HINT

@@ -282,11 +282,16 @@ class AppStrings:
     RESULT_EMPTY_MSG = "검색을 시작 해주세요."
     RESULT_SEARCHING_MSG = '"{}" 검색 중 입니다.'
     RESULT_EMPTY_NO_FOLDER = "검색할 폴더를 추가해주세요."
-    RESULT_EMPTY_NO_MATCH = (
-        "'{}'에 대한 검색 결과가 없습니다.\n\n"
-        "한글 자모가 분리된(NFD) 문자열이나 독일어 ß↔ss 같은 다국어 대소문자 차이는 이미 맞춰 비교했습니다.\n\n"
-        "글자가 깨져 보이는 등 인코딩 문제가 의심되면 설정의 문자 인코딩을 확인하세요."
-    )
+    RESULT_EMPTY_NO_MATCH_TITLE = "'{}'에 대한 검색 결과가 없습니다."
+    RESULT_EMPTY_ENCODING_HINT = "글자가 깨져 보이는 등 인코딩 문제가 의심되면 설정의 문자 인코딩을 확인하세요."
+    RESULT_CONDITIONS_TITLE = "사용한 검색 조건"
+    RESULT_COND_MODE = "검색 모드"
+    RESULT_COND_FOLDERS = "검색 폴더 ({})"
+    RESULT_COND_EXTENSIONS = "확장자 필터"
+    RESULT_COND_FILENAMES = "파일명 필터"
+    RESULT_COND_NOT_USED = "사용 안 함 (모든 파일)"
+    RESULT_COND_MODE_EXTENSIONS = "검색 모드에 따라 {}만 검색"
+    RESULT_COND_MORE_FOLDERS = "외 {}개"
     RESULT_SUMMARY_FORMAT = "파일 수 : {file_count} | 문자열 수 : {match_count} | 시간 : {duration}s"
     RESULT_SUMMARY_SEARCHING_FORMAT = (
         "파일 {scanned_count}개 확인 · 찾은 파일 {file_count}개 · 문자열 {match_count}개 · {elapsed}"

@@ -44,3 +44,25 @@ def test_clear_hides_moving_bar(qtbot, mock_config_manager):
     view.set_summary_info(0, 0, 1.0, state_prefix=AppStrings.SUMMARY_PREFIX_SEARCHING, scanned_count=1)
     view.clear()
     assert not view.searching_bar.isVisible()
+
+
+def test_no_result_lists_conditions_as_entered(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    folders = ["D:/a", "D:/b", "D:/c", "D:/d", "D:/e"]
+    view.show_no_result_conditions("needle", "기본", folders, ["txt", "json"], ["String_", "Item_"])
+    text = view.empty_label.text()
+    assert "needle" in text
+    assert "D:/a" in text and "D:/c" in text and "D:/d" not in text
+    assert AppStrings.RESULT_COND_MORE_FOLDERS.format(2) in text
+    assert "txt, json" in text
+    assert "String_, Item_" in text and "String_*" not in text
+    assert "NFD" not in text
+
+
+def test_no_result_with_search_mode_shows_mode_scope_and_not_used(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    view.show_no_result_conditions("<id>", "JSON (정확히 일치)", ["D:/a"], [], [], mode_extensions=["json"])
+    text = view.empty_label.text()
+    assert "&lt;id&gt;" in text  # 검색어는 글자 그대로 보입니다.
+    assert AppStrings.RESULT_COND_MODE_EXTENSIONS.format(".json") in text
+    assert AppStrings.RESULT_COND_NOT_USED in text

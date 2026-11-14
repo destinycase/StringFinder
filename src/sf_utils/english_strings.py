@@ -246,11 +246,16 @@ ENGLISH_STRINGS = {
     "RESULT_EMPTY_MSG": "Start a search to see results.",
     "RESULT_SEARCHING_MSG": "Searching for \"{}\"...",
     "RESULT_EMPTY_NO_FOLDER": "Add a folder to search.",
-    "RESULT_EMPTY_NO_MATCH": (
-        "No results found for '{}'.\n\n"
-        "Decomposed (NFD) text and multilingual case relationships such as German ß and ss were already matched.\n\n"
-        "If characters look garbled or you suspect an encoding issue, check Text encoding in Settings."
-    ),
+    "RESULT_EMPTY_NO_MATCH_TITLE": "No results found for '{}'.",
+    "RESULT_EMPTY_ENCODING_HINT": "If characters look garbled or you suspect an encoding issue, check Text encoding in Settings.",
+    "RESULT_CONDITIONS_TITLE": "Search conditions used",
+    "RESULT_COND_MODE": "Search mode",
+    "RESULT_COND_FOLDERS": "Folders ({})",
+    "RESULT_COND_EXTENSIONS": "Extension filter",
+    "RESULT_COND_FILENAMES": "File name filter",
+    "RESULT_COND_NOT_USED": "Not used (all files)",
+    "RESULT_COND_MODE_EXTENSIONS": "Only {} by search mode",
+    "RESULT_COND_MORE_FOLDERS": "and {} more",
     "RESULT_SUMMARY_FORMAT": "Files: {file_count} | Strings: {match_count} | Time: {duration}s",
     "RESULT_SUMMARY_SEARCHING_FORMAT": (
         "{scanned_count} files checked · {file_count} files found · {match_count} strings · {elapsed}"

@@ -813,6 +813,15 @@ class SearchTab(QMainWindow):
                 return
             # 결과 뷰 파일명 강조 필터 동기화
             self.current_filename_filters = self.filename_panel.get_selected_filenames()
+            # 결과가 없을 때 보여 줄 이번 검색 조건입니다(7.1.14).
+            is_default_mode = special_mode == AppStrings.SPECIAL_SEARCH_OFF
+            self._last_search_conditions = {
+                "mode_label": self.search_panel.search_mode_combo.currentText(),
+                "folders": list(selected_folders),
+                "extensions": list(selected_exts) if is_default_mode else [],
+                "filenames": list(self.current_filename_filters),
+                "mode_extensions": None if is_default_mode else list(selected_exts),
+            }
             self.result_view_panel.set_filename_filters(self.current_filename_filters)
             self.result_view_panel.clear()
             self._clear_logs()
@@ -1111,10 +1120,14 @@ class SearchTab(QMainWindow):
             if found_count > 0:
                 self.result_view_panel.auto_select_first_result()
             else:
-                self.result_view_panel.show_empty_message(
-                    AppStrings.SUMMARY_PREFIX_FAILED if getattr(self, "_search_failed", False) else AppStrings.RESULT_EMPTY_NO_MATCH.format(self.search_panel.get_search_text()),
-                    emphasized=True,
-                )
+                if getattr(self, "_search_failed", False):
+                    self.result_view_panel.show_empty_message(AppStrings.SUMMARY_PREFIX_FAILED, emphasized=True)
+                else:
+                    conditions = getattr(self, "_last_search_conditions", None) or {
+                        "mode_label": self.search_panel.search_mode_combo.currentText(),
+                        "folders": [], "extensions": [], "filenames": [], "mode_extensions": None,
+                    }
+                    self.result_view_panel.show_no_result_conditions(self.search_panel.get_search_text(), **conditions)
             self.search_finished_with_data.emit()
         except Exception as e:
             logger.error(f"Error in _on_search_finished: {e}")

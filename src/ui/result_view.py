@@ -1,3 +1,4 @@
+import html
 import os
 import subprocess
 import sys
@@ -1361,7 +1362,56 @@ class ResultView(QWidget):
                 if w:
                     w.setVisible(has_results)
 
+    NO_RESULT_FOLDER_LIMIT = 3
+
+    def show_no_result_conditions(self, search_text, mode_label, folders, extensions, filenames, mode_extensions=None):
+        """결과가 없을 때 이번 검색에 쓴 조건(모드·폴더·확장자·파일명)을 나열합니다.
+
+        파일명 필터는 이름에 포함되는지로 비교하므로 입력한 그대로 보여 줍니다.
+        """
+        dark = self._is_dark_theme()
+        muted = "#8FB0CC" if dark else "#5A7896"
+        warn = "#F0C46A" if dark else "#B26B00"
+        esc = html.escape
+
+        def row(label, value_html):
+            return (
+                f'<tr><td style="color:{muted}; padding:2px 16px 2px 0;" valign="top">'
+                f'{esc(label)}</td><td style="padding:2px 0;">{value_html}</td></tr>'
+            )
+
+        not_used = f'<span style="color:{muted};">{esc(AppStrings.RESULT_COND_NOT_USED)}</span>'
+        is_default = mode_extensions is None
+        mode_html = esc(mode_label) if is_default else f'<span style="color:{warn};">{esc(mode_label)}</span>'
+        shown = list(folders[: self.NO_RESULT_FOLDER_LIMIT])
+        folder_html = "<br>".join(esc(folder) for folder in shown) or "-"
+        if len(folders) > len(shown):
+            more = AppStrings.RESULT_COND_MORE_FOLDERS.format(len(folders) - len(shown))
+            folder_html += f'<br><span style="color:{muted};">{esc(more)}</span>'
+        if is_default:
+            ext_html = esc(", ".join(extensions)) if extensions else not_used
+        else:
+            scope = ", ".join("." + ext.lstrip(".") for ext in mode_extensions)
+            ext_html = f'<span style="color:{muted};">{esc(AppStrings.RESULT_COND_MODE_EXTENSIONS.format(scope))}</span>'
+        name_html = esc(", ".join(filenames)) if filenames else not_used
+        rows = "".join((
+            row(AppStrings.RESULT_COND_MODE, mode_html),
+            row(AppStrings.RESULT_COND_FOLDERS.format(len(folders)), folder_html),
+            row(AppStrings.RESULT_COND_EXTENSIONS, ext_html),
+            row(AppStrings.RESULT_COND_FILENAMES, name_html),
+        ))
+        text = (
+            f'<div align="center">{esc(AppStrings.RESULT_EMPTY_NO_MATCH_TITLE.format(search_text))}</div><br>'
+            '<table align="center" style="font-size:13px; font-weight:400;">'
+            f'<tr><td colspan="2" style="color:{muted}; padding-bottom:4px;">{esc(AppStrings.RESULT_CONDITIONS_TITLE)}</td></tr>'
+            f"{rows}</table><br>"
+            f'<div align="center" style="font-size:13px; font-weight:400;">{esc(AppStrings.RESULT_EMPTY_ENCODING_HINT)}</div>'
+        )
+        self.show_empty_message(text, emphasized=True)
+        self.empty_label.setTextFormat(Qt.TextFormat.RichText)
+
     def show_empty_message(self, text, is_error=False, emphasized=False):
+        self.empty_label.setTextFormat(Qt.TextFormat.AutoText)
         self.empty_label.setText(text)
         if is_error:
             self.empty_label.setStyleSheet(UIStyles.STYLE_EMPTY_LABEL.format(Constants.COLOR_RED))
