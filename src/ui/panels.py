@@ -1097,6 +1097,8 @@ class ExtensionFilterPanel(DenseFilterPanel):
         toggle_layout.addWidget(self.sel_all_btn)
         toggle_layout.addWidget(self.desel_all_btn)
         main_layout.addLayout(toggle_layout)
+        # 목록이 숨으면(검색 모드) 남는 공간을 채워 안내가 위에 붙어 있게 합니다. 평소에는 목록이 공간을 씁니다.
+        main_layout.addStretch()
         self.status_label = QLabel(self)
         self.status_label.setWordWrap(True)
         self.status_label.hide()
@@ -1122,6 +1124,12 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.ext_list.empty_hint_suppressed = not is_off
         self.ext_list.refresh_empty_hint()
         self.values_only_notice.setVisible(not is_off)
+        # 검색 모드를 쓰는 동안은 확장자 목록·입력·버튼을 숨기고 안내만 보입니다.
+        # 숨기기만 하므로 목록과 체크 여부는 그대로이며, 기본 모드로 돌아오면 다시 보입니다.
+        for widget in (self.ext_list, self.ext_edit, self.add_btn, self.sel_all_btn, self.desel_all_btn):
+            widget.setVisible(is_off)
+        if not is_off:
+            self.extension_input_notice.hide()
         self._refresh_status()
         self.special_mode_changed.emit(text)
         self.filter_changed.emit()
