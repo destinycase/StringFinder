@@ -119,8 +119,14 @@ class FilterItemWidget(QWidget):
         layout.addWidget(self.drag_handle)
         # 손잡이와 체크박스 사이는 다른 간격보다 좁게 둡니다.
         layout.addSpacing(3 - layout.spacing())
-        self.checkbox = QCheckBox(text)
+        # 이름은 체크박스 글자가 아닌 별도 라벨입니다. 라벨은 마우스 입력을 목록으로 넘겨
+        # 누르면 행 선택·끌기가 되고, 체크는 체크 상자를 눌러야만 바뀝니다(7.1.18).
+        self.checkbox = QCheckBox()
+        self.checkbox.setAccessibleName(text)
         self.checkbox.setChecked(checked)
+        self.name_label = QLabel(text)
+        self.name_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         if on_change:
             self.checkbox.stateChanged.connect(on_change)
         self.delete_btn = QToolButton()
@@ -133,6 +139,8 @@ class FilterItemWidget(QWidget):
         if on_delete:
             self.delete_btn.clicked.connect(on_delete)
         layout.addWidget(self.checkbox)
+        layout.addSpacing(2 - layout.spacing())
+        layout.addWidget(self.name_label)
         layout.addStretch()
         layout.addWidget(self.delete_btn)
 
@@ -154,7 +162,11 @@ class FilterItemWidget(QWidget):
             layout.setContentsMargins(2 + indent, margins.top(), margins.right(), margins.bottom())
 
     def text(self):
-        return self.checkbox.text()
+        return self.name_label.text()
+
+    def set_text(self, text):
+        self.name_label.setText(text)
+        self.checkbox.setAccessibleName(text)
 
     def isChecked(self):
         return self.checkbox.isChecked()
@@ -185,16 +197,16 @@ class FolderGroupHeader(FilterItemWidget):
         self.toggle_btn.setFixedSize(16, 16)
         self.toggle_btn.setToolTip(AppStrings.FOLDER_GROUP_TOGGLE_TOOLTIP)
         self.toggle_btn.clicked.connect(lambda: self._on_toggle(self) if self._on_toggle else None)
-        font = self.checkbox.font()
+        font = self.name_label.font()
         font.setBold(True)
-        self.checkbox.setFont(font)
+        self.name_label.setFont(font)
         self.checkbox.setTristate(True)
         self.checkbox.setToolTip(AppStrings.FOLDER_GROUP_CHECK_TOOLTIP)
         # Qt의 세 단계 순환 대신 패널이 "모두 선택/모두 해제"로 정합니다.
         self.checkbox.clicked.connect(lambda _checked=False: self._on_check(self) if self._on_check else None)
         self.count_label = QLabel()
         self.count_label.setStyleSheet("QLabel { color: #888; }")
-        layout.insertWidget(layout.indexOf(self.checkbox) + 1, self.count_label)
+        layout.insertWidget(layout.indexOf(self.name_label) + 1, self.count_label)
         layout.insertWidget(layout.indexOf(self.count_label) + 1, self.toggle_btn)
         self.set_collapsed(collapsed)
 
@@ -219,8 +231,8 @@ class FolderGroupHeader(FilterItemWidget):
 class FilterListWidget(QListWidget):
     """Scroll filter text normally, but keep row actions outside the viewport.
 
-    항목은 손잡이·이름 글자·빈 공간을 끌어서, 또는 Alt+↑/↓로 순서를 옮길 수 있습니다.
-    이름 글자(체크박스)는 누른 채 움직이면 끌기로, 움직이지 않고 떼면 체크로 처리합니다.
+    항목은 손잡이·이름·빈 공간을 끌어서, 또는 Alt+↑/↓로 순서를 옮길 수 있습니다.
+    이름은 체크박스와 따로 그려 누르면 행 선택·끌기만 하고, 체크는 체크 상자로만 바꿉니다.
     Qt 기본 드래그는 항목을 지웠다 다시 넣으면서 행 위젯을 잃으므로 이동을 직접 처리합니다.
     """
 
@@ -235,7 +247,6 @@ class FilterListWidget(QListWidget):
         self._drag_row = -1
         self._drag_origin = QPoint()
         self._dragging = False
-        self._checkbox_press = None  # (체크박스, 누른 화면 위치, 행)
         self._drop_indicator = QFrame(self.viewport())
         self._drop_indicator.setFrameShape(QFrame.Shape.HLine)
         self._drop_indicator.setStyleSheet("QFrame { background-color: palette(highlight); border: none; }")
@@ -269,7 +280,6 @@ class FilterListWidget(QListWidget):
             button.setParent(self._action_column)
             button.hide()
             self._actions.append((item, button))
-            widget.checkbox.installEventFilter(self)
             # Removing the action must not remove the original row-height floor.
             widget.setMinimumHeight(20 + item_layout.contentsMargins().top()
                                     + item_layout.contentsMargins().bottom())
@@ -300,11 +310,6 @@ class FilterListWidget(QListWidget):
         self._action_column.raise_()
 
     def eventFilter(self, watched, event):
-        if isinstance(watched, QCheckBox) and event.type() in (
-            QEvent.Type.MouseButtonPress, QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease
-        ):
-            if self._handle_checkbox_drag(watched, event):
-                return True
         if watched is self.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
             self._position_actions()
         return super().eventFilter(watched, event)
@@ -393,47 +398,6 @@ class FilterListWidget(QListWidget):
         self._dragging = False
         self._drop_indicator.hide()
         self.viewport().unsetCursor()
-
-    def _row_of_checkbox(self, checkbox) -> int:
-        for row in range(self.count()):
-            widget = self.itemWidget(self.item(row))
-            if isinstance(widget, FilterItemWidget) and widget.checkbox is checkbox:
-                return row
-        return -1
-
-    def _handle_checkbox_drag(self, checkbox, event) -> bool:
-        """이름 글자(체크박스)에서 시작한 끌기를 처리합니다. 끌기로 처리했으면 True(체크 토글 없음)."""
-        etype = event.type()
-        global_pos = event.globalPosition().toPoint()
-        if etype == QEvent.Type.MouseButtonPress:
-            if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
-                self._checkbox_press = (checkbox, global_pos, self._row_of_checkbox(checkbox))
-            return False
-        press = self._checkbox_press
-        if press is None or press[0] is not checkbox:
-            return False
-        if etype == QEvent.Type.MouseMove:
-            if not event.buttons() & Qt.MouseButton.LeftButton or press[2] < 0:
-                return False
-            if not self._dragging:
-                if (global_pos - press[1]).manhattanLength() < QApplication.startDragDistance():
-                    return False
-                checkbox.setDown(False)
-                self._drag_row = press[2]
-                self._dragging = True
-                self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
-            self._drag_move(self.viewport().mapFromGlobal(global_pos))
-            return True
-        # 버튼을 뗐을 때
-        self._checkbox_press = None
-        if self._dragging and event.button() == Qt.MouseButton.LeftButton:
-            source = self._drag_row
-            gap = self.drop_gap_at(self.viewport().mapFromGlobal(global_pos).y())
-            checkbox.setDown(False)
-            self._finish_drag()
-            self.move_row(source, gap)
-            return True
-        return False
 
     def _drag_move(self, position):
         # 목록 위·아래 가장자리에서는 한 칸씩 스크롤해 보이지 않는 위치로도 옮길 수 있게 합니다.
@@ -983,7 +947,7 @@ class FolderFilterPanel(DenseFilterPanel):
         if not self._is_header_row(header_row) or not isinstance(name, str) or not name.strip():
             return False
         header = cast(FolderGroupHeader, self._widget(header_row))
-        header.checkbox.setText(name.strip())
+        header.set_text(name.strip())
         self.filter_changed.emit()
         return True
 
