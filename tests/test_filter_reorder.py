@@ -152,3 +152,32 @@ def test_folder_order_reaches_search_and_survives_session(qtbot, mock_config_man
     assert captured[0][C.PAYLOAD_SEARCH_PATHS] == expected
     restored.close()
     tab.close()
+
+
+@KINDS
+def test_drag_from_item_text_moves_row_without_toggling(qtbot, kind):
+    """이름 글자를 누르고 끌어도 옮겨지고, 체크는 바뀌지 않습니다(7.1.17)."""
+    _, listing = make_panel(qtbot, kind)
+    checkbox = listing.itemWidget(listing.item(0)).checkbox
+    viewport = listing.viewport()
+    start = QPoint(checkbox.width() - 6, checkbox.height() // 2)
+    target_y = listing.visualItemRect(listing.item(2)).bottom() - 1
+    end = checkbox.mapFrom(viewport, QPoint(checkbox.mapTo(viewport, start).x(), target_y))
+    QTest.mousePress(checkbox, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    QTest.mouseMove(checkbox, QPoint(start.x(), start.y() + 20))
+    QTest.mouseMove(checkbox, end)
+    assert listing._drop_indicator.isVisible()
+    QTest.mouseRelease(checkbox, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    assert not listing._drop_indicator.isVisible()
+    assert rows(listing) == [("bbb", False), ("ccc", True), ("aaa", True)]
+
+
+@KINDS
+def test_small_jitter_on_item_text_still_toggles(qtbot, kind):
+    _, listing = make_panel(qtbot, kind)
+    checkbox = listing.itemWidget(listing.item(1)).checkbox
+    start = QPoint(checkbox.width() - 6, checkbox.height() // 2)
+    QTest.mousePress(checkbox, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    QTest.mouseMove(checkbox, QPoint(start.x() + 1, start.y()))
+    QTest.mouseRelease(checkbox, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(start.x() + 1, start.y()))
+    assert rows(listing) == [("aaa", True), ("bbb", True), ("ccc", True)]

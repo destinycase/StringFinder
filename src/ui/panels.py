@@ -219,7 +219,8 @@ class FolderGroupHeader(FilterItemWidget):
 class FilterListWidget(QListWidget):
     """Scroll filter text normally, but keep row actions outside the viewport.
 
-    항목은 손잡이나 빈 공간을 끌어서, 또는 Alt+↑/↓로 순서를 옮길 수 있습니다.
+    항목은 손잡이·이름 글자·빈 공간을 끌어서, 또는 Alt+↑/↓로 순서를 옮길 수 있습니다.
+    이름 글자(체크박스)는 누른 채 움직이면 끌기로, 움직이지 않고 떼면 체크로 처리합니다.
     Qt 기본 드래그는 항목을 지웠다 다시 넣으면서 행 위젯을 잃으므로 이동을 직접 처리합니다.
     """
 
@@ -234,6 +235,7 @@ class FilterListWidget(QListWidget):
         self._drag_row = -1
         self._drag_origin = QPoint()
         self._dragging = False
+        self._checkbox_press = None  # (체크박스, 누른 화면 위치, 행)
         self._drop_indicator = QFrame(self.viewport())
         self._drop_indicator.setFrameShape(QFrame.Shape.HLine)
         self._drop_indicator.setStyleSheet("QFrame { background-color: palette(highlight); border: none; }")
@@ -267,6 +269,7 @@ class FilterListWidget(QListWidget):
             button.setParent(self._action_column)
             button.hide()
             self._actions.append((item, button))
+            widget.checkbox.installEventFilter(self)
             # Removing the action must not remove the original row-height floor.
             widget.setMinimumHeight(20 + item_layout.contentsMargins().top()
                                     + item_layout.contentsMargins().bottom())
@@ -297,6 +300,11 @@ class FilterListWidget(QListWidget):
         self._action_column.raise_()
 
     def eventFilter(self, watched, event):
+        if isinstance(watched, QCheckBox) and event.type() in (
+            QEvent.Type.MouseButtonPress, QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease
+        ):
+            if self._handle_checkbox_drag(watched, event):
+                return True
         if watched is self.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
             self._position_actions()
         return super().eventFilter(watched, event)
@@ -386,6 +394,56 @@ class FilterListWidget(QListWidget):
         self._drop_indicator.hide()
         self.viewport().unsetCursor()
 
+    def _row_of_checkbox(self, checkbox) -> int:
+        for row in range(self.count()):
+            widget = self.itemWidget(self.item(row))
+            if isinstance(widget, FilterItemWidget) and widget.checkbox is checkbox:
+                return row
+        return -1
+
+    def _handle_checkbox_drag(self, checkbox, event) -> bool:
+        """이름 글자(체크박스)에서 시작한 끌기를 처리합니다. 끌기로 처리했으면 True(체크 토글 없음)."""
+        etype = event.type()
+        global_pos = event.globalPosition().toPoint()
+        if etype == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+                self._checkbox_press = (checkbox, global_pos, self._row_of_checkbox(checkbox))
+            return False
+        press = self._checkbox_press
+        if press is None or press[0] is not checkbox:
+            return False
+        if etype == QEvent.Type.MouseMove:
+            if not event.buttons() & Qt.MouseButton.LeftButton or press[2] < 0:
+                return False
+            if not self._dragging:
+                if (global_pos - press[1]).manhattanLength() < QApplication.startDragDistance():
+                    return False
+                checkbox.setDown(False)
+                self._drag_row = press[2]
+                self._dragging = True
+                self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            self._drag_move(self.viewport().mapFromGlobal(global_pos))
+            return True
+        # 버튼을 뗐을 때
+        self._checkbox_press = None
+        if self._dragging and event.button() == Qt.MouseButton.LeftButton:
+            source = self._drag_row
+            gap = self.drop_gap_at(self.viewport().mapFromGlobal(global_pos).y())
+            checkbox.setDown(False)
+            self._finish_drag()
+            self.move_row(source, gap)
+            return True
+        return False
+
+    def _drag_move(self, position):
+        # 목록 위·아래 가장자리에서는 한 칸씩 스크롤해 보이지 않는 위치로도 옮길 수 있게 합니다.
+        scroll = self.verticalScrollBar()
+        if position.y() < self.AUTO_SCROLL_MARGIN:
+            scroll.setValue(scroll.value() - scroll.singleStep())
+        elif position.y() > self.viewport().height() - self.AUTO_SCROLL_MARGIN:
+            scroll.setValue(scroll.value() + scroll.singleStep())
+        self._show_drop_indicator(self.drop_gap_at(position.y()))
+
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
         if event.button() == Qt.MouseButton.LeftButton:
@@ -404,13 +462,7 @@ class FilterListWidget(QListWidget):
                 return
             self._dragging = True
             self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
-        # 목록 위·아래 가장자리에서는 한 칸씩 스크롤해 보이지 않는 위치로도 옮길 수 있게 합니다.
-        scroll = self.verticalScrollBar()
-        if position.y() < self.AUTO_SCROLL_MARGIN:
-            scroll.setValue(scroll.value() - scroll.singleStep())
-        elif position.y() > self.viewport().height() - self.AUTO_SCROLL_MARGIN:
-            scroll.setValue(scroll.value() + scroll.singleStep())
-        self._show_drop_indicator(self.drop_gap_at(position.y()))
+        self._drag_move(position)
 
     def mouseReleaseEvent(self, event):
         if self._dragging and event.button() == Qt.MouseButton.LeftButton:
