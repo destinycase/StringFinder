@@ -252,6 +252,9 @@ ENGLISH_STRINGS = {
         "If characters look garbled or you suspect an encoding issue, check Text encoding in Settings."
     ),
     "RESULT_SUMMARY_FORMAT": "Files: {file_count} | Strings: {match_count} | Time: {duration}s",
+    "RESULT_SUMMARY_SEARCHING_FORMAT": (
+        "{scanned_count} files checked · {file_count} files found · {match_count} strings · {elapsed} — results are still coming in"
+    ),
     "SKIPPED_FILES_COUNT": "⚠ Skipped files: {}",
     "TOTAL_MATCH_LIMIT_REACHED": "⚠ result limit reached ({})",
     "SKIPPED_FILES_VIEW_BUTTON": "View file list",
@@ -284,9 +287,9 @@ ENGLISH_STRINGS = {
         "[Context preview skipped]\nThe target line is too far away, so reading was stopped to protect the UI."
     ),
     "CONTEXT_PREVIEW_TRUNCATED": "\n[Long context; only part is displayed]",
-    "SUMMARY_PREFIX_SEARCHING": "[Searching] ",
+    "SUMMARY_PREFIX_SEARCHING": "Searching… ",
     "SUMMARY_PREFIX_STOPPED": "[Search stopped] ",
-    "SUMMARY_PREFIX_FINISHED": "[Search complete] ",
+    "SUMMARY_PREFIX_FINISHED": "✓ Search complete | ",
     "SUMMARY_PREFIX_FAILED": "[Search failed · incomplete results] ",
     "RESULT_MSG_SKIPPED_SIMPLE": "{} matches found. ({} files skipped)",
     "RESULT_MSG_SKIPPED_WITH_SHEETS": "{} matches found. ({} files skipped, {} sheets skipped)",

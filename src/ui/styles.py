@@ -87,13 +87,13 @@ class UIStyles:
     def get_summary_label_style(cls, is_dark_mode: bool, state: str = "") -> str:
         """테마(다크/라이트)에 대응하는 검색 결과 요약 레이블 스타일을 반환합니다."""
         colors = {
-            "finished": ("#E4EFFB", "#2563A8"),
+            "finished": ("#E8F5E0", "#2F7A12"),
             "stopped": ("#EEF0F3", "#4B5563"),
         }
         if is_dark_mode:
             colors.update(
                 {
-                    "finished": ("#1E3A5F", "#8CB8E8"),
+                    "finished": ("#23391A", "#97C459"),
                     "stopped": ("#30343B", "#AEB7C4"),
                 }
             )

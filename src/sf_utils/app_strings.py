@@ -288,6 +288,9 @@ class AppStrings:
         "글자가 깨져 보이는 등 인코딩 문제가 의심되면 설정의 문자 인코딩을 확인하세요."
     )
     RESULT_SUMMARY_FORMAT = "파일 수 : {file_count} | 문자열 수 : {match_count} | 시간 : {duration}s"
+    RESULT_SUMMARY_SEARCHING_FORMAT = (
+        "파일 {scanned_count}개 확인 · 찾은 파일 {file_count}개 · 문자열 {match_count}개 · {elapsed} — 결과가 계속 늘어납니다"
+    )
     SKIPPED_FILES_COUNT = "⚠ 건너뛴 파일 수: {}"
     TOTAL_MATCH_LIMIT_REACHED = "⚠ 결과 수량 제한 도달 ({})"
     SKIPPED_FILES_VIEW_BUTTON = "파일 목록 보기"
@@ -318,9 +321,9 @@ class AppStrings:
     CONTEXT_PREVIEW_READ_FAILED = "[문맥 미리보기 읽기 실패]\n{}"
     CONTEXT_PREVIEW_SCAN_LIMIT = "[문맥 미리보기 생략]\n대상 줄이 너무 멀어 UI 보호를 위해 읽기를 중단했습니다."
     CONTEXT_PREVIEW_TRUNCATED = "\n[문맥이 길어 일부만 표시됩니다]"
-    SUMMARY_PREFIX_SEARCHING = "[검색 중] "
+    SUMMARY_PREFIX_SEARCHING = "검색 중… "
     SUMMARY_PREFIX_STOPPED = "[검색 중지] "
-    SUMMARY_PREFIX_FINISHED = "[검색 완료] "
+    SUMMARY_PREFIX_FINISHED = "✓ 검색 완료 | "
     SUMMARY_PREFIX_FAILED = "[검색 오류 · 결과 불완전] "
     RESULT_MSG_SKIPPED_SIMPLE = "{}개의 검색 결과가 발견되었습니다. ({}개 파일 스킵)"
     RESULT_MSG_SKIPPED_WITH_SHEETS = "{}개의 검색 결과가 발견되었습니다. ({}개 파일 스킵, {}개 시트 스킵)"

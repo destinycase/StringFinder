@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QProgressBar,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -565,12 +566,20 @@ class ResultView(QWidget):
         self.result_splitter.setStretchFactor(0, 1)
         self.result_splitter.setStretchFactor(1, 1)
         main_layout.addLayout(self.summary_row)
+        # 검색 중에만 보이는 움직이는 막대입니다. 전체 파일 수를 미리 세지 않으므로 진행률(%)은 없습니다.
+        self.searching_bar = QProgressBar()
+        self.searching_bar.setObjectName("searchingBar")
+        self.searching_bar.setRange(0, 0)
+        self.searching_bar.setTextVisible(False)
+        self.searching_bar.setFixedHeight(4)
+        self.searching_bar.setVisible(False)
+        main_layout.addWidget(self.searching_bar)
         main_layout.addLayout(self.result_filter_layout)
         main_layout.addWidget(self.result_splitter, 1)
         self.empty_label = QLabel(AppStrings.RESULT_EMPTY_MSG)
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet(UIStyles.STYLE_SELECTION_INFO)
-        main_layout.insertWidget(1, self.empty_label, 1)
+        main_layout.insertWidget(2, self.empty_label, 1)  # 요약 줄·검색 중 막대 아래
         self.result_splitter.setVisible(False)
         self._apply_theme_style()
         self.apply_display_density()
@@ -1181,14 +1190,27 @@ class ResultView(QWidget):
         QTimer.singleShot(300, self._update_pagination_ui)
         self.update_ui_visibility()
 
-    def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix=""):
-        """상단 요약 정보를 업데이트합니다."""
+    def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix="", scanned_count=None):
+        """상단 요약 정보를 업데이트합니다. 검색 중에는 확인한 파일 수·경과 시간을 보여 주고 막대를 움직입니다."""
         # 요약 색은 문구 일부가 아니라 정해진 상태 접두어와 같은지로 정합니다(검수 D-4).
         state = {
             AppStrings.SUMMARY_PREFIX_SEARCHING: "searching",
             AppStrings.SUMMARY_PREFIX_STOPPED: "stopped",
             AppStrings.SUMMARY_PREFIX_FAILED: "stopped",
         }.get(state_prefix, "finished")
+        self.searching_bar.setVisible(state == "searching")
+        if state == "searching":
+            seconds = max(0, int(duration))
+            summary_text = AppStrings.RESULT_SUMMARY_SEARCHING_FORMAT.format(
+                scanned_count=f"{max(0, int(scanned_count or 0)):,}",
+                file_count=f"{file_count:,}",
+                match_count=f"{match_count:,}",
+                elapsed=f"{seconds // 60:02d}:{seconds % 60:02d}",
+            )
+            self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(self._is_dark_theme(), state))
+            self.summary_label.setText(state_prefix + summary_text)
+            self.summary_label.setVisible(True)
+            return
         if file_count > 0 or skip_count > 0 or state_prefix == AppStrings.SUMMARY_PREFIX_FAILED:
             summary_text = AppStrings.RESULT_SUMMARY_FORMAT.format(
                 file_count=file_count,
@@ -1243,6 +1265,7 @@ class ResultView(QWidget):
         # [UI/UX] 검색 시작 시 이전 검색의 요약 정보를 숨깁니다.
         self.summary_label.setText("")
         self.summary_label.setVisible(False)
+        self.searching_bar.setVisible(False)
         self.set_total_match_limit_reached(0)
         self.set_skipped_files([], total_count=0)
         self.selected_file_path = ""

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PySide6.QtCore import QByteArray, QSignalBlocker, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QDialog,
     QDockWidget,
@@ -863,6 +864,8 @@ class SearchTab(QMainWindow):
             self.total_matches = 0
             self.total_files = 0
             self.scanned_count = 0
+            # 첫 결과를 기다리지 않고 바로 "검색 중" 줄과 움직이는 막대를 보입니다(7.1.11).
+            self._update_realtime_summary(force=True)
             if self.worker:
                 QThreadPool.globalInstance().start(self.worker)
                 # Record after dispatch, not on Enter or failed validation.
@@ -993,15 +996,14 @@ class SearchTab(QMainWindow):
             
             # [Fix] 첫 매칭 전에는 요약을 그리지 않도록 제한 (사용자 요청 사항)
             # 단, 검색이 명시적으로 종료/중단되었을 때는 결과를 보여줍니다.
-            if not force and self.total_files == 0:
-                return
-
+            # 검색 중에는 결과가 없어도 확인한 파일 수·경과 시간을 보여 검색이 진행 중임을 알립니다(7.1.11).
             self.result_view_panel.set_summary_info(
                 file_count=self.total_files,
                 match_count=self.total_matches,
                 duration=total_elapsed,
                 skip_count=total_skipped,
-                state_prefix=status_text
+                state_prefix=status_text,
+                scanned_count=self.scanned_count,
             )
         
         self.last_summary_update_time = now
@@ -1022,10 +1024,8 @@ class SearchTab(QMainWindow):
         self.scanned_count = current
         self.progress_update_requested.emit(current, total, True)
         
-        # [Fix] 실시간성 강화: 결과가 있을 때만 1초 주기로 요약 정보 갱신을 시도합니다.
-        if self.total_files > 0:
-            # 진행 중일 때는 현재까지의 리스트 길이를 사용하므로 skipped_count=0 (기본값)
-            self._update_realtime_summary()
+        # 결과가 없어도 1초 주기로 확인한 파일 수·경과 시간을 갱신합니다.
+        self._update_realtime_summary()
 
     def _on_results_found(self, results):
         """새로운 검색 결과들을 전달받아 버퍼에 쌓고 수치를 갱신합니다."""
@@ -1056,6 +1056,10 @@ class SearchTab(QMainWindow):
             final_total = max(self.scanned_count, 1)
             self.progress_update_requested.emit(final_total, final_total, False)
             self.result_view_panel.set_searching_state(False)  # 검색 완료/중지 시 버튼 활성화
+            # 다른 프로그램을 보고 있으면 작업 표시줄 아이콘을 깜빡여 끝났음을 알립니다(7.1.11).
+            window = self.window()
+            if window is not None and not window.isActiveWindow():
+                QApplication.alert(window)
 
             # [신규] 검색 종료 시 전역 정렬 트리거 (매치 수 기준 등)
             self.result_view_panel.sort_results()
