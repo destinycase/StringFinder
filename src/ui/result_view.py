@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from functools import lru_cache
 from typing import cast
-from PySide6.QtCore import QByteArray, QItemSelectionModel, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QItemSelectionModel, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtCore import QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
     QAction,
@@ -598,6 +598,25 @@ class ResultView(QWidget):
             lambda text, key=config_key: self._on_context_line_count_changed(key, text)
         )
         return combo
+
+    def reload_shared_settings(self):
+        """다른 탭에서 바꾼 앞뒤 줄 수 설정을 이 탭에도 반영합니다."""
+        changed = False
+        for combo, key in (
+            (self.context_before_combo, Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES),
+            (self.context_after_combo, Constants.CONFIG_KEY_CONTEXT_AFTER_LINES),
+        ):
+            try:
+                value = int(self.config_manager.get(key, self.CONTEXT_RADIUS))
+            except (AttributeError, TypeError, ValueError):
+                value = self.CONTEXT_RADIUS
+            value = min(max(value, 0), self.CONTEXT_MAX_RADIUS)
+            if combo.currentIndex() != value:
+                with QSignalBlocker(combo):
+                    combo.setCurrentIndex(value)
+                changed = True
+        if changed and self._current_match_item is not None:
+            self._show_context_preview(self._current_match_item)
 
     def _on_context_line_count_changed(self, config_key, text):
         try:

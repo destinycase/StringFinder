@@ -208,6 +208,7 @@ class MainWindow(QMainWindow):
         sb.addPermanentWidget(self.status_actions)
 
         self.tab_widget.currentChanged.connect(self._sync_status_bar_with_active_tab)
+        self.tab_widget.currentChanged.connect(self._reload_shared_settings_in_tab)
         self._load_all_tabs()
 
     def _show_search_help(self):
@@ -473,6 +474,11 @@ class MainWindow(QMainWindow):
         dialog.display_density_changed.connect(self._apply_display_density)
         if dialog.exec():
             self._apply_theme()
+
+    def _reload_shared_settings_in_tab(self, index):
+        tab = self.tab_widget.widget(index)
+        if isinstance(tab, SearchTab):
+            tab.reload_shared_settings()
 
     def _apply_display_density(self):
         for index in range(self.tab_widget.count()):

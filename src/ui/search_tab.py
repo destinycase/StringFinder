@@ -440,6 +440,11 @@ class SearchTab(QMainWindow):
         if not self._pending_logs:
             self._log_throttle_timer.stop()
 
+    def reload_shared_settings(self):
+        """모든 탭이 함께 쓰는 설정·검색 히스토리를 다시 읽습니다. 탭을 바꿔 볼 때 부릅니다."""
+        self._load_histories()
+        self.result_view_panel.reload_shared_settings()
+
     def _load_histories(self):
         """Reload saved search history without changing the current input."""
         self.search_panel.search_combo.load_history(self.config_manager.get_history())
