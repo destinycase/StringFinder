@@ -212,7 +212,8 @@ class FolderGroupHeader(FilterItemWidget):
         self.checkbox.clicked.connect(lambda _checked=False: self._on_check(self) if self._on_check else None)
         self.count_label = QLabel()
         self.count_label.setStyleSheet("QLabel { color: #888; }")
-        layout.insertWidget(layout.indexOf(self.name_label) + 1, self.count_label)
+        # 개수는 줄의 오른쪽 끝(삭제 단추 앞)에 둡니다(7.1.23).
+        layout.insertWidget(layout.indexOf(self.delete_btn), self.count_label)
         # 펼치기 단추는 체크 상자와 이름 사이에 둡니다(7.1.22).
         layout.insertWidget(layout.indexOf(self.name_label), self.toggle_btn)
         self.set_collapsed(collapsed)
