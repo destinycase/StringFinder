@@ -126,6 +126,7 @@ class Constants:
     CONFIG_KEY_DOCK_LAYOUT_STATE = "dock_layout_state"
     CONFIG_KEY_LOCK_DOCK_LAYOUT = "lock_dock_layout"
     CONFIG_KEY_TABS = "tabs"
+    CONFIG_KEY_CURRENT_TAB = "current_tab"
     OBJ_NAME_SEARCH_DOCK = "SearchDock"
     OBJ_NAME_FOLDER_DOCK = "FolderDock"
     

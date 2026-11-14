@@ -852,7 +852,7 @@ class SearchTab(QMainWindow):
             exclude_binary = self.config_manager.get_exclude_binary()
             self.result_view_panel.set_searching_state(True)  # 검색 중 버튼 비활성화
             self.result_view_panel.show_empty_message(
-                AppStrings.RESULT_SEARCHING_MSG.format(search_text), emphasized=True
+                AppStrings.RESULT_SEARCHING_MSG.format(search_text), emphasized=True, plain=True
             )
             self.result_view_panel.set_search_context(search_text, special_mode)
 

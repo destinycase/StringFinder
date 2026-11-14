@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
         self._search_lock_owner = None
         self._layout_tab = None
         self._shared_layout_applied = False
+        self._restoring_tabs = False
         self._init_ui()
         from sf_utils.logger import qt_log_handler
 
@@ -421,6 +422,15 @@ class MainWindow(QMainWindow):
         for i in range(self.tab_widget.count()):
             tabs.append(self.tab_widget.tabText(i))
         self.config_manager.set_tab_order(tabs)
+        self._save_current_tab()
+
+    def _save_current_tab(self):
+        """보이는 탭 이름을 저장해 다시 켰을 때 그 탭을 보여 줍니다. 시작 중 탭 복원 동안에는 저장하지 않습니다."""
+        if self._restoring_tabs:
+            return
+        index = self.tab_widget.currentIndex()
+        if index >= 0:
+            self.config_manager.set_current_tab(self.tab_widget.tabText(index))
 
     def _sync_status_bar_with_active_tab(self, index):
         """Only the active tab's file-selection conditions belong in the status bar."""
@@ -449,7 +459,15 @@ class MainWindow(QMainWindow):
 
     def _load_all_tabs(self):
         """프로그램 시작 시 저장된 모든 탭을 정해진 순서로 불러옵니다."""
+        self._restoring_tabs = True
+        try:
+            self._restore_saved_tabs()
+        finally:
+            self._restoring_tabs = False
+
+    def _restore_saved_tabs(self):
         ordered_tabs = self.config_manager.get_tab_order()
+        current_name = self.config_manager.get_current_tab()
         all_sessions = self.config_manager.get_all_session_names()
         loaded_tabs = set()
         failed_tabs = set()
@@ -482,6 +500,12 @@ class MainWindow(QMainWindow):
                     break
                 number += 1
             self.add_new_tab(name=title)
+            return
+        # 닫기 전에 보던 탭을 다시 보여 줍니다. 그 탭이 없거나 불러오지 못했으면 지금 탭을 그대로 둡니다.
+        for i in range(self.tab_widget.count()):
+            if current_name and self.tab_widget.tabText(i) == current_name:
+                self.tab_widget.setCurrentIndex(i)
+                break
 
 
     def _show_settings(self):
@@ -505,6 +529,7 @@ class MainWindow(QMainWindow):
         self._layout_tab = tab if isinstance(tab, SearchTab) else None
         if isinstance(tab, SearchTab):
             tab.reload_shared_settings()
+        self._save_current_tab()
 
     def _apply_display_density(self):
         for index in range(self.tab_widget.count()):

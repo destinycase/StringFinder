@@ -98,6 +98,7 @@ class ConfigManager:
             Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT: False,
             Constants.CONFIG_KEY_EXCLUDE_BINARY: True,
             Constants.CONFIG_KEY_TABS: [],
+            Constants.CONFIG_KEY_CURRENT_TAB: "",
             Constants.CONFIG_KEY_ADVANCED: {
                 key: spec["default"]
                 for key, spec in Constants.ADVANCED_SETTING_SPECS.items()
@@ -609,6 +610,20 @@ class ConfigManager:
         """탭 순서를 저장한다."""
         with self._config_lock:
             self._config[Constants.CONFIG_KEY_TABS] = list(tabs) if isinstance(tabs, list) else []
+        self.save()
+
+    def get_current_tab(self):
+        """마지막으로 보던 탭 이름을 반환한다(없으면 빈 문자열)."""
+        with self._config_lock:
+            name = self._config.get(Constants.CONFIG_KEY_CURRENT_TAB, "")
+            return name if isinstance(name, str) else ""
+
+    def set_current_tab(self, name):
+        """마지막으로 보던 탭 이름을 저장한다."""
+        with self._config_lock:
+            if self._config.get(Constants.CONFIG_KEY_CURRENT_TAB) == name:
+                return
+            self._config[Constants.CONFIG_KEY_CURRENT_TAB] = name if isinstance(name, str) else ""
         self.save()
 
     def _sanitize_session_name(self, name: str) -> str:

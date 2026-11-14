@@ -1410,8 +1410,9 @@ class ResultView(QWidget):
         self.show_empty_message(text, emphasized=True)
         self.empty_label.setTextFormat(Qt.TextFormat.RichText)
 
-    def show_empty_message(self, text, is_error=False, emphasized=False):
-        self.empty_label.setTextFormat(Qt.TextFormat.AutoText)
+    def show_empty_message(self, text, is_error=False, emphasized=False, plain=False):
+        # 검색어처럼 사용자가 입력한 글이 들어가면 plain=True로 서식 해석 없이 글자 그대로 보여 줍니다.
+        self.empty_label.setTextFormat(Qt.TextFormat.PlainText if plain else Qt.TextFormat.AutoText)
         self.empty_label.setText(text)
         if is_error:
             self.empty_label.setStyleSheet(UIStyles.STYLE_EMPTY_LABEL.format(Constants.COLOR_RED))
