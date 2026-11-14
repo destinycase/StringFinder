@@ -339,7 +339,8 @@ class SearchResultModel(QAbstractTableModel):
             path = row_data[3] if len(row_data) > 3 else ""
             if role == Qt.ItemDataRole.DisplayRole:
                 short = self.short_note_for(path)
-                return f"<span style='color: {NOTE_COLOR};'>⚠ {escape(short)}</span>" if short else ""
+                # 아이콘만 강조색으로 두고 글자는 테마의 기본 글자색을 씁니다(7.1.25).
+                return f"<span style='color: {NOTE_COLOR};'>⚠</span> {escape(short)}" if short else ""
             if role == Qt.ItemDataRole.EditRole:
                 return self._notes.get(path, "")
             if role == Qt.ItemDataRole.ToolTipRole:

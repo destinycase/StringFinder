@@ -43,8 +43,8 @@ def test_result_context_preview_is_bounded_and_highlights_match(search_tab_fixtu
     assert str(file_path) in panel.file_info_label.text()
     assert panel.file_info_header.height() <= 32
     assert panel.file_info_label.toolTip() == ""
-    assert panel.open_file_btn.toolTip() == ""
-    assert panel.open_folder_btn.toolTip() == ""
+    # 상세 목록 위의 파일 열기·폴더 열기 단추는 없앴습니다(7.1.25).
+    assert not hasattr(panel, "open_file_btn") and not hasattr(panel, "open_folder_btn")
     assert "needle" in panel.context_preview.toPlainText()
     assert "▶" in panel.context_preview.toPlainText()
     assert panel.context_preview.extraSelections()
@@ -146,17 +146,6 @@ def test_context_line_settings_return_for_text_preview(search_tab_fixture, tmp_p
     panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
 
     assert not panel.context_line_settings_widget.isHidden()
-
-
-def test_selected_file_open_button_uses_default_file_handler(search_tab_fixture, tmp_path):
-    panel = search_tab_fixture.result_view_panel
-    file_path = tmp_path / "open.txt"
-    panel.selected_file_path = str(file_path)
-
-    with patch("sf_utils.file_helper.open_file") as open_file:
-        panel.open_file_btn.click()
-
-    open_file.assert_called_once_with(str(file_path))
 
 
 def test_search_and_stop_buttons_have_no_description_tooltips(search_tab_fixture):

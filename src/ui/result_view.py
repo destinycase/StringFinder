@@ -615,13 +615,7 @@ class ResultView(QWidget):
         file_info_layout.setContentsMargins(0, 0, 0, 0)
         self.file_info_label = QLabel()
         self.file_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.open_file_btn = QPushButton(AppStrings.OPEN_FILE)
-        self.open_file_btn.clicked.connect(self._on_open_selected_file_clicked)
-        self.open_folder_btn = QPushButton(AppStrings.OPEN_FOLDER)
-        self.open_folder_btn.clicked.connect(self._on_open_selected_folder_clicked)
         file_info_layout.addWidget(self.file_info_label, 1)
-        file_info_layout.addWidget(self.open_file_btn)
-        file_info_layout.addWidget(self.open_folder_btn)
         # 선택 파일 정보는 한 줄 헤더이므로 세로 방향으로 확장되지 않게 제한합니다.
         self.file_info_header.setFixedHeight(32)
         self.file_info_header.setVisible(False)
@@ -1294,16 +1288,6 @@ class ResultView(QWidget):
         worker.signals.finished.connect(self._on_context_preview_finished)
         self._context_workers.append(worker)
         self._context_thread_pool.start(worker)
-
-    def _on_open_selected_folder_clicked(self):
-        """선택된 파일의 위치를 운영체제 파일 탐색기에서 엽니다."""
-        if self.selected_file_path:
-            self._open_file_location(self.selected_file_path)
-
-    def _on_open_selected_file_clicked(self):
-        """선택된 파일을 운영체제의 기본 프로그램으로 엽니다."""
-        if self.selected_file_path:
-            self.file_double_clicked.emit(self.selected_file_path, 0)
 
     def _on_match_double_clicked(self, index):
         if not index.isValid():

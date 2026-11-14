@@ -136,6 +136,8 @@ def test_note_column_shows_short_reason_and_tooltip(qtbot, mock_config_manager):
     shown = notes["D:/d/b.txt"]
     assert AppStrings.FILE_NOTE_MATCH_LIMIT.format(2) in shown
     assert AppStrings.FILE_NOTE_EXCEL_PARTIAL.format("Sheet3") in shown and "⚠" in shown
+    # 글자는 기본 글자색, ⚠만 강조색입니다(7.1.25).
+    assert shown.index("</span>") < shown.index(AppStrings.FILE_NOTE_MATCH_LIMIT.format(2))
     row_b = next(r for r in range(model.rowCount())
                  if model.data(model.index(r, 0), Qt.ItemDataRole.UserRole)[0] == "D:/d/b.txt")
     assert model.data(model.index(row_b, 3), Qt.ItemDataRole.ToolTipRole) == reason
