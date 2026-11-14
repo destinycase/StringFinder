@@ -304,6 +304,59 @@ class SkippedFilesDialog(QDialog):
         self.copy_confirmation_label.setVisible(True)
 
 
+class SearchSpinner(QWidget):
+    """검색 중 문구 앞에서 도는 원호입니다. 글자 기호는 글꼴마다 폭이 달라 흔들리므로 직접 그립니다."""
+
+    SIZE = 14
+    STEP_DEGREES = 30
+    INTERVAL_MS = 80
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(self.SIZE, self.SIZE)
+        # 부모(요약 줄)의 테두리·여백·최소 높이 스타일을 물려받지 않게 합니다.
+        self.setStyleSheet("border: none; background: transparent; padding: 0; margin: 0; min-height: 0;")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._angle = 0
+        self._color = QColor("#C47B00")
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.INTERVAL_MS)
+        self._timer.timeout.connect(self._advance)
+        self.hide()
+
+    def set_color(self, color):
+        self._color = QColor(color)
+        self.update()
+
+    def start(self):
+        if not self._timer.isActive():
+            self._timer.start()
+        self.show()
+
+    def stop(self):
+        self._timer.stop()
+        self.hide()
+
+    def is_spinning(self):
+        return self._timer.isActive()
+
+    def _advance(self):
+        self._angle = (self._angle + self.STEP_DEGREES) % 360
+        self.update()
+
+    def paintEvent(self, _event):
+        from PySide6.QtGui import QPainter, QPen
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(self._color, 2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        rect = self.rect().adjusted(2, 2, -2, -2)
+        painter.drawArc(rect, -self._angle * 16, 270 * 16)
+        painter.end()
+
+
 class ResultView(QWidget):
     CONTEXT_RADIUS = Constants.DEFAULT_CONTEXT_PREVIEW_LINES
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
@@ -574,12 +627,8 @@ class ResultView(QWidget):
         self.searching_bar.setFixedHeight(4)
         self.searching_bar.setVisible(False)
         main_layout.addWidget(self.searching_bar)
-        # 검색 중 문구 앞에서 도는 표시입니다. 글자 기호를 바꿔 그려 별도 그림 파일이 필요 없습니다.
-        self._spinner_frame = 0
-        self._searching_text = ""
-        self._spinner_timer = QTimer(self)
-        self._spinner_timer.setInterval(self.SPINNER_INTERVAL_MS)
-        self._spinner_timer.timeout.connect(self._advance_spinner)
+        # 검색 중 문구 앞에서 도는 표시입니다. 요약 줄 안쪽 왼쪽에 겹쳐 두고, 그만큼 글자를 오른쪽으로 밉니다.
+        self.search_spinner = SearchSpinner(self.summary_label)
         main_layout.addLayout(self.result_filter_layout)
         main_layout.addWidget(self.result_splitter, 1)
         self.empty_label = QLabel(AppStrings.RESULT_EMPTY_MSG)
@@ -1196,20 +1245,16 @@ class ResultView(QWidget):
         QTimer.singleShot(300, self._update_pagination_ui)
         self.update_ui_visibility()
 
-    SPINNER_FRAMES = ("◐", "◓", "◑", "◒")
-    SPINNER_INTERVAL_MS = 150
+    SPINNER_TEXT_INDENT = 20
 
-    def _render_searching_text(self):
-        frame = self.SPINNER_FRAMES[self._spinner_frame % len(self.SPINNER_FRAMES)]
-        self.summary_label.setText(f"{frame} {self._searching_text}")
-
-    def _advance_spinner(self):
-        self._spinner_frame = (self._spinner_frame + 1) % len(self.SPINNER_FRAMES)
-        self._render_searching_text()
+    def _start_spinner(self):
+        self.search_spinner.set_color("#D69E2E" if self._is_dark_theme() else "#C47B00")
+        y = max(0, (self.summary_label.height() - self.search_spinner.height()) // 2)
+        self.search_spinner.move(12, y)
+        self.search_spinner.start()
 
     def _stop_spinner(self):
-        self._spinner_timer.stop()
-        self._searching_text = ""
+        self.search_spinner.stop()
 
     def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix="", scanned_count=None):
         """상단 요약 정보를 업데이트합니다. 검색 중에는 확인한 파일 수·경과 시간을 보여 주고 막대를 움직입니다."""
@@ -1228,12 +1273,13 @@ class ResultView(QWidget):
                 match_count=f"{match_count:,}",
                 elapsed=f"{seconds // 60:02d}:{seconds % 60:02d}",
             )
-            self.summary_label.setStyleSheet(UIStyles.get_summary_label_style(self._is_dark_theme(), state))
-            self._searching_text = state_prefix + summary_text
-            self._render_searching_text()
-            if not self._spinner_timer.isActive():
-                self._spinner_timer.start()
+            self.summary_label.setStyleSheet(
+                UIStyles.get_summary_label_style(self._is_dark_theme(), state)
+                + f" padding-left: {self.SPINNER_TEXT_INDENT + 10}px;"
+            )
+            self.summary_label.setText(state_prefix + summary_text)
             self.summary_label.setVisible(True)
+            self._start_spinner()
             return
         self._stop_spinner()
         if file_count > 0 or skip_count > 0 or state_prefix == AppStrings.SUMMARY_PREFIX_FAILED:

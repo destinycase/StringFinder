@@ -17,11 +17,14 @@ def test_searching_line_shows_checked_files_and_elapsed_without_results(qtbot, m
     view.set_summary_info(0, 0, 75.4, state_prefix=AppStrings.SUMMARY_PREFIX_SEARCHING, scanned_count=1234)
     text = view.summary_label.text()
     assert view.summary_label.isVisible()
-    assert text[0] in ResultView.SPINNER_FRAMES
-    assert text[2:].startswith(AppStrings.SUMMARY_PREFIX_SEARCHING)
-    assert view._spinner_timer.isActive()
-    view._advance_spinner()
-    assert view.summary_label.text()[0] != text[0]  # 표시가 돕니다.
+    assert text.startswith(AppStrings.SUMMARY_PREFIX_SEARCHING)
+    spinner = view.search_spinner
+    assert spinner.is_spinning() and spinner.isVisible()
+    # 글자 기호가 아니라 고정 크기로 그리므로 돌아도 크기가 변하지 않습니다.
+    size = spinner.size()
+    angle = spinner._angle
+    spinner._advance()
+    assert spinner._angle != angle and spinner.size() == size
     assert "1,234" in text and "01:15" in text
     assert view.searching_bar.isVisible()
     assert view.searching_bar.maximum() == 0  # 진행률 없이 움직이기만 합니다.
@@ -32,7 +35,7 @@ def test_finished_line_hides_moving_bar(qtbot, mock_config_manager):
     view.set_summary_info(3, 5, 1.0, state_prefix=AppStrings.SUMMARY_PREFIX_SEARCHING, scanned_count=10)
     view.set_summary_info(3, 5, 2.5, state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED)
     assert not view.searching_bar.isVisible()
-    assert not view._spinner_timer.isActive()
+    assert not view.search_spinner.is_spinning()
     assert view.summary_label.text().startswith(AppStrings.SUMMARY_PREFIX_FINISHED)
 
 
