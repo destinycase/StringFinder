@@ -72,3 +72,12 @@ def test_no_result_with_search_mode_shows_mode_scope_and_not_used(qtbot, mock_co
     assert "&lt;id&gt;" in text  # 검색어는 글자 그대로 보입니다.
     assert AppStrings.RESULT_COND_MODE_EXTENSIONS.format(".json") in text
     assert AppStrings.RESULT_COND_NOT_USED in text
+
+
+def test_light_theme_shimmer_is_visible_on_pale_background(qtbot, mock_config_manager):
+    """라이트 모드에서는 밝은 배경에서도 보이도록 흰색이 아닌 주황빛으로 흐릅니다(7.1.21)."""
+    view = _view(qtbot, mock_config_manager)
+    view._is_dark_theme = lambda: False
+    view.set_summary_info(0, 0, 1.0, state_prefix=AppStrings.SUMMARY_PREFIX_SEARCHING, scanned_count=1)
+    color = view.search_shimmer._color
+    assert color.red() > color.blue() + 100 and color.alpha() >= 60

@@ -1318,7 +1318,7 @@ class ResultView(QWidget):
         self.search_spinner.set_color("#D69E2E" if self._is_dark_theme() else "#C47B00")
         y = max(0, (self.summary_label.height() - self.search_spinner.height()) // 2)
         self.search_spinner.move(12, y)
-        self.search_shimmer.set_color(QColor(240, 196, 106, 60) if self._is_dark_theme() else QColor(255, 255, 255, 150))
+        self.search_shimmer.set_color(QColor(240, 196, 106, 60) if self._is_dark_theme() else QColor(239, 159, 39, 80))
         self.search_shimmer.start()
         self.search_spinner.start()
         self.search_spinner.raise_()
