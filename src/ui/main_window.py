@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(600, 400)
         self._search_lock_owner = None
         self._layout_tab = None
+        self._shared_layout_applied = False
         self._init_ui()
         from sf_utils.logger import qt_log_handler
 
@@ -92,6 +93,19 @@ class MainWindow(QMainWindow):
             self, AppStrings.ERROR_TITLE,
             AppStrings.CONFIG_TEMP_STORAGE_WARNING.format(self.config_manager.config_dir),
         )
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._shared_layout_applied:
+            # 창이 실제 크기로 뜨기 전에 복원한 도크 높이는 맞지 않으므로, 처음 보인 직후 한 번 더 적용합니다.
+            QTimer.singleShot(0, self, self._apply_shared_layout_after_show)
+
+    def _apply_shared_layout_after_show(self):
+        self._shared_layout_applied = True
+        tab = self.tab_widget.currentWidget()
+        if isinstance(tab, SearchTab):
+            tab.restore_shared_layout()
+        self._layout_tab = tab if isinstance(tab, SearchTab) else None
 
     def closeEvent(self, event):
         """창을 닫을 때 호출되어 애플리케이션 종료 절차를 수행합니다."""
@@ -481,7 +495,8 @@ class MainWindow(QMainWindow):
         """탭을 바꿀 때 떠나는 탭의 배치를 저장하고, 새 탭에 공통 설정·히스토리·배치를 적용합니다."""
         previous = self._layout_tab
         tab = self.tab_widget.widget(index)
-        if isinstance(previous, SearchTab) and previous is not tab:
+        # 처음 화면에 보이기 전(시작 중 탭 복원)에는 아직 크기가 정해지지 않은 배치를 저장하지 않습니다.
+        if isinstance(previous, SearchTab) and previous is not tab and self._shared_layout_applied:
             try:
                 if self.tab_widget.indexOf(previous) >= 0:
                     previous.save_shared_layout()

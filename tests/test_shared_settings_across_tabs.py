@@ -53,9 +53,36 @@ def test_dock_layout_is_saved_when_leaving_a_tab_and_applied_to_next(qtbot, mock
     from PySide6.QtCore import Qt
 
     window = _window(qtbot)
+    window.show()
+    qtbot.waitUntil(lambda: window._shared_layout_applied)
     first = window.add_new_tab("A")
     second = window.add_new_tab("B")
     second.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, second.folder_dock)
     window.tab_widget.setCurrentWidget(first)
     assert mock_config_manager.get_dock_state()
     assert first.dockWidgetArea(first.folder_dock) == Qt.DockWidgetArea.RightDockWidgetArea
+
+
+def test_search_dock_height_survives_restart(qtbot, mock_config_manager):
+    """검색 설정 창 높이를 줄이고 다시 켜도 같은 높이로 열립니다(7.1.15)."""
+    from PySide6.QtCore import Qt
+    from ui.main_window import MainWindow
+
+    def open_window():
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.resize(1400, 900)
+        window.show()
+        qtbot.waitUntil(lambda: window._shared_layout_applied)
+        qtbot.wait(20)
+        return window, window.tab_widget.currentWidget()
+
+    window, tab = open_window()
+    tab.resizeDocks([tab.search_dock], [60], Qt.Orientation.Vertical)
+    qtbot.wait(20)
+    height = tab.search_dock.height()
+    window.close()
+
+    window, tab = open_window()
+    assert tab.search_dock.height() == height
+    window.close()
