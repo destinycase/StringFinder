@@ -81,6 +81,7 @@ class ConfigManager:
             Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS: [60, 400, 400],
             Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES: Constants.DEFAULT_CONTEXT_PREVIEW_LINES,
             Constants.CONFIG_KEY_COMPACT_RESULT_ROWS: True,
+            Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE: False,
             Constants.CONFIG_KEY_FILTER_LAYOUT: Constants.DEFAULT_FILTER_LAYOUT,
             Constants.CONFIG_KEY_EXCLUDE_HIDDEN: True,
             Constants.CONFIG_KEY_CONTEXT_AFTER_LINES: Constants.DEFAULT_CONTEXT_PREVIEW_LINES,
@@ -206,6 +207,7 @@ class ConfigManager:
                     merged.pop(Constants.LEGACY_CONFIG_KEY_FILTER_LAYOUT, None)
                     for key in (
                         Constants.CONFIG_KEY_COMPACT_RESULT_ROWS,
+                        Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE,
                         Constants.CONFIG_KEY_EXCLUDE_HIDDEN,
                         Constants.CONFIG_KEY_EXCLUDE_BINARY,
                         Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT,

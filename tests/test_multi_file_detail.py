@@ -169,3 +169,93 @@ def test_text_export_includes_note(qtbot, mock_config_manager, tmp_path):
     view._export_to_text(str(target))
     text = target.read_text(encoding="utf-8")
     assert "⚠ " + AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2) in text
+
+
+def _grouped_model(entries, page_size=100):
+    from ui.models import FileGroupHeader
+
+    model = MatchDetailModel()
+    model.group_by_file = True
+    model.set_page_size(page_size)
+    model.set_files(entries, "", Constants.MODE_NORMAL)
+    return model, FileGroupHeader
+
+
+def test_grouped_view_inserts_one_header_per_file_without_file_column():
+    """파일별 묶음 보기: 파일마다 머리줄, 파일 칸 없음, 머리줄은 결과로 치지 않음(7.1.26)."""
+    model, header_cls = _grouped_model([
+        ("D:/x/a.txt", [[1, "a1", 0, 1], [2, "a2", 0, 1]]),
+        ("D:/x/b.txt", [[3, "b3", 0, 1]]),
+    ])
+    assert model.columnCount() == 1
+    kinds = [type(row).__name__ for row in model._data]
+    assert kinds == ["FileGroupHeader", "SearchMatchSchema", "SearchMatchSchema", "FileGroupHeader", "SearchMatchSchema"]
+    assert model.match_count == 3 and model.get_total_pages() == 1
+    assert model.get_match(0) is None and model.first_match_row() == 1
+    assert model.flags(model.index(0, 0)) == Qt.ItemFlag.NoItemFlags
+    shown = model.data(model.index(0, 0))
+    assert "D:/x/a.txt" in shown and AppStrings.GROUP_HEADER_COUNT.format("2") in shown
+
+
+def test_grouped_view_repeats_header_as_continued_on_next_page():
+    rows = [[i, f"line {i}", 0, 1] for i in range(1, 151)]
+    model, header_cls = _grouped_model([("D:/x/a.txt", rows), ("D:/x/b.txt", [[1, "b", 0, 1]])], page_size=100)
+    first = model._data[0]
+    assert isinstance(first, header_cls) and not first.continued
+    model.go_to_page(2)
+    top = model._data[0]
+    assert isinstance(top, header_cls) and top.continued and top.path == "D:/x/a.txt"
+    assert AppStrings.GROUP_HEADER_CONTINUED in model.data(model.index(0, 0))
+    headers = [row.path for row in model._data if isinstance(row, header_cls)]
+    assert headers == ["D:/x/a.txt", "D:/x/b.txt"]
+
+
+def test_grouped_header_shows_note_and_filter_keeps_only_matching_files():
+    model, header_cls = _grouped_model([
+        ("D:/x/a.txt", [[1, "alpha", 0, 1]]),
+        ("D:/x/b.txt", [[2, "beta", 0, 1]]),
+    ])
+    model.note_lookup = lambda path: "NOTE-B" if path.endswith("b.txt") else ""
+    model.beginResetModel()
+    model.endResetModel()
+    b_row = next(r for r, row in enumerate(model._data) if isinstance(row, header_cls) and row.path.endswith("b.txt"))
+    assert "NOTE-B" in model.data(model.index(b_row, 0))
+    model.set_column_filter(0, "beta")
+    assert [row.path for row in model._data if isinstance(row, header_cls)] == ["D:/x/b.txt"]
+
+
+def test_single_file_is_same_in_both_modes():
+    model, header_cls = _grouped_model([("D:/x/a.txt", [[1, "a1", 0, 1]])])
+    assert not any(isinstance(row, header_cls) for row in model._data) and model.columnCount() == 1
+
+
+def test_setting_switches_open_detail_view(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0, 1, 2])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    assert view.match_model.columnCount() == 2
+    mock_config_manager.set(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, True)
+    view.apply_display_density()
+    assert view.match_model.grouped and view.match_model.columnCount() == 1
+    assert view.match_model.is_group_row(0)
+    # 복사는 고른 결과 행만 대상입니다(머리줄은 고를 수 없음).
+    view.match_view.selectAll()
+    selected_rows = {index.row() for index in view.match_view.selectionModel().selectedRows()}
+    assert all(not view.match_model.is_group_row(row) for row in selected_rows)
+    mock_config_manager.set(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, False)
+    view.apply_display_density()
+    assert view.match_model.columnCount() == 2 and not view.match_model.is_group_row(0)
+
+
+def test_settings_dialog_has_match_view_option(qtbot, mock_config_manager):
+    from ui.settings_dialog import SettingsDialog
+
+    dialog = SettingsDialog(mock_config_manager)
+    qtbot.addWidget(dialog)
+    combo = dialog.match_view_combo
+    assert combo.currentData() is False
+    assert [combo.itemText(i) for i in range(combo.count())] == [AppStrings.MATCH_VIEW_FILE_COLUMN, AppStrings.MATCH_VIEW_GROUPED]
+    emitted = []
+    dialog.display_density_changed.connect(lambda: emitted.append(1))
+    combo.setCurrentIndex(1)
+    assert mock_config_manager.get(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE) is True and emitted

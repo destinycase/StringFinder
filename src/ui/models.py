@@ -523,6 +523,18 @@ class SearchResultModel(QAbstractTableModel):
             self.dataChanged.emit(top_left, bottom_right, [Qt.ItemDataRole.DisplayRole])
 
 
+@dataclass
+class FileGroupHeader:
+    """파일별 묶음 보기에서 파일 결과 앞에 끼우는 머리줄입니다(7.1.26). 결과로 치지 않습니다."""
+
+    path: str
+    count: int
+    continued: bool = False
+
+
+GROUP_HEADER_BACKGROUND = (120, 150, 200, 60)
+
+
 class MatchDetailModel(QAbstractTableModel):
     """
     특정 파일 내의 상세 매칭 정보(라인 번호, 내용)를 관리하는 모델입니다.
@@ -539,6 +551,10 @@ class MatchDetailModel(QAbstractTableModel):
         self._cache: Dict[int, SearchMatchSchema] = {}
         self._filtered_indices: Union[range, List[int]] = range(0)
         self.multi_file = False
+        # 여러 파일을 고를 때 파일별 묶음(머리줄)으로 보일지입니다. 꺼져 있으면 맨 앞 파일 칸으로 보입니다.
+        self.group_by_file = False
+        # 머리줄에 붙일 기타 칸 짧은 문구를 찾는 함수입니다(파일 목록 모델이 넘김).
+        self.note_lookup = None
         self._page_size = 100
         self._current_page = 1
         self.current_file_path = ""
@@ -554,13 +570,65 @@ class MatchDetailModel(QAbstractTableModel):
         """전체 매치 항목의 총 개수를 반환합니다."""
         return self._total
 
+    @property
+    def show_file_column(self) -> bool:
+        return self.multi_file and not self.group_by_file
+
+    @property
+    def grouped(self) -> bool:
+        return self.multi_file and self.group_by_file
+
+    def set_group_by_file(self, enabled: bool):
+        """보기 방식을 바꾸고 지금 페이지를 다시 그립니다."""
+        enabled = bool(enabled)
+        if enabled == self.group_by_file:
+            return
+        self.beginResetModel()
+        self.group_by_file = enabled
+        self._load_current_page_data_no_reset()
+        self.endResetModel()
+        self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, max(0, self.columnCount() - 1))
+
+    def is_group_row(self, row: int) -> bool:
+        return 0 <= row < len(self._data) and isinstance(self._data[row], FileGroupHeader)
+
+    def flags(self, index):
+        if index.isValid() and self.is_group_row(index.row()):
+            # 머리줄은 고르거나 키보드로 옮겨 갈 수 없게 합니다.
+            return Qt.ItemFlag.NoItemFlags
+        return super().flags(index)
+
+    def _group_header_data(self, header: "FileGroupHeader", col: int, role):
+        if role == Qt.ItemDataRole.BackgroundRole:
+            from PySide6.QtGui import QColor
+
+            return QColor(*GROUP_HEADER_BACKGROUND)
+        if col != 0:
+            return "" if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole) else None
+        note = self.note_lookup(header.path) if callable(self.note_lookup) else ""
+        if role == Qt.ItemDataRole.DisplayRole:
+            parts = [f"<b>{escape(header.path)}</b>",
+                     f"<span style='color: #9aa0a6;'>{escape(AppStrings.GROUP_HEADER_COUNT.format(f'{header.count:,}'))}</span>"]
+            if header.continued:
+                parts.append(f"<span style='color: #9aa0a6;'>· {escape(AppStrings.GROUP_HEADER_CONTINUED)}</span>")
+            if note:
+                parts.append(f"<span style='color: {NOTE_COLOR};'>⚠</span> {escape(note)}")
+            return " ".join(parts)
+        if role == Qt.ItemDataRole.EditRole:
+            return header.path
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return header.path
+        if role == Qt.ItemDataRole.UserRole:
+            return header.path
+        return None
+
     def rowCount(self, parent=QModelIndex()):
         return len(self._data)
 
     def columnCount(self, parent=QModelIndex()):
         # [UX] 검색 모드에 따라 컬럼 수 결정 (Normal은 1컬럼, 나머지는 헤더 수만큼)
         search_mode = str(self.search_mode or Constants.MODE_NORMAL)
-        file_col = 1 if self.multi_file else 0
+        file_col = 1 if self.show_file_column else 0
         if search_mode == Constants.MODE_NORMAL or search_mode == AppStrings.SPECIAL_SEARCH_OFF:
             return 1 + file_col
         return len(self._headers) + file_col
@@ -570,10 +638,12 @@ class MatchDetailModel(QAbstractTableModel):
             return None
         row_data = self._data[index.row()]
         col = index.column()
+        if isinstance(row_data, FileGroupHeader):
+            return self._group_header_data(row_data, col, role)
         row_path = row_data.source_path or self.current_file_path or ""
         if role == Qt.ItemDataRole.UserRole:
             return row_path
-        if self.multi_file:
+        if self.show_file_column:
             # 여러 파일을 합쳐 볼 때 맨 앞 칸은 파일 이름입니다. 복사·거르기용 값과 설명은 전체 경로입니다.
             if col == 0:
                 if role == Qt.ItemDataRole.DisplayRole:
@@ -752,12 +822,36 @@ class MatchDetailModel(QAbstractTableModel):
     def _load_current_page_data_no_reset(self):
         start_idx = (self._current_page - 1) * self._page_size
         end_idx = min(start_idx + self._page_size, len(self._filtered_indices))
-        self._data = [self._item_at(i) for i in self._filtered_indices[start_idx:end_idx]]
+        page = self._filtered_indices[start_idx:end_idx]
+        if not self.grouped:
+            self._data = [self._item_at(i) for i in page]
+            return
+        # 파일이 바뀌는 자리마다 머리줄을 넣습니다. 페이지가 같은 파일 중간에서 시작하면 "이어서"로 표시합니다.
+        rows: list = []
+        previous_seg = None
+        if start_idx > 0 and page:
+            previous_seg = self._segment_of(self._filtered_indices[start_idx - 1])
+        first = True
+        for i in page:
+            seg = self._segment_of(i)
+            if seg != previous_seg or first:
+                path, matches = self._segments[seg]
+                if seg != previous_seg or not first:
+                    rows.append(FileGroupHeader(path, len(matches)))
+                else:
+                    rows.append(FileGroupHeader(path, len(matches), continued=True))
+            rows.append(self._item_at(i))
+            previous_seg = seg
+            first = False
+        self._data = rows
+
+    def _segment_of(self, index: int) -> int:
+        return bisect.bisect_right(self._seg_starts, index) - 1
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             mode = self.search_mode or Constants.MODE_NORMAL
-            if self.multi_file:
+            if self.show_file_column:
                 if section == 0:
                     return AppStrings.HEADER_FILE
                 section -= 1
@@ -1128,7 +1222,14 @@ class MatchDetailModel(QAbstractTableModel):
         self.endResetModel()
 
     def get_match(self, row):
-        """특정 행의 매치 데이터를 반환합니다."""
-        if 0 <= row < len(self._data):
+        """특정 행의 매치 데이터를 반환합니다. 파일 머리줄이면 None입니다."""
+        if 0 <= row < len(self._data) and not isinstance(self._data[row], FileGroupHeader):
             return self._data[row]
         return None
+
+    def first_match_row(self) -> int:
+        """지금 페이지에서 첫 결과 행 번호입니다(머리줄 건너뜀). 없으면 -1."""
+        for row, item in enumerate(self._data):
+            if not isinstance(item, FileGroupHeader):
+                return row
+        return -1

@@ -105,6 +105,20 @@ class SettingsDialog(QDialog):
         compact_rows_row.addStretch()
         compact_rows_row.addWidget(self.compact_rows_combo)
         appearance_layout.addLayout(compact_rows_row)
+        match_view_row = QHBoxLayout()
+        match_view_label = QLabel(AppStrings.MATCH_VIEW_MODE_LABEL)
+        self.match_view_combo = QComboBox()
+        self.match_view_combo.addItem(AppStrings.MATCH_VIEW_FILE_COLUMN, False)
+        self.match_view_combo.addItem(AppStrings.MATCH_VIEW_GROUPED, True)
+        grouped = self.config_manager.get(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, False) is True
+        self.match_view_combo.setCurrentIndex(self.match_view_combo.findData(grouped))
+        self.match_view_combo.setFixedWidth(INPUT_WIDTH)
+        self.match_view_combo.currentIndexChanged.connect(self._on_match_view_mode_changed)
+        match_view_label.setBuddy(self.match_view_combo)
+        match_view_row.addWidget(match_view_label)
+        match_view_row.addStretch()
+        match_view_row.addWidget(self.match_view_combo)
+        appearance_layout.addLayout(match_view_row)
         filter_layout_row = QHBoxLayout()
         filter_layout_label = QLabel(AppStrings.FILTER_LAYOUT_LABEL)
         self.filter_layout_combo = QComboBox()
@@ -426,6 +440,14 @@ class SettingsDialog(QDialog):
         if not isinstance(compact, bool):
             return
         self.config_manager.set(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, compact)
+        self.display_density_changed.emit()
+
+    def _on_match_view_mode_changed(self, index):
+        grouped = self.match_view_combo.itemData(index)
+        if not isinstance(grouped, bool):
+            return
+        self.config_manager.set(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, grouped)
+        # 표시 설정 변경 신호로 열린 모든 검색 탭에 바로 반영합니다.
         self.display_density_changed.emit()
 
     def _on_filter_layout_changed(self, index):

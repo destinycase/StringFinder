@@ -621,9 +621,13 @@ class ResultView(QWidget):
         self.file_info_header.setVisible(False)
         self.match_view = QTableView()
         self.match_model = MatchDetailModel()
+        self.match_model.group_by_file = self.config_manager.get(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, False) is True
+        self.match_model.note_lookup = lambda path: self.result_model.short_note_for(path)
         self.match_proxy_model = MatchProxyModel()
         self.match_proxy_model.setSourceModel(self.match_model)
         self.match_view.setModel(self.match_proxy_model)
+        self.match_proxy_model.modelReset.connect(self._apply_group_spans)
+        self.match_proxy_model.layoutChanged.connect(self._apply_group_spans)
         self.match_view.setItemDelegate(HtmlDelegate(self.match_view))
         self._normal_match_row_height = self.match_view.verticalHeader().defaultSectionSize()
         self.match_view.setFrameShape(QFrame.Shape.NoFrame)  # 디자인 일관성을 위해 매치 뷰의 프레임 테두리를 제거합니다.
@@ -1050,7 +1054,36 @@ class ResultView(QWidget):
 
             # 상세 뷰 로드 시 첫 번째 행을 자동으로 선택하여 정보를 즉시 제공합니다.
             if self.match_model.match_count > 0:
-                QTimer.singleShot(0, lambda: self.match_view.selectRow(0))
+                QTimer.singleShot(0, self._select_first_match_row)
+
+    def _select_first_match_row(self):
+        row = self.match_model.first_match_row()
+        if row >= 0:
+            self.match_view.selectRow(row)
+
+    def _apply_group_spans(self):
+        """파일별 묶음 보기의 머리줄이 표 전체 폭을 차지하게 합니다(7.1.26)."""
+        view = self.match_view
+        view.clearSpans()
+        columns = self.match_proxy_model.columnCount()
+        if columns <= 1:
+            return
+        for row in range(self.match_proxy_model.rowCount()):
+            source_row = self.match_proxy_model.mapToSource(self.match_proxy_model.index(row, 0)).row()
+            if self.match_model.is_group_row(source_row):
+                view.setSpan(row, 0, 1, columns)
+
+    def apply_match_view_mode(self):
+        """설정의 여러 파일 상세 목록 보기 방식을 적용합니다."""
+        grouped = self.config_manager.get(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, False) is True
+        if grouped == self.match_model.group_by_file:
+            return
+        self.match_model.set_group_by_file(grouped)
+        self.match_view.reset()
+        self._apply_group_spans()
+        self._adjust_match_column_widths()
+        if self.match_model.match_count > 0:
+            self._select_first_match_row()
 
     def _on_match_column_resized(self, index, _old_width, _new_width):
         """상세 뷰의 컬럼 크기가 변경될 때 호출되는 로그 핸들러"""
@@ -1579,6 +1612,7 @@ class ResultView(QWidget):
 
     def apply_display_density(self):
         """공통 표시 설정을 두 표에 적용하며 문맥 미리보기는 유지합니다."""
+        self.apply_match_view_mode()
         compact = self.config_manager.get(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, True) is True
         for view, normal_height in (
             (self.result_view, self._normal_result_row_height),
@@ -2088,7 +2122,7 @@ class ResultView(QWidget):
             for i in range(self.match_proxy_model.columnCount()):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
-            if self.search_mode == Constants.MODE_NORMAL and not self.match_model.multi_file:
+            if self.search_mode == Constants.MODE_NORMAL and not self.match_model.show_file_column:
                 # 일반 모드(단일 컬럼)는 항상 뷰포트에 꽉 채우도록 설정
                 header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             elif self.search_mode == Constants.MODE_NORMAL:
