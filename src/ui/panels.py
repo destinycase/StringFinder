@@ -123,6 +123,8 @@ class FilterItemWidget(QWidget):
         # 누르면 행 선택·끌기가 되고, 체크는 체크 상자를 눌러야만 바뀝니다(7.1.18).
         self.checkbox = QCheckBox()
         self.checkbox.setAccessibleName(text)
+        # 글자 없는 체크 상자라 테마의 글자 간격이 이름 앞 빈칸으로 남지 않게 없앱니다.
+        self.checkbox.setStyleSheet("QCheckBox { spacing: 0px; }")
         self.checkbox.setChecked(checked)
         self.name_label = QLabel(text)
         self.name_label.setTextFormat(Qt.TextFormat.PlainText)

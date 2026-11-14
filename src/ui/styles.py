@@ -1,5 +1,8 @@
 class UIStyles:
     """애플리케이션 내에서 공통으로 사용되는 CSS 스타일시트와 동적 스타일 로직을 정의합니다."""
+    # 테마가 체크박스에 마우스를 올리면 아래 테두리(밑줄처럼 보임)를 그리는 것을 끕니다(7.1.19).
+    STYLE_CHECKBOX_NO_HOVER_LINE = "QCheckBox:hover { border-bottom: 2px solid transparent; }"
+
     STYLE_SCROLLBAR = """
         QScrollBar:vertical { width: 16px; }
         QScrollBar:horizontal { height: 16px; }
