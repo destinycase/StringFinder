@@ -304,6 +304,12 @@ class SkippedFilesDialog(QDialog):
         self.copy_confirmation_label.setVisible(True)
 
 
+def _result_note(result_model, path) -> str:
+    """내보낼 때 쓸 파일 목록 기타 칸의 사유 원문입니다(7.1.24)."""
+    note_for = getattr(result_model, "note_for", None)
+    return note_for(path) if callable(note_for) else ""
+
+
 class SearchSpinner(QWidget):
     """검색 중 문구 앞에서 도는 원호입니다. 글자 기호는 글꼴마다 폭이 달라 흔들리므로 직접 그립니다."""
 
@@ -564,6 +570,7 @@ class ResultView(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # 매치 수
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 파일명
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # 폴더
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # 기타(일부만 검색한 사유)
         header.sectionResized.connect(lambda i, _o, _n: self._save_column_widths(Constants.VIEW_RESULT))
         # 기본 정렬 표시는 검색 종료 시 정렬(매치 수 많은 순)과 같게 둡니다.
         header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
@@ -571,7 +578,14 @@ class ResultView(QWidget):
         self.result_view.customContextMenuRequested.connect(self._show_result_context_menu)
         # 마우스·키보드로 현재 행이 바뀌면 상세 매치 정보를 갱신합니다. 누름 신호까지 연결하면 한 번 누를 때
         # 상세 목록을 두 번 만들므로 현재 행 변경 신호 하나만 씁니다(검수 S-4).
-        self.result_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._on_result_clicked(curr))
+        self.result_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._refresh_detail_from_selection())
+        # Ctrl+A처럼 현재 행은 그대로이고 선택만 바뀌는 경우도 상세 목록에 반영합니다(7.1.24).
+        self._detail_signature = None
+        self._detail_refresh_timer = QTimer(self)
+        self._detail_refresh_timer.setSingleShot(True)
+        self._detail_refresh_timer.setInterval(0)
+        self._detail_refresh_timer.timeout.connect(self._refresh_detail_from_selection)
+        self.result_view.selectionModel().selectionChanged.connect(lambda *_: self._detail_refresh_timer.start())
         # 검색 중 결과가 추가되며 목록을 다시 만들 때 선택한 파일을 유지합니다(검수 U-3).
         self._reselect_path = None
         self.proxy_model.modelAboutToBeReset.connect(self._remember_result_selection)
@@ -976,19 +990,56 @@ class ResultView(QWidget):
                 self.result_view.viewport().update()
                 return
 
+    def _selected_result_entries(self):
+        """선택한 파일들의 (경로, 결과)를 파일 목록에 보이는 순서대로 돌려줍니다."""
+        selection = self.result_view.selectionModel()
+        if selection is None:
+            return []
+        rows = sorted({index.row() for index in selection.selectedRows()})
+        entries = []
+        for row in rows:
+            item = self.result_model.get_item(self.proxy_model.mapToSource(self.proxy_model.index(row, 0)).row())
+            if item:
+                entries.append((item[0], item[2]))
+        return entries
+
+    def _refresh_detail_from_selection(self):
+        """파일 목록의 선택에 맞춰 상세 목록을 만듭니다. 여러 파일이면 결과를 합쳐 보여 줍니다(7.1.24)."""
+        entries = self._selected_result_entries()
+        if len(entries) <= 1:
+            current = self.result_view.currentIndex()
+            if not current.isValid():
+                return
+            item = self.result_model.get_item(self.proxy_model.mapToSource(current).row())
+            signature = (item[0],) if item else None
+            if signature is not None and signature == self._detail_signature:
+                return
+            self._on_result_clicked(current)
+            return
+        signature = tuple(path for path, _ in entries)
+        if signature == self._detail_signature:
+            return
+        self._show_detail_entries(entries)
+
     def _on_result_clicked(self, index):
         if not index.isValid():
             return
         real_index = self.proxy_model.mapToSource(index)
         item = self.result_model.get_item(real_index.row())
         if item:
-            path = item[0]
-            matches = item[2]
+            self._show_detail_entries([(item[0], item[2])])
+
+    def _show_detail_entries(self, entries):
+        if entries:
+            path = entries[0][0]
+            self._detail_signature = tuple(entry[0] for entry in entries)
             self.selected_file_path = path
-            self.match_model.set_matches(path, matches, self.search_text, self.search_mode)
-            self.file_info_label.setText(
-                AppStrings.SELECTED_FILE_INFO_TEMPLATE.format(path, self.match_model.match_count)
-            )
+            self.match_model.set_files(entries, self.search_text, self.search_mode)
+            if len(entries) > 1:
+                info = AppStrings.SELECTED_FILES_INFO_TEMPLATE.format(len(entries), f"{self.match_model.match_count:,}")
+            else:
+                info = AppStrings.SELECTED_FILE_INFO_TEMPLATE.format(path, self.match_model.match_count)
+            self.file_info_label.setText(info)
             self.file_info_header.setVisible(True)
             self._clear_context_preview()
 
@@ -1036,6 +1087,11 @@ class ResultView(QWidget):
         if match_item is None:
             self._clear_context_preview()
             return
+        # 여러 파일을 합쳐 볼 때 미리보기·열기는 고른 줄이 나온 파일을 대상으로 합니다.
+        source_path = getattr(match_item, "source_path", None)
+        if source_path:
+            self.match_model.current_file_path = source_path
+            self.selected_file_path = source_path
         self._show_context_preview(match_item)
 
     def _clear_context_preview(self):
@@ -1260,6 +1316,15 @@ class ResultView(QWidget):
             return
         real_index = self.match_proxy_model.mapToSource(index)
         match_item = self.match_model.get_match(real_index.row())
+        source_path = getattr(match_item, "source_path", None) if match_item is not None else None
+        if source_path:
+            line = 0
+            try:
+                line = int(match_item[0])
+            except (ValueError, TypeError, IndexError):
+                pass
+            self.match_double_clicked.emit(source_path, line)
+            return
         current_idx = self.result_view.currentIndex()
         if current_idx.isValid():
             real_src_idx = self.proxy_model.mapToSource(current_idx)
@@ -1371,6 +1436,12 @@ class ResultView(QWidget):
     def set_skipped_files(self, skipped_files, total_count=None):
         """상단 스킵 배너와 팝업에서 사용할 파일 목록을 갱신합니다."""
         self._skipped_files = normalize_skipped_files(skipped_files)
+        # 결과가 있는 파일의 사유는 파일 목록 기타 칸에 보입니다(7.1.24).
+        notes: dict = {}
+        for skipped_path, reason in self._skipped_files:
+            if skipped_path and reason:
+                notes[skipped_path] = f"{notes[skipped_path]}\n{reason}" if skipped_path in notes else str(reason)
+        self.result_model.set_file_notes(notes)
         requested_count = len(self._skipped_files) if total_count is None else int(total_count or 0)
         self._skipped_file_count = max(requested_count, len(self._skipped_files), 0)
         self.skipped_files_label.setText(_skipped_count_text(self._skipped_files, self._skipped_file_count))
@@ -1410,6 +1481,7 @@ class ResultView(QWidget):
         self.set_total_match_limit_reached(0)
         self.set_skipped_files([], total_count=0)
         self.selected_file_path = ""
+        self._detail_signature = None
         self.file_info_label.clear()
         self.file_info_header.setVisible(False)
         self._clear_context_preview()
@@ -1820,7 +1892,8 @@ class ResultView(QWidget):
         # [Sheet 1] 검색 파일 목록
         ws1 = wb.active
         ws1.title = AppStrings.EXCEL_SHEET_FILE_LIST
-        _append_excel_row(ws1, [AppStrings.HEADER_COUNT, AppStrings.HEADER_FILE, AppStrings.HEADER_MATCH_COUNT])
+        _append_excel_row(ws1, [AppStrings.HEADER_COUNT, AppStrings.HEADER_FILE, AppStrings.HEADER_MATCH_COUNT,
+                                AppStrings.HEADER_NOTE])
 
         # [Sheet 2] 검색 상세
         ws2 = wb.create_sheet(title=AppStrings.EXCEL_SHEET_MATCH_DETAILS)
@@ -1867,7 +1940,7 @@ class ResultView(QWidget):
 
         for i, (count, path, folder, full_path, matches) in enumerate(all_results):
             # 시트 1 데이터 추가
-            _append_excel_row(ws1, [i + 1, full_path, count])
+            _append_excel_row(ws1, [i + 1, full_path, count, _result_note(self.result_model, full_path).replace("\n", " / ")])
 
             # 시트 2 데이터 추가
             for m in matches:
@@ -1925,6 +1998,8 @@ class ResultView(QWidget):
                 all_results = self.result_model.get_all_results()
                 for count, path, folder, full_path, matches in all_results:
                     f.write(f"[{count}] {full_path}\n")
+                    for note_line in _result_note(self.result_model, full_path).splitlines():
+                        f.write(f"  ⚠ {note_line}\n")
                     for item in matches:
                         fields = self._match_fields_for_export(item)
                         if fields:
@@ -2029,9 +2104,15 @@ class ResultView(QWidget):
             for i in range(self.match_proxy_model.columnCount()):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
-            if self.search_mode == Constants.MODE_NORMAL:
+            if self.search_mode == Constants.MODE_NORMAL and not self.match_model.multi_file:
                 # 일반 모드(단일 컬럼)는 항상 뷰포트에 꽉 채우도록 설정
                 header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            elif self.search_mode == Constants.MODE_NORMAL:
+                # 여러 파일: 파일 이름 칸은 내용에 맞추고(최대 260px) 목록 칸이 나머지를 채웁니다.
+                self.match_view.resizeColumnToContents(0)
+                if self.match_view.columnWidth(0) > 260:
+                    self.match_view.setColumnWidth(0, 260)
+                header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             else:
                 # 특수 검색 모드(다중 컬럼)
                 # [M-04] 상세 뷰도 대용량(1000행 초과)일 경우 자동 리사이즈 생략

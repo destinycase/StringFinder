@@ -73,10 +73,11 @@ def test_one_click_builds_details_once(qtbot, mock_config_manager, monkeypatch):
     view.show()
     view.result_model.add_results([("d/a.txt", 1, [(1, "x", None, None)]), ("d/b.txt", 1, [(1, "y", None, None)])])
     calls = []
-    original = view.match_model.set_matches
-    monkeypatch.setattr(view.match_model, "set_matches", lambda *a, **k: (calls.append(a[0]), original(*a, **k)))
+    original = view.match_model.set_files
+    monkeypatch.setattr(view.match_model, "set_files", lambda *a, **k: (calls.append(a[0]), original(*a, **k)))
     rect = view.result_view.visualRect(view.proxy_model.index(1, 1))
     qtbot.mouseClick(view.result_view.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+    qtbot.wait(50)  # 선택 변경 신호로 예약된 갱신이 있어도 같은 파일이면 다시 만들지 않습니다.
     assert len(calls) == 1
 
 
@@ -129,15 +130,14 @@ def test_highlight_follows_the_search_comparison(text, query, marked):
 
 
 @pytest.mark.parametrize("position", [-1, -2])
-def test_excel_notice_rows_in_normal_search(position):
+def test_notice_rows_are_not_shown_in_detail_list(position):
+    """파일당 상한·부분 검색 안내는 파일 목록의 기타 칸에만 보이고 상세 목록에는 없습니다(7.1.24)."""
     from ui.models import MatchDetailModel
 
     model = MatchDetailModel()
-    model.set_matches("C:/t/a.xlsx", [(3, "Sheet1\tA3\tabc", None, None), (position, "LIMIT-MSG", None, None)],
+    model.set_matches("C:/t/a.xlsx", [(3, "Sheet1	A3	abc", None, None), (position, "LIMIT-MSG", None, None)],
                       "abc", C.MODE_NORMAL)
-    shown = model.data(model.index(1, 0))
-    assert shown.count("LIMIT-MSG") == 1 and "-1!" not in shown and "-2!" not in shown and " | " not in shown
-    assert model.data(model.index(1, 0), Qt.ItemDataRole.EditRole) == "LIMIT-MSG"
+    assert model.rowCount() == 1 and model.match_count == 1
     first = model.data(model.index(0, 0))
     assert first.startswith("<html>Sheet1!A3 | ") and "abc</span>" in first
 
