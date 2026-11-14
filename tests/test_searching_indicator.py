@@ -26,15 +26,21 @@ def test_searching_line_shows_checked_files_and_elapsed_without_results(qtbot, m
     spinner._advance()
     assert spinner._angle != angle and spinner.size() == size
     assert "1,234" in text and "01:15" in text
-    assert view.searching_bar.isVisible()
-    assert view.searching_bar.maximum() == 0  # 진행률 없이 움직이기만 합니다.
+    # 아래 막대 대신 요약 줄 안에서 빛이 좌→우로 흐릅니다(7.1.20).
+    shimmer = view.search_shimmer
+    assert shimmer.is_running() and shimmer.isVisible()
+    assert shimmer.geometry() == view.summary_label.rect()
+    phase = shimmer._phase
+    shimmer._advance()
+    assert shimmer._phase > phase
+    assert not hasattr(view, "searching_bar")
 
 
 def test_finished_line_hides_moving_bar(qtbot, mock_config_manager):
     view = _view(qtbot, mock_config_manager)
     view.set_summary_info(3, 5, 1.0, state_prefix=AppStrings.SUMMARY_PREFIX_SEARCHING, scanned_count=10)
     view.set_summary_info(3, 5, 2.5, state_prefix=AppStrings.SUMMARY_PREFIX_FINISHED)
-    assert not view.searching_bar.isVisible()
+    assert not view.search_shimmer.is_running()
     assert not view.search_spinner.is_spinning()
     assert view.summary_label.text().startswith(AppStrings.SUMMARY_PREFIX_FINISHED)
 
@@ -43,7 +49,7 @@ def test_clear_hides_moving_bar(qtbot, mock_config_manager):
     view = _view(qtbot, mock_config_manager)
     view.set_summary_info(0, 0, 1.0, state_prefix=AppStrings.SUMMARY_PREFIX_SEARCHING, scanned_count=1)
     view.clear()
-    assert not view.searching_bar.isVisible()
+    assert not view.search_shimmer.is_running() and not view.search_shimmer.isVisible()
 
 
 def test_no_result_lists_conditions_as_entered(qtbot, mock_config_manager):

@@ -9,7 +9,7 @@ from pathlib import Path
 from functools import lru_cache
 from typing import cast
 from PySide6.QtCore import QByteArray, QItemSelectionModel, QSignalBlocker, Qt, QTimer, Signal
-from PySide6.QtCore import QObject, QRunnable, QThreadPool
+from PySide6.QtCore import QEvent, QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
-    QProgressBar,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -358,6 +357,79 @@ class SearchSpinner(QWidget):
         painter.end()
 
 
+class SearchShimmer(QWidget):
+    """검색 중 요약 줄 위로 밝은 띠가 왼쪽에서 오른쪽으로 지나가는 효과입니다(7.1.20).
+
+    요약 줄과 같은 크기로 겹쳐 그리며, 마우스 입력은 아래로 넘깁니다.
+    """
+
+    PERIOD_MS = 1800
+    INTERVAL_MS = 30
+    BAND_RATIO = 0.4
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setStyleSheet("border: none; background: transparent; padding: 0; margin: 0; min-height: 0;")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._target = parent
+        self._phase = 0.0
+        self._color = QColor(240, 196, 106, 70)
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.INTERVAL_MS)
+        self._timer.timeout.connect(self._advance)
+        parent.installEventFilter(self)
+        self.hide()
+
+    def eventFilter(self, watched, event):
+        if watched is self.parent() and event.type() == QEvent.Type.Resize:
+            self.setGeometry(watched.rect())
+        return False
+
+    def set_color(self, color):
+        self._color = QColor(color)
+        self.update()
+
+    def start(self):
+        self.setGeometry(self._target.rect())
+        if not self._timer.isActive():
+            self._phase = 0.0
+            self._timer.start()
+        self.show()
+        self.raise_()
+
+    def stop(self):
+        self._timer.stop()
+        self.hide()
+
+    def is_running(self):
+        return self._timer.isActive()
+
+    def _advance(self):
+        self._phase = (self._phase + self.INTERVAL_MS / self.PERIOD_MS) % 1.0
+        self.update()
+
+    def paintEvent(self, _event):
+        from PySide6.QtGui import QLinearGradient, QPainter
+
+        width = self.width()
+        band = max(1.0, width * self.BAND_RATIO)
+        # 띠가 왼쪽 밖에서 들어와 오른쪽 밖으로 완전히 나갈 때까지 움직입니다.
+        left = -band + (width + band) * self._phase
+        gradient = QLinearGradient(left, 0, left + band, 0)
+        clear = QColor(self._color)
+        clear.setAlpha(0)
+        gradient.setColorAt(0.0, clear)
+        gradient.setColorAt(0.5, self._color)
+        gradient.setColorAt(1.0, clear)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(gradient)
+        # 테두리 안쪽만 칠합니다.
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 3, 3)
+        painter.end()
+
+
 class ResultView(QWidget):
     CONTEXT_RADIUS = Constants.DEFAULT_CONTEXT_PREVIEW_LINES
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
@@ -621,14 +693,8 @@ class ResultView(QWidget):
         self.result_splitter.setStretchFactor(1, 1)
         main_layout.addLayout(self.summary_row)
         # 검색 중에만 보이는 움직이는 막대입니다. 전체 파일 수를 미리 세지 않으므로 진행률(%)은 없습니다.
-        self.searching_bar = QProgressBar()
-        self.searching_bar.setObjectName("searchingBar")
-        self.searching_bar.setRange(0, 0)
-        self.searching_bar.setTextVisible(False)
-        self.searching_bar.setFixedHeight(4)
-        self.searching_bar.setVisible(False)
-        main_layout.addWidget(self.searching_bar)
         # 검색 중 문구 앞에서 도는 표시입니다. 요약 줄 안쪽 왼쪽에 겹쳐 두고, 그만큼 글자를 오른쪽으로 밉니다.
+        self.search_shimmer = SearchShimmer(self.summary_label)
         self.search_spinner = SearchSpinner(self.summary_label)
         main_layout.addLayout(self.result_filter_layout)
         main_layout.addWidget(self.result_splitter, 1)
@@ -1252,20 +1318,23 @@ class ResultView(QWidget):
         self.search_spinner.set_color("#D69E2E" if self._is_dark_theme() else "#C47B00")
         y = max(0, (self.summary_label.height() - self.search_spinner.height()) // 2)
         self.search_spinner.move(12, y)
+        self.search_shimmer.set_color(QColor(240, 196, 106, 60) if self._is_dark_theme() else QColor(255, 255, 255, 150))
+        self.search_shimmer.start()
         self.search_spinner.start()
+        self.search_spinner.raise_()
 
     def _stop_spinner(self):
         self.search_spinner.stop()
+        self.search_shimmer.stop()
 
     def set_summary_info(self, file_count, match_count, duration, skip_count=0, state_prefix="", scanned_count=None):
-        """상단 요약 정보를 업데이트합니다. 검색 중에는 확인한 파일 수·경과 시간을 보여 주고 막대를 움직입니다."""
+        """상단 요약 정보를 업데이트합니다. 검색 중에는 확인한 파일 수·경과 시간을 보여 주고 요약 줄에 빛이 흐르게 합니다."""
         # 요약 색은 문구 일부가 아니라 정해진 상태 접두어와 같은지로 정합니다(검수 D-4).
         state = {
             AppStrings.SUMMARY_PREFIX_SEARCHING: "searching",
             AppStrings.SUMMARY_PREFIX_STOPPED: "stopped",
             AppStrings.SUMMARY_PREFIX_FAILED: "stopped",
         }.get(state_prefix, "finished")
-        self.searching_bar.setVisible(state == "searching")
         if state == "searching":
             seconds = max(0, int(duration))
             summary_text = AppStrings.RESULT_SUMMARY_SEARCHING_FORMAT.format(
@@ -1338,7 +1407,6 @@ class ResultView(QWidget):
         self._stop_spinner()
         self.summary_label.setText("")
         self.summary_label.setVisible(False)
-        self.searching_bar.setVisible(False)
         self.set_total_match_limit_reached(0)
         self.set_skipped_files([], total_count=0)
         self.selected_file_path = ""
