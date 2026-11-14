@@ -170,7 +170,7 @@ UI (src/ui)
 | 전체 텍스트 | Rust 확장 | 병렬 파일 순회와 배치 결과 전달을 사용합니다. |
 | JSON/XML/Excel/UE 현지화 archive | Rust 형식별 파서 | JSON/XML/archive 파싱·구조 오류는 앞부분의 결과도 폐기합니다. Excel은 정상 시트 결과를 보존하고 읽지 못한 시트를 부분 검색 안내로 보고합니다. |
 
-앱의 검색 경로는 폴더 검색(`search_directory_fast`) 하나입니다. 파일 하나를 검색할 때도 그 파일을 검색 대상으로 넘겨 같은 경로를 씁니다(테스트는 `tests/folder_search_helper.py`, 도구는 `tools/app_search.py`). Rust 엔진 결과를 화면용 결과로 정리하는 규칙은 `format_file_matches` 한곳에 있고, 폴더 검색과 워커의 실시간 결과 처리가 함께 씁니다. 도트로 시작하는 파일, 숨김 옵션, `.gitignore`/`.ignore`, 겹치는 루트, 심볼릭 링크, 빈 확장자 필터, 휴지통, 파일 크기 상한을 회귀 검증합니다(`tests/test_search_path_matrix.py`, `tests/test_rust_only_golden.py`).
+앱의 검색 경로는 폴더 검색(`search_directory_fast`) 하나입니다. 파일 하나를 검색할 때도 그 파일을 검색 대상으로 넘겨 같은 경로를 씁니다(테스트는 `tests/folder_search_helper.py`). Rust 엔진 결과를 화면용 결과로 정리하는 규칙은 `format_file_matches` 한곳에 있고, 폴더 검색과 워커의 실시간 결과 처리가 함께 씁니다. 도트로 시작하는 파일, 숨김 옵션, `.gitignore`/`.ignore`, 겹치는 루트, 심볼릭 링크, 빈 확장자 필터, 휴지통, 파일 크기 상한을 회귀 검증합니다(`tests/test_search_path_matrix.py`, `tests/test_rust_only_golden.py`).
 
 세션 복원은 저장된 폴더·확장자·파일명 목록과 체크 상태를 재구성합니다. 현재 전역 필터와 병합하면 대상 파일 집합이 달라지므로 병합하지 않습니다. 복원 중 패널 시그널을 차단해 다른 탭의 전역 설정에 중간 상태를 저장하지 않습니다. 필터 항목은 비어 있지 않은 문자열, 체크 상태는 bool만 허용하며 잘못된 항목은 제외합니다.
 

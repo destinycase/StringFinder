@@ -30,7 +30,32 @@ os.environ["APPDATA"] = _TEST_APPDATA
 
 
 def _remove_test_appdata():
+    # 열린 로그 파일이 있으면 Windows에서 폴더를 지우지 못하므로 먼저 닫습니다.
+    import logging
+
+    for log in [logging.getLogger()] + [logging.getLogger(n) for n in list(logging.root.manager.loggerDict)]:
+        for handler in list(getattr(log, "handlers", [])):
+            if isinstance(handler, logging.FileHandler):
+                handler.close()
+                log.removeHandler(handler)
     shutil.rmtree(_TEST_APPDATA, ignore_errors=True)
+
+
+def _remove_stale_test_appdata(max_age_seconds=6 * 3600):
+    """이전 실행이 지우지 못하고 남긴 시험용 설정 폴더를 정리합니다(동시에 도는 실행을 건드리지 않게 오래된 것만)."""
+    import glob
+    import time
+
+    pattern = os.path.join(os.path.dirname(_TEST_APPDATA), "sf_test_appdata_*")
+    for path in glob.glob(pattern):
+        try:
+            if path != _TEST_APPDATA and time.time() - os.path.getmtime(path) > max_age_seconds:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+
+
+_remove_stale_test_appdata()
 
 
 import atexit  # noqa: E402
