@@ -27,6 +27,13 @@ def panel(qtbot):
     return widget
 
 
+def click_toggle(panel, qtbot, head):
+    """실제 사용처럼 목록 위 단추 자리를 누릅니다(단추는 마우스를 목록으로 넘깁니다)."""
+    viewport = panel.folder_list.viewport()
+    pos = head.toggle_btn.mapTo(viewport, head.toggle_btn.rect().center())
+    qtbot.mouseClick(viewport, Qt.MouseButton.LeftButton, pos=pos)
+
+
 def header(panel, name):
     for row in range(panel.folder_list.count()):
         widget = panel.folder_list.itemWidget(panel.folder_list.item(row))
@@ -85,11 +92,11 @@ def test_child_toggle_updates_group_state(panel):
 def test_collapse_hides_children_and_is_saved(panel, qtbot):
     row, work = header(panel, "Work")
     assert panel.folder_list.item(row + 1).isHidden()
-    qtbot.mouseClick(work.toggle_btn, Qt.MouseButton.LeftButton)
+    click_toggle(panel, qtbot, work)
     assert not panel.folder_list.item(row + 1).isHidden()
     assert panel.get_group_state()[1]["collapsed"] is False
     game_row, game = header(panel, "Game")
-    qtbot.mouseClick(game.toggle_btn, Qt.MouseButton.LeftButton)
+    click_toggle(panel, qtbot, game)
     assert panel.folder_list.item(game_row + 1).isHidden()
     assert panel.get_group_state()[0]["collapsed"] is True
 
@@ -230,7 +237,8 @@ def test_group_checkbox_lines_up_with_ungrouped_folder_checkboxes(panel):
     _, game = header(panel, "Game")
     # 펼치기 단추는 그룹 이름 오른쪽에 있어 체크 위치를 밀지 않습니다.
     assert game.checkbox.x() == loose.checkbox.x()
-    assert game.toggle_btn.x() > game.count_label.x() > game.checkbox.x()
+    # 펼치기 단추는 체크 상자와 이름 사이에 있습니다(7.1.22).
+    assert game.checkbox.x() < game.toggle_btn.x() < game.name_label.x() < game.count_label.x()
 
 
 @pytest.mark.parametrize("panel_type", [FolderFilterPanel, ExtensionFilterPanel, FilenameFilterPanel])
@@ -352,3 +360,24 @@ def test_old_session_does_not_get_groups_made_only_of_other_folders(qtbot, mock_
     assert restored.folder_panel.get_group_state() == []
     for widget in (tab, restored):
         widget.close()
+
+
+def test_drag_from_group_toggle_moves_group_without_toggling(panel, qtbot):
+    """펼치기 단추 위에서 끌어도 그룹째 옮겨지고 펼침 상태는 그대로입니다(7.1.22)."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    listing = panel.folder_list
+    _, game = header(panel, "Game")
+    collapsed = game.collapsed
+    viewport = listing.viewport()
+    start = game.toggle_btn.mapTo(viewport, game.toggle_btn.rect().center())
+    last_visible = max(r for r in range(listing.count()) if not listing.item(r).isHidden())
+    end = QPoint(start.x(), listing.visualItemRect(listing.item(last_visible)).bottom() - 1)
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    QTest.mouseMove(viewport, QPoint(start.x(), start.y() + 20))
+    QTest.mouseMove(viewport, end)
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, end)
+    names = [g["name"] for g in panel.get_group_state()]
+    assert names[-1] == "Game"
+    assert header(panel, "Game")[1].collapsed == collapsed

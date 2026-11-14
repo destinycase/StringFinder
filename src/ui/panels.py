@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -199,6 +200,9 @@ class FolderGroupHeader(FilterItemWidget):
         self.toggle_btn.setFixedSize(16, 16)
         self.toggle_btn.setToolTip(AppStrings.FOLDER_GROUP_TOGGLE_TOOLTIP)
         self.toggle_btn.clicked.connect(lambda: self._on_toggle(self) if self._on_toggle else None)
+        # 단추가 마우스를 가져가지 않게 해, 단추 위에서도 끌어서 순서를 바꿀 수 있습니다.
+        # 끌지 않고 누르면 목록이 단추를 대신 눌러 펼치기/접기를 합니다(7.1.22).
+        self.toggle_btn.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         font = self.name_label.font()
         font.setBold(True)
         self.name_label.setFont(font)
@@ -209,7 +213,8 @@ class FolderGroupHeader(FilterItemWidget):
         self.count_label = QLabel()
         self.count_label.setStyleSheet("QLabel { color: #888; }")
         layout.insertWidget(layout.indexOf(self.name_label) + 1, self.count_label)
-        layout.insertWidget(layout.indexOf(self.count_label) + 1, self.toggle_btn)
+        # 펼치기 단추는 체크 상자와 이름 사이에 둡니다(7.1.22).
+        layout.insertWidget(layout.indexOf(self.name_label), self.toggle_btn)
         self.set_collapsed(collapsed)
 
     def isChecked(self):
@@ -314,6 +319,11 @@ class FilterListWidget(QListWidget):
     def eventFilter(self, watched, event):
         if watched is self.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
             self._position_actions()
+        if watched is self.viewport() and event.type() == QEvent.Type.ToolTip:
+            toggle = self._group_toggle_at(event.pos())
+            if toggle is not None:
+                QToolTip.showText(event.globalPos(), toggle.toolTip(), self.viewport())
+                return True
         return super().eventFilter(watched, event)
 
     def resizeEvent(self, event):
@@ -430,6 +440,16 @@ class FilterListWidget(QListWidget):
             self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
         self._drag_move(position)
 
+    def _group_toggle_at(self, pos):
+        """뷰포트 위치에 그룹 펼치기 단추가 있으면 그 단추를 돌려줍니다."""
+        item = self.itemAt(pos)
+        widget = self.itemWidget(item) if item is not None else None
+        toggle = getattr(widget, "toggle_btn", None)
+        if toggle is None or not toggle.isVisible():
+            return None
+        local = toggle.mapFrom(self.viewport(), pos)
+        return toggle if toggle.rect().contains(local) else None
+
     def mouseReleaseEvent(self, event):
         if self._dragging and event.button() == Qt.MouseButton.LeftButton:
             source = self._drag_row
@@ -437,8 +457,15 @@ class FilterListWidget(QListWidget):
             self._finish_drag()
             self.move_row(source, gap)
             return
+        pressed_row = self._drag_row
         self._finish_drag()
         super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+            pos = event.position().toPoint()
+            toggle = self._group_toggle_at(pos)
+            item = self.itemAt(pos)
+            if toggle is not None and item is not None and self.row(item) == pressed_row:
+                toggle.click()
 
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.KeyboardModifier.AltModifier and event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down):
