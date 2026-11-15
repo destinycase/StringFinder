@@ -277,3 +277,33 @@ def test_page_switch_stays_fast_with_large_grouped_detail(qtbot, mock_config_man
         qtbot.wait(1)
     per_page = (time.perf_counter() - started) / 4
     assert per_page < 0.5
+
+
+def test_open_file_location_warns_when_file_is_missing(qtbot, mock_config_manager, monkeypatch, tmp_path):
+    """파일 위치 열기: 파일이 없으면 안내하고, 실행 실패도 안내하며, 탐색기를 기다리지 않습니다(7.1.29)."""
+    import subprocess
+
+    from PySide6.QtWidgets import QMessageBox
+
+    view = _view(qtbot, mock_config_manager)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    launched = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **k: launched.append(cmd))
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("blocking run")))
+
+    missing = str(tmp_path / "gone.txt")
+    view._open_file_location(missing)
+    assert warnings == [AppStrings.ERROR_OPEN_FOLDER.format(missing)] and not launched
+
+    present = tmp_path / "here.txt"
+    present.write_text("x", encoding="utf-8")
+    view._open_file_location(str(present))
+    assert launched and len(warnings) == 1
+
+    def fail(cmd, **k):
+        raise FileNotFoundError("explorer")
+
+    monkeypatch.setattr(subprocess, "Popen", fail)
+    view._open_file_location(str(present))
+    assert warnings[-1] == AppStrings.ERROR_OPEN_FOLDER.format(str(present))

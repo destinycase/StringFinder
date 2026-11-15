@@ -1860,13 +1860,27 @@ class ResultView(QWidget):
         clipboard.setText(text)
 
     def _open_file_location(self, file_path):
-        if not os.path.exists(file_path):
+        """파일이 있는 폴더를 탐색기에서 열고 그 파일을 선택합니다.
+
+        탐색기가 끝날 때까지 기다리지 않으며, 파일이 없거나 실행하지 못하면 안내합니다(7.1.29).
+        """
+        if not file_path or not os.path.exists(file_path):
+            self._show_open_location_error(file_path)
             return
-        if os.name == "nt":
-            subprocess.run(["explorer", "/select,", os.path.normpath(file_path)])
-        else:
-            folder = os.path.dirname(file_path)
-            subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", folder])
+        try:
+            if os.name == "nt":
+                command = ["explorer", "/select,", os.path.normpath(file_path)]
+            else:
+                command = ["open" if sys.platform == "darwin" else "xdg-open", os.path.dirname(file_path)]
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError) as error:
+            logger.warning(AppStrings.LOG_OPEN_FOLDER_FAIL.format(file_path, error))
+            self._show_open_location_error(file_path)
+
+    def _show_open_location_error(self, file_path):
+        from PySide6.QtWidgets import QMessageBox
+
+        QMessageBox.warning(self, AppStrings.ERROR_TITLE, AppStrings.ERROR_OPEN_FOLDER.format(file_path or ""))
 
     def _export_results(self):
         if self.result_model.rowCount() == 0:

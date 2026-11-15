@@ -16,6 +16,7 @@ from core.search_query import validate_search_query
 from core.skip_reason_codes import (
     EXPAT_XML_DETAIL_TRANSLATION_NAMES,
     LEGACY_MARKERS,
+    SKIP_CODE_ARCHIVE_FORMAT,
     SKIP_CODE_CRITICAL,
     SKIP_CODE_EXCEL_PANIC,
     SKIP_CODE_EXCEL_PROCESS,
@@ -346,6 +347,9 @@ def format_skip_reason(reason: Any) -> str:
         )
     elif code == SKIP_CODE_JSON_PARSE:
         safe_detail = _localize_json_error_detail(safe_detail)
+    elif code == SKIP_CODE_ARCHIVE_FORMAT and (depth := re.fullmatch(r"depth>(\d+)", safe_detail.strip())):
+        # 깊이 제한으로 건너뛴 정상 archive를 "형식이 아님"으로 보이지 않게 합니다(7.1.29).
+        return AppStrings.ERROR_ARCHIVE_DEPTH_LIMIT.format(depth.group(1))
     elif code == SKIP_CODE_EXCEL_PROCESS:
         safe_detail = _localize_internal_error_detail("Excel conversion", safe_detail)
     elif code == SKIP_CODE_EXCEL_PANIC:

@@ -295,3 +295,20 @@ def test_result_line_is_the_key_line(tmp_path):
         result = search(path, "needle")
         assert [(match[0], match[2]) for match in result[2]] == [(9, "K_FIRST"), (11, "K_SECOND")]
         assert result[2][0][3] == "needle é first"
+
+
+def _nested_archive(levels):
+    node = {"Namespace": "Leaf", "Children": [
+        {"Key": "K", "Source": {"Text": "needle"}, "Translation": {"Text": "t"}}]}
+    for i in range(levels):
+        node = {"Namespace": f"N{i}", "Children": [], "Subnamespaces": [node]}
+    return node
+
+
+def test_archive_deeper_than_limit_reports_depth_not_format(tmp_path):
+    """깊이 제한을 넘은 정상 archive는 '형식이 아님'이 아니라 깊이 제한으로 안내합니다(7.1.29)."""
+    shallow = search(write_archive(tmp_path, _nested_archive(10), name="shallow.archive"), "needle")
+    assert len(rows(shallow)) == 1
+    deep = search(write_archive(tmp_path, _nested_archive(80), name="deep.archive"), "needle")
+    assert deep == (C.STATUS_SKIPPED, AppStrings.ERROR_ARCHIVE_DEPTH_LIMIT.format(128))
+    assert AppStrings.ERROR_ARCHIVE_FORMAT.split("(")[0] not in deep[1]

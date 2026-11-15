@@ -104,13 +104,23 @@ def test_config_retry_survives_unremovable_failed_temporary(mock_config_manager,
 def test_config_temp_creation_permission_failure_is_bounded(mock_config_manager, monkeypatch):
     manager = mock_config_manager
     manager.cancel_start()
-    denied = Mock(side_effect=PermissionError("creation denied"))
+    import threading
+
+    # 전역 open을 바꾸는 동안 다른 스레드(로그·백그라운드 저장)가 연 횟수는 세지 않습니다.
+    test_thread = threading.get_ident()
+    modes = []
+
+    def denied(*args, **kwargs):
+        if threading.get_ident() == test_thread:
+            modes.append(args[1] if len(args) > 1 else kwargs.get("mode"))
+        raise PermissionError("creation denied")
+
     monkeypatch.setattr("sf_utils.config_manager.time.sleep", lambda _: None)
     with monkeypatch.context() as injection:
         injection.setattr("builtins.open", denied)
         assert manager.save_immediately() is False
-    assert denied.call_count == 5
-    assert all(call.args[1] == "x" for call in denied.call_args_list)
+    assert len(modes) == 5
+    assert all(mode == "x" for mode in modes)
     assert not list(Path(manager.config_dir).glob(".config_*.tmp"))
 
 
