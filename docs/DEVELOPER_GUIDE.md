@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 2.0 (StringFinder v7.1.1 안정 버전 기준)
-- **최종 수정일:** 2026-11-13
+- **문서 버전:** 2.1 (StringFinder v7.2.1 안정 버전 기준)
+- **최종 수정일:** 2026-11-15
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 7.1.1 (stable)** · Updated: **2026-11-13**
+> Documentation baseline: **StringFinder 7.2.1 (stable)** · Updated: **2026-11-15**
 >
 > 7 버전부터 검색은 Rust 엔진 하나로만 합니다. 그 전의 설계 경위·측정·검토 기록은 [v7 이전 기록](archive/before-v7/README.md)에 보관했습니다.
 
