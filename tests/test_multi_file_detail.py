@@ -124,8 +124,8 @@ def test_filter_on_combined_detail_spans_all_files():
 
 def test_note_column_shows_short_reason_and_tooltip(qtbot, mock_config_manager):
     view = _view(qtbot, mock_config_manager)
-    reason = AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2) + "\n" + AppStrings.SKIP_REASON_EXCEL_PARTIAL.format("Sheet3")
-    view.set_skipped_files([("D:/d/b.txt", reason), ("D:/d/missing.bin", "unreadable")])
+    reason = "INFO_FILE_MATCH_LIMIT|2\nINFO_EXCEL_PARTIAL|Sheet3"  # 사유는 코드로 들어옵니다(7.2.5)
+    view.set_skipped_files([("D:/d/b.txt", reason), ("D:/d/missing.bin", "ERR_OPEN|unreadable")])
     model = view.result_model
     assert model.headerData(3, Qt.Orientation.Horizontal) == AppStrings.HEADER_NOTE
     notes = {}
@@ -140,7 +140,9 @@ def test_note_column_shows_short_reason_and_tooltip(qtbot, mock_config_manager):
     assert shown.index("</span>") < shown.index(AppStrings.FILE_NOTE_MATCH_LIMIT.format(2))
     row_b = next(r for r in range(model.rowCount())
                  if model.data(model.index(r, 0), Qt.ItemDataRole.UserRole)[0] == "D:/d/b.txt")
-    assert model.data(model.index(row_b, 3), Qt.ItemDataRole.ToolTipRole) == reason
+    from core.search_engine import render_skip_reason
+
+    assert model.data(model.index(row_b, 3), Qt.ItemDataRole.ToolTipRole) == render_skip_reason(reason)
 
 
 @pytest.mark.parametrize("language", ["ko", "en"])
@@ -164,7 +166,7 @@ def test_every_known_reason_has_a_short_label(language, monkeypatch):
 
 def test_text_export_includes_note(qtbot, mock_config_manager, tmp_path):
     view = _view(qtbot, mock_config_manager)
-    view.set_skipped_files([("D:/d/b.txt", AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))])
+    view.set_skipped_files([("D:/d/b.txt", "INFO_FILE_MATCH_LIMIT|2")])
     target = tmp_path / "out.txt"
     view._export_to_text(str(target))
     text = target.read_text(encoding="utf-8")

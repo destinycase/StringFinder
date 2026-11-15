@@ -13,13 +13,13 @@ def test_unknown_walk_errors_are_not_merged(language, qtbot, isolated_clipboard)
     previous = get_language()
     try:
         set_language(language)
-        entries = normalize_skipped_files([("walker error", "ERR_WALK|I/O failure")] * 27)
+        entries = normalize_skipped_files(
+            [(f"{UNKNOWN_WALK_PATH_PREFIX}{index}", "ERR_WALK|I/O failure") for index in range(27)])
         assert len(entries) == 27
         assert normalize_skipped_files(entries, strict_session=True) == entries
         dialog = SkippedFilesDialog(entries, 27)
         qtbot.addWidget(dialog)
         text = dialog.list_text
-        assert "walker error" not in text
         assert UNKNOWN_WALK_PATH_PREFIX not in text
         assert AppStrings.SKIPPED_FILES_DETAILS_MISSING.format(26) not in text
         assert text.count(AppStrings.SKIPPED_WALK_PATH_UNKNOWN) == 27
@@ -50,8 +50,8 @@ def test_walk_failure_banner_and_accumulation(qtbot, mock_config_manager):
 
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
-    tab._on_skipped_found([("walker error", "ERR_WALK|failure")] * 26)
-    tab._on_skipped_found([("walker error", "ERR_WALK|failure")])
+    tab._on_skipped_found([(f"{UNKNOWN_WALK_PATH_PREFIX}{index}", "ERR_WALK|failure") for index in range(26)])
+    tab._on_skipped_found([(f"{UNKNOWN_WALK_PATH_PREFIX}26", "ERR_WALK|failure")])
     entries = tab.skipped_files_list
     assert len(entries) == 27
     view = tab.result_view_panel
@@ -89,4 +89,5 @@ def test_native_traversal_failures_preserve_missing_root_paths(operation, tmp_pa
     assert all(reason.startswith("ERR_WALK|") for path, reason in skipped)
     entries = normalize_skipped_files(skipped)
     assert len(entries) == 2
-    assert all(AppStrings.SKIP_DETAIL_FILE_NOT_FOUND in reason for path, reason in entries)
+    assert all(AppStrings.SKIP_DETAIL_FILE_NOT_FOUND in search_engine.render_skip_reason(reason)
+               for path, reason in entries)

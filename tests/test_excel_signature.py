@@ -13,6 +13,7 @@
 """
 
 
+from folder_search_helper import rendered_skips
 import pytest
 
 from folder_search_helper import search_in_excel_special
@@ -128,9 +129,9 @@ def test_real_rust_bulk_corrupted_excel_is_reported_as_skipped(
         )
 
     assert result["results"] == []
-    assert len(result["skipped"]) == 1
-    assert result["skipped"][0][0] == str(target)
-    assert "Excel" in result["skipped"][0][1]
+    assert len(rendered_skips(result["skipped"])) == 1
+    assert rendered_skips(result["skipped"])[0][0] == str(target)
+    assert "Excel" in rendered_skips(result["skipped"])[0][1]
 
 
 def test_real_rust_recycle_excel_is_never_reported(tmp_path):

@@ -1,4 +1,5 @@
 
+from folder_search_helper import rendered_skips
 import pytest
 
 from core import search_engine
@@ -106,9 +107,9 @@ def test_real_rust_json_size_limit_skips_only_large_file(tmp_path, monkeypatch):
     assert [path for path, _count, _matches in response["results"]] == [
         str(valid_file)
     ]
-    assert len(response["skipped"]) == 1
-    assert response["skipped"][0][0] == str(large_file)
-    assert AppStrings.SKIP_REASON_TOO_LARGE.split("{}")[0] in response["skipped"][0][1]
+    assert len(rendered_skips(response["skipped"])) == 1
+    assert rendered_skips(response["skipped"])[0][0] == str(large_file)
+    assert AppStrings.SKIP_REASON_TOO_LARGE.split("{}")[0] in rendered_skips(response["skipped"])[0][1]
 
 
 def test_real_rust_engine_exposes_structured_match_metadata(tmp_path):
@@ -275,10 +276,11 @@ def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
         ]
     )
 
-    assert reason is not None
-    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2) in reason
-    assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in reason
-    assert reason.count("\n") == 1
+    assert reason == "INFO_FILE_MATCH_LIMIT|2\nINFO_JSON_DEPTH_LIMIT|3"  # 코드로 만듭니다(7.2.5)
+    shown = search_engine.render_skip_reason(reason)
+    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2) in shown
+    assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in shown
+    assert shown.count("\n") == 1
 
 
 def test_directory_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
@@ -310,10 +312,10 @@ def test_directory_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
 
     assert response["results"][0][0] == "limited.json"
     assert response["results"][0][1] == 1
-    assert len(response["skipped"]) == 1
-    assert response["skipped"][0][0] == "limited.json"
-    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(17) in response["skipped"][0][1]
-    assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in response["skipped"][0][1]
+    assert len(rendered_skips(response["skipped"])) == 1
+    assert rendered_skips(response["skipped"])[0][0] == "limited.json"
+    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(17) in rendered_skips(response["skipped"])[0][1]
+    assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in rendered_skips(response["skipped"])[0][1]
 
 
 def test_real_rust_engine_marks_partial_json_depth_without_dropping_visible_match(tmp_path):
@@ -355,7 +357,7 @@ def test_real_directory_wrapper_reports_match_limit_and_keeps_results(tmp_path, 
 
     assert response["results"][0][1] == 2
     assert len(response["results"][0][2]) == 3  # two matches plus the result-row notice
-    assert response["skipped"] == [
+    assert rendered_skips(response["skipped"]) == [
         (str(file_path), search_engine.AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))
     ]
 
@@ -382,7 +384,7 @@ def test_real_directory_wrapper_reports_json_depth_and_keeps_shallow_match(tmp_p
     )
 
     assert response["results"][0][1] == 1
-    assert response["skipped"] == [
+    assert rendered_skips(response["skipped"]) == [
         (str(file_path), search_engine.AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(1))
     ]
 
@@ -411,7 +413,7 @@ def test_real_excel_file_limit_is_reported_as_partial_file(tmp_path, monkeypatch
     )
 
     assert response["results"][0][1] == 2
-    assert response["skipped"] == [
+    assert rendered_skips(response["skipped"]) == [
         (str(file_path), search_engine.AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2))
     ]
 

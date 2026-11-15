@@ -205,11 +205,12 @@ def test_values_only_off_searches_archive_files_as_plain_text(tmp_path):
 def test_format_error_reason_survives_language_switch(tmp_path):
     previous = get_language()
     try:
+        saved = "ERR_ARCHIVE_FORMAT|/Children/0/Key"
         set_language("ko")
-        korean = AppStrings.ERROR_ARCHIVE_FORMAT.format("/Children/0/Key")
+        korean = engine.render_skip_reason(saved)
         set_language("en-US")
-        assert engine.localize_skip_reason_for_display(korean) == AppStrings.ERROR_ARCHIVE_FORMAT.format(
-            "/Children/0/Key")
+        assert engine.render_skip_reason(saved) == AppStrings.ERROR_ARCHIVE_FORMAT.format("/Children/0/Key")
+        assert korean != engine.render_skip_reason(saved)
     finally:
         set_language(previous)
 

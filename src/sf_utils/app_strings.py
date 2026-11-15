@@ -391,7 +391,6 @@ class AppStrings:
         "이 파일 형식은 시스템 연결 프로그램을 통해 실행될 수 있습니다.\n\n{}\n\n"
         "출처를 신뢰하고 파일을 여시겠습니까?"
     )
-    SKIP_EMPTY_FILE = "[건너뜀] 빈 파일"
 
     # 기존 검색 모드명 (안전성 확보를 위해 확인)
     # =========================================================================
@@ -511,21 +510,14 @@ class AppStrings:
     # [12] 에러 메시지 (Error Messages) - 형식: [오류] 메시지
     # =========================================================================
     ERROR_TITLE = "오류"
-    ERROR_UNEXPECTED_FILE = "[오류] 파일 처리 중 예기치 못한 문제 발생 ('{}'): {}"
     ERROR_JSON_PARSE = "[오류] JSON 구문 분석 실패: {}"
     ERROR_ARCHIVE_FORMAT = "[오류] UE 현지화 archive 형식이 아닙니다 (위치: {})"
     ERROR_ARCHIVE_DEPTH_LIMIT = "[건너뜀] archive 구조가 너무 깊어(최대 {}단계) 검색하지 않았습니다. 파일 형식 오류는 아닙니다."
     ERROR_EXPORT_FAIL = "[오류] 결과 내보내기 실패: {}"
     EXPORT_SUCCESS = "검색 결과를 저장했습니다:\n{}"
     ERROR_OPEN_DIR_FAILED = "[오류] 폴더 열기 실패: {}"
-    ERROR_IO_DURING_SEARCH = "[오류] 검색 수행 중 입출력 오류 발생: {}"
     ERROR_STOP_SEARCH_TAB = "[오류] 검색 탭 중단 처리 실패: {}"
-    ERROR_EXCEL_ACCESS = "[오류] Excel 파일 접근 실패: {}"
-    ERROR_EXCEL_SIGNATURE = "[오류] 유효하지 않은 Excel 서명입니다."
     ERROR_EXCEL_PROCESS = "[오류] Excel 데이터 변환 실패: {}"
-    ERROR_EXCEL_CALAMINE = "[오류] Excel 검색을 위한 'python-calamine' 라이브러리가 유실되었습니다."
-    ERROR_SEARCH_EXCEL = "[오류] Excel 통합 검색 실패 ('{}'): {}"
-    ERROR_SEARCH_EXCEL_SHEET = "[오류] Excel 시트 데이터 검색 실패 ('{}'): {}"
     ERROR_EXCEL_PANIC = "[오류] Excel 엔진에서 치명적인 오류가 발생했습니다: {}"
     EXCEL_DETAIL_RANGE_OUT_OF_BOUNDS = (
         "{} 워크시트 데이터 범위가 손상되었습니다. 시작 위치 {}이(가) 데이터 길이 {}의 범위를 벗어났습니다."
@@ -536,7 +528,6 @@ class AppStrings:
     ERROR_XML_PARSE = "[오류] XML 구문 분석 실패: {}"
     ERROR_XML_UNSUPPORTED_DTD = "[안내] XML DTD는 안전한 파싱을 위해 지원하지 않습니다: {}"
     XML_DETAIL_TAG_MISMATCH = "종료 태그가 일치하지 않습니다. {} 태그가 필요하지만 {} 태그가 발견되었습니다."
-    XML_DETAIL_MISMATCHED_TAG = "시작 태그와 종료 태그가 일치하지 않습니다."
     XML_DETAIL_DOCTYPE_POSITION = "DOCTYPE 선언은 루트 요소보다 앞에 있어야 합니다."
     XML_DETAIL_DTD_UNSUPPORTED = "DTD 선언과 엔터티 확장은 지원하지 않습니다."
     XML_DETAIL_DECLARATION_POSITION = "XML 선언은 문서 맨 앞에 한 번만 있어야 합니다."
@@ -549,14 +540,11 @@ class AppStrings:
     XML_DETAIL_INVALID_TOKEN = "올바르지 않은 XML 토큰이 발견되었습니다."
     XML_DETAIL_INVALID_ATTRIBUTE = "XML 속성 형식이 올바르지 않습니다."
     XML_DETAIL_INVALID_ENTITY = "XML 엔터티 또는 이스케이프 문자 형식이 올바르지 않습니다."
-    XML_DETAIL_EMPTY_DOCTYPE = "DOCTYPE 선언의 내용이 비어 있습니다."
     XML_DETAIL_UNKNOWN_NAMESPACE = "정의되지 않은 네임스페이스 접두사가 사용되었습니다: {}"
     XML_DETAIL_INVALID_DOCUMENT = "XML 문서 형식이 올바르지 않습니다."
-    XML_DETAIL_WITH_POSITION = "{} ({}행, {}열)"
     JSON_DETAIL_INVALID_DOCUMENT = "JSON 문서 형식이 올바르지 않습니다."
     JSON_DETAIL_DUPLICATE_KEYS = "같은 객체 안에 중복된 JSON 키가 있습니다. 설정에서 중복 키를 허용할 수 있습니다."
     JSON_DETAIL_WITH_POSITION = "{} ({}행, {}열)"
-    ERROR_FILE_ACCESS_BINARY = "[오류] 파일 바이너리 여부 확인 실패: {}"
     ERROR_SEARCH_CRITICAL_MSG = "검색 과정에서 치명적인 오류가 발생했습니다.\n로그 탭에서 상세 내용을 확인해주세요.\n\n원인: {}"
     ERROR_SESSION_SAVE = "[오류] 세션 데이터 보존 실패: {}"
     ERROR_LIMIT_REACHED = "[안내] 결과 임계치 도달: 도구 안정성을 위해 검색을 자동 중지했습니다. (최대 {}건)"
@@ -597,7 +585,6 @@ class AppStrings:
     SKIP_REASON_JSON_DEPTH_LIMIT = "[안내] JSON 최대 깊이({})를 초과한 하위 영역을 검색하지 않았습니다."
     SKIP_REASON_PANIC = "[오류] 하위 엔진 패닉 발생: {}"
     SKIP_REASON_CRITICAL = "[오류] 치명적인 예외 감지: {}"
-    SKIP_REASON_BATCH = "[오류] 파일 처리 작업 단위 실패: {}"
     SKIP_REASON_UNKNOWN = "[오류] 상세 사유를 알 수 없는 스킵: {}"
     SKIP_DETAIL_PERMISSION_DENIED = "운영체제가 접근을 허용하지 않았습니다."
     SKIP_DETAIL_FILE_NOT_FOUND = "파일 또는 폴더를 찾을 수 없습니다."

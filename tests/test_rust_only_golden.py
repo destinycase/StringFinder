@@ -3,6 +3,7 @@
 앱이 실제로 쓰는 경로(``search_directory_fast`` → Rust, 파일 하나는 ``folder_search_helper``로 같은 경로)를
 지나며, 예전에 글자 변형 검색(Python)으로만 찾던 경우를 포함해 형식마다 기대 결과를 고정합니다.
 """
+from folder_search_helper import rendered_skips
 import json
 import os
 import random
@@ -59,7 +60,7 @@ def test_plain_text_matches_case_and_normal_forms_across_encodings(corpus):
     assert _lines(result) == {"plain.txt": [4]}
     result = se.search_directory_fast([str(corpus)], "σοφία", ["txt"])
     assert _lines(result) == {"utf16.txt": [2]}
-    assert result["skipped"] == []
+    assert rendered_skips(result["skipped"]) == []
 
 
 @pytest.mark.parametrize("mode,query,expected", [
@@ -150,7 +151,7 @@ def _decode_notice(reason):
 @pytest.mark.parametrize("query", ["target", "검색"])
 def test_undecodable_bytes_are_reported_even_without_matches(decode_corpus, query):
     result = se.search_directory_fast([str(decode_corpus)], query, ["txt"])
-    notices = {os.path.basename(path): reason for path, reason in result["skipped"]}
+    notices = {os.path.basename(path): reason for path, reason in rendered_skips(result["skipped"])}
     # 일치가 있든 없든 네 파일 모두 "일부를 해석하지 못함" 안내가 붙습니다.
     assert set(notices) == set(DECODE_CASES)
     assert all(_decode_notice(reason) for reason in notices.values())
@@ -180,7 +181,7 @@ def test_real_replacement_characters_and_binary_files_are_not_decode_failures(tm
     # 바이너리 파일은 일치 개수만 보고하므로 안내 대상이 아닙니다.
     (root / "blob.bin").write_bytes(b"\x00\x01\xff\xfe target \x00" * 100)
     result = se.search_directory_fast([str(root)], "target", [], exclude_binary=False)
-    assert result["skipped"] == []
+    assert rendered_skips(result["skipped"]) == []
     assert len(result["results"]) == 4
 
 
@@ -191,7 +192,7 @@ def test_valid_cp949_after_ascii_prefix_is_not_a_decode_failure(tmp_path, query)
     path = tmp_path / "cp949_ascii_head.txt"
     path.write_bytes(b"ascii only line\n" * 5000 + "한글 줄 needle\n다른 줄\n".encode("cp949"))
     result = se.search_directory_fast([str(tmp_path)], query, ["txt"])
-    assert result["skipped"] == []
+    assert rendered_skips(result["skipped"]) == []
     single = folder_search_helper.search_in_file(str(path), query)
     assert single is None or single[0] != C.STATUS_SKIPPED
     if query == "needle":
@@ -205,5 +206,5 @@ def test_long_converted_last_line_reports_undecodable_tail(tmp_path):
     path = tmp_path / "long_tail.txt"
     path.write_bytes("K target ".encode() + b"x" * 200_000 + b"\xff tail")
     result = se.search_directory_fast([str(tmp_path)], "target", ["txt"])
-    assert [os.path.basename(p) for p, _ in result["skipped"]] == ["long_tail.txt"]
-    assert _decode_notice(result["skipped"][0][1])
+    assert [os.path.basename(p) for p, _ in rendered_skips(result["skipped"])] == ["long_tail.txt"]
+    assert _decode_notice(rendered_skips(result["skipped"])[0][1])

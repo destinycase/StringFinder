@@ -1079,7 +1079,9 @@ class SearchTab(QMainWindow):
                 if hasattr(self, "skipped_files_list") and self.skipped_files_list:
                     for skipped_item in self.skipped_files_list:
                         path_str = str(skipped_item[0])
-                        reason_str = str(skipped_item[1]) if len(skipped_item) > 1 else ""
+                        from core.search_engine import render_skip_reason
+
+                        reason_str = render_skip_reason(skipped_item[1]) if len(skipped_item) > 1 else ""
                         logger.info(AppStrings.LOG_SCH_SKIPPED_FILE_ITEM.format(path_str, reason_str))
                 # 스킵 된 시트 목록을 계층적으로 출력 (파일명 > 시트명 + 원인)
                 for sheet_item in skipped_sheets:

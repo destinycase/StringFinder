@@ -4,10 +4,7 @@ import subprocess
 import sys
 import threading
 import tempfile
-import uuid
 from pathlib import Path
-from functools import lru_cache
-from typing import cast
 from PySide6.QtCore import QByteArray, QItemSelectionModel, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtCore import QEvent, QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
@@ -143,30 +140,12 @@ class ContextPreviewWorker(QRunnable):
             self.signals.finished.emit(self.request_id, None, error, self.cancel_event.is_set())
 
 
-@lru_cache(maxsize=1)
-def _walk_reason_prefixes():
-    from sf_utils.english_strings import ENGLISH_STRINGS
-    from sf_utils.localization import get_korean_strings
-
-    return tuple(cast(str, template).split("{}", 1)[0] for template in (
-        get_korean_strings()["SKIP_REASON_WALK"], ENGLISH_STRINGS["SKIP_REASON_WALK"]
-    ))
-
-
 def _is_walk_failure(path, reason):
-    from core.skip_reason_codes import (
-        LEGACY_UNKNOWN_WALK_PATHS, UNKNOWN_WALK_PATH_PREFIX, decode_skip_reason,
-    )
+    """폴더 탐색 실패(경로를 모르는 항목 포함)인지입니다. 사유는 코드 형식입니다(7.2.5)."""
+    from core.skip_reason_codes import SKIP_CODE_WALK, UNKNOWN_WALK_PATH_PREFIX, decode_skip_reason
 
-    return (
-        path.startswith(UNKNOWN_WALK_PATH_PREFIX)
-        or path.casefold() in LEGACY_UNKNOWN_WALK_PATHS
-        or decode_skip_reason(reason)[0] == "ERR_WALK"
-        or any(
-            line.startswith(prefix)
-            for line in reason.splitlines()
-            for prefix in _walk_reason_prefixes()
-        )
+    return path.startswith(UNKNOWN_WALK_PATH_PREFIX) or any(
+        decode_skip_reason(line)[0] == SKIP_CODE_WALK for line in str(reason or "").splitlines() if line.strip()
     )
 
 
@@ -178,9 +157,12 @@ def _skipped_count_text(entries, total):
 
 
 def normalize_skipped_files(skipped_files, *, strict_session: bool = False):
-    """스킵 항목을 팝업과 세션 저장에 안전한 ``(경로, 사유)`` 튜플로 정규화합니다."""
-    from core.search_engine import is_supported_skip_reason, localize_skip_reason_for_display
-    from core.skip_reason_codes import LEGACY_UNKNOWN_WALK_PATHS, UNKNOWN_WALK_PATH_PREFIX
+    """건너뛴 항목을 ``(경로, 사유 코드)`` 목록으로 정리합니다. 같은 경로의 사유는 줄로 합칩니다.
+
+    사유는 코드 형식(``ERR_…|상세``)으로 두고, 문장은 보여 줄 때 ``render_skip_reason``으로 만듭니다(7.2.5).
+    ``strict_session``이면 세션에서 읽은 값이라 모양을 엄격히 확인하고, 코드 형식이 아닌 사유는 버립니다.
+    """
+    from core.skip_reason_codes import TEMPLATE_NAMES, decode_skip_reason, is_coded_reason
 
     normalized_by_path: dict[str, str] = {}
     if not isinstance(skipped_files, (list, tuple)):
@@ -205,30 +187,21 @@ def normalize_skipped_files(skipped_files, *, strict_session: bool = False):
                 or len(raw_path) > 32767
                 or any(character in raw_path for character in ("\x00", "\r", "\n"))
                 or len(raw_reason) > 65536
-                or not is_supported_skip_reason(raw_reason)
+                or not is_coded_reason(raw_reason)
+                or any(decode_skip_reason(line)[0] not in TEMPLATE_NAMES
+                       for line in raw_reason.splitlines() if line.strip())
             ):
                 continue
 
         path = str(raw_path).strip()
         if not path:
             continue
-        if path.casefold() in LEGACY_UNKNOWN_WALK_PATHS:
-            # Legacy engines supplied no path. Preserve each failure as an event;
-            # generated identifiers survive subsequent normalization and sessions.
-            path = UNKNOWN_WALK_PATH_PREFIX + uuid.uuid4().hex
-        reason = localize_skip_reason_for_display(raw_reason)
+        reason = str(raw_reason or "").strip()
         previous_reason = normalized_by_path.get(path, "")
         if previous_reason and reason:
-            reason_lines = list(
-                dict.fromkeys(
-                    [
-                        line
-                        for value in (previous_reason, reason)
-                        for line in value.splitlines()
-                        if line
-                    ]
-                )
-            )
+            reason_lines = list(dict.fromkeys(
+                line for value in (previous_reason, reason) for line in value.splitlines() if line
+            ))
             normalized_by_path[path] = "\n".join(reason_lines)
         elif reason or path not in normalized_by_path:
             normalized_by_path[path] = reason
@@ -252,7 +225,9 @@ def _format_skipped_files_text(skipped_files, total_count):
             path = AppStrings.SKIPPED_WALK_ENTRY.format(path)
         lines = [f"{index}. {path}"]
         if reason:
-            lines.append(f"   {AppStrings.SKIPPED_FILES_REASON.format(reason)}")
+            from core.search_engine import render_skip_reason
+
+            lines.append(f"   {AppStrings.SKIPPED_FILES_REASON.format(render_skip_reason(reason))}")
         blocks.append("\n".join(lines))
 
     missing_count = max(0, int(total_count or 0) - len(entries))
@@ -306,9 +281,13 @@ class SkippedFilesDialog(QDialog):
 
 
 def _result_note(result_model, path) -> str:
-    """내보낼 때 쓸 파일 목록 기타 칸의 사유 원문입니다(7.1.24)."""
+    """내보낼 때 쓸 파일 목록 기타 칸의 사유 문장입니다(지금 언어)."""
     note_for = getattr(result_model, "note_for", None)
-    return note_for(path) if callable(note_for) else ""
+    if not callable(note_for):
+        return ""
+    from core.search_engine import render_skip_reason
+
+    return render_skip_reason(note_for(path))
 
 
 class SearchSpinner(QWidget):

@@ -83,7 +83,9 @@ def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
 
     assert results_received[0][0] == "limited.txt"
     assert skipped_received[0][0] == "limited.txt"
-    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.split("{}")[0] in skipped_received[0][1]
+    from core.search_engine import render_skip_reason
+
+    assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.split("{}")[0] in render_skip_reason(skipped_received[0][1])
     assert finished_received == [(1, 1, 1)]
 
 

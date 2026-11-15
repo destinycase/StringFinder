@@ -13,8 +13,7 @@ from PySide6.QtWidgets import QLabel
 from core.search_engine import (
     format_excel_panic_reason,
     format_skip_reason,
-    is_supported_skip_reason,
-    localize_skip_reason_for_display,
+    render_skip_reason,
 )
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
@@ -96,8 +95,8 @@ def test_json_size_limit_is_file_local_and_localized():
 def test_misspelled_mmap_reason_code_is_not_supported(language):
     set_language(language)
 
-    assert not is_supported_skip_reason("ERR_MAP|mapping failed")
-    assert is_supported_skip_reason("ERR_MMAP|mapping failed")
+    assert render_skip_reason("ERR_MAP|mapping failed").startswith(AppStrings.SKIP_REASON_UNKNOWN.split("{")[0])
+    assert render_skip_reason("ERR_MMAP|mapping failed").startswith(AppStrings.SKIP_REASON_MMAP.split("{")[0])
 
 
 def test_projected_resource_budget_reason_follows_active_language():
@@ -144,16 +143,15 @@ def test_parser_and_engine_skip_details_follow_active_language():
 
 
 def test_saved_skip_reason_is_rendered_in_the_current_language():
-    set_language("ko")
-    saved_korean = format_skip_reason("ERR_OPEN|Access denied")
+    saved = "ERR_OPEN|Access denied"  # 세션에는 코드로 저장합니다(7.2.5)
 
     set_language("en")
-    rendered_english = localize_skip_reason_for_display(saved_korean)
+    rendered_english = render_skip_reason(saved)
     assert rendered_english.startswith("[Error]")
     assert not re.search(r"[가-힣]", rendered_english)
 
     set_language("ko")
-    rendered_korean = localize_skip_reason_for_display(rendered_english)
+    rendered_korean = render_skip_reason(saved)
     assert rendered_korean.startswith("[오류]")
     assert "The operating system" not in rendered_korean
 
@@ -308,16 +306,10 @@ def test_partial_search_reasons_follow_active_language():
 
 
 def test_combined_partial_reasons_are_relocalized_line_by_line():
-    set_language("ko")
-    saved_reason = "\n".join(
-        (
-            format_skip_reason("INFO_FILE_MATCH_LIMIT|25"),
-            format_skip_reason("INFO_JSON_DEPTH_LIMIT|40"),
-        )
-    )
+    saved_reason = "INFO_FILE_MATCH_LIMIT|25\nINFO_JSON_DEPTH_LIMIT|40"
 
     set_language("en")
-    localized = localize_skip_reason_for_display(saved_reason)
+    localized = render_skip_reason(saved_reason)
 
     assert "per-file match limit" in localized
     assert "maximum JSON depth" in localized

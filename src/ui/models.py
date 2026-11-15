@@ -57,36 +57,36 @@ class SearchMatchSchema:
 NOTE_COLOR = "#E8A33D"
 
 
-def _note_patterns():
-    """건너뛴 파일 사유(긴 문장)를 기타 칸의 짧은 문구로 바꾸는 규칙입니다. 언어마다 문구가 달라 그때 만듭니다."""
-    pairs = (
-        (AppStrings.SKIP_REASON_FILE_MATCH_LIMIT, AppStrings.FILE_NOTE_MATCH_LIMIT),
-        (AppStrings.SKIP_REASON_DECODE_PARTIAL, AppStrings.FILE_NOTE_DECODE_PARTIAL),
-        (AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT, AppStrings.FILE_NOTE_JSON_DEPTH_LIMIT),
-        (AppStrings.SKIP_REASON_EXCEL_PARTIAL, AppStrings.FILE_NOTE_EXCEL_PARTIAL),
-    )
-    patterns = []
-    for template, short in pairs:
-        regex = re.escape(template).replace(re.escape("{}"), "(.*?)")
-        patterns.append((re.compile(regex + r"\Z", re.DOTALL), short))
-    return patterns
-
-
 def short_file_note(reason: str) -> str:
-    """파일 목록 기타 칸에 보일 짧은 문구입니다. 모르는 사유는 앞의 [안내] 같은 꼬리표만 떼고 그대로 씁니다."""
-    patterns = _note_patterns()
+    """파일 목록 기타 칸에 보일 짧은 문구입니다. 사유 코드에서 바로 만듭니다(7.2.5).
+
+    알려진 일부만 검색한 사유 4종은 짧은 문구로, 그 밖의 사유는 문장에서 앞의 꼬리표만 떼어 씁니다.
+    """
+    from core.search_engine import render_skip_reason
+    from core.skip_reason_codes import (
+        SKIP_CODE_DECODE_PARTIAL,
+        SKIP_CODE_EXCEL_PARTIAL,
+        SKIP_CODE_FILE_MATCH_LIMIT,
+        SKIP_CODE_JSON_DEPTH_LIMIT,
+        decode_skip_reason,
+    )
+
+    short_templates = {
+        SKIP_CODE_FILE_MATCH_LIMIT: AppStrings.FILE_NOTE_MATCH_LIMIT,
+        SKIP_CODE_DECODE_PARTIAL: AppStrings.FILE_NOTE_DECODE_PARTIAL,
+        SKIP_CODE_JSON_DEPTH_LIMIT: AppStrings.FILE_NOTE_JSON_DEPTH_LIMIT,
+        SKIP_CODE_EXCEL_PARTIAL: AppStrings.FILE_NOTE_EXCEL_PARTIAL,
+    }
     parts = []
     for line in str(reason or "").splitlines():
         line = line.strip()
         if not line:
             continue
-        for regex, short in patterns:
-            match = regex.match(line)
-            if match:
-                parts.append(short.format(*match.groups()))
-                break
+        code, detail = decode_skip_reason(line)
+        if code in short_templates:
+            parts.append(short_templates[code].format(detail))
         else:
-            parts.append(re.sub(r"^\[[^\]]*\]\s*", "", line))
+            parts.append(re.sub(r"^\[[^\]]*\]\s*", "", render_skip_reason(line)))
     return " · ".join(dict.fromkeys(parts))
 
 
@@ -102,7 +102,7 @@ class SearchResultModel(QAbstractTableModel):
         """모델을 초기화하고 검색 엔진의 결과 항목 헤더를 설정합니다."""
         super().__init__()
         self.headers = [AppStrings.HEADER_COUNT, AppStrings.HEADER_FILE, AppStrings.HEADER_FOLDER, AppStrings.HEADER_NOTE]
-        # 일부만 검색한 파일의 사유입니다(경로 → 사유 원문). 기타 칸에 짧게 보입니다(7.1.24).
+        # 일부만 검색한 파일의 사유 코드입니다(경로 → 코드, 7.2.5). 기타 칸에 짧게, 설명에 문장으로 보입니다.
         self._notes: Dict[str, str] = {}
         self._short_notes: Dict[str, str] = {}
         self._data = []
@@ -344,7 +344,9 @@ class SearchResultModel(QAbstractTableModel):
             if role == Qt.ItemDataRole.EditRole:
                 return self._notes.get(path, "")
             if role == Qt.ItemDataRole.ToolTipRole:
-                return self._notes.get(path) or None
+                from core.search_engine import render_skip_reason
+
+                return render_skip_reason(self._notes.get(path)) or None
             if role == Qt.ItemDataRole.TextAlignmentRole:
                 return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
             if role == Qt.ItemDataRole.UserRole:

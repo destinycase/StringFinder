@@ -28,9 +28,10 @@ class Constants:
     SESSION_INPUTS_SUFFIX = ".inputs"
     # 7.1.4부터 저장한 탭 입력값에 붙는 표식입니다. 없으면 예전 버전이 저장한 세션입니다.
     STATE_KEY_INPUTS_TRACKED = "inputs_saved_on_change"
-    # 세션 형식 번호(7.2.3). 이 번호가 아닌 세션은 검색 조건만 살리고 결과는 다시 검색하게 합니다.
+    # 세션 형식 번호. 이 번호가 아닌 세션은 검색 조건만 살리고 결과는 다시 검색하게 합니다.
+    # 2(7.2.3): 검색 모드 고정 값, 3(7.2.5): 건너뛴 사유를 코드로 저장.
     STATE_KEY_SESSION_FORMAT = "session_format"
-    SESSION_FORMAT_VERSION = 2
+    SESSION_FORMAT_VERSION = 3
     BACKUP_FILE_SUFFIX = ".old"
     # 하드코딩되었던 상수들은 고급 설정의 '기본값'으로 사용되며, 
     # UI 편집용 수치(MB 단위)와 내부 바이트 계산용 수치로 적절히 분리됩니다.

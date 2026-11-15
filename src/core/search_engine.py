@@ -10,11 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 from sf_utils.app_strings import AppStrings
 from sf_utils.config_manager import ConfigManager
 from sf_utils.constants import Constants
-from sf_utils.english_strings import ENGLISH_STRINGS
-from sf_utils.localization import get_korean_strings, get_language
 from core.search_query import validate_search_query
 from core.skip_reason_codes import (
-    EXPAT_XML_DETAIL_TRANSLATION_NAMES,
     SKIP_CODE_ARCHIVE_FORMAT,
     SKIP_CODE_CRITICAL,
     SKIP_CODE_EXCEL_PANIC,
@@ -31,10 +28,16 @@ from core.skip_reason_codes import (
     SKIP_CODE_WALK,
     SKIP_CODE_XML_PARSE,
     SKIP_CODE_XML_UNSUPPORTED_DTD,
+    SKIP_CODE_DECODE_PARTIAL,
+    SKIP_CODE_EXCEL_PARTIAL,
+    SKIP_CODE_FILE_MATCH_LIMIT,
+    SKIP_CODE_JSON_DEPTH_LIMIT,
+    SKIP_CODE_ROOT_JUNCTION,
     TEMPLATE_NAMES,
     XML_DETAIL_TRANSLATION_NAMES,
     build_skip_reason,
     decode_skip_reason,
+    is_coded_reason,
 )
 from core.skip_reason_formatter import format_excel_panic_reason as _format_excel_panic_reason
 
@@ -210,24 +213,6 @@ def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) ->
     if tag_mismatch:
         return AppStrings.XML_DETAIL_TAG_MISMATCH.format(*tag_mismatch.groups())
 
-    expat_location = re.fullmatch(r"(.+): line (\d+), column (\d+)", raw_detail)
-    if expat_location:
-        message, line, column = expat_location.groups()
-        if message == "unbound prefix":
-            localized_message = AppStrings.XML_DETAIL_UNKNOWN_NAMESPACE.format("prefix")
-        else:
-            localized_name = EXPAT_XML_DETAIL_TRANSLATION_NAMES.get(message)
-            localized_message = (
-                getattr(AppStrings, localized_name)
-                if localized_name
-                else AppStrings.XML_DETAIL_INVALID_DOCUMENT
-            )
-        return AppStrings.XML_DETAIL_WITH_POSITION.format(localized_message, line, column)
-
-    # A Korean legacy-session reason is safe only while the Korean catalog is active.
-    if re.search(r"[가-힣]", raw_detail):
-        return raw_detail if get_language() == "ko" else AppStrings.XML_DETAIL_INVALID_DOCUMENT
-
     if raw_detail.startswith(("Malformed UTF-8 input", "Malformed input")):
         return AppStrings.XML_DETAIL_INVALID_ENCODING
     if raw_detail.startswith("Unexpected EOF during reading"):
@@ -365,229 +350,19 @@ def format_excel_panic_reason(detail: Any) -> str:
     )
 
 
-_LOCALIZED_SKIP_MESSAGE_NAMES = (
-    "SKIP_ROOT_JUNCTION",
-    "ERROR_SELECTED_ENCODING",
-    "ERROR_DOCUMENT_ENCODING",
-    "ERROR_JSON_PARSE",
-    "ERROR_ARCHIVE_FORMAT",
-    "ERROR_EXCEL_ACCESS",
-    "ERROR_EXCEL_SIGNATURE",
-    "ERROR_EXCEL_PROCESS",
-    "ERROR_EXCEL_CALAMINE",
-    "ERROR_SEARCH_EXCEL",
-    "ERROR_SEARCH_EXCEL_SHEET",
-    "ERROR_EXCEL_PANIC",
-    "ERROR_XML_PARSE",
-    "ERROR_XML_UNSUPPORTED_DTD",
-    "ERROR_FILE_ACCESS_BINARY",
-    "ERROR_IO_DURING_SEARCH",
-    "ERROR_UNEXPECTED_FILE",
-    "ERROR_MEMORY_CRITICAL",
-    "SKIP_EMPTY_FILE",
-    "SKIP_REASON_WALK",
-    "SKIP_REASON_OPEN",
-    "SKIP_REASON_METADATA",
-    "SKIP_REASON_MMAP",
-    "SKIP_REASON_TOO_LARGE",
-    "SKIP_REASON_JSON_SIZE_LIMIT",
-    "SKIP_REASON_RESOURCE_BUDGET",
-    "SKIP_REASON_FILE_MATCH_LIMIT",
-    "SKIP_REASON_JSON_DEPTH_LIMIT",
-    "SKIP_REASON_EXCEL_PARTIAL",
-    "SKIP_REASON_DECODE_PARTIAL",
-    "SKIP_REASON_PANIC",
-    "SKIP_REASON_CRITICAL",
-    "SKIP_REASON_BATCH",
-    "SKIP_REASON_UNKNOWN",
-)
+def render_skip_reason(reason: Any) -> str:
+    """저장된 건너뛴 사유(코드 형식, 여러 줄 가능)를 지금 언어의 문장으로 만듭니다(7.2.5).
 
-
-def _match_localized_skip_resource(reason: str, catalog: Dict[str, Any]) -> Optional[str]:
-    for resource_name in _LOCALIZED_SKIP_MESSAGE_NAMES:
-        template = str(catalog.get(resource_name, ""))
-        prefix = template.split("{", 1)[0]
-        if prefix and reason.startswith(prefix):
-            return resource_name
-        if template and "{" not in template and reason == template:
-            return resource_name
-    return None
-
-
-def _is_current_localized_skip_reason(reason: str) -> bool:
-    """Return whether a reason was already rendered with the active catalog."""
-    current_catalog = {
-        name: getattr(AppStrings, name, "")
-        for name in _LOCALIZED_SKIP_MESSAGE_NAMES
-    }
-    return _match_localized_skip_resource(reason, current_catalog) is not None
-
-
-def is_supported_skip_reason(reason: Any) -> bool:
-    """Return whether a saved skip reason belongs to the supported protocol."""
-    if not isinstance(reason, str):
-        return False
-    reason_text = reason.strip()
-    if not reason_text:
-        return False
-
-    catalogs = (get_korean_strings(), ENGLISH_STRINGS)
-    for line in reason_text.splitlines():
+    세션·화면 모델에는 ``ERR_…|상세``·``INFO_…|상세`` 코드를 두고, 보여 줄 때만 이 함수로 문장을 만듭니다.
+    코드 형식이 아닌 줄은 그대로 둡니다.
+    """
+    lines = []
+    for line in str(reason or "").splitlines():
         line = line.strip()
         if not line:
             continue
-        if line.startswith(("ERR_", "INFO_")) and "|" in line:
-            code, _ = decode_skip_reason(line)
-            if code not in TEMPLATE_NAMES:
-                return False
-            continue
-        if line.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
-            continue
-        if re.match(r"^(?:xlsx?|xlsm|xlsb)\|range start index ", line, re.IGNORECASE):
-            continue
-        if any(_match_localized_skip_resource(line, catalog) for catalog in catalogs):
-            continue
-        code, _ = decode_skip_reason(line)
-        if code not in TEMPLATE_NAMES or code == SKIP_CODE_UNKNOWN:
-            return False
-    return True
-
-
-def _render_saved_skip_resource(resource_name: str, source_reason: str = "") -> str:
-    """Re-render a categorized legacy-session reason with the active catalog."""
-    saved_limit_match = re.search(
-        r"\(([0-9,]+)(?:건|개|\s*cells?)?\)",
-        source_reason,
-        flags=re.IGNORECASE,
-    )
-    saved_limit = (
-        saved_limit_match.group(1).replace(",", "")
-        if saved_limit_match
-        else None
-    )
-    direct_resources = {
-        "ERROR_EXCEL_SIGNATURE",
-        "ERROR_EXCEL_CALAMINE",
-        "ERROR_MEMORY_CRITICAL",
-        "SKIP_EMPTY_FILE",
-        "ERROR_DOCUMENT_ENCODING",
-        "ERROR_SELECTED_ENCODING",
-        "SKIP_ROOT_JUNCTION",
-    }
-    if resource_name in direct_resources:
-        return str(getattr(AppStrings, resource_name))
-    if resource_name == "SKIP_REASON_DECODE_PARTIAL":
-        for catalog in (get_korean_strings(), ENGLISH_STRINGS):
-            prefix, suffix = str(catalog[resource_name]).split("{}", 1)
-            if source_reason.startswith(prefix) and source_reason.endswith(suffix):
-                encoding = source_reason[len(prefix):len(source_reason) - len(suffix)]
-                return AppStrings.SKIP_REASON_DECODE_PARTIAL.format(encoding)
-    if resource_name == "SKIP_REASON_EXCEL_PARTIAL":
-        for catalog in (get_korean_strings(), ENGLISH_STRINGS):
-            prefix, suffix = str(catalog[resource_name]).split("{}", 1)
-            if source_reason.startswith(prefix) and source_reason.endswith(suffix):
-                sheets = source_reason[len(prefix):len(source_reason) - len(suffix)]
-                return AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(sheets)
-    if resource_name == "ERROR_JSON_PARSE":
-        return AppStrings.ERROR_JSON_PARSE.format(AppStrings.JSON_DETAIL_INVALID_DOCUMENT)
-    if resource_name == "ERROR_ARCHIVE_FORMAT":
-        # 문제 위치는 언어와 무관한 구조 경로이므로 그대로 옮깁니다.
-        for catalog in (get_korean_strings(), ENGLISH_STRINGS):
-            prefix, suffix = str(catalog[resource_name]).split("{}", 1)
-            if source_reason.startswith(prefix) and source_reason.endswith(suffix):
-                location = source_reason[len(prefix):len(source_reason) - len(suffix)]
-                return AppStrings.ERROR_ARCHIVE_FORMAT.format(location)
-    if resource_name == "ERROR_XML_PARSE":
-        return AppStrings.ERROR_XML_PARSE.format(AppStrings.XML_DETAIL_INVALID_DOCUMENT)
-    if resource_name == "ERROR_XML_UNSUPPORTED_DTD":
-        return AppStrings.ERROR_XML_UNSUPPORTED_DTD.format(AppStrings.XML_DETAIL_DTD_UNSUPPORTED)
-    if resource_name == "ERROR_EXCEL_ACCESS":
-        return AppStrings.ERROR_EXCEL_ACCESS.format(AppStrings.SKIP_DETAIL_IO_FAILURE)
-    if resource_name in {"ERROR_EXCEL_PROCESS", "ERROR_SEARCH_EXCEL", "ERROR_SEARCH_EXCEL_SHEET"}:
-        return AppStrings.ERROR_EXCEL_PROCESS.format(AppStrings.EXCEL_DETAIL_UNKNOWN_FORMAT)
-    if resource_name == "ERROR_EXCEL_PANIC":
-        return AppStrings.ERROR_EXCEL_PANIC.format(AppStrings.EXCEL_DETAIL_UNKNOWN_FORMAT)
-    if resource_name in {"ERROR_FILE_ACCESS_BINARY", "ERROR_IO_DURING_SEARCH"}:
-        return AppStrings.ERROR_IO_DURING_SEARCH.format(AppStrings.SKIP_DETAIL_IO_FAILURE)
-    if resource_name == "ERROR_UNEXPECTED_FILE":
-        return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
-
-    if resource_name == "SKIP_REASON_OPEN":
-        return AppStrings.SKIP_REASON_OPEN.format(AppStrings.SKIP_DETAIL_PERMISSION_DENIED)
-    if resource_name in {"SKIP_REASON_WALK", "SKIP_REASON_METADATA", "SKIP_REASON_MMAP"}:
-        template = cast(str, getattr(AppStrings, resource_name))
-        return template.format(AppStrings.SKIP_DETAIL_IO_FAILURE)
-    if resource_name == "SKIP_REASON_TOO_LARGE":
-        return AppStrings.SKIP_REASON_TOO_LARGE.format(AppStrings.SKIP_DETAIL_SIZE_LIMIT)
-    if resource_name == "SKIP_REASON_JSON_SIZE_LIMIT":
-        return AppStrings.SKIP_REASON_JSON_SIZE_LIMIT.format(AppStrings.SKIP_DETAIL_JSON_SIZE_LIMIT)
-    if resource_name == "SKIP_REASON_RESOURCE_BUDGET":
-        return AppStrings.SKIP_REASON_RESOURCE_BUDGET.format(AppStrings.SKIP_DETAIL_RESOURCE_BUDGET)
-    if resource_name == "SKIP_REASON_FILE_MATCH_LIMIT":
-        return AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(
-            saved_limit
-            or _get_adv_setting(
-                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-                Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-            )
-        )
-    if resource_name == "SKIP_REASON_JSON_DEPTH_LIMIT":
-        return AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(
-            saved_limit
-            or _get_adv_setting(
-                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
-                Constants.DEFAULT_MAX_JSON_DEPTH,
-            )
-        )
-    if resource_name in {"SKIP_REASON_PANIC", "SKIP_REASON_CRITICAL"}:
-        template = cast(str, getattr(AppStrings, resource_name))
-        return template.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
-    if resource_name == "SKIP_REASON_BATCH":
-        return AppStrings.SKIP_REASON_BATCH.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
-    return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
-
-
-def localize_skip_reason_for_display(reason: Any) -> str:
-    """Normalize raw or saved skipped-file reasons to the active UI language."""
-    reason_text = str(reason or "").strip()
-    if not reason_text:
-        return ""
-    if "\n" in reason_text:
-        localized_lines = [
-            localize_skip_reason_for_display(line)
-            for line in reason_text.splitlines()
-            if line.strip()
-        ]
-        return "\n".join(dict.fromkeys(localized_lines))
-    if reason_text.startswith(("ERR_", "INFO_")) and "|" in reason_text:
-        return format_skip_reason(reason_text)
-    if reason_text.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
-        return format_excel_panic_reason(reason_text[len(RUST_MATCH_MARKER_EXCEL_PANIC) :])
-    if re.match(r"^(?:xlsx?|xlsm|xlsb)\|range start index ", reason_text, re.IGNORECASE):
-        return format_excel_panic_reason(reason_text)
-    if _is_current_localized_skip_reason(reason_text):
-        return reason_text
-
-    normalized = reason_text.casefold()
-    # Old sessions may contain a reason rendered in the other supported language.
-    other_catalog = ENGLISH_STRINGS if get_language() == "ko" else get_korean_strings()
-    saved_resource = _match_localized_skip_resource(reason_text, other_catalog)
-    if saved_resource:
-        _log_raw_skip_detail("saved-session", reason_text)
-        return _render_saved_skip_resource(saved_resource, reason_text)
-    if reason_text.startswith(("[오류]", "[안내]", "[건너뜀]", "[Error]", "[Info]", "[Skipped]")):
-        _log_raw_skip_detail("saved-session", reason_text)
-        return AppStrings.SKIP_REASON_UNKNOWN.format(AppStrings.SKIP_DETAIL_INTERNAL_FAILURE)
-    if "json" in normalized:
-        return AppStrings.ERROR_JSON_PARSE.format(_localize_json_error_detail(reason_text))
-    if "xml" in normalized:
-        return AppStrings.ERROR_XML_PARSE.format(_localize_xml_error_detail(reason_text))
-    if any(token in normalized for token in ("permission", "access denied", "접근 거부", "접근이 거부")):
-        return AppStrings.SKIP_REASON_OPEN.format(_localize_io_error_detail(reason_text))
-    if any(token in normalized for token in ("read error", "os error", "i/o", "입출력")):
-        return AppStrings.ERROR_IO_DURING_SEARCH.format(_localize_io_error_detail(reason_text))
-
-    return AppStrings.SKIP_REASON_UNKNOWN.format(_localize_internal_error_detail("unclassified", reason_text))
+        lines.append(format_skip_reason(line) if is_coded_reason(line) else line)
+    return "\n".join(dict.fromkeys(lines))
 
 
 def _rust_match_field(match: Any, index: int, attribute: str, default: Any = None) -> Any:
@@ -753,9 +528,7 @@ def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
         structured_detail = getattr(m, "detail", None)
         if structured_kind == "error":
             if structured_code:
-                if structured_code == "ERR_EXCEL_PANIC":
-                    return format_excel_panic_reason(structured_detail)
-                return format_skip_reason(build_skip_reason(structured_code, structured_detail or ""))
+                return build_skip_reason(structured_code, structured_detail or "")
 
         try:
             # m: (line, content, offset, length)
@@ -774,14 +547,14 @@ def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
 
         if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
             panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
-            return format_excel_panic_reason(panic_detail)
+            return build_skip_reason(SKIP_CODE_EXCEL_PANIC, panic_detail)
         # 엑셀 시트 파싱 에러(sheet error)는 파일 전체를 건너뛰는 사유가 아닙니다.
         # 이 마커가 오더라도 다른 시트의 정상 매치 데이터가 존재할 수 있으므로 파일 전체를 스킵하지 않습니다.
         if content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
             continue
         # 일반 마커 처리
         if content.startswith("ERR_") and "|" in content:
-            return format_skip_reason(content)
+            return content
     return None
 
 
@@ -809,7 +582,7 @@ def _positive_limit(value: Any, key: str, default: int) -> int:
 
 
 def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
-    """Build one localized file notice for non-fatal result omissions."""
+    """일부만 검색한 파일의 안내를 코드 형식(한 줄에 하나)으로 만듭니다. 문장은 보여 줄 때 만듭니다."""
     reasons: List[str] = []
     failed_sheets: List[str] = []
 
@@ -836,14 +609,14 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
                 Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
                 Constants.DEFAULT_MAX_PER_FILE_MATCHES,
             )
-            reasons.append(AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(limit))
+            reasons.append(build_skip_reason(SKIP_CODE_FILE_MATCH_LIMIT, limit))
             continue
 
         if code == "DECODE_PARTIAL" or (
             is_tuple_metadata and content.startswith(RUST_MATCH_MARKER_DECODE_PARTIAL)
         ):
             encoding = str(detail) if detail is not None else content[len(RUST_MATCH_MARKER_DECODE_PARTIAL):]
-            reasons.append(AppStrings.SKIP_REASON_DECODE_PARTIAL.format(encoding))
+            reasons.append(build_skip_reason(SKIP_CODE_DECODE_PARTIAL, encoding))
             continue
 
         if code == "JSON_DEPTH_LIMIT":
@@ -852,7 +625,7 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
                 Constants.CONFIG_KEY_MAX_JSON_DEPTH,
                 Constants.DEFAULT_MAX_JSON_DEPTH,
             )
-            reasons.append(AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(limit))
+            reasons.append(build_skip_reason(SKIP_CODE_JSON_DEPTH_LIMIT, limit))
             continue
 
 
@@ -865,12 +638,11 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
                 Constants.CONFIG_KEY_MAX_JSON_DEPTH,
                 Constants.DEFAULT_MAX_JSON_DEPTH,
             )
-            reasons.append(AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(limit))
+            reasons.append(build_skip_reason(SKIP_CODE_JSON_DEPTH_LIMIT, limit))
             continue
 
-
     if failed_sheets:
-        reasons.append(AppStrings.SKIP_REASON_EXCEL_PARTIAL.format(", ".join(dict.fromkeys(failed_sheets))))
+        reasons.append(build_skip_reason(SKIP_CODE_EXCEL_PARTIAL, ", ".join(dict.fromkeys(failed_sheets))))
     unique_reasons = list(dict.fromkeys(reasons))
     return "\n".join(unique_reasons) if unique_reasons else None
 
@@ -1037,8 +809,9 @@ def search_directory_fast(
             included_paths = []
             for path in search_paths:
                 if os.path.isjunction(path):
-                    if (path, AppStrings.SKIP_ROOT_JUNCTION) not in excluded_roots:
-                        excluded_roots.append((path, AppStrings.SKIP_ROOT_JUNCTION))
+                    junction_reason = build_skip_reason(SKIP_CODE_ROOT_JUNCTION, "")
+                    if (path, junction_reason) not in excluded_roots:
+                        excluded_roots.append((path, junction_reason))
                 else:
                     included_paths.append(path)
             search_paths = included_paths
@@ -1116,7 +889,10 @@ def search_directory_fast(
                         formatted_results.append(result)
 
             for path, reason in skipped_list:
-                skipped_results.append((path, format_skip_reason(reason)))
+                reason_text = str(reason or "")
+                if not is_coded_reason(reason_text):
+                    reason_text = build_skip_reason(SKIP_CODE_UNKNOWN, reason_text)
+                skipped_results.append((path, reason_text))
         return {"results": formatted_results, "skipped": skipped_results}
     except (IOError, OSError, RuntimeError) as e:
         logger.error(AppStrings.LOG_SCH_RUST_DIR_SEARCH_ERROR.format("SearchEngine.Directory", e))

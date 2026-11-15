@@ -15,6 +15,7 @@
   4. 동시 실행 워커 간의 상태 격리(No State Leak).
 """
 
+from folder_search_helper import rendered_skips
 import importlib
 import os
 import subprocess
@@ -153,7 +154,7 @@ def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
         result = search_directory_fast(["."], "KEYWORD", special_mode=Constants.MODE_EXCEL)
 
     assert result["results"] == []
-    assert result["skipped"] == [("panic.xlsx", format_excel_panic_reason("xlsx"))]
+    assert rendered_skips(result["skipped"]) == [("panic.xlsx", format_excel_panic_reason("xlsx"))]
 
 
 def test_mainwindow_qtimer_after_destroy(qtbot, mock_config_manager):

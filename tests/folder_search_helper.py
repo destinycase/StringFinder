@@ -18,7 +18,7 @@
 import os
 from typing import Any, List, Optional, Tuple
 
-from core.search_engine import EXCEL_EXTS, search_directory_fast
+from core.search_engine import EXCEL_EXTS, render_skip_reason, search_directory_fast
 from sf_utils.constants import Constants
 
 last_skipped: List[Tuple[str, str]] = []
@@ -42,6 +42,8 @@ def search_one_file(
         exclude_binary=exclude_binary,
         **kwargs,
     )
+    # 엔진 연결은 사유를 코드로 돌려줍니다(7.2.5). 도우미는 사용자가 보는 문장으로 바꿔 돌려줍니다.
+    response = {**response, "skipped": [(path, render_skip_reason(reason)) for path, reason in response["skipped"]]}
     last_skipped[:] = list(response["skipped"])
     if response["results"]:
         path, count, matches = response["results"][0]
@@ -103,3 +105,8 @@ def fake_dir_engine(matches: Any = None, skipped: Any = None, error: Optional[Ba
             return results, list(skipped or [])
 
     return FakeEngine()
+
+
+def rendered_skips(skipped):
+    """``[(경로, 사유 코드)]``를 사용자가 보는 ``[(경로, 문장)]``으로 바꿉니다(7.2.5)."""
+    return [(path, render_skip_reason(reason)) for path, reason in skipped]

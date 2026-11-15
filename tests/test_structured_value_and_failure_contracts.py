@@ -1,4 +1,5 @@
 """Regression coverage for structured-document integrity and partial failures."""
+from folder_search_helper import rendered_skips
 import zipfile
 from datetime import date
 
@@ -48,7 +49,7 @@ def test_damaged_structured_encoding_skips_whole_document(tmp_path, mode, encodi
     else:
         result = native(p, "needle", mode)
         assert result["results"] == []
-        assert result["skipped"][0][1] == AppStrings.ERROR_DOCUMENT_ENCODING
+        assert rendered_skips(result["skipped"])[0][1] == AppStrings.ERROR_DOCUMENT_ENCODING
     assert precise(p, "needle", mode) == (C.STATUS_SKIPPED, AppStrings.ERROR_DOCUMENT_ENCODING)
 
 
@@ -91,8 +92,8 @@ def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, query):
     p = tmp_path / "partial.xlsx"
     broken_workbook(p, broken_first=True)
     result = native(p, query, C.MODE_EXCEL)
-    assert len(result["skipped"]) == 1
-    assert "Broken0" in result["skipped"][0][1]
+    assert len(rendered_skips(result["skipped"])) == 1
+    assert "Broken0" in rendered_skips(result["skipped"])[0][1]
     answer = precise(p, query, C.MODE_EXCEL)
     if query == "not found":
         assert not result["results"]
@@ -101,7 +102,7 @@ def test_excel_partial_sheet_keeps_results_and_notice(tmp_path, query):
         assert result["results"][0][1] == 1
         assert answer[1] == 1
         assert "Broken0" in partial_reason(answer[2])
-        assert "Good" not in result["skipped"][0][1]
+        assert "Good" not in rendered_skips(result["skipped"])[0][1]
 
 
 def test_excel_errors_do_not_consume_cap_or_disappear_on_hit(tmp_path):
@@ -109,7 +110,7 @@ def test_excel_errors_do_not_consume_cap_or_disappear_on_hit(tmp_path):
     broken_workbook(p, broken_count=11, broken_first=True)
     result = native(p, "needle", C.MODE_EXCEL)
     assert result["results"][0][1] == 1
-    assert len(result["skipped"]) == 1
+    assert len(rendered_skips(result["skipped"])) == 1
     answer = precise(p, "needle", C.MODE_EXCEL)
     assert answer[1] == 1
     assert partial_reason(answer[2])
@@ -134,8 +135,8 @@ def test_ordinary_text_keeps_replacement_policy(tmp_path, mode):
     result = native(p, "needle", mode)
     # 결과는 유지하고, 해석하지 못한 바이트(짝 없는 서로게이트)는 부분 검색 안내로 알립니다(제안서 2.5).
     assert result["results"][0][1] == 1
-    assert len(result["skipped"]) == 1
-    assert AppStrings.SKIP_REASON_DECODE_PARTIAL.split("{}", 1)[0] in result["skipped"][0][1]
+    assert len(rendered_skips(result["skipped"])) == 1
+    assert AppStrings.SKIP_REASON_DECODE_PARTIAL.split("{}", 1)[0] in rendered_skips(result["skipped"])[0][1]
     single = precise(p, "needle", mode)
     assert single[1] == 1 and partial_reason(single[2])
 
@@ -145,18 +146,15 @@ def test_json_tab_numeric_key_obeys_match_cap(tmp_path):
     p.write_text("[" + ",".join('{"a\\tb":1.5}' for _ in range(15)) + "]", encoding="utf-8")
     result = native(p, "1.5", C.MODE_JSON)
     assert result["results"][0][1] == 10
-    assert len(result["skipped"]) == 1
+    assert len(rendered_skips(result["skipped"])) == 1
 
 
 def test_new_notices_localize_after_session_language_change():
     previous = get_language()
     try:
-        set_language("ko")
-        notices = (AppStrings.ERROR_DOCUMENT_ENCODING,
-                   AppStrings.SKIP_REASON_EXCEL_PARTIAL.format("Broken0"))
-        assert all(se.is_supported_skip_reason(reason) for reason in notices)
+        notices = ("ERR_DECODING|", "INFO_EXCEL_PARTIAL|Broken0")  # 코드로 저장(7.2.5)
         set_language("en")
-        translated = [se.localize_skip_reason_for_display(reason) for reason in notices]
+        translated = [se.render_skip_reason(reason) for reason in notices]
         assert translated == [AppStrings.ERROR_DOCUMENT_ENCODING,
                               AppStrings.SKIP_REASON_EXCEL_PARTIAL.format("Broken0")]
     finally:
