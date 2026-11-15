@@ -149,6 +149,7 @@ ENGLISH_STRINGS = {
     "SETTINGS_IMPORT_ALL_FOLDERS_FOUND": "All {} folders were found",
     "SETTINGS_IMPORT_RESTART_NOTE": "Importing closes the program. The settings are applied when you start it again.",
     "SETTINGS_IMPORT_BUTTON": "Import",
+    "SETTINGS_IMPORT_EDITOR_INFO": "⚠ The program for opening lines will change to: {}",
     "FOLDER_MISSING_TOOLTIP": "This folder was not found on this PC. Check the drive connection or remove it from the list.",
     "LOG_CFG_SETTINGS_EXPORTED": "[Settings] Exported settings: {}",
     "LOG_CFG_SETTINGS_IMPORTED": "[Settings] Imported settings (sections: {}, backup: {})",

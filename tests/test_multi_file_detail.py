@@ -307,3 +307,31 @@ def test_open_file_location_warns_when_file_is_missing(qtbot, mock_config_manage
     monkeypatch.setattr(subprocess, "Popen", fail)
     view._open_file_location(str(present))
     assert warnings[-1] == AppStrings.ERROR_OPEN_FOLDER.format(str(present))
+
+
+def test_large_detail_filter_waits_until_typing_pauses(qtbot, mock_config_manager):
+    """결과가 많을 때 상세 목록 거르기는 입력이 멈춘 뒤 한 번만 합니다(7.1.33)."""
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.set_search_context("x", Constants.MODE_NORMAL)
+    rows = [[n, f"x {n}", 0, 1] for n in range(1, 30_001)]
+    view.set_results([[30_000, "big.txt", "D:/d", "D:/d/big.txt", rows]])
+    view._on_result_clicked(view.proxy_model.index(0, 0))
+    calls = []
+    original = view.match_model.set_column_filters
+    view.match_model.set_column_filters = lambda f: (calls.append(dict(f)), original(f))
+    for text in ("2", "29", "299", "2999"):
+        view.match_filter_1_edit.setText(text)
+    assert calls == []
+    qtbot.waitUntil(lambda: len(calls) == 1, timeout=2000)
+    assert list(calls[0].values()) == ["2999"]
+    expected = sum("2999" in f"{n} | x {n}" for n in range(1, 30_001))
+    assert view.match_model.match_count == 30_000 and len(view.match_model._filtered_indices) == expected
+
+
+def test_small_detail_filter_applies_immediately(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0])
+    qtbot.waitUntil(lambda: view.match_model.match_count > 0)
+    view.match_filter_1_edit.setText("zzz-none")
+    assert len(view.match_model._filtered_indices) == 0

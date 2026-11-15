@@ -1115,6 +1115,16 @@ class MatchDetailModel(QAbstractTableModel):
             SearchMatchSchema(position=line_no, content=content, offset=offset, length=length)
         )
 
+    def set_column_filters(self, filters: dict):
+        """여러 칸의 거르기 조건을 한 번에 바꾸고 한 번만 거릅니다."""
+        for column, text in filters.items():
+            new_text = str(text or "").lower().strip()
+            if new_text:
+                self._filters[column] = new_text
+            else:
+                self._filters.pop(column, None)
+        self._apply_filters()
+
     def set_column_filter(self, column: int, text: str):
         """상세 목록의 특정 컬럼에 대한 필터를 설정합니다."""
         new_text = text.lower().strip()

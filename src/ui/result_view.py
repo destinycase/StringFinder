@@ -480,6 +480,12 @@ class ResultView(QWidget):
         self._filter_timer.setSingleShot(True)
         self._filter_timer.setInterval(250)
         self._filter_timer.timeout.connect(self._on_result_filters_changed)
+        # 상세 목록 거르기: 결과가 많으면 입력이 멈춘 뒤 한 번만 거릅니다(7.1.33).
+        self._pending_match_filters: dict = {}
+        self._match_filter_timer = QTimer(self)
+        self._match_filter_timer.setSingleShot(True)
+        self._match_filter_timer.setInterval(250)
+        self._match_filter_timer.timeout.connect(self._apply_pending_match_filters)
 
         self._init_ui()
         self._restore_states()
@@ -1730,21 +1736,38 @@ class ResultView(QWidget):
         folder_text = self.result_folder_filter_edit.text()
         self.result_model.set_filters(file_text, folder_text)
 
+    MATCH_FILTER_DEBOUNCE_MIN = 20_000
+
+    def _queue_match_filter(self, edit_idx: int, text: str):
+        """결과가 적으면 바로 거르고, 많으면 입력이 멈춘 뒤 한 번에 거릅니다."""
+        self._pending_match_filters[self._get_match_filter_col(edit_idx)] = text
+        if self.match_model.match_count <= self.MATCH_FILTER_DEBOUNCE_MIN:
+            self._apply_pending_match_filters()
+        else:
+            self._match_filter_timer.start()
+
+    def _apply_pending_match_filters(self):
+        self._match_filter_timer.stop()
+        pending, self._pending_match_filters = self._pending_match_filters, {}
+        if pending:
+            self.match_model.set_column_filters(pending)
+            self._update_match_pagination_ui()
+
     def _on_match_filter_1_changed(self, text):
         """첫 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(self._get_match_filter_col(0), text)
+        self._queue_match_filter(0, text)
 
     def _on_match_filter_2_changed(self, text):
         """두 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(self._get_match_filter_col(1), text)
+        self._queue_match_filter(1, text)
 
     def _on_match_filter_3_changed(self, text):
         """세 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(self._get_match_filter_col(2), text)
+        self._queue_match_filter(2, text)
 
     def _on_match_filter_4_changed(self, text):
         """네 번째 필터 입력 시 호출됩니다."""
-        self.match_model.set_column_filter(self._get_match_filter_col(3), text)
+        self._queue_match_filter(3, text)
 
     def cleanup(self):
         self._cancel_context_preview()

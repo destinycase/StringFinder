@@ -154,6 +154,7 @@ class AppStrings:
     SETTINGS_IMPORT_ALL_FOLDERS_FOUND = "폴더 {}개를 모두 찾았습니다"
     SETTINGS_IMPORT_RESTART_NOTE = "불러오기를 하면 프로그램이 종료되며, 재시작을 하면 적용됩니다."
     SETTINGS_IMPORT_BUTTON = "불러오기"
+    SETTINGS_IMPORT_EDITOR_INFO = "⚠ 줄 열기 프로그램이 바뀝니다: {}"
     FOLDER_MISSING_TOOLTIP = "이 PC에서 폴더를 찾을 수 없습니다. 드라이브 연결을 확인하거나 목록에서 지우세요."
     LOG_CFG_SETTINGS_EXPORTED = "[설정] 설정을 내보냈습니다: {}"
     LOG_CFG_SETTINGS_IMPORTED = "[설정] 설정을 불러왔습니다 (묶음: {}, 백업: {})"

@@ -74,6 +74,18 @@ def _conditions_folders(section) -> list:
     return []
 
 
+def _external_editor_text(section) -> str:
+    """설정 묶음의 줄 열기 프로그램이 기본(시스템 앱)이 아니면 보여 줄 글자를 돌려줍니다."""
+    editor = section.get(Constants.CONFIG_KEY_EXTERNAL_EDITOR) if isinstance(section, dict) else None
+    if not isinstance(editor, dict):
+        return ""
+    editor_type = editor.get(Constants.CONFIG_KEY_EDITOR_TYPE)
+    if not isinstance(editor_type, str) or editor_type == Constants.DEFAULT_EXTERNAL_EDITOR:
+        return ""
+    path = editor.get(Constants.CONFIG_KEY_EDITOR_CUSTOM_PATH)
+    return path if isinstance(path, str) and path.strip() else editor_type
+
+
 class SettingsImportDialog(QDialog):
     """불러올 묶음을 체크 상자로 고르는 창입니다.
 
@@ -106,6 +118,7 @@ class SettingsImportDialog(QDialog):
         grid.setColumnStretch(1, 1)
         self.checkboxes = {}
         self.descriptions = {}
+        self.editor_label = None
         self.folder_status_label = None
         row = 0
         for section in Constants.SETTINGS_SECTIONS:
@@ -123,6 +136,15 @@ class SettingsImportDialog(QDialog):
             self.checkboxes[section] = box
             self.descriptions[section] = desc
             row += 1
+            if section == Constants.SETTINGS_SECTION_SETTINGS and available:
+                editor = _external_editor_text(sections[section])
+                if editor:
+                    # 불러오면 결과 줄을 두 번 누를 때 이 프로그램이 실행되므로 미리 보여 줍니다(7.1.33).
+                    self.editor_label = QLabel(AppStrings.SETTINGS_IMPORT_EDITOR_INFO.format(editor))
+                    self.editor_label.setStyleSheet("QLabel { color: #E8A33D; }")
+                    self.editor_label.setWordWrap(True)
+                    grid.addWidget(self.editor_label, row, 1)
+                    row += 1
             if section == Constants.SETTINGS_SECTION_CONDITIONS and available:
                 folders = _conditions_folders(sections[section])
                 if folders:

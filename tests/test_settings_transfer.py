@@ -244,3 +244,58 @@ def test_settings_dialog_groups_logs_and_data_in_advanced_tab(qtbot, mock_config
     assert inside(dialog.settings_manage_group, general)
     for widget in (dialog.log_group, dialog.open_data_dir_btn, dialog.clear_data_btn):
         assert inside(widget, advanced) and not inside(widget, general)
+
+
+def test_failed_import_save_leaves_memory_and_later_saves_untouched(mock_config_manager, tmp_path, monkeypatch):
+    """저장이 실패하면 메모리 설정이 바뀌지 않고, 이후 저장에도 불러온 값이 들어가지 않습니다(7.1.33)."""
+    mock_config_manager.set(C.CONFIG_KEY_THEME, "Dark")
+    mock_config_manager.save_immediately()
+    payload = mock_config_manager.build_settings_export("now")
+    payload["sections"]["settings"][C.CONFIG_KEY_THEME] = "Light"
+    original_save = mock_config_manager.save_immediately
+    monkeypatch.setattr(mock_config_manager, "save_immediately", lambda snapshot=None: False)
+    with pytest.raises(OSError):
+        mock_config_manager.import_settings(payload, ALL, "b.json")
+    assert mock_config_manager.get(C.CONFIG_KEY_THEME) == "Dark"
+    assert mock_config_manager.get(C.CONFIG_KEY_IMPORTED_CONDITIONS) is False
+    monkeypatch.setattr(mock_config_manager, "save_immediately", original_save)
+    assert mock_config_manager.save_immediately()
+    saved = json.loads(open(mock_config_manager.config_path, encoding="utf-8").read())
+    assert saved[C.CONFIG_KEY_THEME] == "Dark"
+
+
+def test_failed_backup_changes_nothing(mock_config_manager, monkeypatch):
+    import shutil
+
+    mock_config_manager.set(C.CONFIG_KEY_THEME, "Dark")
+    mock_config_manager.save_immediately()
+    payload = mock_config_manager.build_settings_export("now")
+    payload["sections"]["settings"][C.CONFIG_KEY_THEME] = "Light"
+    monkeypatch.setattr(shutil, "copy2", lambda *a, **k: (_ for _ in ()).throw(PermissionError("denied")))
+    with pytest.raises(OSError):
+        mock_config_manager.import_settings(payload, ALL, "b.json")
+    assert mock_config_manager.get(C.CONFIG_KEY_THEME) == "Dark"
+
+
+def test_only_latest_five_import_backups_are_kept(mock_config_manager):
+    mock_config_manager.save_immediately()
+    folder = mock_config_manager.config_dir
+    for i in range(7):
+        open(os.path.join(folder, f"config_backup_before_import_2026010{i}_000000.json"), "w").close()
+    payload = mock_config_manager.build_settings_export("now")
+    mock_config_manager.import_settings(payload, ["history"], "config_backup_before_import_20991231_235959.json")
+    kept = sorted(n for n in os.listdir(folder) if n.startswith("config_backup_before_import_"))
+    assert len(kept) == 5 and kept[-1] == "config_backup_before_import_20991231_235959.json"
+    assert "config_backup_before_import_20260100_000000.json" not in kept
+
+
+def test_import_dialog_shows_custom_line_opener(qtbot, mock_config_manager):
+    payload = mock_config_manager.build_settings_export("now")
+    plain = SettingsImportDialog(payload, "a.json")
+    qtbot.addWidget(plain)
+    assert plain.editor_label is None
+    payload["sections"]["settings"][C.CONFIG_KEY_EXTERNAL_EDITOR] = {
+        C.CONFIG_KEY_EDITOR_TYPE: "custom", C.CONFIG_KEY_EDITOR_CUSTOM_PATH: r"C:\Tools\open.exe"}
+    dialog = SettingsImportDialog(payload, "a.json")
+    qtbot.addWidget(dialog)
+    assert dialog.editor_label.text() == AppStrings.SETTINGS_IMPORT_EDITOR_INFO.format(r"C:\Tools\open.exe")

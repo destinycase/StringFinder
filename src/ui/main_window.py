@@ -574,7 +574,7 @@ class MainWindow(QMainWindow):
         dialog = SettingsImportDialog(data, path, parent)
         if not dialog.exec():
             return False
-        backup_name = f"config_backup_before_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        backup_name = f"{self.config_manager.IMPORT_BACKUP_PREFIX}{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         try:
             self.config_manager.import_settings(data, dialog.selected_sections(), backup_name)
         except (OSError, ValueError) as error:

@@ -389,8 +389,8 @@ class ConfigManager:
         self.cancel_start()
         return self.save_immediately()
 
-    def save_immediately(self) -> bool:
-        """설정 파일을 원자적으로 즉시 저장한다."""
+    def save_immediately(self, snapshot: Optional[dict] = None) -> bool:
+        """설정 파일을 원자적으로 즉시 저장한다. ``snapshot``을 주면 메모리 설정 대신 그 내용을 씁니다."""
         if self.__dict__.get("_frozen_after_import"):
             # 불러온 설정을 쓴 뒤 종료하는 동안 창 크기 등이 다시 저장되어 덮어쓰지 않게 합니다.
             return True
@@ -402,8 +402,11 @@ class ConfigManager:
                 self._save_timer = None
             
             # 스냅샷 촬영을 위해 config_lock만 아주 짧게 획득
-            with self._config_lock:
-                config_snapshot = copy.deepcopy(self._config)
+            if snapshot is not None:
+                config_snapshot = snapshot
+            else:
+                with self._config_lock:
+                    config_snapshot = copy.deepcopy(self._config)
 
             for attempt in range(5):
                 temp_path = None
@@ -727,20 +730,44 @@ class ConfigManager:
         backup_path = os.path.join(self.config_dir, backup_name)
         if os.path.exists(self.config_path):
             shutil.copy2(self.config_path, backup_path)
+            self._prune_import_backups()
+        # 새 설정은 사본에 만들어 먼저 파일로 저장하고, 저장이 성공한 뒤에만 메모리 설정을 바꿉니다.
+        # 저장이 실패하면 메모리는 그대로라 나중 저장에도 실패한 불러오기가 반영되지 않습니다(7.1.33).
         with self._config_lock:
-            for section in chosen:
-                for key in self._section_keys(section):
-                    self._config[key] = copy.deepcopy(normalized.get(key, self._defaults.get(key)))
-            if Constants.SETTINGS_SECTION_CONDITIONS in chosen:
-                # 다시 켰을 때 처음 보이는 탭에도 불러온 검색 조건을 넣습니다.
-                self._config[Constants.CONFIG_KEY_IMPORTED_CONDITIONS] = True
+            updated = copy.deepcopy(self._config)
+        for section in chosen:
+            for key in self._section_keys(section):
+                updated[key] = copy.deepcopy(normalized.get(key, self._defaults.get(key)))
+        if Constants.SETTINGS_SECTION_CONDITIONS in chosen:
+            # 다시 켰을 때 처음 보이는 탭에도 불러온 검색 조건을 넣습니다.
+            updated[Constants.CONFIG_KEY_IMPORTED_CONDITIONS] = True
+        if not self.save_immediately(snapshot=updated):
+            raise OSError(self.config_path)
+        with self._config_lock:
+            self._config = updated
         if Constants.SETTINGS_SECTION_CONDITIONS in chosen:
             self._ensure_filters_dict()
-        if not self.save_immediately():
-            raise OSError(self.config_path)
         self._frozen_after_import = True
         logger.info(AppStrings.LOG_CFG_SETTINGS_IMPORTED.format(", ".join(chosen), backup_path))
         return backup_path
+
+    IMPORT_BACKUP_PREFIX = "config_backup_before_import_"
+    IMPORT_BACKUP_KEEP = 5
+
+    def _prune_import_backups(self):
+        """불러오기 전 백업은 최근 5개만 남깁니다(이름에 시각이 있어 이름 순서가 시간 순서)."""
+        try:
+            names = sorted(
+                name for name in os.listdir(self.config_dir)
+                if name.startswith(self.IMPORT_BACKUP_PREFIX) and name.endswith(".json")
+            )
+        except OSError:
+            return
+        for name in names[:-self.IMPORT_BACKUP_KEEP]:
+            try:
+                os.remove(os.path.join(self.config_dir, name))
+            except OSError:
+                pass
 
     def take_imported_conditions_flag(self) -> bool:
         """불러온 검색 조건을 아직 탭에 넣지 않았으면 True를 돌려주고 표시를 지웁니다."""
