@@ -202,8 +202,8 @@ options = sf_engine.SearchOptions(
     exclude_hidden=True,            # 숨김 파일 제외
     stop_event=stop_event,          # 취소 감시용 threading.Event
     results_callback=callback_fn,   # 실시간 배치 수신 콜백
-    batch_size=100,                 # 디스패치 배치 크기
-    flush_ms=20,                    # 플러시 주기 (ms)
+    batch_size=128,                 # 디스패치 배치 크기 (제품 값: Constants.RUST_RESULT_BATCH_SIZE)
+    flush_ms=75,                    # 플러시 주기 ms (제품 값: Constants.RUST_RESULT_FLUSH_MS; 생략 시 엔진 기본 100/20)
     max_per_file=10000,             # 파일당 최대 검색 결과 수
     max_json_depth=20000,           # JSON 탐색 깊이 제한
     max_json_size=1073741824,       # 공통 검색 파일 크기 제한 (1GB; legacy API 이름)
@@ -236,7 +236,7 @@ UI 모델에 별도의 100,000파일 상한을 두지 않습니다. 결과 한�
 
 `results_callback`을 사용하는 폴더 검색(`search_dir`)에서는 callback이 결과의 단일 전달 경로입니다. callback에는 `(path, matches)` 배치가 전달되고, 동기 반환 목록은 중복 메모리 보관을 피하기 위해 비워질 수 있습니다. callback 없이 호출하면 동기 반환 목록을 사용할 수 있습니다. callback 예외는 Rust 검색 오류로 호출자에게 전파됩니다.
 
-파일 단위 결과 제한은 `__SF_TRUNCATED__`, JSON 깊이 제한은 `__SF_JSON_DEPTH_LIMIT__|<limit>` 메타데이터로 전달합니다. 이 신호들은 치명적 오류가 아니므로 정상 매치를 제거하지 않습니다. Python 계층은 같은 파일에서 발생한 부분 검색 사유를 하나로 합쳐 `skipped` 스트림에도 전달하며, UI는 기존 **건너뛴 파일 수** 패널과 목록 팝업을 재사용합니다. 제한만 발생해 정상 매치가 없어도 해당 파일은 `skipped` 안내에 포함되어야 합니다.
+파일 단위 결과 제한·JSON 깊이 제한 같은 부분 검색 안내는 `SearchMatch`의 종류(`kind`)·코드·상세로 전달합니다(4.2절). 이 안내들은 치명적 오류가 아니므로 정상 매치를 제거하지 않습니다. Python 계층은 같은 파일에서 발생한 부분 검색 사유를 하나로 합쳐 `skipped` 스트림에도 전달하며, UI는 기존 **건너뛴 파일 수** 패널과 목록 팝업을 재사용합니다. 제한만 발생해 정상 매치가 없어도 해당 파일은 `skipped` 안내에 포함되어야 합니다.
 
 Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니다. API를 바꾸면 Rust 엔진을 다시 빌드해야 합니다. 오래된 엔진을 현재 Python 코드와 섞어 실행하지 않습니다. 예전 형식 세션의 복원 기준은 [구현 정책 2.4절](IMPLEMENTATION_POLICY.md)의 세션 형식 번호 항목입니다(7.2.5 이전 세션은 검색 조건만 복원하고 재검색 안내).
 
@@ -363,24 +363,24 @@ XML 파서 변경 시에는 최소한 다음 회귀 조건도 확인합니다.
 
 기본 작업은 Ruff, 제품·벤치마크 도구 mypy, Rust 포맷·Clippy·테스트, 격리된 Python 기본 검사를 수행합니다. Qt는 `offscreen`으로 실행합니다. 주간·수동 실행은 stress/chaos와 실제 Windows Qt 클립보드 연동도 추가합니다. 예약 시각은 매주 일요일 UTC 00:00(한국 시간 09:00)입니다. 저장소의 Actions가 활성화되어야 하며, 설정 파일을 원격에 푸시한 후 실제 실행 결과를 확인해야 합니다. 로컬 통과를 GitHub 실행 성공으로 표기하지 않습니다.
 
-로컬에서는 아래처럼 같은 검사를 재현합니다. 검증 자료는 Git에서 제외되는 `docs_dev/` 아래에 두고 사용자의 실제 설정과 분리합니다.
+로컬에서는 아래처럼 같은 검사를 재현합니다. 임시 자료는 Git에서 제외되는 `scratch/` 아래에 두고 사용자의 실제 설정과 분리합니다.
 
 ```powershell
 python -m pip install pyqtdarktheme==2.1.0 --ignore-requires-python --no-deps
 python -m pip install -e ".[dev]" -c .github/ci-constraints.txt
 python -m pip check
 $env:QT_QPA_PLATFORM = "offscreen"
-$env:APPDATA = Join-Path $PWD "docs_dev/ci_local/appdata"
+$env:APPDATA = Join-Path $PWD "scratch/ci_local/appdata"
 python build_rust.py
 python tools/check_dev_environment.py --require-engine
 python -m ruff check src tests tools
-python -m mypy src tools/benchmark.py --cache-dir docs_dev/ci_local/mypy_cache
+python -m mypy src tools/benchmark.py --cache-dir scratch/ci_local/mypy_cache
 cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
 cargo clippy --manifest-path src/rust_engine/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src/rust_engine/Cargo.toml --locked
-python -m pytest -q -p no:cacheprovider --basetemp docs_dev/ci_local/basic
-python -m pytest -q -o addopts= -m "stress or chaos" -p no:cacheprovider --basetemp docs_dev/ci_local/extended
-python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp docs_dev/ci_local/clipboard
+python -m pytest -q -p no:cacheprovider --basetemp scratch/ci_local/basic
+python -m pytest -q -o addopts= -m "stress or chaos" -p no:cacheprovider --basetemp scratch/ci_local/extended
+python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp scratch/ci_local/clipboard
 ```
 
 복사할 내용의 검사는 가짜 클립보드로 격리하고 Qt의 실제 붙여넣기·복사는 `os_clipboard`로 분리합니다. 실제 Windows 연동을 로컬에서 확인하려면 마지막 명령만 `QT_QPA_PLATFORM=windows`로 바꿔 전용 테스트 환경에서 실행하세요.
