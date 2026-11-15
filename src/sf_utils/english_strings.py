@@ -82,6 +82,8 @@ ENGLISH_STRINGS = {
     "SETTINGS_USER_GUIDE_BUTTON": "Open GitHub user guide",
     "SETTINGS_GROUP_APPEARANCE": "Appearance",
     "SETTINGS_GROUP_LOG": "Logs",
+    "SETTINGS_GROUP_MANAGE": "Settings management",
+    "SETTINGS_GROUP_DATA": "Data",
     "SETTINGS_GROUP_ADVANCED": "Advanced",
     "EXTERNAL_EDITOR_GROUP": "Open line with",
     "EXTERNAL_EDITOR_LABEL": "Application",

@@ -245,22 +245,18 @@ class SettingsDialog(QDialog):
         delete_logs_btn = QPushButton(AppStrings.BTN_DELETE_ALL_LOGS)
         delete_logs_btn.clicked.connect(self._clear_all_logs)
         log_layout.addWidget(delete_logs_btn)
-        tab_general_layout.addWidget(log_group)
-        
-        tab_general_layout.addSpacing(10)
-        open_dir_btn = QPushButton(AppStrings.OPEN_DATA_DIR_BTN)
-        open_dir_btn.clicked.connect(self._open_data_dir)
-        tab_general_layout.addWidget(open_dir_btn)
+        # 로그 묶음은 고급 탭에 둡니다(7.1.32).
+
+        # 설정 관리: 내보내기·불러오기(7.1.32)
+        self.settings_manage_group = QGroupBox(AppStrings.SETTINGS_GROUP_MANAGE)
+        manage_layout = QHBoxLayout(self.settings_manage_group)
         self.export_settings_btn = QPushButton(AppStrings.SETTINGS_EXPORT_BTN)
         self.export_settings_btn.clicked.connect(self.export_settings_requested.emit)
-        tab_general_layout.addWidget(self.export_settings_btn)
+        manage_layout.addWidget(self.export_settings_btn)
         self.import_settings_btn = QPushButton(AppStrings.SETTINGS_IMPORT_BTN)
         self.import_settings_btn.clicked.connect(self.import_settings_requested.emit)
-        tab_general_layout.addWidget(self.import_settings_btn)
-        clear_data_btn = QPushButton(AppStrings.CLEAR_ALL_DATA_BTN)
-        clear_data_btn.setStyleSheet(f"QPushButton {{ {UIStyles.STYLE_DANGER_TEXT} }}")
-        clear_data_btn.clicked.connect(self._clear_all_data)
-        tab_general_layout.addWidget(clear_data_btn)
+        manage_layout.addWidget(self.import_settings_btn)
+        tab_general_layout.addWidget(self.settings_manage_group)
         tab_general_layout.addStretch()
         
         add_scrollable_tab(tab_general, AppStrings.SETTINGS_GROUP_GENERAL)
@@ -416,6 +412,21 @@ class SettingsDialog(QDialog):
         reset_adv_btn = QPushButton(AppStrings.BTN_RESET_ADVANCED)
         reset_adv_btn.clicked.connect(self._reset_advanced_settings)
         tab_advanced_layout.addWidget(reset_adv_btn)
+
+        # 로그와 데이터 폴더·전체 삭제는 고급 탭에 둡니다(7.1.32).
+        tab_advanced_layout.addSpacing(10)
+        self.log_group = log_group
+        tab_advanced_layout.addWidget(log_group)
+        self.data_group = QGroupBox(AppStrings.SETTINGS_GROUP_DATA)
+        data_layout = QHBoxLayout(self.data_group)
+        self.open_data_dir_btn = QPushButton(AppStrings.OPEN_DATA_DIR_BTN)
+        self.open_data_dir_btn.clicked.connect(self._open_data_dir)
+        data_layout.addWidget(self.open_data_dir_btn)
+        self.clear_data_btn = QPushButton(AppStrings.CLEAR_ALL_DATA_BTN)
+        self.clear_data_btn.setStyleSheet(f"QPushButton {{ {UIStyles.STYLE_DANGER_TEXT} }}")
+        self.clear_data_btn.clicked.connect(self._clear_all_data)
+        data_layout.addWidget(self.clear_data_btn)
+        tab_advanced_layout.addWidget(self.data_group)
 
         tab_advanced_layout.addStretch()
         add_scrollable_tab(tab_advanced, AppStrings.SETTINGS_GROUP_ADVANCED)

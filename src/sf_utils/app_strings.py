@@ -78,6 +78,8 @@ class AppStrings:
     SETTINGS_USER_GUIDE_BUTTON = "GitHub 사용자 가이드 열기"
     SETTINGS_GROUP_APPEARANCE = "화면"
     SETTINGS_GROUP_LOG = "로그"
+    SETTINGS_GROUP_MANAGE = "설정 관리"
+    SETTINGS_GROUP_DATA = "데이터"
     SETTINGS_GROUP_ADVANCED = "고급"
     EXTERNAL_EDITOR_GROUP = "줄 열기 프로그램"
     EXTERNAL_EDITOR_LABEL = "프로그램"

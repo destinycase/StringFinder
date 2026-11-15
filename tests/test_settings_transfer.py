@@ -216,3 +216,31 @@ def test_main_window_export_then_import_closes_program(qtbot, mock_config_manage
     monkeypatch.setattr(SettingsImportDialog, "exec", lambda self: 1)
     assert window.import_settings() is True
     qtbot.waitUntil(lambda: not window.isVisible())
+
+
+def test_settings_dialog_groups_logs_and_data_in_advanced_tab(qtbot, mock_config_manager):
+    """로그·데이터 폴더·전체 삭제는 고급 탭, 내보내기·불러오기는 일반 탭의 '설정 관리' 묶음입니다(7.1.32)."""
+    from PySide6.QtWidgets import QTabWidget
+
+    from ui.settings_dialog import SettingsDialog
+
+    dialog = SettingsDialog(mock_config_manager)
+    qtbot.addWidget(dialog)
+    tabs = dialog.findChild(QTabWidget)
+    titles = [tabs.tabText(i) for i in range(tabs.count())]
+    general = tabs.widget(titles.index(AppStrings.SETTINGS_GROUP_GENERAL))
+    advanced = tabs.widget(titles.index(AppStrings.SETTINGS_GROUP_ADVANCED))
+
+    def inside(widget, page):
+        while widget is not None:
+            if widget is page:
+                return True
+            widget = widget.parentWidget()
+        return False
+
+    assert dialog.settings_manage_group.title() == AppStrings.SETTINGS_GROUP_MANAGE
+    assert inside(dialog.export_settings_btn, dialog.settings_manage_group)
+    assert inside(dialog.import_settings_btn, dialog.settings_manage_group)
+    assert inside(dialog.settings_manage_group, general)
+    for widget in (dialog.log_group, dialog.open_data_dir_btn, dialog.clear_data_btn):
+        assert inside(widget, advanced) and not inside(widget, general)
