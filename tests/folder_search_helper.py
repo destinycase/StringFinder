@@ -94,14 +94,70 @@ def search_in_excel_special(file_path: str, search_string: str, exact_match: boo
     return search_one_file(file_path, search_string, special_mode=special_mode, stop_event=stop_event)
 
 
-def fake_dir_engine(matches: Any = None, skipped: Any = None, error: Optional[BaseException] = None) -> Any:
+class FakeSearchMatch:
+    """엔진의 결과 객체(``SearchMatch``)를 흉내 냅니다. 종류·코드·상세는 엔진(``types.rs``)과 같은 규칙으로 정합니다."""
+
+    def __init__(self, line, content, offset=None, length=None):
+        self.line, self.content, self.offset, self.length = line, content, offset, length
+        self.kind, self.code, self.detail = _classify(str(content))
+
+    def __iter__(self):  # 예전 튜플처럼 풀어 쓰는 시험을 위해
+        return iter((self.line, self.content, self.offset, self.length))
+
+
+def _classify(content: str):
+    if not content.startswith(("__SF_", "ERR_")):
+        return "match", None, None
+    if content == "__SF_TRUNCATED__":
+        return "truncated", "TRUNCATED", None
+    for prefix, kind, code in (
+        ("__SF_JSON_DEPTH_LIMIT__|", "partial", "JSON_DEPTH_LIMIT"),
+        ("__SF_BINARY_MATCH__|", "binary", "BINARY"),
+        ("__SF_LONG_LINE__|", "long_line", "LONG_LINE"),
+        ("__SF_DECODE_PARTIAL__|", "partial", "DECODE_PARTIAL"),
+        ("__SF_EXCEL_SHEET_ERR__|", "sheet_error", "EXCEL_SHEET_ERROR"),
+        ("__SF_EXCEL_PANIC__|", "error", "ERR_EXCEL_PANIC"),
+    ):
+        if content.startswith(prefix):
+            return kind, code, content[len(prefix):]
+    code, sep, detail = content.partition("|")
+    if sep and code.startswith("ERR_"):
+        return "error", code, detail
+    return "match", None, None
+
+
+def fake_match(item):
+    """``(줄, 내용, 오프셋, 길이)`` 튜플을 가짜 결과 객체로 바꿉니다(이미 객체면 그대로)."""
+    if isinstance(item, (tuple, list)):
+        values = list(item) + [None] * (4 - len(item))
+        return FakeSearchMatch(*values[:4])
+    if not hasattr(item, "kind"):  # 줄·내용 속성만 가진 시험용 객체
+        return FakeSearchMatch(getattr(item, "line", 1), getattr(item, "content", ""),
+                               getattr(item, "offset", None), getattr(item, "length", None))
+    return item
+
+
+def fake_matches(items):
+    return [fake_match(item) for item in items]
+
+
+class FakeSearchOptions:
+    def __init__(self, **values):
+        self.__dict__.update(values)
+
+
+def fake_dir_engine(matches: Any = None, skipped: Any = None, error: Optional[BaseException] = None,
+                    path: Optional[str] = None) -> Any:
     """``search_dir``만 가진 가짜 엔진을 만듭니다. 첫 검색 대상의 결과로 ``matches``를 돌려줍니다."""
 
     class FakeEngine:
+        SearchOptions = FakeSearchOptions
+        SearchMatch = FakeSearchMatch
+
         def search_dir(self, root_paths, pattern, options=None, **_kwargs):
             if error is not None:
                 raise error
-            results = [(root_paths[0], list(matches))] if matches is not None else []
+            results = [(path or root_paths[0], [fake_match(m) for m in matches])] if matches is not None else []
             return results, list(skipped or [])
 
     return FakeEngine()

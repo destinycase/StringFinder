@@ -95,22 +95,13 @@ def _get_rust_search_limits() -> Tuple[int, int, int]:
     )
 
 
-def _build_rust_options(**values: Any) -> Optional[Any]:
-    """Rust 검색 옵션 객체(``SearchOptions``)를 만듭니다. 앱이 요구하는 엔진 API에는 항상 있습니다."""
-    options_type = getattr(sf_engine, "SearchOptions", None)
-    if options_type is None:
-        # 테스트의 가짜 엔진처럼 옵션 객체가 없으면 키워드 인자로 호출합니다.
-        return None
-    include_junctions = _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False) is True
-    encoding = _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto")
-    if hasattr(options_type, "encoding"):
-        values.setdefault("include_junctions", include_junctions)
-        values.setdefault("encoding", encoding)
-    elif include_junctions or encoding != "auto":
-        raise RuntimeError("The Rust engine must be rebuilt to support junction and encoding options")
-    if values.get("max_total_matches") is None or not hasattr(options_type, "max_total_matches"):
+def _build_rust_options(**values: Any) -> Any:
+    """Rust 검색 옵션 객체(``SearchOptions``)를 만듭니다. 엔진을 불러올 때 있는지 확인합니다."""
+    values.setdefault("include_junctions", _get_adv_setting(Constants.CONFIG_KEY_INCLUDE_JUNCTIONS, False) is True)
+    values.setdefault("encoding", _get_adv_setting(Constants.CONFIG_KEY_SEARCH_ENCODING, "auto"))
+    if values.get("max_total_matches") is None:
         values.pop("max_total_matches", None)
-    return options_type(**values)
+    return cast(Any, sf_engine).SearchOptions(**values)
 
 
 def _positive_int_or_none(value: Any) -> Optional[int]:
@@ -147,8 +138,12 @@ try:
 
     REQUIRED_API_VERSION = 8
     engine_version = getattr(sf_engine, "API_VERSION", 0)
-    if engine_version < REQUIRED_API_VERSION:
+    # 앱은 옵션 객체(SearchOptions)와 종류·코드가 붙은 결과 객체(SearchMatch)를 주는 엔진만 씁니다(7.2.6).
+    missing_api = [name for name in ("SearchOptions", "SearchMatch", "search_dir") if not hasattr(sf_engine, name)]
+    if engine_version < REQUIRED_API_VERSION or missing_api:
         _err_msg = AppStrings.ERROR_RUST_API_VERSION.format(REQUIRED_API_VERSION, engine_version)
+        if missing_api:
+            _err_msg += f" (missing: {', '.join(missing_api)})"
         logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format(_err_msg))
         _RUST_ENGINE_ERROR = _err_msg
         HAS_RUST_ENGINE = False
@@ -185,15 +180,8 @@ SearchMatch = Tuple[Any, ...]
 SearchResult = Tuple[str, int, List[SearchMatch]]
 
 
-RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
-RUST_MATCH_MARKER_LONG_LINE = "__SF_LONG_LINE__|"
-RUST_MATCH_MARKER_TRUNCATED = "__SF_TRUNCATED__"
-RUST_MATCH_MARKER_JSON_DEPTH_LIMIT = "__SF_JSON_DEPTH_LIMIT__|"
 # Rust UE 현지화 archive 결과 표식입니다. 뒤에 [Namespace, Key, 원문, 번역문] JSON 배열이 옵니다.
 RUST_MATCH_MARKER_ARCHIVE_FIELDS = "ARCHIVE_FIELDS|"
-RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
-RUST_MATCH_MARKER_DECODE_PARTIAL = "__SF_DECODE_PARTIAL__|"
-RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
 
 def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) -> str:
     """XML parser diagnostics are converted to the active UI language."""
@@ -365,13 +353,6 @@ def render_skip_reason(reason: Any) -> str:
     return "\n".join(dict.fromkeys(lines))
 
 
-def _rust_match_field(match: Any, index: int, attribute: str, default: Any = None) -> Any:
-    """Read a Rust match from either the tuple ABI or the typed object ABI."""
-    if isinstance(match, (tuple, list)):
-        return match[index] if len(match) > index else default
-    return getattr(match, attribute, default)
-
-
 def _split_excel_match_content(content: str) -> Tuple[str, str, str]:
     """Excel 결과 ``시트\t셀\t값``을 세 칸으로 나눕니다."""
     parts = content.split("\t", 2)
@@ -388,115 +369,54 @@ def _split_json_match_content(content: str) -> List[str]:
 
 
 def _normalize_rust_matches(
-    matches: List[Any], 
-    special_mode: Optional[str] = None, 
+    matches: List[Any],
+    special_mode: Optional[str] = None,
 ) -> Tuple[List[Any], int, List[Tuple[str, str]]]:
-    """Rust 엔진의 반환 결과를 정규화된 매치 튜플 리스트, 바이너리 매치 카운트, 시트 스킵 목록으로 변환합니다."""
+    """엔진 결과 객체(``SearchMatch``)를 화면용 행, 바이너리 일치 수, 읽지 못한 시트 목록으로 바꿉니다.
+
+    엔진이 붙여 주는 종류(``kind``)만 보고 나눕니다(7.2.6). 표식 글자를 다시 해석하지 않습니다.
+    """
+    from core import search_mode as sm
+
     res: List[Any] = []
     bin_cnt = 0
-    sheet_skips: List[Tuple[str, str]] = []  # [(file_path, sheet_name), ...]
-    # 일반 검색의 보통 일치(대부분의 결과)는 바로 담습니다. 일치가 많은 검색에서 결과 정리가
-    # 검색 시간보다 오래 걸리던 문제를 줄입니다(검수 S-2). 표식(__SF_)이 있는 내용은 아래에서 처리합니다.
-    plain_mode = not special_mode
+    sheet_skips: List[Tuple[str, str]] = []
+    mode_kind = sm.kind(special_mode)
     for m in matches:
-        if plain_mode and getattr(m, "kind", None) == "match":
-            content = m.content
-            if not content.startswith("__SF_"):
-                res.append((m.line, content, m.offset, m.length))
-                continue
-        # Rust 엔진은 (라인, 내용, 오프셋, 길이)를 반환합니다.
-        c = _rust_match_field(m, 1, "content", "")
-        marker_line = _rust_match_field(m, 0, "line")
-        marker_offset = _rust_match_field(m, 2, "offset")
-        marker_length = _rust_match_field(m, 3, "length")
-
-        if c.startswith(RUST_MATCH_MARKER_LONG_LINE) and marker_line != 0 and marker_offset is None and marker_length is None:
-            c = AppStrings.MSG_LONG_LINE_PREVIEW.format(c[len(RUST_MATCH_MARKER_LONG_LINE):])
-
-        structured_kind = getattr(m, "kind", None)
-        is_structured_match = structured_kind == "match"
-        is_legacy_typed_marker = not isinstance(m, (tuple, list)) and c.startswith("__SF_")
-        if (
-            not is_structured_match
-            and c.startswith("__SF_")
-            and (marker_line == 0 or is_legacy_typed_marker)
-        ):
-            if c == RUST_MATCH_MARKER_TRUNCATED and marker_line == 0:
-                res.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
-                    _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
-                ), None, None))
-                continue
-            if c.startswith((RUST_MATCH_MARKER_JSON_DEPTH_LIMIT, RUST_MATCH_MARKER_DECODE_PARTIAL)):
-                # 파일 단위 부분 검색 안내로 별도 전달되며 결과 행에는 표시하지 않습니다.
-                continue
-            if c.startswith(RUST_MATCH_MARKER_LONG_LINE):
-                c = AppStrings.MSG_LONG_LINE_PREVIEW.format(c[len(RUST_MATCH_MARKER_LONG_LINE):])
-            elif c.startswith(RUST_MATCH_MARKER_BINARY):
-                try:
-                    bin_cnt += int(c.split("|")[-1])
-                except Exception:
-                    bin_cnt += 1
-                continue
-            # EXCEL_SHEET_ERR 마커: 시트 스킵 정보를 추출하여 반환 목록에 추가
-            elif c.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
-                payload = c[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):]
-                if "|" in payload:
-                    sheet_name, detail = payload.split("|", 1)
-                else:
-                    sheet_name, detail = payload, ""
-                _log_raw_skip_detail(f"Excel sheet {sheet_name.strip()}", detail)
-                sheet_skips.append((sheet_name.strip(), AppStrings.EXCEL_DETAIL_SHEET_FAILURE))
-                continue
+        kind = m.kind
+        if kind == "match":
+            line, content, offset, length = m.line, m.content, m.offset, m.length
+            if mode_kind == sm.KIND_XML and "\t" in content:
+                # "/a/b/@c\t값" → ("a > b > @c", "값")
+                tag_path, _, value = content.partition("\t")
+                res.append((line, tag_path.lstrip("/").replace("/", " > "), value, offset, length))
+            elif mode_kind == sm.KIND_JSON and ("\t" in content or content.startswith("JSON_FIELDS|")):
+                parts = _split_json_match_content(content)
+                position = "" if line == 0 else line
+                res.append((position, json_path_for_display(parts[0]), parts[1] if len(parts) > 1 else "", offset, length))
+            elif mode_kind == sm.KIND_ARCHIVE and (fields := _archive_fields_from_rust(content)) is not None:
+                res.append((line, *fields, offset, length))
+            elif mode_kind == sm.KIND_EXCEL:
+                sheet, cell, value = _split_excel_match_content(content)
+                res.append((line, sheet, cell, value, offset, length))
             else:
-                continue
-
-        try:
-            line = _rust_match_field(m, 0, "line", 1)
-            offset = _rust_match_field(m, 2, "offset")
-            length = _rust_match_field(m, 3, "length")
-
-            # Rust 엔진은 특수 모드(XML, JSON)에서
-            # content 필드에 모든 필드를 \t로 합쳐서 반환함.
-            # 앱의 검색 경로(폴더 검색)는 이 함수에서 직접 분리함.
-            if special_mode:
-                mode_up = str(special_mode).upper()
-
-                if "XML" in mode_up and "\t" in c:
-                    # 예) "/typesystem/ns/@name\tQtVideo" -> (line, "typesystem > ns > @name", "QtVideo", offset, length)
-                    pts = c.split("\t", 1)
-                    tag_path = pts[0].lstrip("/").replace("/", " > ")
-                    val = pts[1] if len(pts) > 1 else ""
-                    res.append((line, tag_path, val, offset, length))
-                    continue
-
-                if "JSON" in mode_up and ("\t" in c or c.startswith("JSON_FIELDS|")):
-                    # 예) "/root/key\tvalue" -> (line, "root.key", "value", offset, length)
-                    pts = _split_json_match_content(c)
-                    json_path = json_path_for_display(pts[0])
-                    val = pts[1] if len(pts) > 1 else ""
-                    position = "" if line == 0 else line
-                    res.append((position, json_path, val, offset, length))
-                    continue
-
-                if Constants.MODE_ARCHIVE.upper() in mode_up:
-                    # 예) 'ARCHIVE_FIELDS|["NS","Key","원문","번역문"]' -> (위치, NS, Key, 원문, 번역문, offset, length)
-                    archive_fields = _archive_fields_from_rust(c)
-                    if archive_fields is not None:
-                        res.append((line, *archive_fields, offset, length))
-                        continue
-
-                if "EXCEL" in mode_up:
-                    # 예) "시트\t셀\t값" -> (line, sheet, cell, val, offset, length)
-                    # set_matches Case1이 m[1]=sheet, m[2]=cell, m[3]=val로 매핑함
-                    sheet, cell, val = _split_excel_match_content(str(c))
-                    res.append((line, sheet, cell, val, offset, length))
-                    continue
-
-            # 기본: (line, content, offset, length)
-            res.append((line, c, offset, length))
-        except (IndexError, TypeError):
-            res.append((getattr(m, "line", 1), c, getattr(m, "offset", None), getattr(m, "length", None)))
-
+                res.append((line, content, offset, length))
+        elif kind == "long_line":
+            res.append((m.line, AppStrings.MSG_LONG_LINE_PREVIEW.format(m.detail or ""), m.offset, m.length))
+        elif kind == "truncated":
+            res.append((-1, AppStrings.MSG_MATCH_LIMIT_PER_FILE.format(
+                _get_adv_setting(Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES, Constants.DEFAULT_MAX_PER_FILE_MATCHES)
+            ), None, None))
+        elif kind == "binary":
+            try:
+                bin_cnt += int(m.detail)
+            except (TypeError, ValueError):
+                bin_cnt += 1
+        elif kind == "sheet_error":
+            sheet_name, _, detail = str(m.detail or "").partition("|")
+            _log_raw_skip_detail(f"Excel sheet {sheet_name.strip()}", detail)
+            sheet_skips.append((sheet_name.strip(), AppStrings.EXCEL_DETAIL_SHEET_FAILURE))
+        # "partial"(일부만 검색)은 파일 단위 안내로, "error"는 파일을 건너뛴 사유로 따로 처리합니다.
     return res, bin_cnt, sheet_skips
 
 
@@ -517,44 +437,14 @@ def _metadata_items(matches: Any) -> List[Any]:
     엔진의 보통 일치(kind == "match")는 표식이 아니므로 표식 검사에서 뺍니다. 그러면 일치가 많을 때 검사가
     빨라지고, 내용이 우연히 "ERR_…|"로 시작하는 실제 일치를 오류로 잘못 읽지도 않습니다(검수 S-2).
     """
-    return [m for m in matches or [] if getattr(m, "kind", None) != "match"]
+    return [m for m in matches or [] if m.kind != "match"]
 
 
 def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
-    """엑셀 마커 전용 결과뿐만 아니라, 모든 모드의 일반 오류를 스킵 사유로 추출합니다."""
+    """파일 전체를 건너뛴 오류(``kind == "error"``)가 있으면 그 사유 코드를 돌려줍니다."""
     for m in _metadata_items(matches):
-        structured_kind = getattr(m, "kind", None)
-        structured_code = getattr(m, "code", None)
-        structured_detail = getattr(m, "detail", None)
-        if structured_kind == "error":
-            if structured_code:
-                return build_skip_reason(structured_code, structured_detail or "")
-
-        try:
-            # m: (line, content, offset, length)
-            content = str(_rust_match_field(m, 1, "content", ""))
-        except (IndexError, TypeError):
-            content = str(getattr(m, "content", ""))
-
-        try:
-            marker_line = _rust_match_field(m, 0, "line")
-        except (IndexError, TypeError):
-            marker_line = None
-        # Current Rust output uses line 0 for metadata. Keep typed-object
-        # results compatible with older extension builds that used line 1.
-        if marker_line != 0 and isinstance(m, (tuple, list)):
-            continue
-
-        if content.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
-            panic_detail = content[len(RUST_MATCH_MARKER_EXCEL_PANIC) :].strip() or "unknown"
-            return build_skip_reason(SKIP_CODE_EXCEL_PANIC, panic_detail)
-        # 엑셀 시트 파싱 에러(sheet error)는 파일 전체를 건너뛰는 사유가 아닙니다.
-        # 이 마커가 오더라도 다른 시트의 정상 매치 데이터가 존재할 수 있으므로 파일 전체를 스킵하지 않습니다.
-        if content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):
-            continue
-        # 일반 마커 처리
-        if content.startswith("ERR_") and "|" in content:
-            return content
+        if m.kind == "error" and m.code:
+            return build_skip_reason(m.code, m.detail or "")
     return None
 
 
@@ -585,62 +475,21 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
     """일부만 검색한 파일의 안내를 코드 형식(한 줄에 하나)으로 만듭니다. 문장은 보여 줄 때 만듭니다."""
     reasons: List[str] = []
     failed_sheets: List[str] = []
-
-    for match in _metadata_items(matches):
-        line = _rust_match_field(match, 0, "line")
-        content = str(_rust_match_field(match, 1, "content", ""))
-        kind = getattr(match, "kind", None)
-        code = getattr(match, "code", None)
-        detail = getattr(match, "detail", None)
-
-        is_tuple_metadata = isinstance(match, (tuple, list)) and line == 0
-        if code == "EXCEL_SHEET_ERROR" or (
-            (is_tuple_metadata or kind == "sheet_error")
-            and content.startswith(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR)
-        ):
-            payload = str(detail) if detail is not None else content[len(RUST_MATCH_MARKER_EXCEL_SHEET_ERROR):]
-            sheet, _, raw_error = payload.partition("|")
+    for m in _metadata_items(matches):
+        kind, code, detail = m.kind, m.code, m.detail
+        if kind == "sheet_error":
+            sheet, _, raw_error = str(detail or "").partition("|")
             _log_raw_skip_detail(f"Excel sheet {sheet}", raw_error)
             failed_sheets.append(sheet)
-            continue
-        if kind == "truncated" or (is_tuple_metadata and content == RUST_MATCH_MARKER_TRUNCATED):
-            limit = _positive_limit(
-                detail,
-                Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
-                Constants.DEFAULT_MAX_PER_FILE_MATCHES,
-            )
+        elif kind == "truncated":
+            limit = _positive_limit(detail, Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES,
+                                    Constants.DEFAULT_MAX_PER_FILE_MATCHES)
             reasons.append(build_skip_reason(SKIP_CODE_FILE_MATCH_LIMIT, limit))
-            continue
-
-        if code == "DECODE_PARTIAL" or (
-            is_tuple_metadata and content.startswith(RUST_MATCH_MARKER_DECODE_PARTIAL)
-        ):
-            encoding = str(detail) if detail is not None else content[len(RUST_MATCH_MARKER_DECODE_PARTIAL):]
-            reasons.append(build_skip_reason(SKIP_CODE_DECODE_PARTIAL, encoding))
-            continue
-
-        if code == "JSON_DEPTH_LIMIT":
-            limit = _positive_limit(
-                detail,
-                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
-                Constants.DEFAULT_MAX_JSON_DEPTH,
-            )
+        elif kind == "partial" and code == "DECODE_PARTIAL":
+            reasons.append(build_skip_reason(SKIP_CODE_DECODE_PARTIAL, detail or ""))
+        elif kind == "partial" and code == "JSON_DEPTH_LIMIT":
+            limit = _positive_limit(detail, Constants.CONFIG_KEY_MAX_JSON_DEPTH, Constants.DEFAULT_MAX_JSON_DEPTH)
             reasons.append(build_skip_reason(SKIP_CODE_JSON_DEPTH_LIMIT, limit))
-            continue
-
-
-        if kind == "partial":
-            continue
-
-        if is_tuple_metadata and content.startswith(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT):
-            limit = _positive_limit(
-                content[len(RUST_MATCH_MARKER_JSON_DEPTH_LIMIT) :],
-                Constants.CONFIG_KEY_MAX_JSON_DEPTH,
-                Constants.DEFAULT_MAX_JSON_DEPTH,
-            )
-            reasons.append(build_skip_reason(SKIP_CODE_JSON_DEPTH_LIMIT, limit))
-            continue
-
     if failed_sheets:
         reasons.append(build_skip_reason(SKIP_CODE_EXCEL_PARTIAL, ", ".join(dict.fromkeys(failed_sheets))))
     unique_reasons = list(dict.fromkeys(reasons))
@@ -854,26 +703,7 @@ def search_directory_fast(
             structured_memory_budget=_get_structured_memory_budget(),
             max_total_matches=_positive_int_or_none(kwargs.get("max_total_matches")),
         )
-        if rust_options is not None:
-            raw_ret = search_dir_func(root_paths=search_paths, pattern=rust_pattern, options=rust_options)
-        else:
-            raw_ret = search_dir_func(
-                root_paths=search_paths,
-                pattern=rust_pattern,
-                extensions=rust_exts,
-                mode_bits=mode_bits,
-                filename_filter=rust_fn_filters,
-                exclude_hidden=exclude_hidden,
-                stop_event=stop_event,
-                progress_callback=progress_callback,
-                results_callback=kwargs.get("results_callback"),
-                batch_size=kwargs.get("batch_size", Constants.RUST_RESULT_BATCH_SIZE),
-                _flush_ms=kwargs.get("flush_ms", Constants.RUST_RESULT_FLUSH_MS),
-                max_per_file=max_per_file,
-                max_json_depth=max_json_depth,
-                max_json_size=max_json_size,
-                options=_build_rust_options(),
-            )
+        raw_ret = search_dir_func(root_paths=search_paths, pattern=rust_pattern, options=rust_options)
         formatted_results = []
         skipped_results = list(excluded_roots)
         if raw_ret:

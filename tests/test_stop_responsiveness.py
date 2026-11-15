@@ -19,6 +19,7 @@ import pytest
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from ui.search_tab import SearchTab
+from folder_search_helper import fake_matches
 
 
 def test_search_worker_granular_rust_stop():
@@ -32,7 +33,7 @@ def test_search_worker_granular_rust_stop():
         callback = kwargs.get("results_callback")
         if callback:
             # 콜백 실행 -> signals.results_found 발생 -> worker.stop() 호출
-            callback([("C:/dir1/f1.txt", [(1, "match", 0, 5)])])
+            callback([("C:/dir1/f1.txt", fake_matches([(1, "match", 0, 5)]))])
         return mock_res
 
     with (

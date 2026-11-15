@@ -11,6 +11,7 @@ from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
 from ui.search_tab import SearchTab
+from folder_search_helper import fake_matches
 
 
 @pytest.fixture(params=["ko", "en"])
@@ -53,7 +54,7 @@ def test_native_error_after_delivery_keeps_results_and_marks_ui_failed(
     worker.signals.error.connect(errors.append)
 
     def failed_search(*args, **kwargs):
-        kwargs["results_callback"]([(str(path), [(1, "needle", 0, 6)])])
+        kwargs["results_callback"]([(str(path), fake_matches([(1, "needle", 0, 6)]))])
         raise RuntimeError("results dispatcher terminated unexpectedly; monitor thread terminated unexpectedly")
 
     monkeypatch.setattr(engine, "search_directory_fast", failed_search)

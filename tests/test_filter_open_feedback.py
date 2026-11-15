@@ -9,6 +9,7 @@ from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
 from ui.panels import FilenameFilterPanel
 from ui.search_tab import SearchTab
+from folder_search_helper import fake_matches
 
 
 @pytest.fixture(params=["ko", "en"])
@@ -67,7 +68,7 @@ def test_rejected_execution_does_not_report_open_failure(qtbot, mock_config_mana
 def test_junction_notice_survives_other_results(tmp_path, monkeypatch):
     root, normal = str(tmp_path / "link"), str(tmp_path / "normal")
     monkeypatch.setattr(se.os.path, "isjunction", lambda path: path == root)
-    search = Mock(return_value=([("good.txt", [(1, "needle", None, None)])], [("bad.txt", "ERR_OPEN|denied")]))
+    search = Mock(return_value=([("good.txt", fake_matches([(1, "needle", None, None)]))], [("bad.txt", "ERR_OPEN|denied")]))
     monkeypatch.setattr(se.sf_engine, "search_dir", search)
     with se.use_search_settings_snapshot({C.CONFIG_KEY_INCLUDE_JUNCTIONS: False}):
         result = se.search_directory_fast([root, normal, root], "needle")

@@ -1,10 +1,10 @@
-
 from folder_search_helper import rendered_skips
 import pytest
 
 from core import search_engine
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
+from folder_search_helper import FakeSearchOptions, fake_matches
 
 
 def _configured_limits(monkeypatch):
@@ -26,6 +26,8 @@ def test_batch_rust_searches_receive_the_same_configured_limits(monkeypatch):
     captured = {}
 
     class FakeEngine:
+        SearchOptions = FakeSearchOptions
+
         def search_dir(self, *args, **kwargs):
             captured["dir"] = (args, kwargs)
             return ([], [])
@@ -36,10 +38,11 @@ def test_batch_rust_searches_receive_the_same_configured_limits(monkeypatch):
 
     dir_args, dir_kwargs = captured["dir"]
     assert dir_args == ()
-    assert dir_kwargs["max_per_file"] == 17
-    assert dir_kwargs["max_json_depth"] == 29
-    assert dir_kwargs["max_json_size"] == 31 * 1024 * 1024
-    assert dir_kwargs["_flush_ms"] == Constants.RUST_RESULT_FLUSH_MS
+    options = dir_kwargs["options"]
+    assert options.max_per_file == 17
+    assert options.max_json_depth == 29
+    assert options.max_json_size == 31 * 1024 * 1024
+    assert options.flush_ms == Constants.RUST_RESULT_FLUSH_MS
 
 
 def test_rust_search_limits_fall_back_to_safe_defaults_for_invalid_values(monkeypatch):
@@ -223,11 +226,11 @@ def test_rust_truncation_marker_is_normalized(monkeypatch):
     )
 
     matches, binary_count, sheet_skips = search_engine._normalize_rust_matches(
-        [
+        fake_matches([
             (1, "one", None, None),
             (2, "two", None, None),
             (0, "__SF_TRUNCATED__", None, None),
-        ]
+        ])
     )
 
     assert matches == [
@@ -246,9 +249,10 @@ def test_literal_truncation_text_is_not_treated_as_metadata(monkeypatch):
         lambda _self: {Constants.CONFIG_KEY_MAX_PER_FILE_MATCHES: 2},
     )
 
-    matches, _, _ = search_engine._normalize_rust_matches(
-        [(1, "__SF_TRUNCATED__", None, None)]
-    )
+    # 종류는 엔진이 정합니다(7.2.6). 종류가 "match"면 내용이 표식처럼 보여도 일치 줄로 둡니다.
+    literal = fake_matches([(1, "__SF_TRUNCATED__", None, None)])
+    literal[0].kind, literal[0].code, literal[0].detail = "match", None, None
+    matches, _, _ = search_engine._normalize_rust_matches(literal)
 
     assert matches == [(1, "__SF_TRUNCATED__", None, None)]
 
@@ -270,10 +274,10 @@ def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
     )
 
     reason = search_engine._extract_partial_skip_reason(
-        [
+        fake_matches([
             (0, "__SF_TRUNCATED__", None, None),
             (0, "__SF_JSON_DEPTH_LIMIT__|3", None, None),
-        ]
+        ])
     )
 
     assert reason == "INFO_FILE_MATCH_LIMIT|2\nINFO_JSON_DEPTH_LIMIT|3"  # 코드로 만듭니다(7.2.5)
@@ -285,17 +289,19 @@ def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
 
 def test_directory_wrapper_keeps_matches_and_reports_partial_file(monkeypatch):
     class FakeEngine:
+        SearchOptions = FakeSearchOptions
+
         @staticmethod
         def search_dir(*args, **kwargs):
             return (
                 [
                     (
                         "limited.json",
-                        [
+                        fake_matches([
                             (1, "/visible\tneedle", None, None),
                             (0, "__SF_TRUNCATED__", None, None),
                             (0, "__SF_JSON_DEPTH_LIMIT__|3", None, None),
-                        ],
+                        ]),
                     )
                 ],
                 [],

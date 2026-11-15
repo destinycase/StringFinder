@@ -18,6 +18,7 @@ from core.worker import SearchWorker
 from ui.models import SearchResultModel
 from ui.result_view import ResultView
 from sf_utils.constants import Constants
+from folder_search_helper import fake_matches
 
 
 def test_worker_streaming_accumulation(qtbot):
@@ -48,9 +49,9 @@ def test_worker_streaming_accumulation(qtbot):
             results_cb = kwargs.get("results_callback")
             if results_cb:
                 # 배치 1번 전송
-                results_cb([("/path/file1.txt", [(1, "match1", 10, 5)])])
+                results_cb([("/path/file1.txt", fake_matches([(1, "match1", 10, 5)]))])
                 # 배치 2번 전송
-                results_cb([("/path/file2.txt", [(2, "match2", 20, 5), (3, "match3", 30, 5)])])
+                results_cb([("/path/file2.txt", fake_matches([(2, "match2", 20, 5), (3, "match3", 30, 5)]))])
             return {Constants.PAYLOAD_RESULTS: [], Constants.PAYLOAD_SKIPPED: []}
 
         mock_search.side_effect = side_effect

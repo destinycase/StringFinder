@@ -128,7 +128,7 @@ def test_rust_search_dir_binary_marker_is_mapped():
         offset=None,
         length=2,
     )
-    fake_engine = types.SimpleNamespace(search_dir=lambda *_args, **_kwargs: ([("a.bin", [fake_match])], []))
+    fake_engine = folder_search_helper.fake_dir_engine([fake_match], path="a.bin")
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("core.search_engine.HAS_RUST_ENGINE", True)
@@ -146,7 +146,7 @@ def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
         offset=None,
         length=None,
     )
-    fake_engine = types.SimpleNamespace(search_dir=lambda *_args, **_kwargs: ([("panic.xlsx", [fake_match])], []))
+    fake_engine = folder_search_helper.fake_dir_engine([fake_match], path="panic.xlsx")
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("core.search_engine.HAS_RUST_ENGINE", True)
@@ -317,12 +317,12 @@ def test_parallel_runs_no_state_leak_between_workers(qtbot):
         # [Fix] Worker의 results_callback을 호출하여 결과를 전달해야 함
         results_callback = kwargs.get("results_callback")
         if paths == ["A"]:
-            results = [("A/a.txt", [(1, "alpha", None, None)])]
+            results = [("A/a.txt", folder_search_helper.fake_matches([(1, "alpha", None, None)]))]
             if results_callback:
                 results_callback(results)
             return {"results": results, "skipped": []}
         if paths == ["B"]:
-            results = [("B/b.txt", [(1, "beta", None, None)])]
+            results = [("B/b.txt", folder_search_helper.fake_matches([(1, "beta", None, None)]))]
             if results_callback:
                 results_callback(results)
             return {"results": results, "skipped": []}

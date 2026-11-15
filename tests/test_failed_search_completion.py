@@ -9,6 +9,7 @@ from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from sf_utils.localization import get_language, set_language
 from ui.search_tab import SearchTab
+from folder_search_helper import fake_matches
 
 
 @pytest.mark.parametrize("language", ["ko", "en"])
@@ -39,8 +40,8 @@ def test_native_failure_completion(
         def fail(*args, **kwargs):
             if partial:
                 kwargs["results_callback"]([
-                    ("partial.txt", [(1, "needle retained content", None, None),
-                                     (0, "__SF_TRUNCATED__", None, None)])
+                    ("partial.txt", fake_matches([(1, "needle retained content", None, None),
+                                                  (0, "__SF_TRUNCATED__", None, None)]))
                 ])
             raise RuntimeError("Injected native batch failure")
 

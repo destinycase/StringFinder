@@ -17,6 +17,7 @@
 from core.worker import SearchWorker
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
+from folder_search_helper import fake_matches
 
 
 def test_worker_total_limit_keeps_exact_allowed_prefix():
@@ -69,10 +70,10 @@ def test_rust_worker_emits_partial_file_notice_and_keeps_results(monkeypatch):
             [
                 (
                     "limited.txt",
-                    [
+                    fake_matches([
                         (1, "needle", None, None),
                         (0, "__SF_TRUNCATED__", None, None),
-                    ],
+                    ]),
                 )
             ]
         )

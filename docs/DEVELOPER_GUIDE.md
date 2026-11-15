@@ -188,7 +188,7 @@ UI (src/ui)
 
 ### 4.1 `SearchOptions` (Named Configuration)
 
-파라미터 폭증을 방지하고 Python과 Rust 간 옵션을 이름으로 전달하기 위해 [`src/rust_engine/src/types.rs`](../src/rust_engine/src/types.rs)에 `SearchOptions` pyclass가 정의되어 있습니다. 이 객체는 현재 Rust 확장 모듈의 선택적 저수준 API이며, 일반 애플리케이션 코드는 `core.search_engine` 래퍼를 우선 사용해야 합니다.
+파라미터 폭증을 방지하고 Python과 Rust 간 옵션을 이름으로 전달하기 위해 [`src/rust_engine/src/types.rs`](../src/rust_engine/src/types.rs)에 `SearchOptions` pyclass가 정의되어 있습니다. 앱은 7.2.6부터 이 옵션 객체로만 엔진을 호출하며, 엔진을 불러올 때 `SearchOptions`·`SearchMatch`·`search_dir`가 없으면 엔진을 쓰지 않습니다. 일반 애플리케이션 코드는 `core.search_engine` 래퍼를 우선 사용해야 합니다.
 
 ```python
 # Python에서의 사용 예시
@@ -244,7 +244,7 @@ Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니�
 
 ### 4.2 `SearchMatch` (Structured Match Object)
 
-검색 매치 결과를 튜플 및 속성(Property) 양방향으로 읽을 수 있는 통합 구조체입니다.
+검색 매치 결과 객체입니다. 종류(`kind`)·코드·상세는 엔진(`types.rs`)이 정하며, Python은 7.2.6부터 이 종류만 보고 결과를 나눕니다(표식 글자를 다시 해석하지 않습니다). 시험의 가짜 엔진은 `tests/folder_search_helper.py`의 `fake_matches`로 같은 모양을 만듭니다.
 
 | 필드명 | 타입 | 설명 |
 | :--- | :---: | :--- |
@@ -256,7 +256,7 @@ Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니�
 | `code` | `Option<String>` | 에러/안내 코드 (`ERR_MMAP`, `ERR_JSON_SIZE_LIMIT`, `JSON_DEPTH_LIMIT` 등) |
 | `detail` | `Option<String>` | 상세 메시지 |
 
-구조 검색의 기본 `content` 직렬화 형식은 JSON/XML의 경우 `path\tvalue`, Excel의 경우 `sheet\tcell\tvalue`입니다. UE 현지화 archive는 값에 탭·줄바꿈이 있어도 필드가 섞이지 않도록 항상 `ARCHIVE_FIELDS|[Namespace, Key, 원문, 번역문]` JSON 배열을 쓰며, Python 정규화 후 결과 행은 `(Key 줄 번호, Namespace, Key, 원문, 번역문, offset, length)`이며 화면에는 줄번호·Namespace·Key·원문·번역문 다섯 열로 표시합니다. 구조 오류 코드는 `ERR_ARCHIVE_FORMAT|<문제 위치 경로>`입니다. JSON 키에 탭이 있으면 필드를 모호하게 나누지 않도록 `JSON_FIELDS|` 접두부와 JSON 배열로 경로·값을 전달합니다. 이는 오류 마커가 아닌 정상 결과 형식입니다. Python의 `_normalize_rust_matches()`가 이 값을 UI 모델용 튜플로 변환하므로 형식 변경 시 Rust 생성부, Python 정규화 계층, UI 모델과 세션 회귀 테스트를 함께 수정해야 합니다. 구버전 세션·확장 모듈이 사용한 Excel `sheet | cell | value` 형식도 계속 읽으며, 시트 이름에 ` | `가 들어갈 수 있으므로 오른쪽의 셀·값 필드부터 분리합니다.
+구조 검색의 기본 `content` 직렬화 형식은 JSON/XML의 경우 `path\tvalue`, Excel의 경우 `sheet\tcell\tvalue`입니다. UE 현지화 archive는 값에 탭·줄바꿈이 있어도 필드가 섞이지 않도록 항상 `ARCHIVE_FIELDS|[Namespace, Key, 원문, 번역문]` JSON 배열을 쓰며, Python 정규화 후 결과 행은 `(Key 줄 번호, Namespace, Key, 원문, 번역문, offset, length)`이며 화면에는 줄번호·Namespace·Key·원문·번역문 다섯 열로 표시합니다. 구조 오류 코드는 `ERR_ARCHIVE_FORMAT|<문제 위치 경로>`입니다. JSON 키에 탭이 있으면 필드를 모호하게 나누지 않도록 `JSON_FIELDS|` 접두부와 JSON 배열로 경로·값을 전달합니다. 이는 오류 마커가 아닌 정상 결과 형식입니다. Python의 `_normalize_rust_matches()`가 이 값을 UI 모델용 튜플로 변환하므로 형식 변경 시 Rust 생성부, Python 정규화 계층, UI 모델과 세션 회귀 테스트를 함께 수정해야 합니다.
 
 XML 결과도 같은 정규화 계층을 사용합니다. `_visible_match_count()`는 제한 메타데이터를 결과 수에 포함하지 않으며, 정상 결과와 부분 검색 안내는 별도 스트림으로 전달합니다. 관련 실패 주입·문자열 표시·XML 제한 회귀는 `tests/test_storage_preview_and_packaging_boundaries.py`로 확인합니다.
 
