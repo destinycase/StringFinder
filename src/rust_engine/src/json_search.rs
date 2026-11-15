@@ -3,7 +3,7 @@ use serde_json::Deserializer;
 use std::borrow::Cow;
 use std::fmt;
 
-use crate::types::RawMatch;
+use crate::types::{RawMatch, ResultKind};
 
 pub const JSON_DEPTH_LIMIT_MARKER_PREFIX: &str = "__SF_JSON_DEPTH_LIMIT__|";
 
@@ -320,7 +320,8 @@ impl<'data> JsonSearchState<'data> {
         } else {
             format!("{}\t{}", path_string, value)
         };
-        self.results.push((line, content, found_pos, found_len));
+        self.results
+            .push((line, content, found_pos, found_len, ResultKind::Match));
     }
 }
 
@@ -736,6 +737,7 @@ pub fn search_json_file_with_policy(
             format!("{}{}", JSON_DEPTH_LIMIT_MARKER_PREFIX, state.max_json_depth),
             None,
             None,
+            ResultKind::JsonDepthLimit,
         ));
     }
     Ok(std::mem::take(&mut state.results))

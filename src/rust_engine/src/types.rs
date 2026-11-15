@@ -12,7 +12,39 @@ pub const MODE_EXCEL: u32 = 1 << 4;
 pub const MODE_EXCLUDE_BINARY: u32 = 1 << 5;
 pub const MODE_ALLOW_DUPLICATE_JSON_KEYS: u32 = 1 << 7;
 
-pub type RawMatch = (usize, String, Option<usize>, Option<usize>);
+/// 엔진 내부 결과 한 건: (줄 번호, 내용, 위치, 길이, 종류).
+///
+/// 종류는 결과를 만드는 곳에서 정합니다. 내용 글자 모양으로 종류를 추측하지 않으므로, 실제 파일의 줄이
+/// `ERR_…|`나 `__SF_…`로 시작해도 일치 줄로 남습니다(7.2.9).
+pub type RawMatch = (usize, String, Option<usize>, Option<usize>, ResultKind);
+
+/// 결과 종류입니다. `Match`·`LongLine`은 실제 일치 줄이고, 나머지는 파일 단위 안내(메타데이터)입니다.
+///
+/// 안내의 내용은 `__SF_<이름>__|<상세>` 모양으로 만들며(`Truncated`는 `__SF_TRUNCATED__`), 상세는 첫 `|` 뒤입니다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResultKind {
+    /// 보통 일치 줄
+    Match,
+    /// 긴 줄의 일치. 내용은 `__SF_LONG_LINE__|<미리보기>`
+    LongLine,
+    /// 파일당 결과 수 제한에 닿음
+    Truncated,
+    /// 바이너리 파일의 일치 수
+    Binary,
+    /// 해석하지 못한 바이트가 있어 일부만 검색
+    DecodePartial,
+    /// JSON 깊이 제한에 닿아 일부만 검색
+    JsonDepthLimit,
+    /// Excel 시트 하나를 읽지 못함. 상세는 `<시트>|<오류>`
+    SheetError,
+}
+
+impl ResultKind {
+    /// 실제 일치 줄이 아닌 파일 단위 안내인지입니다.
+    pub fn is_metadata(self) -> bool {
+        !matches!(self, ResultKind::Match | ResultKind::LongLine)
+    }
+}
 
 /// Shared configuration for the Rust search entry points.
 ///
@@ -197,43 +229,27 @@ impl SearchMatch {
 }
 
 impl From<RawMatch> for SearchMatch {
-    fn from((line, content, offset, length): RawMatch) -> Self {
-        // 대부분은 일반 일치 줄입니다. 표시 접두어(`__SF_`, `ERR_`)로 시작할 때만 아래 분류를 봅니다.
-        let (kind, code, detail) = if !content.starts_with("__SF_") && !content.starts_with("ERR_")
-        {
-            ("match", None, None)
-        } else if content == "__SF_TRUNCATED__" {
-            ("truncated", Some("TRUNCATED"), None)
-        } else if let Some(detail) = content.strip_prefix("__SF_JSON_DEPTH_LIMIT__|") {
-            ("partial", Some("JSON_DEPTH_LIMIT"), Some(detail))
-        } else if let Some(detail) = content.strip_prefix("__SF_BINARY_MATCH__|") {
-            ("binary", Some("BINARY"), Some(detail))
-        } else if let Some(detail) = content.strip_prefix("__SF_LONG_LINE__|") {
-            ("long_line", Some("LONG_LINE"), Some(detail))
-        } else if let Some(detail) = content.strip_prefix("__SF_DECODE_PARTIAL__|") {
-            ("partial", Some("DECODE_PARTIAL"), Some(detail))
-        } else if let Some(detail) = content.strip_prefix("__SF_EXCEL_SHEET_ERR__|") {
-            ("sheet_error", Some("EXCEL_SHEET_ERROR"), Some(detail))
-        } else if let Some(detail) = content.strip_prefix("__SF_EXCEL_PANIC__|") {
-            ("error", Some("ERR_EXCEL_PANIC"), Some(detail))
-        } else if let Some((code, detail)) = content
-            .split_once('|')
-            .filter(|(code, _)| code.starts_with("ERR_"))
-        {
-            ("error", Some(code), Some(detail))
-        } else {
-            ("match", None, None)
+    fn from((line, content, offset, length, kind): RawMatch) -> Self {
+        // 종류는 결과를 만든 곳에서 정해 왔습니다. 안내의 상세는 내용의 첫 `|` 뒤입니다.
+        let (kind, code) = match kind {
+            ResultKind::Match => ("match", None),
+            ResultKind::LongLine => ("long_line", Some("LONG_LINE")),
+            ResultKind::Truncated => ("truncated", Some("TRUNCATED")),
+            ResultKind::Binary => ("binary", Some("BINARY")),
+            ResultKind::DecodePartial => ("partial", Some("DECODE_PARTIAL")),
+            ResultKind::JsonDepthLimit => ("partial", Some("JSON_DEPTH_LIMIT")),
+            ResultKind::SheetError => ("sheet_error", Some("EXCEL_SHEET_ERROR")),
         };
-        let kind = std::borrow::Cow::Borrowed(kind);
-        let code = code.map(str::to_string);
-        let detail = detail.map(str::to_string);
+        let detail = code
+            .and_then(|_| content.split_once('|'))
+            .map(|(_, detail)| detail.to_string());
         Self {
             line,
             content,
             offset,
             length,
-            kind,
-            code,
+            kind: std::borrow::Cow::Borrowed(kind),
+            code: code.map(str::to_string),
             detail,
         }
     }

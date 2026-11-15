@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::types::RawMatch;
+use crate::types::{RawMatch, ResultKind};
 
 /// 결과 내용 앞에 붙는 표식입니다. 뒤에는 `[Namespace, Key, 원문, 번역문]` JSON 배열이 옵니다.
 /// 각 값에 탭·줄바꿈이 있어도 필드가 섞이지 않도록 구분자 대신 JSON 배열을 사용합니다.
@@ -63,7 +63,8 @@ impl ArchiveSearch<'_> {
             Err(_) => return,
         };
         // 줄 번호는 항목의 `Key` 줄입니다. 바이트 위치는 인코딩 변환 뒤라 원본과 다를 수 있어 넘기지 않습니다.
-        self.results.push((key_line, content, None, None));
+        self.results
+            .push((key_line, content, None, None, ResultKind::Match));
     }
 }
 
@@ -400,7 +401,7 @@ mod tests {
         .map(|results| {
             results
                 .into_iter()
-                .map(|(_, content, _, _)| {
+                .map(|(_, content, _, _, _)| {
                     serde_json::from_str(content.strip_prefix(ARCHIVE_FIELDS_PREFIX).unwrap())
                         .unwrap()
                 })

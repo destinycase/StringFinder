@@ -1,4 +1,4 @@
-use crate::types::RawMatch;
+use crate::types::{RawMatch, ResultKind};
 use calamine::{Cell, Data, Range, Reader, Xls, Xlsb, Xlsx, XlsxError};
 use std::borrow::Cow;
 use std::fmt::Write;
@@ -137,6 +137,7 @@ where
                     format!("{}{}|{:?}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
                     None,
                     None,
+                    ResultKind::SheetError,
                 ));
             }
             Err(panic_err) => {
@@ -149,6 +150,7 @@ where
                     ),
                     None,
                     None,
+                    ResultKind::SheetError,
                 ));
             }
         }
@@ -161,6 +163,7 @@ where
                 format!("{EXCEL_MARKER_SHEET_ERROR_PREFIX}{sheet_name}|{error}"),
                 None,
                 None,
+                ResultKind::SheetError,
             ));
         }
     }
@@ -240,6 +243,7 @@ fn match_cell(
         format!("{}\t{}{}\t{}", sheet_name, col_letter, row_idx + 1, val),
         None,
         None,
+        ResultKind::Match,
     ))
 }
 

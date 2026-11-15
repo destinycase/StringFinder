@@ -24,7 +24,7 @@ use std::time::SystemTime;
 
 use crate::excel_search::{search_excel_file, ExcelFileError};
 use crate::json_search::search_json_file_with_policy;
-use crate::types::{RawMatch, SearchMatch, SearchOptions};
+use crate::types::{RawMatch, ResultKind, SearchMatch, SearchOptions};
 use crate::ue_archive_search::{search_archive_file, ArchiveSearchError};
 use crate::utils::{
     build_glob_set, decode_structured_bytes, detect_encoding, generate_search_patterns, is_binary,
@@ -738,6 +738,7 @@ fn do_search_with_mmap(
             format!("{MATCH_META_DECODE_PARTIAL_PREFIX}{}", encoding.name()),
             None,
             None,
+            ResultKind::DecodePartial,
         ));
     }
     results
@@ -886,26 +887,27 @@ impl Utf8TextSearch<'_> {
             self.last_exact_line_start = Some(line_start);
             let text = String::from_utf8_lossy(&self.buf[line_start..line_end]);
             if self.matcher.equals_trimmed(&text) {
-                let content =
+                let (content, kind) =
                     extract_line_content_bytes(self.buf, line_start, line_end, None, None);
-                self.results.push((line, content, None, None));
+                self.results.push((line, content, None, None, kind));
             }
             return;
         }
         // Each hit retains its line preview and byte range.
-        let content = extract_line_content_bytes(
+        let (content, kind) = extract_line_content_bytes(
             self.buf,
             line_start,
             line_end,
             Some(match_start),
             Some(match_len),
         );
-        let (offset, length) = if content.starts_with(MATCH_META_LONG_LINE_PREFIX) {
+        // 긴 줄은 미리보기만 보이므로 위치를 생략합니다. 내용 글자가 아니라 만든 곳이 알려 준 종류로 판단합니다.
+        let (offset, length) = if kind == ResultKind::LongLine {
             (None, None)
         } else {
             (Some(match_start), Some(match_len))
         };
-        self.results.push((line, content, offset, length));
+        self.results.push((line, content, offset, length, kind));
     }
 
     /// 변환할 줄 목록(위치 순)을 처리합니다. 바로 이어진 줄들은 한 번에 변환해 검색합니다.
@@ -950,7 +952,7 @@ impl Utf8TextSearch<'_> {
         let mut line_index = 0usize;
         let mut converted_line_start = 0usize;
         let mut converted_line_end = next_line_break(converted, 0);
-        let mut last_reported: Option<(usize, String)> = None;
+        let mut last_reported: Option<(usize, (String, ResultKind))> = None;
         for hit in hits {
             while hit >= converted_line_end {
                 converted_line_start = skip_line_break(converted, converted_line_end);
@@ -967,7 +969,8 @@ impl Utf8TextSearch<'_> {
             if self.full() {
                 return;
             }
-            self.results.push((line, content.clone(), None, None));
+            self.results
+                .push((line, content.0.clone(), None, None, content.1));
             last_reported = Some((line_start, content));
         }
     }
@@ -978,9 +981,9 @@ impl Utf8TextSearch<'_> {
         let line = self.counter.line_at(self.buf, line_start);
         if self.is_exact {
             if self.matcher.equals_trimmed(&text) {
-                let content =
+                let (content, kind) =
                     extract_line_content_bytes(self.buf, line_start, line_end, None, None);
-                self.results.push((line, content, None, None));
+                self.results.push((line, content, None, None, kind));
             }
             return;
         }
@@ -988,12 +991,13 @@ impl Utf8TextSearch<'_> {
         if hits == 0 {
             return;
         }
-        let content = extract_line_content_bytes(self.buf, line_start, line_end, None, None);
+        let (content, kind) =
+            extract_line_content_bytes(self.buf, line_start, line_end, None, None);
         for _ in 0..hits {
             if self.full() {
                 return;
             }
-            self.results.push((line, content.clone(), None, None));
+            self.results.push((line, content.clone(), None, None, kind));
         }
     }
 }
@@ -1343,17 +1347,23 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
 }
 
 fn apply_match_limit(matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatch> {
-    // line 0의 __SF_ 항목은 실제 매치가 아닌 파일 단위 메타데이터입니다.
-    // 매치 상한 계산에서 제외하고, 잘림 이후에도 반드시 보존합니다.
-    let (mut visible_matches, mut metadata): (Vec<_>, Vec<_>) = matches
-        .into_iter()
-        .partition(|item| !(item.0 == 0 && item.1.starts_with("__SF_")));
-    let is_single_error_marker =
-        visible_matches.len() == 1 && visible_matches[0].1.starts_with("ERR_");
-    if visible_matches.len() > max_per_file && !is_single_error_marker {
+    // 파일 단위 안내(종류가 메타데이터)는 실제 매치가 아닙니다.
+    // 매치 상한 계산에서 제외하고, 잘림 이후에도 반드시 보존합니다. 종류는 만든 곳에서 정해 옵니다.
+    let (mut visible_matches, mut metadata): (Vec<_>, Vec<_>) =
+        matches.into_iter().partition(|item| !item.4.is_metadata());
+    if visible_matches.len() > max_per_file {
         visible_matches.truncate(max_per_file);
-        if !metadata.iter().any(|item| item.1 == MATCH_META_TRUNCATED) {
-            metadata.insert(0, (0, MATCH_META_TRUNCATED.to_string(), None, None));
+        if !metadata.iter().any(|item| item.4 == ResultKind::Truncated) {
+            metadata.insert(
+                0,
+                (
+                    0,
+                    MATCH_META_TRUNCATED.to_string(),
+                    None,
+                    None,
+                    ResultKind::Truncated,
+                ),
+            );
         }
     }
     visible_matches.extend(metadata);
@@ -1572,8 +1582,8 @@ fn search_decoded_region(
     let budget = max_per_file.saturating_sub(results.len());
     search_utf8_text(region, matcher, is_exact, stop_flag, budget, &mut found);
     let base = *line_number - 1;
-    for (line, content, _, _) in found {
-        results.push((base + line, content, None, None));
+    for (line, content, _, _, kind) in found {
+        results.push((base + line, content, None, None, kind));
     }
     *line_number += textkey::LineCounter::new().line_at(region, region.len()) - 1;
     results.len() > max_per_file || stop_flag.load(Ordering::Relaxed)
@@ -1794,6 +1804,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
                         format!("{}{}", MATCH_META_BINARY_PREFIX, c),
                         None,
                         Some(c),
+                        ResultKind::Binary,
                     )]
                 } else {
                     Vec::new()
@@ -1823,10 +1834,9 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
             };
             if enc == UTF_8
                 && encoding.is_none()
-                && matches.iter().any(|m| {
-                    m.1.contains('\u{fffd}')
-                        || (m.0 == 0 && m.1.starts_with(MATCH_META_DECODE_PARTIAL_PREFIX))
-                })
+                && matches
+                    .iter()
+                    .any(|m| m.1.contains('\u{fffd}') || m.4 == ResultKind::DecodePartial)
             {
                 // 앞부분만 보고 UTF-8로 정했는데 깨진 글자가 보이거나 해석하지 못한 바이트를 만났으면
                 // 파일 전체로 다시 판정합니다(일치가 없어도 다시 판정해 잘못된 안내를 막음).
@@ -2277,7 +2287,7 @@ pub fn search_dir(
                                         if let Some(limit) = max_total_matches {
                                             let real = matches
                                                 .iter()
-                                                .filter(|m| !m.1.starts_with("__SF_"))
+                                                .filter(|m| !m.4.is_metadata())
                                                 .count()
                                                 as u64;
                                             let total =
@@ -2500,7 +2510,7 @@ fn extract_line_content_bytes(
     end: usize,
     match_start: Option<usize>,
     match_len: Option<usize>,
-) -> String {
+) -> (String, ResultKind) {
     let mut line_end = end;
     if line_end > start && mmap[line_end - 1] == b'\r' {
         line_end -= 1;
@@ -2541,13 +2551,17 @@ fn extract_line_content_bytes(
         };
         let prefix = if preview_start > start { "..." } else { "" };
         let suffix = if preview_end < line_end { "..." } else { "" };
-        return format!("{MATCH_META_LONG_LINE_PREFIX}{prefix}{preview_text}{suffix}");
+        return (
+            format!("{MATCH_META_LONG_LINE_PREFIX}{prefix}{preview_text}{suffix}"),
+            ResultKind::LongLine,
+        );
     }
     let line_bytes = &mmap[start..line_end];
-    match simdutf8::basic::from_utf8(line_bytes) {
+    let text = match simdutf8::basic::from_utf8(line_bytes) {
         Ok(s) => s.trim().to_string(),
         Err(_) => String::from_utf8_lossy(line_bytes).trim().to_string(),
-    }
+    };
+    (text, ResultKind::Match)
 }
 
 #[cfg(test)]
@@ -2755,18 +2769,14 @@ mod tests {
                         };
                         matched.then(|| {
                             let start = line.find("needle");
-                            (
-                                i + 1,
-                                extract_line_content_bytes(
-                                    line.as_bytes(),
-                                    0,
-                                    line.len(),
-                                    start,
-                                    Some(6),
-                                ),
-                                None,
-                                None,
-                            )
+                            let (content, kind) = extract_line_content_bytes(
+                                line.as_bytes(),
+                                0,
+                                line.len(),
+                                start,
+                                Some(6),
+                            );
+                            (i + 1, content, None, None, kind)
                         })
                     })
                     .collect();
@@ -2916,7 +2926,13 @@ mod tests {
             .encode_utf16()
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
-        let original = vec![(1, "already delivered".to_string(), None, None)];
+        let original = vec![(
+            1,
+            "already delivered".to_string(),
+            None,
+            None,
+            ResultKind::Match,
+        )];
         let mut actual = original.clone();
         search_non_utf8_chunks(
             &bytes,
@@ -2959,9 +2975,9 @@ mod tests {
     #[test]
     fn match_limit_returns_only_allowed_matches_and_a_marker() {
         let matches = vec![
-            (1, "one".to_string(), None, None),
-            (2, "two".to_string(), None, None),
-            (3, "three".to_string(), None, None),
+            (1, "one".to_string(), None, None, ResultKind::Match),
+            (2, "two".to_string(), None, None, ResultKind::Match),
+            (3, "three".to_string(), None, None, ResultKind::Match),
         ];
         let limited = apply_match_limit(matches, 2);
 
@@ -2974,9 +2990,9 @@ mod tests {
     #[test]
     fn match_limit_preserves_json_depth_notice_without_counting_it() {
         let matches = vec![
-            (1, "one".to_string(), None, None),
-            (2, "two".to_string(), None, None),
-            (3, "three".to_string(), None, None),
+            (1, "one".to_string(), None, None, ResultKind::Match),
+            (2, "two".to_string(), None, None, ResultKind::Match),
+            (3, "three".to_string(), None, None, ResultKind::Match),
             (
                 0,
                 format!(
@@ -2986,6 +3002,7 @@ mod tests {
                 ),
                 None,
                 None,
+                ResultKind::JsonDepthLimit,
             ),
         ];
 
@@ -3001,13 +3018,14 @@ mod tests {
     #[test]
     fn match_limit_does_not_treat_metadata_as_an_extra_match() {
         let matches = vec![
-            (1, "one".to_string(), None, None),
-            (2, "two".to_string(), None, None),
+            (1, "one".to_string(), None, None, ResultKind::Match),
+            (2, "two".to_string(), None, None, ResultKind::Match),
             (
                 0,
                 "__SF_EXCEL_SHEET_ERR__|Sheet2|parse failure".to_string(),
                 None,
                 None,
+                ResultKind::SheetError,
             ),
         ];
 
@@ -3234,7 +3252,7 @@ mod tests {
                     10_000,
                 );
                 let mut actual: Vec<(usize, usize)> = Vec::new();
-                for (line, _content, offset, length) in &results {
+                for (line, _content, offset, length, _kind) in &results {
                     if let (Some(offset), Some(length)) = (offset, length) {
                         let piece = &text.as_bytes()[*offset..offset + length];
                         assert_eq!(
@@ -3307,7 +3325,7 @@ mod tests {
             let results =
                 do_search_with_mmap(text.as_bytes(), UTF_8, &matcher, false, &stop_flag, 10_000);
             let mut actual: Vec<(usize, usize)> = Vec::new();
-            for (line, _content, offset, length) in &results {
+            for (line, _content, offset, length, _kind) in &results {
                 if let (Some(offset), Some(length)) = (offset, length) {
                     let piece = &text.as_bytes()[*offset..offset + length];
                     assert_eq!(
@@ -3347,5 +3365,156 @@ mod tests {
         let matches = do_search_with_mmap(&data, encoding, &matcher, false, &stop_flag, 5000);
         assert_eq!(matches.len(), 1);
         assert!(matches[0].1.contains("needle"));
+    }
+
+    /// 실제 파일 줄이 안내 표식처럼 생겨도 일치 줄로 남습니다(7.2.9). 예전에는 글자 모양으로 분류해
+    /// `ERR_…|` 줄 하나 때문에 파일 전체가 건너뛴 것으로 처리됐습니다.
+    #[test]
+    fn marker_like_lines_stay_plain_matches() {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let text = "ERR_LOGIN_FAILED|login needle failed\n\
+                    OK_LOGIN|needle\n\
+                    plain needle\n\
+                    __SF_TRUNCATED__ needle\n\
+                    __SF_LONG_LINE__|needle\n\
+                    __SF_BINARY_MATCH__|needle\n\
+                    __SF_EXCEL_SHEET_ERR__|needle|x\n";
+        let matcher = textkey::Matcher::new("needle").unwrap();
+        let matches =
+            do_search_with_mmap(text.as_bytes(), UTF_8, &matcher, false, &stop_flag, 5000);
+        assert_eq!(matches.len(), 7);
+        for (index, item) in matches.iter().enumerate() {
+            assert_eq!(item.0, index + 1);
+            assert_eq!(item.4, ResultKind::Match, "{:?}", item);
+            // 짧은 줄은 표식처럼 보여도 위치를 잃지 않습니다.
+            assert!(item.2.is_some() && item.3 == Some(6), "{:?}", item);
+            let converted = SearchMatch::from(item.clone());
+            assert_eq!(converted.kind, "match");
+            assert_eq!(converted.code, None);
+            assert_eq!(converted.detail, None);
+        }
+        assert_eq!(matches[0].1, "ERR_LOGIN_FAILED|login needle failed");
+
+        // 정확히 일치도 같습니다.
+        let exact = textkey::Matcher::new("ERR_A|needle").unwrap();
+        let matches = do_search_with_mmap(
+            b"ERR_A|needle\n__SF_TRUNCATED__\n",
+            UTF_8,
+            &exact,
+            true,
+            &stop_flag,
+            5000,
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].4, ResultKind::Match);
+    }
+
+    /// 표식처럼 생긴 일치 줄도 파일당 상한에 셉니다. 진짜 안내만 세지 않습니다.
+    #[test]
+    fn match_limit_counts_marker_like_matches() {
+        let matches = vec![
+            (
+                0,
+                "__SF_TRUNCATED__".to_string(),
+                None,
+                None,
+                ResultKind::Match,
+            ),
+            (0, "__SF_X__|a".to_string(), None, None, ResultKind::Match),
+            (3, "ERR_X|b".to_string(), None, None, ResultKind::Match),
+        ];
+        let limited = apply_match_limit(matches, 2);
+        assert_eq!(limited.len(), 3);
+        assert_eq!(limited[0].4, ResultKind::Match);
+        assert_eq!(limited[1].4, ResultKind::Match);
+        assert_eq!(limited[2].4, ResultKind::Truncated);
+
+        // 일치 하나가 `ERR_`로 시작해도 상한 계산에서 따로 다루지 않습니다.
+        let single = vec![
+            (1, "ERR_X|a".to_string(), None, None, ResultKind::Match),
+            (2, "two".to_string(), None, None, ResultKind::Match),
+        ];
+        let limited = apply_match_limit(single, 1);
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[1].4, ResultKind::Truncated);
+    }
+
+    /// 안내의 종류·코드·상세는 만든 곳의 종류에서 나옵니다.
+    #[test]
+    fn metadata_kinds_convert_to_python_fields() {
+        let cases = [
+            (
+                ResultKind::Truncated,
+                MATCH_META_TRUNCATED.to_string(),
+                "truncated",
+                Some("TRUNCATED"),
+                None,
+            ),
+            (
+                ResultKind::Binary,
+                format!("{MATCH_META_BINARY_PREFIX}3"),
+                "binary",
+                Some("BINARY"),
+                Some("3"),
+            ),
+            (
+                ResultKind::LongLine,
+                format!("{MATCH_META_LONG_LINE_PREFIX}...a|b..."),
+                "long_line",
+                Some("LONG_LINE"),
+                Some("...a|b..."),
+            ),
+            (
+                ResultKind::DecodePartial,
+                format!("{MATCH_META_DECODE_PARTIAL_PREFIX}UTF-8"),
+                "partial",
+                Some("DECODE_PARTIAL"),
+                Some("UTF-8"),
+            ),
+            (
+                ResultKind::JsonDepthLimit,
+                format!("{}7", crate::json_search::JSON_DEPTH_LIMIT_MARKER_PREFIX),
+                "partial",
+                Some("JSON_DEPTH_LIMIT"),
+                Some("7"),
+            ),
+            (
+                ResultKind::SheetError,
+                "__SF_EXCEL_SHEET_ERR__|Sheet 2|parse failure".to_string(),
+                "sheet_error",
+                Some("EXCEL_SHEET_ERROR"),
+                Some("Sheet 2|parse failure"),
+            ),
+        ];
+        for (kind, content, name, code, detail) in cases {
+            let converted = SearchMatch::from((0, content.clone(), None, None, kind));
+            assert_eq!(converted.kind, name);
+            assert_eq!(converted.code.as_deref(), code);
+            assert_eq!(converted.detail.as_deref(), detail);
+            assert_eq!(converted.content, content);
+            assert!(kind.is_metadata() || kind == ResultKind::LongLine);
+        }
+        assert!(!ResultKind::Match.is_metadata());
+        assert!(!ResultKind::LongLine.is_metadata());
+    }
+
+    /// 긴 줄은 미리보기 종류로 오고 위치가 없습니다.
+    #[test]
+    fn long_line_match_has_long_line_kind() {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let mut data = vec![b'A'; 12_000];
+        data[8_000..8_006].copy_from_slice(b"needle");
+        let matches = do_search_with_mmap(
+            &data,
+            UTF_8,
+            &textkey::Matcher::new("needle").unwrap(),
+            false,
+            &stop_flag,
+            5000,
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].4, ResultKind::LongLine);
+        assert_eq!((matches[0].2, matches[0].3), (None, None));
+        assert!(!matches[0].4.is_metadata());
     }
 }

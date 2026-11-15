@@ -1,4 +1,4 @@
-use crate::types::RawMatch;
+use crate::types::{RawMatch, ResultKind};
 use quick_xml::events::Event;
 use quick_xml::reader::Reader as XmlReader;
 use std::borrow::Cow;
@@ -342,6 +342,7 @@ fn process_xml_text_item(
                 format!("/{}\t{}", tag_path, trimmed),
                 location.map(|(offset, _)| offset),
                 location.map(|(_, length)| length),
+                ResultKind::Match,
             ));
         }
     }
@@ -432,6 +433,7 @@ fn process_xml_attributes(
                 format!("/{}/@{}\t{}", ctx.tag_path_cache, key, val),
                 location.map(|(offset, _)| offset),
                 location.map(|(_, length)| length),
+                ResultKind::Match,
             ));
         }
     }

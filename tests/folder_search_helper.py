@@ -96,7 +96,12 @@ def search_in_excel_special(file_path: str, search_string: str, exact_match: boo
 
 
 class FakeSearchMatch:
-    """엔진의 결과 객체(``SearchMatch``)를 흉내 냅니다. 종류·코드·상세는 엔진(``types.rs``)과 같은 규칙으로 정합니다."""
+    """엔진의 결과 객체(``SearchMatch``)를 흉내 냅니다.
+
+    실제 엔진은 결과를 만드는 곳에서 종류를 정합니다(7.2.9). 시험에서는 짧게 쓰려고, 엔진이 안내를 만들 때
+    쓰는 내용(``__SF_…``)이면 그 종류로, 아니면 일치로 봅니다. 엔진은 결과 목록에 ``ERR_…`` 오류를 넣지 않습니다
+    (파일 오류는 건너뛴 목록으로 갑니다).
+    """
 
     def __init__(self, line, content, offset=None, length=None):
         self.line, self.content, self.offset, self.length = line, content, offset, length
@@ -107,7 +112,7 @@ class FakeSearchMatch:
 
 
 def _classify(content: str):
-    if not content.startswith(("__SF_", "ERR_")):
+    if not content.startswith("__SF_"):
         return "match", None, None
     if content == "__SF_TRUNCATED__":
         return "truncated", "TRUNCATED", None
@@ -117,13 +122,9 @@ def _classify(content: str):
         ("__SF_LONG_LINE__|", "long_line", "LONG_LINE"),
         ("__SF_DECODE_PARTIAL__|", "partial", "DECODE_PARTIAL"),
         ("__SF_EXCEL_SHEET_ERR__|", "sheet_error", "EXCEL_SHEET_ERROR"),
-        ("__SF_EXCEL_PANIC__|", "error", "ERR_EXCEL_PANIC"),
     ):
         if content.startswith(prefix):
             return kind, code, content[len(prefix):]
-    code, sep, detail = content.partition("|")
-    if sep and code.startswith("ERR_"):
-        return "error", code, detail
     return "match", None, None
 
 

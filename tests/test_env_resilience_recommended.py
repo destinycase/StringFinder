@@ -141,13 +141,8 @@ def test_rust_search_dir_binary_marker_is_mapped():
 
 
 def test_rust_search_dir_excel_panic_marker_maps_to_skipped():
-    fake_match = types.SimpleNamespace(
-        line=0,
-        content="__SF_EXCEL_PANIC__|xlsx",
-        offset=None,
-        length=None,
-    )
-    fake_engine = folder_search_helper.fake_dir_engine([fake_match], path="panic.xlsx")
+    # Excel 엔진 오류는 건너뛴 목록의 ERR_EXCEL_PANIC 사유로 옵니다(7.2.9).
+    fake_engine = folder_search_helper.fake_dir_engine(skipped=[("panic.xlsx", "ERR_EXCEL_PANIC|xlsx")])
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("core.search_engine.HAS_RUST_ENGINE", True)

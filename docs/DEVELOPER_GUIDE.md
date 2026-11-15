@@ -244,7 +244,11 @@ Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니�
 
 ### 4.2 `SearchMatch` (Structured Match Object)
 
-검색 매치 결과 객체입니다. 종류(`kind`)·코드·상세는 엔진(`types.rs`)이 정하며, Python은 7.2.6부터 이 종류만 보고 결과를 나눕니다(표식 글자를 다시 해석하지 않습니다). 시험의 가짜 엔진은 `tests/folder_search_helper.py`의 `fake_matches`로 같은 모양을 만듭니다.
+검색 매치 결과 객체입니다. 종류(`kind`)·코드·상세는 엔진이 정하며, Python은 7.2.6부터 이 종류만 보고 결과를 나눕니다.
+
+7.2.9부터 종류는 **결과를 만드는 곳에서** 정합니다. 엔진 내부 결과 `RawMatch`는 `(줄, 내용, 위치, 길이, ResultKind)`이고, 일치 줄을 만드는 곳은 `Match`(긴 줄은 `LongLine`), 안내를 만드는 곳은 `Truncated`·`Binary`·`DecodePartial`·`JsonDepthLimit`·`SheetError`를 붙입니다(`types.rs`). 내용 글자 모양으로 종류를 추측하지 않으므로, 실제 파일의 줄이 `ERR_…|`나 `__SF_…`로 시작해도 일치 줄로 남습니다. 파일당 결과 상한, 전체 결과 수 집계, 해석 실패 재판정도 모두 이 종류로 판단합니다. 파일 단위 오류(`ERR_OPEN` 등)는 결과 목록이 아니라 건너뛴 목록으로 보내며, 결과 객체의 종류 `"error"`는 쓰지 않습니다.
+
+시험의 가짜 엔진은 `tests/folder_search_helper.py`의 `fake_matches`로 같은 모양을 만듭니다. 실제 엔진 동작은 `tests/test_marker_like_lines.py`와 Rust 시험(`marker_like_lines_stay_plain_matches` 등)이 확인합니다.
 
 | 필드명 | 타입 | 설명 |
 | :--- | :---: | :--- |
@@ -252,8 +256,8 @@ Python 코드와 Rust 엔진은 `API_VERSION`(현재 8)으로 짝을 맞춥니�
 | `content` | `String` | 매칭 라인 텍스트 또는 포맷된 결과 (`path\tvalue`) |
 | `offset` | `Option<usize>` | 매치 시작 바이트 오프셋 |
 | `length` | `Option<usize>` | 매치 바이트 길이 |
-| `kind` | `String` | `"match"`, `"partial"`, `"binary"`, `"long_line"`, `"truncated"`, `"sheet_error"`, `"error"` |
-| `code` | `Option<String>` | 에러/안내 코드 (`ERR_MMAP`, `ERR_JSON_SIZE_LIMIT`, `JSON_DEPTH_LIMIT` 등) |
+| `kind` | `String` | `"match"`, `"long_line"`(실제 일치), `"partial"`, `"binary"`, `"truncated"`, `"sheet_error"`(파일 단위 안내) |
+| `code` | `Option<String>` | 안내 코드 (`TRUNCATED`, `BINARY`, `LONG_LINE`, `DECODE_PARTIAL`, `JSON_DEPTH_LIMIT`, `EXCEL_SHEET_ERROR`). 보통 일치는 없음 |
 | `detail` | `Option<String>` | 상세 메시지 |
 
 구조 검색의 기본 `content` 직렬화 형식은 JSON/XML의 경우 `path\tvalue`, Excel의 경우 `sheet\tcell\tvalue`입니다. UE 현지화 archive는 값에 탭·줄바꿈이 있어도 필드가 섞이지 않도록 항상 `ARCHIVE_FIELDS|[Namespace, Key, 원문, 번역문]` JSON 배열을 쓰며, Python 정규화 후 결과 행은 `(Key 줄 번호, Namespace, Key, 원문, 번역문, offset, length)`이며 화면에는 줄번호·Namespace·Key·원문·번역문 다섯 열로 표시합니다. 구조 오류 코드는 `ERR_ARCHIVE_FORMAT|<문제 위치 경로>`입니다. JSON 키에 탭이 있으면 필드를 모호하게 나누지 않도록 `JSON_FIELDS|` 접두부와 JSON 배열로 경로·값을 전달합니다. 이는 오류 마커가 아닌 정상 결과 형식입니다. Python의 `_normalize_rust_matches()`가 이 값을 UI 모델용 튜플로 변환하므로 형식 변경 시 Rust 생성부, Python 정규화 계층, UI 모델과 세션 회귀 테스트를 함께 수정해야 합니다.

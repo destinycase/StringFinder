@@ -24,18 +24,10 @@ def test_json_size_limit_code_is_handled_as_file_skip(tmp_path, monkeypatch):
     file_path = tmp_path / "large.json"
     file_path.write_text('{"key": "value"}')
 
-    class MockMatch:
-        def __init__(self, content):
-            self.content = content
-            self.line = 1
-            self.offset = 0
-            self.length = 0
-
-    def mock_search_file(path, _query, mode, stop_event=None, **_kwargs):
-        return [MockMatch("ERR_JSON_SIZE_LIMIT|Size exceeds limit")]
-
+    # 엔진은 파일 오류를 결과가 아니라 건너뛴 목록으로 보냅니다(7.2.9).
     import core.search_engine
-    monkeypatch.setattr(core.search_engine, "sf_engine", folder_search_helper.fake_dir_engine(mock_search_file(None, None, 0)))
+    monkeypatch.setattr(core.search_engine, "sf_engine", folder_search_helper.fake_dir_engine(
+        skipped=[(str(file_path), "ERR_JSON_SIZE_LIMIT|Size exceeds limit")]))
 
     result = search_in_json_special(str(file_path), "value")
 
@@ -47,25 +39,17 @@ def test_json_size_limit_code_is_handled_as_file_skip(tmp_path, monkeypatch):
 
 def test_generic_rust_error_prevents_silent_failure(tmp_path, monkeypatch, caplog):
     """
-    일반 검색 모드에서 Rust 엔진이 'ERR_PANIC|...' 형태의 마커를 반환할 때,
+    일반 검색 모드에서 Rust 엔진이 'ERR_PANIC|...' 사유로 파일을 건너뛰었을 때,
     단순히 '일치 항목 0건'으로 조용히 실패(Silent Failure)하지 않고
     반드시 STATUS_SKIPPED 처리되는지 확인하는 방어적 단위 테스트입니다.
     """
     file_path = tmp_path / "dummy.txt"
     file_path.write_text("dummy")
 
-    class MockMatch:
-        def __init__(self, content):
-            self.content = content
-            self.line = 1
-            self.offset = 0
-            self.length = 0
-
-    def mock_search_file(path, _query, mode_bits, stop_event=None, _progress_cb=None, **_kwargs):
-        return [MockMatch("ERR_PANIC|Simulated engine crash")]
-
+    # 엔진은 파일 오류를 결과가 아니라 건너뛴 목록으로 보냅니다(7.2.9).
     import core.search_engine
-    monkeypatch.setattr(core.search_engine, "sf_engine", folder_search_helper.fake_dir_engine(mock_search_file(None, None, 0)))
+    monkeypatch.setattr(core.search_engine, "sf_engine", folder_search_helper.fake_dir_engine(
+        skipped=[(str(file_path), "ERR_PANIC|Simulated engine crash")]))
 
     result = folder_search_helper.search_in_file(str(file_path), "query")
 

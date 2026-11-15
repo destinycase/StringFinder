@@ -230,7 +230,8 @@ def _normalize_rust_matches(
             sheet_name, _, detail = str(m.detail or "").partition("|")
             _log_raw_skip_detail(f"Excel sheet {sheet_name.strip()}", detail)
             sheet_skips.append((sheet_name.strip(), AppStrings.EXCEL_DETAIL_SHEET_FAILURE))
-        # "partial"(일부만 검색)은 파일 단위 안내로, "error"는 파일을 건너뛴 사유로 따로 처리합니다.
+        # "partial"(일부만 검색)은 파일 단위 안내로 따로 처리합니다. 파일을 못 읽은 오류는 결과가 아니라
+        # 건너뛴 목록으로 옵니다.
     return res, bin_cnt, sheet_skips
 
 
@@ -249,18 +250,10 @@ def _metadata_items(matches: Any) -> List[Any]:
     """보통 일치를 뺀 항목(파일 단위 표식·오류)만 고릅니다.
 
     엔진의 보통 일치(kind == "match")는 표식이 아니므로 표식 검사에서 뺍니다. 일치가 많을 때 검사가 빨라집니다.
-    주의: 종류는 엔진(types.rs)이 줄 내용의 글자 모양으로 정합니다. 그래서 내용이 "ERR_…|"로 시작하는 실제
-    일치 줄은 지금 오류로 분류됩니다(7.2.1부터 있던 문제, 엔진 수정 제안서에 기록).
+    종류는 엔진이 결과를 만드는 곳에서 정하므로, 내용이 "ERR_…|"나 "__SF_…"로 시작하는 실제 일치 줄도
+    "match"로 옵니다(7.2.9).
     """
     return [m for m in matches or [] if m.kind != "match"]
-
-
-def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
-    """파일 전체를 건너뛴 오류(``kind == "error"``)가 있으면 그 사유 코드를 돌려줍니다."""
-    for m in _metadata_items(matches):
-        if m.kind == "error" and m.code:
-            return build_skip_reason(m.code, m.detail or "")
-    return None
 
 
 def json_path_for_display(raw_path: str) -> str:
@@ -408,9 +401,6 @@ def format_file_matches(
     - 건너뜀 목록: 파일 전체를 건너뛴 사유 또는 일부만 검색한 안내 ``[(경로, 사유)]``
     - 시트 실패 목록: Excel에서 읽지 못한 시트 ``[(시트, 사유)]``
     """
-    skip_reason = _extract_marker_skip_reason(matches)
-    if skip_reason:
-        return None, [(path, skip_reason)], []
     skipped: List[Tuple[str, str]] = []
     partial_reason = _extract_partial_skip_reason(matches)
     if partial_reason:
