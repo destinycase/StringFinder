@@ -153,7 +153,6 @@ class SearchTab(QMainWindow):
         self.apply_filter_layout()
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.filter_dock)
         self.filename_panel.filter_changed.connect(self._sync_filters_to_config)
-        self.filename_panel.search_triggered.connect(self.start_search)
         # 중앙 결과 영역
         self.result_container = QWidget()
         result_layout = QVBoxLayout(self.result_container)

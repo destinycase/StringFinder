@@ -160,15 +160,10 @@ def test_configured_json_size_limit_precedes_projected_budget(tmp_path, monkeypa
     assert "메모리 예산" not in result[1]
 
 
-def test_json_size_limit_does_not_trigger_global_memory_stop():
-    new_reason = search_engine.format_skip_reason(
-        "ERR_JSON_SIZE_LIMIT|1048576 bytes"
-    )
+def test_skipped_file_reasons_never_stop_the_whole_search():
+    """메모리 부족 중지는 작업자의 메모리 검사만 합니다. 파일 단위 건너뜀 사유는 전체 검색을 멈추지 않습니다(7.2.2)."""
+    reason = search_engine.format_skip_reason("ERR_JSON_SIZE_LIMIT|1048576 bytes")
+    assert reason != AppStrings.ERROR_MEMORY_CRITICAL
+    assert not hasattr(SearchWorker, "_is_memory_skip")
 
-    assert not SearchWorker._is_memory_skip([("large.json", new_reason)])
 
-
-def test_only_system_memory_pressure_reason_triggers_global_stop():
-    assert SearchWorker._is_memory_skip(
-        [("guarded.json", AppStrings.ERROR_MEMORY_CRITICAL)]
-    )

@@ -415,7 +415,7 @@ class AppStrings:
     LOG_SYS_SHUTDOWN = "[시스템] 애플리케이션 종료 중..."
     LOG_SYS_LOG_CLEANUP_DONE = "[시스템] 로그 파일 정리 완료 ({}개 제거)."
     LOG_SYS_RUST_SUCCESS = "[시스템] Rust 가속 엔진 로딩 완료."
-    LOG_SYS_RUST_FALLBACK = "[시스템] Rust 엔진 로딩 실패: 애플리케이션을 시작할 수 없습니다."
+    LOG_SYS_RUST_LOAD_FAIL = "[시스템] Rust 엔진 로딩 실패: 애플리케이션을 시작할 수 없습니다."
     LOG_SYS_SF_ENGINE_NOT_FOUND = "[시스템] Rust 라이브러리 유실 감지: {}"
     LOG_SYS_UNCAUGHT_EXCEPTION = "[시스템] 처리되지 않은 예외 발생."
     LOG_SYS_QT_THREAD_WARNING = "[시스템] QThread 경고 발생: {}\n상세 스택:\n{}"

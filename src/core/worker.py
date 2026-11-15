@@ -86,13 +86,6 @@ class SearchWorker(QRunnable):
             self._safe_emit(self.signals.memory_critical)
             self._safe_emit(self.signals.error, AppStrings.ERROR_MEMORY_CRITICAL)
 
-    @staticmethod
-    def _is_memory_skip(skip_list) -> bool:
-        """Return True only for a system-wide memory-pressure stop reason."""
-        return any(
-            str(reason).strip() == AppStrings.ERROR_MEMORY_CRITICAL
-            for _, reason in skip_list
-        )
     def _check_safety_limits(self, new_matches_count: int) -> bool:
         """Account for accepted matches and enforce the memory guard."""
         self._total_matches_accumulated += new_matches_count
@@ -217,8 +210,7 @@ class SearchWorker(QRunnable):
         self.skipped_sheets_list: List[Any] = []  # [(file_path, sheet_name), ...] 시트 스킵 목록
         try:
             if self.search_paths:
-                # [H-04 Fix] 하드코딩된 상수 문자열 대신 직접 속성 참조
-                self._run_rust_search(exclude_hidden=self.exclude_hidden, exclude_binary=self.exclude_binary)
+                self._run_rust_search()
             else:
                 logger.warning(AppStrings.LOG_SCH_NO_FILES)
                 self._safe_emit(self.signals.search_finished, 0, 0, 0)
@@ -230,7 +222,7 @@ class SearchWorker(QRunnable):
         finally:
             self._safe_emit(self.signals.finished)
 
-    def _run_rust_search(self, exclude_hidden: bool = True, exclude_binary: bool = True):
+    def _run_rust_search(self):
         from core.search_engine import search_directory_fast
         total_files = 100
         self._rust_found_files = 0
@@ -262,7 +254,6 @@ class SearchWorker(QRunnable):
         def process_results_batch(batch):
             # 검색 중지 직후에도 Rust 디스패처가 이미 발견한 마지막 배치를 전달할 수 있습니다.
             # 중지 플래그만으로 이 배치를 버리면 사용자에게 부분 검색 결과가 유실됩니다.
-            # logger.debug(f"[Worker] results_callback received batch of {len(batch)}")
             from core.search_engine import format_file_matches
 
             formatted_batch = []
@@ -272,10 +263,9 @@ class SearchWorker(QRunnable):
                 result, file_skips, sheet_skips = format_file_matches(path, matches, self.special_mode)
                 if file_skips:
                     skipped_batch.extend(file_skips)
-                    if hasattr(self, "all_skipped"):
-                        self.all_skipped.extend(file_skips)
+                    self.all_skipped.extend(file_skips)
                 # 시트 스킵 정보를 별도 목록에 수집 (파일 스킵과 구분)
-                if sheet_skips and hasattr(self, "skipped_sheets_list"):
+                if sheet_skips:
                     for sheet_name, detail in sheet_skips:
                         self.skipped_sheets_list.append((path, sheet_name, detail))
                 if result is not None:
@@ -284,8 +274,6 @@ class SearchWorker(QRunnable):
             
             if not formatted_batch and not skipped_batch:
                 return
-            if skipped_batch and self._is_memory_skip(skipped_batch):
-                self._stop_for_memory_pressure()
             limit_reached = False
             if formatted_batch:
                 formatted_batch, current_batch_matches, limit_reached = self._fit_results_to_total_limit(
@@ -344,15 +332,13 @@ class SearchWorker(QRunnable):
             )
             return
 
-        total_found = getattr(self, "_rust_found_files", 0)
-        total_matches = getattr(self, "_rust_total_matches", 0)
+        total_found = self._rust_found_files
+        total_matches = self._rust_total_matches
         skipped_list = []
         if isinstance(search_res, dict):
             skipped_list = search_res.get(Constants.PAYLOAD_SKIPPED, [])
-        skipped_count = len(skipped_list) + len(getattr(self, "all_skipped", []))
+        skipped_count = len(skipped_list) + len(self.all_skipped)
         if skipped_list:
-            if self._is_memory_skip(skipped_list):
-                self._stop_for_memory_pressure()
             self._safe_emit(self.signals.skipped_found, skipped_list)
         self._safe_emit(self.signals.search_finished, total_found, total_matches, skipped_count)
         elapsed = time.time() - self.worker_start_time

@@ -112,7 +112,6 @@ class SearchResultModel(QAbstractTableModel):
         self._filtered_buffer = []  # 필터링된 데이터
         self._current_page = 1
         self._page_size = 1000  # 기본 페이지 크기를 1000건으로 설정합니다.
-        self._pagination_enabled = True
         self._is_sorting = False
         self._sort_worker = None
         self._data_revision = 0
@@ -246,7 +245,6 @@ class SearchResultModel(QAbstractTableModel):
             
             if item_data:
                 new_items.append(item_data)
-                # 개별 파일의 매치 수 상한(-1 마커) 도달 여부를 확인합니다.
 
         if not new_items:
             return
@@ -429,7 +427,7 @@ class SearchResultModel(QAbstractTableModel):
 
     def get_total_pages(self) -> int:
         """전체 페이지 수를 계산하여 반환합니다."""
-        if not self._pagination_enabled or not self._filtered_buffer:
+        if not self._filtered_buffer:
             return 1
         return (len(self._filtered_buffer) + self._page_size - 1) // self._page_size
 
@@ -439,8 +437,6 @@ class SearchResultModel(QAbstractTableModel):
 
     def go_to_page(self, page_number: int):
         """지정된 페이지 번호로 이동합니다."""
-        if not self._pagination_enabled:
-            return
         total_pages = self.get_total_pages()
         if page_number < 1:
             page_number = 1
@@ -638,7 +634,6 @@ class MatchDetailModel(QAbstractTableModel):
 
         if role in [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]:
             # [UX] 검색 모드가 Normal인 경우 한 줄로 표시
-            search_mode = str(self.search_mode or Constants.MODE_NORMAL)
             if search_mode == Constants.MODE_NORMAL:
                 is_excel = row_path.lower().endswith(EXCEL_EXTENSIONS)
 
@@ -901,7 +896,7 @@ class MatchDetailModel(QAbstractTableModel):
 
         self._apply_filters()
 
-        # [H-05 Fix] headerDataChanged 시그널을 명시적으로 발생시켜 QHeaderView 캐시를 강제 초기화.
+        # headerDataChanged 시그널을 명시적으로 발생시켜 QHeaderView 캐시를 강제 초기화.
         # 모드 전환 시(예: NORMAL→JSON) 컬럼 수가 즉시 반영되도록 보장.
         self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, max(0, self.columnCount() - 1))
 
@@ -1129,7 +1124,7 @@ class MatchDetailModel(QAbstractTableModel):
         """상세 목록의 특정 컬럼에 대한 필터를 설정합니다."""
         new_text = text.lower().strip()
         
-        # [H-06 Fix] 인덱스 매핑 변경에 대응하기 위해, 
+        # 인덱스 매핑 변경에 대응하기 위해, 
         # 값이 없는 경우라도 dict에서 제거하여 이전 모드의 찌꺼기 필터가 영향 주지 않게 함
         if not new_text:
             self._filters.pop(column, None)

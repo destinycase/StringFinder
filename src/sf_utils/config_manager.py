@@ -218,8 +218,6 @@ class ConfigManager:
             Constants.FILTER_LAYOUT_STACKED,
         ):
             merged[Constants.CONFIG_KEY_FILTER_LAYOUT] = Constants.DEFAULT_FILTER_LAYOUT
-        # 예전 키의 값(대부분 당시 기본값)은 쓰지 않고 지웁니다.
-        merged.pop(Constants.LEGACY_CONFIG_KEY_FILTER_LAYOUT, None)
         for key in (
             Constants.CONFIG_KEY_IMPORTED_CONDITIONS,
             Constants.CONFIG_KEY_COMPACT_RESULT_ROWS,

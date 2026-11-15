@@ -42,7 +42,7 @@ def get_logger():
         _logger_instance = logging.getLogger("StringFinder")
         _logger_instance.setLevel(logging.DEBUG)
 
-    # [H-03 Fix] 핸들러 중복 등록 방지 — 이미 핸들러가 있으면 추가하지 않음
+    # 핸들러 중복 등록 방지 — 이미 핸들러가 있으면 추가하지 않음
     # logging.getLogger()는 전역 레지스트리를 반환하므로 _logger_instance 리셋 후
     # 재호출 시에도 기존 핸들러가 보존됩니다.
     if not _logger_instance.handlers:

@@ -15,7 +15,6 @@ from sf_utils.localization import get_korean_strings, get_language
 from core.search_query import validate_search_query
 from core.skip_reason_codes import (
     EXPAT_XML_DETAIL_TRANSLATION_NAMES,
-    LEGACY_MARKERS,
     SKIP_CODE_ARCHIVE_FORMAT,
     SKIP_CODE_CRITICAL,
     SKIP_CODE_EXCEL_PANIC,
@@ -173,11 +172,11 @@ try:
 except ImportError as e:
     HAS_RUST_ENGINE = False
     _RUST_ENGINE_ERROR = f"ImportError: {e}"
-    logger.warning(AppStrings.LOG_SYS_RUST_FALLBACK)
+    logger.warning(AppStrings.LOG_SYS_RUST_LOAD_FAIL)
 except Exception as e:
     HAS_RUST_ENGINE = False
     _RUST_ENGINE_ERROR = f"{type(e).__name__}: {e}"
-    logger.warning(AppStrings.LOG_SYS_RUST_FALLBACK)
+    logger.warning(AppStrings.LOG_SYS_RUST_LOAD_FAIL)
 
 SearchMatch = Tuple[Any, ...]
 SearchResult = Tuple[str, int, List[SearchMatch]]
@@ -192,21 +191,6 @@ RUST_MATCH_MARKER_ARCHIVE_FIELDS = "ARCHIVE_FIELDS|"
 RUST_MATCH_MARKER_EXCEL_SHEET_ERROR = "__SF_EXCEL_SHEET_ERR__|"
 RUST_MATCH_MARKER_DECODE_PARTIAL = "__SF_DECODE_PARTIAL__|"
 RUST_MATCH_MARKER_EXCEL_PANIC = "__SF_EXCEL_PANIC__|"
-_SKIP_REASON_TEMPLATE_NAMES = TEMPLATE_NAMES
-# Keep accepting skip reasons saved by releases predating the structured
-# ``ERR_*|detail`` protocol. Session files can outlive the application version.
-_LEGACY_SKIP_MARKERS = LEGACY_MARKERS
-
-_XML_DETAIL_TRANSLATION_NAMES = XML_DETAIL_TRANSLATION_NAMES
-_EXPAT_XML_DETAIL_TRANSLATION_NAMES = EXPAT_XML_DETAIL_TRANSLATION_NAMES
-
-def _build_skip_reason(code: str, detail: Any) -> str:
-    return build_skip_reason(code, detail)
-
-
-def _decode_skip_reason(reason: Any) -> Tuple[str, str]:
-    return decode_skip_reason(reason)
-
 
 def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) -> str:
     """XML parser diagnostics are converted to the active UI language."""
@@ -218,7 +202,7 @@ def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) ->
             else AppStrings.XML_DETAIL_INVALID_DOCUMENT
         )
 
-    translated_name = _XML_DETAIL_TRANSLATION_NAMES.get(raw_detail)
+    translated_name = XML_DETAIL_TRANSLATION_NAMES.get(raw_detail)
     if translated_name:
         return cast(str, getattr(AppStrings, translated_name))
 
@@ -232,7 +216,7 @@ def _localize_xml_error_detail(detail: Any, *, unsupported_dtd: bool = False) ->
         if message == "unbound prefix":
             localized_message = AppStrings.XML_DETAIL_UNKNOWN_NAMESPACE.format("prefix")
         else:
-            localized_name = _EXPAT_XML_DETAIL_TRANSLATION_NAMES.get(message)
+            localized_name = EXPAT_XML_DETAIL_TRANSLATION_NAMES.get(message)
             localized_message = (
                 getattr(AppStrings, localized_name)
                 if localized_name
@@ -336,8 +320,8 @@ def _localize_internal_error_detail(context: str, detail: Any) -> str:
 
 
 def format_skip_reason(reason: Any) -> str:
-    code, detail = _decode_skip_reason(reason)
-    template_name = _SKIP_REASON_TEMPLATE_NAMES.get(code, "SKIP_REASON_UNKNOWN")
+    code, detail = decode_skip_reason(reason)
+    template_name = TEMPLATE_NAMES.get(code, "SKIP_REASON_UNKNOWN")
     template = cast(str, getattr(AppStrings, template_name))
     safe_detail = detail if detail else str(reason or "")
     if code in (SKIP_CODE_XML_PARSE, SKIP_CODE_XML_UNSUPPORTED_DTD):
@@ -367,7 +351,7 @@ def format_skip_reason(reason: Any) -> str:
         safe_detail = AppStrings.SKIP_DETAIL_WALK_LOOP
     elif code in (SKIP_CODE_WALK, SKIP_CODE_OPEN, SKIP_CODE_METADATA, SKIP_CODE_MMAP):
         safe_detail = _localize_io_error_detail(safe_detail)
-    elif code in (SKIP_CODE_PANIC, SKIP_CODE_CRITICAL, SKIP_CODE_UNKNOWN) or code not in _SKIP_REASON_TEMPLATE_NAMES:
+    elif code in (SKIP_CODE_PANIC, SKIP_CODE_CRITICAL, SKIP_CODE_UNKNOWN) or code not in TEMPLATE_NAMES:
         safe_detail = _localize_internal_error_detail(code, safe_detail)
     try:
         return template.format(safe_detail)
@@ -453,8 +437,8 @@ def is_supported_skip_reason(reason: Any) -> bool:
         if not line:
             continue
         if line.startswith(("ERR_", "INFO_")) and "|" in line:
-            code, _ = _decode_skip_reason(line)
-            if code not in _SKIP_REASON_TEMPLATE_NAMES:
+            code, _ = decode_skip_reason(line)
+            if code not in TEMPLATE_NAMES:
                 return False
             continue
         if line.startswith(RUST_MATCH_MARKER_EXCEL_PANIC):
@@ -463,8 +447,8 @@ def is_supported_skip_reason(reason: Any) -> bool:
             continue
         if any(_match_localized_skip_resource(line, catalog) for catalog in catalogs):
             continue
-        code, _ = _decode_skip_reason(line)
-        if code not in _SKIP_REASON_TEMPLATE_NAMES or code == SKIP_CODE_UNKNOWN:
+        code, _ = decode_skip_reason(line)
+        if code not in TEMPLATE_NAMES or code == SKIP_CODE_UNKNOWN:
             return False
     return True
 
@@ -671,7 +655,7 @@ def _normalize_rust_matches(
                 # 파일 단위 부분 검색 안내로 별도 전달되며 결과 행에는 표시하지 않습니다.
                 continue
             if c.startswith(RUST_MATCH_MARKER_LONG_LINE):
-                c = AppStrings.MSG_LONG_LINE_PREVIEW.format(c[len("__SF_LONG_LINE__|"):])
+                c = AppStrings.MSG_LONG_LINE_PREVIEW.format(c[len(RUST_MATCH_MARKER_LONG_LINE):])
             elif c.startswith(RUST_MATCH_MARKER_BINARY):
                 try:
                     bin_cnt += int(c.split("|")[-1])
@@ -771,7 +755,7 @@ def _extract_marker_skip_reason(matches: Any) -> Optional[str]:
             if structured_code:
                 if structured_code == "ERR_EXCEL_PANIC":
                     return format_excel_panic_reason(structured_detail)
-                return format_skip_reason(_build_skip_reason(structured_code, structured_detail or ""))
+                return format_skip_reason(build_skip_reason(structured_code, structured_detail or ""))
 
         try:
             # m: (line, content, offset, length)

@@ -1385,7 +1385,6 @@ class ExtensionFilterPanel(DenseFilterPanel):
 
 class FilenameFilterPanel(DenseFilterPanel):
     filter_changed = Signal()
-    search_triggered = Signal()  # 입력창에서 Enter로 검색 트리거
 
     def __init__(self, parent=None):
         super().__init__(parent)

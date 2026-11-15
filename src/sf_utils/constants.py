@@ -42,8 +42,6 @@ class Constants:
     DEFAULT_MAX_JSON_DEPTH = DEFAULTS["max_json_depth"]
     SETTING_MAX_SEARCH_FILE_SIZE_MB = 1024
 
-    # 유지보수 호환상 기존 상수를 기본값 기반 동적 연산 프로퍼티가 아닌 형태로 남길 경우:
-    
     VIEW_RESULT = "result"
     VIEW_MATCH = "match"
     ENC_UTF8 = "utf-8"
@@ -109,7 +107,6 @@ class Constants:
     # 6.4.12~6.4.13은 기본값이 위아래 패널이었고 기본값도 설정 파일에 저장되어, 사용자가 직접 고른 값과
     # 구분할 수 없습니다. 기본값을 탭으로 바꾸며 새 키를 쓰고 예전 키(filter_layout)는 읽지 않습니다.
     CONFIG_KEY_FILTER_LAYOUT = "filter_layout_v2"
-    LEGACY_CONFIG_KEY_FILTER_LAYOUT = "filter_layout"
     FILTER_LAYOUT_TABS = "tabs"
     FILTER_LAYOUT_STACKED = "stacked"
     DEFAULT_FILTER_LAYOUT = FILTER_LAYOUT_TABS

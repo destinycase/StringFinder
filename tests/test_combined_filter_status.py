@@ -212,6 +212,6 @@ def test_saved_filter_layout_falls_back_to_tabs(mock_config_manager, saved):
     reloaded = ConfigManager()
     try:
         assert reloaded.get(C.CONFIG_KEY_FILTER_LAYOUT) == C.FILTER_LAYOUT_TABS
-        assert reloaded.get(C.LEGACY_CONFIG_KEY_FILTER_LAYOUT) is None
+        assert reloaded.get("filter_layout") is None
     finally:
         reloaded.stop()

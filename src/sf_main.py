@@ -130,7 +130,7 @@ def main():
                 self.original_stderr.flush()
 
         def isatty(self):
-            """[L-01 Fix] pytest 등 일부 라이브러리의 isatty() 호출 시 AttributeError 방지."""
+            """pytest 등 일부 라이브러리의 isatty() 호출 시 AttributeError 방지."""
             if self.original_stderr:
                 return getattr(self.original_stderr, "isatty", lambda: False)()
             return False

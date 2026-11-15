@@ -1724,7 +1724,7 @@ class ResultView(QWidget):
                 edit.blockSignals(True)
                 edit.clear()
                 edit.blockSignals(False)
-        # [H-06 Fix] 가시성 변경 후 현재 입력된 텍스트들을 모델의 정확한 컬럼 인덱스에 재전송
+        # 가시성 변경 후 현재 입력된 텍스트들을 모델의 정확한 컬럼 인덱스에 재전송
         self.match_model.set_column_filter(self._get_match_filter_col(0), self.match_filter_1_edit.text())
         self.match_model.set_column_filter(self._get_match_filter_col(1), self.match_filter_2_edit.text())
         self.match_model.set_column_filter(self._get_match_filter_col(2), self.match_filter_3_edit.text())

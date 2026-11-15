@@ -372,7 +372,7 @@ ENGLISH_STRINGS = {
     "LOG_SYS_SHUTDOWN": "[System] Shutting down the application...",
     "LOG_SYS_LOG_CLEANUP_DONE": "[System] Log cleanup completed ({} removed).",
     "LOG_SYS_RUST_SUCCESS": "[System] Rust acceleration engine loaded.",
-    "LOG_SYS_RUST_FALLBACK": "[System] Failed to load the Rust engine; the application cannot start.",
+    "LOG_SYS_RUST_LOAD_FAIL": "[System] Failed to load the Rust engine; the application cannot start.",
     "LOG_SYS_SF_ENGINE_NOT_FOUND": "[System] Rust library is missing: {}",
     "LOG_SYS_UNCAUGHT_EXCEPTION": "[System] An unhandled exception occurred.",
     "LOG_SYS_QT_THREAD_WARNING": "[System] QThread warning: {}\nStack details:\n{}",
