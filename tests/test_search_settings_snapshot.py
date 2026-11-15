@@ -1,3 +1,5 @@
+"""검색을 시작할 때의 설정으로 끝까지 검색하는지(도중 설정 변경 무시) 확인합니다."""
+
 from __future__ import annotations
 
 

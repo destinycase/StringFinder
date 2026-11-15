@@ -1,3 +1,5 @@
+"""손상 JSON·XML 보고, 해석 오류 전 일치 거부, DTD 미지원, 해석 오류 안내 번역."""
+
 import json
 
 import pytest

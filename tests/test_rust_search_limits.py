@@ -1,3 +1,5 @@
+"""설정한 크기·깊이·결과 수 제한이 실제 엔진에 전달·적용되는지와 잘못된 값의 기본값 처리."""
+
 from folder_search_helper import rendered_skips
 from core import skip_reason_formatter
 import pytest

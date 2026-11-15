@@ -1,3 +1,5 @@
+"""없앤 검색 프로필 값 무시, Excel 대문자 정확히 일치, 내보내기 안내."""
+
 from PySide6.QtWidgets import QMessageBox, QFileIconProvider
 from sf_utils.constants import Constants
 from ui.panels import SearchOptionsPanel

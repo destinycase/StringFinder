@@ -1,3 +1,5 @@
+"""큰 손상 파일과 메모리 매핑 JSON 손상에서도 결과·건너뜀이 맞는지 확인합니다."""
+
 import os
 import unittest
 from folder_search_helper import search_in_json_special

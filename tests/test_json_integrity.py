@@ -1,18 +1,4 @@
-"""
-[test_json_integrity.py]
-
-이 테스트는 JSON 파일 검색 시의 데이터 추출 무결성을 검증합니다.
-
-- 테스트 목적:
-  1. JSON 키(Key)가 아닌 값(Value) 영역에서만 정확한 검색이 이루어지는지 확인.
-  2. 손상된(Malformed) JSON 파일에 대한 방어적 예외 처리 로직 검증.
-  3. UTF-16 및 BOM 환경에서의 JSON 파싱 안정성 확보.
-
-- 주요 검증 사항:
-  1. JSON Key 매칭 배제 여부.
-  2. 대용량 깨진 JSON 처리 시 `STATUS_SKIPPED` 반환 여부.
-  3. UTF-16 LE BOM JSON 검색 성공 여부.
-"""
+"""JSON 검색 무결성: 키만 일치, 손상 JSON, 정확히 일치, UTF-16 BOM."""
 
 import json
 

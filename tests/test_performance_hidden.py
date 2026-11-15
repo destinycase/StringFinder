@@ -1,16 +1,4 @@
-"""
-[test_performance_hidden.py]
-
-이 테스트는 윈도우 시스템의 '숨김' 속성 파일 및 디렉토리에 대한 필터링 정책을 검증합니다.
-
-- 테스트 목적:
-  1. 사용자의 '숨김 파일 제외' 옵션 선택 시 스캔 엔진이 이를 정확히 인지하는지 확인.
-  2. Rust 엔진과 Python 엔진 모두에서 동일한 숨김 속성 필터링 동작 보장.
-
-- 주요 검증 사항:
-  1. `SetFileAttributesW`를 통한 실제 윈도우 숨김 속성 생성 및 탐지 테스트.
-  2. `FileScanner` 및 Rust 기반 고속 검색 함수에서의 `exclude_hidden` 작동 여부.
-"""
+"""숨김 파일 제외, gitignore 파일 포함, 겹치는 폴더 중복 제거, 공통 파일 크기 제한."""
 
 import ctypes
 import os

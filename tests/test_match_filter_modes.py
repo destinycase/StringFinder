@@ -1,3 +1,5 @@
+"""상세 결과 목록 거르기가 검색 모드(일반·JSON·XML·Excel)에 맞게 동작하는지 확인합니다."""
+
 
 import pytest
 from sf_utils.constants import Constants

@@ -1,16 +1,4 @@
-"""
-[test_special_bom.py]
-
-이 테스트는 BOM(Byte Order Mark)이 포함된 특수 형식 파일(JSON, XML)에 대한 검색 호환성을 검증합니다.
-
-- 테스트 목적:
-  1. UTF-8 BOM 등이 포함된 정형 데이터 파일의 파싱 실패(Parser Error) 방지.
-  2. BOM 제거 후에도 특수 검색 엔진이 데이터 구조를 정상적으로 유지하는지 확인.
-
-- 주요 검증 사항:
-  1. BOM이 포함된 JSON, XML 파일 검색 결과 정확도.
-  2. 인코딩 감지 로직과 특수 검색 모드 간의 상호작용 무결성.
-"""
+"""BOM이 있는 JSON·XML 파일의 값만 검색."""
 
 import pytest
 

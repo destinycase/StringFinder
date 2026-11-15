@@ -1,17 +1,4 @@
-"""
-[test_streaming_pipeline.py]
-
-이 테스트는 검색 엔진과 UI 간의 실시간 결과 전송(Streaming) 및 데이터 누적 파이프라인을 검증합니다.
-
-- 테스트 목적:
-  1. 대량의 검색 결과가 실시간으로 UI 모델에 반영될 때의 응답성 및 안정성 확보.
-  2. 데이터 배치(Batch) 처리 시의 누합 및 통계 계산 정확도 확인.
-
-- 주요 검증 사항:
-  1. `SearchWorker`의 스트림 콜백을 통한 결과 누적 무결성.
-  2. `SearchResultModel`의 배치 추가 시 레이아웃 업데이트 정확도.
-  3. 첫 결과 수신 시의 UI 상태 전환(Onboarding -> Result View).
-"""
+"""결과가 들어오는 대로 쌓기, 묶음 추가, 정렬 중 거르기 동기화, 결과 보기 전환."""
 
 from unittest.mock import patch
 from core.worker import SearchWorker

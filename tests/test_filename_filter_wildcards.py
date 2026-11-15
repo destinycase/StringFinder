@@ -1,3 +1,5 @@
+"""파일명 필터에 와일드카드(*, ? 등)를 입력·복원하지 못하게 하는지 확인합니다."""
+
 from PySide6.QtGui import QValidator
 
 from sf_utils.constants import Constants

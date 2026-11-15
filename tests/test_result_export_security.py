@@ -1,3 +1,5 @@
+"""결과를 Excel로 내보낼 때 수식으로 해석될 값을 글자로 막는지 확인합니다."""
+
 import openpyxl
 
 from folder_search_helper import search_in_file

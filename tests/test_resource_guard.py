@@ -1,3 +1,5 @@
+"""메모리 한도 계산과 메모리 압박 판정, 계측값이 잘못돼도 검색을 멈추지 않는지."""
+
 from unittest.mock import patch
 from core import skip_reason_formatter
 

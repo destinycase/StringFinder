@@ -1,3 +1,5 @@
+"""로그가 프로세스별 파일에 이어 쓰이는지 확인합니다."""
+
 import logging
 from unittest.mock import MagicMock, patch
 

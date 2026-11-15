@@ -1,3 +1,5 @@
+"""오류 때 완료 신호의 무결성과 엔진 감시 스레드 누수."""
+
 import os
 import sys
 from pathlib import Path

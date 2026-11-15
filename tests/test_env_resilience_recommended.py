@@ -1,19 +1,4 @@
-"""
-[test_env_resilience_recommended.py]
-
-이 테스트는 다양한 실행 환경 변화 및 잠재적 오류 상황에서의 시스템 복원력을 광범위하게 검증합니다.
-
-- 테스트 목적:
-  1. Rust 엔진 로드 실패나 API 버전 불일치 시나리오에서 Python 엔진으로의 안정적인 폴백(Fallback) 보장.
-  2. 윈도우 롱 패스(Long Path), 파일 잠금(Sharing Violation) 등 운영체제 수준의 엣계 케이스 대응력 확인.
-  3. 대용량 파일 처리 시의 메모리 사용량 제어(Memory Budget) 정책 검증.
-
-- 주요 검증 사항:
-  1. `sf_engine` API 버전 불일치 탐지 및 엔진 비활성화 로직.
-  2. 폴백 모드에서의 이진 파일 placeholder 및 누락 방지 검색(Exact Match) 의미론 일치 여부.
-  3. 윈도우 특유의 파일 접근 제한 상황에서의 무중단 스캐닝.
-  4. 동시 실행 워커 간의 상태 격리(No State Leak).
-"""
+"""엔진 API 버전 불일치, 엔진 안내(바이너리·긴 줄·Excel 패닉)의 화면 문구 연결, 창 종료 뒤 타이머 안전성."""
 
 from folder_search_helper import rendered_skips
 import importlib

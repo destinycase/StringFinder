@@ -1,3 +1,5 @@
+"""소스 폴더의 엔진(sf_engine.pyd)이 지금 Rust 소스로 빌드한 것과 같은지 확인합니다."""
+
 import hashlib
 from pathlib import Path
 

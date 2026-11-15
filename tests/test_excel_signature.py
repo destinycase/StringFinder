@@ -1,16 +1,4 @@
-"""
-[test_excel_signature.py]
-
-이 테스트는 Excel 파일의 유효성을 확장자가 아닌 바이너리 시그너처(Magic Number)를 통해 판별하는 로직을 검증합니다.
-
-- 테스트 목적:
-  1. 확장자만 엑셀로 변경된 일반 텍스트 파일이나 손상된 파일에 대한 검색 시도를 사전에 차단.
-  2. 엑셀 특수 검색 엔진의 안정적인 진입점 확보 및 예외 방지.
-
-- 주요 검증 사항:
-  1. 표준 Excel(Zip 기반) 시그너처 (`\x50\x4b\x03\x04`) 감지 확인.
-  2. 잘못된 시그너처를 가진 파일에 대한 'SKIPPED' 상태 반환 및 에러 메시지 무결성.
-"""
+"""Excel 값 검색의 셀 결과, 손상 Excel 건너뜀, 휴지통 안 Excel 제외."""
 
 
 from folder_search_helper import rendered_skips
@@ -20,7 +8,7 @@ from folder_search_helper import search_in_excel_special
 from sf_utils.constants import Constants
 
 
-def test_python_excel_returns_cell_details(tmp_path, monkeypatch):
+def test_excel_special_search_returns_cell_details(tmp_path, monkeypatch):
     from openpyxl import Workbook
 
     target = tmp_path / "limited_python.xlsx"
@@ -39,7 +27,7 @@ def test_python_excel_returns_cell_details(tmp_path, monkeypatch):
     assert result[1] == 1
 
 
-def test_python_excel_precise_search_keeps_single_cell_sheet(tmp_path):
+def test_excel_special_exact_search_keeps_single_cell_sheet(tmp_path):
     from openpyxl import Workbook
 
     target = tmp_path / "single_cell.xlsx"

@@ -1,3 +1,5 @@
+"""한국어·영어 문구 표의 대응과 자리표시자, 언어 전환 시 화면·건너뛴 사유 문구."""
+
 import json
 import os
 import re
