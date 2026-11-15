@@ -248,8 +248,9 @@ def _visible_match_count(matches: List[Any]) -> int:
 def _metadata_items(matches: Any) -> List[Any]:
     """보통 일치를 뺀 항목(파일 단위 표식·오류)만 고릅니다.
 
-    엔진의 보통 일치(kind == "match")는 표식이 아니므로 표식 검사에서 뺍니다. 그러면 일치가 많을 때 검사가
-    빨라지고, 내용이 우연히 "ERR_…|"로 시작하는 실제 일치를 오류로 잘못 읽지도 않습니다(검수 S-2).
+    엔진의 보통 일치(kind == "match")는 표식이 아니므로 표식 검사에서 뺍니다. 일치가 많을 때 검사가 빨라집니다.
+    주의: 종류는 엔진(types.rs)이 줄 내용의 글자 모양으로 정합니다. 그래서 내용이 "ERR_…|"로 시작하는 실제
+    일치 줄은 지금 오류로 분류됩니다(7.2.1부터 있던 문제, 엔진 수정 제안서에 기록).
     """
     return [m for m in matches or [] if m.kind != "match"]
 
@@ -491,11 +492,8 @@ def search_directory_fast(
             else:
                 rust_fn_filters = filename_filter
         exclude_hidden = bool(kwargs.get("exclude_hidden", False))
-        search_dir_func = getattr(sf_engine, "search_dir", None)
-        if not search_dir_func:
-            logger.error(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
-            # A missing Rust API is an engine error, not a Python retry.
-            raise AttributeError(AppStrings.LOG_SYS_SF_ENGINE_NOT_FOUND.format("sf_engine.search_dir"))  # type: ignore
+        # search_dir가 있는지는 엔진을 불러올 때 확인합니다(7.2.6).
+        search_dir_func = cast(Any, sf_engine).search_dir
         exclude_binary = bool(kwargs.get("exclude_binary", True))
         mode_bits = get_rust_mode_bits(kwargs.get("special_mode"), exclude_binary=exclude_binary)
         max_per_file, max_json_depth, max_json_size = _get_rust_search_limits()

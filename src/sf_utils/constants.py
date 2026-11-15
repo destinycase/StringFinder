@@ -52,7 +52,7 @@ class Constants:
     MODE_XML = "XML"
     MODE_JSON = "JSON"
     MODE_EXCEL = "Excel"
-    # 화면 저장값(한글·영문) 모두에 들어 있는 글자로 UE 현지화 archive 모드를 판별합니다.
+    # UE 현지화 archive 모드의 고정 값입니다(core/search_mode.py).
     MODE_ARCHIVE = "archive"
     MODE_EXACT = "exact"  # 검색 모드 고정 값의 "정확히 일치" 표시(core/search_mode.py)
     MODE_NORMAL = "Normal"

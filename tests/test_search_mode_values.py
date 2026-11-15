@@ -23,7 +23,9 @@ def test_kind_and_exact():
     assert sm.kind("JSON exact") == sm.KIND_JSON and sm.is_exact("JSON exact")
     assert sm.kind("Normal") is None and not sm.is_exact("Normal")
     assert sm.kind("exact") is None and sm.is_exact("exact") and sm.is_normal("exact")
-    assert sm.kind("json") is None  # 고정 값과 같은 대소문자만 형식으로 봅니다
+    # 손으로 고친 값도 대소문자를 가리지 않고 읽습니다(7.2.8).
+    assert sm.kind("json") == sm.KIND_JSON and sm.normalize("json exact") == "JSON exact"
+    assert sm.normalize("EXCEL") == "Excel"
 
 
 @pytest.mark.parametrize("language", ["ko", "en"])
@@ -34,8 +36,7 @@ def test_values_do_not_change_with_language_but_labels_do(language):
         assert AppStrings.SPECIAL_SEARCH_ITEMS == list(sm.VALUES)
         assert AppStrings.SPECIAL_SEARCH_OFF == C.MODE_NORMAL == sm.NORMAL
         assert C.MODE_EXACT == sm.EXACT
-        assert sm.menu_label("JSON exact") == AppStrings.SPECIAL_SEARCH_MENU_ITEMS[4]
-        assert sm.menu_label("exact") == AppStrings.SPECIAL_SEARCH_MENU_ITEMS[0]
+        assert len(AppStrings.SPECIAL_SEARCH_MENU_ITEMS) == len(sm.VALUES)
     finally:
         set_language(previous)
     assert "SPECIAL_SEARCH_ITEMS" not in ENGLISH_STRINGS and "SPECIAL_SEARCH_OFF" not in ENGLISH_STRINGS
@@ -49,3 +50,13 @@ def test_engine_bits_follow_mode_kind():
     assert get_rust_mode_bits("archive exact") & C.RUST_MODE_ARCHIVE
     assert get_rust_mode_bits("exact") & C.RUST_MODE_EXACT
     assert get_rust_mode_bits("Normal") & (C.RUST_MODE_JSON | C.RUST_MODE_XML | C.RUST_MODE_EXACT) == 0
+
+
+def test_skip_reason_detail_newline_survives_session():
+    """줄바꿈이 든 시트 이름의 사유가 세션에서 버려지지 않습니다(7.2.8)."""
+    from core.skip_reason_codes import SKIP_CODE_EXCEL_PARTIAL, build_skip_reason
+    from ui.result_view import normalize_skipped_files
+
+    reason = build_skip_reason(SKIP_CODE_EXCEL_PARTIAL, "Line\nTwo") + "\nINFO_FILE_MATCH_LIMIT|3"
+    assert reason == "INFO_EXCEL_PARTIAL|Line Two\nINFO_FILE_MATCH_LIMIT|3"
+    assert normalize_skipped_files([["a.xlsx", reason]], strict_session=True) == [("a.xlsx", reason)]

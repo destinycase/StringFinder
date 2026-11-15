@@ -532,13 +532,6 @@ class FilterListWidget(QListWidget):
         super().keyPressEvent(event)
 
 
-def normalize_special_search_mode(value: Any) -> str:
-    """검색 모드를 고정 값으로 바꿉니다(core/search_mode.py)."""
-    from core import search_mode
-
-    return search_mode.normalize(value)
-
-
 class SearchOptionsPanel(QWidget):
     search_started = Signal()
     stop_requested = Signal()
@@ -657,7 +650,7 @@ class SearchOptionsPanel(QWidget):
         self._layout_search_controls()
 
     def set_special_mode(self, mode: str):
-        normalized = normalize_special_search_mode(mode)
+        normalized = sm.normalize(mode)
         changed = self._special_mode != normalized
         self._special_mode = normalized
         self._refresh_search_mode()
@@ -1244,7 +1237,7 @@ class ExtensionFilterPanel(DenseFilterPanel):
         self.filter_changed.emit()
 
     def set_special_mode(self, value):
-        mode = normalize_special_search_mode(value)
+        mode = sm.normalize(value)
         if mode != self._special_mode:
             self._special_mode = mode
             self._on_special_changed(mode)
@@ -1516,9 +1509,7 @@ class FilenameFilterPanel(DenseFilterPanel):
         return {Constants.CONFIG_KEY_FILENAMES: filename_states}
 
     def load_state(self, state: dict):
-        if (Constants.CONFIG_KEY_FILENAMES in state
-                or Constants.PAYLOAD_FILENAME_FILTER in state):
-            self.restore_state({
-                Constants.CONFIG_KEY_FILENAMES: state.get(Constants.CONFIG_KEY_FILENAMES, {}),
-                Constants.PAYLOAD_FILENAME_FILTER: state.get(Constants.PAYLOAD_FILENAME_FILTER, ""),
-            })
+        # 파일명 조건은 체크 목록(filenames)만 읽습니다. 5.9.17 이전 세션의 쉼표 문자열(filename_filter)은
+        # 지원하지 않습니다(7.2.8).
+        if Constants.CONFIG_KEY_FILENAMES in state:
+            self.restore_state({Constants.CONFIG_KEY_FILENAMES: state.get(Constants.CONFIG_KEY_FILENAMES, {})})

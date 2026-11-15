@@ -59,7 +59,12 @@ XML_DETAIL_TRANSLATION_NAMES = {
 
 
 def build_skip_reason(code: str, detail: object) -> str:
-    return "{}|{}".format(code, "" if detail is None else str(detail))
+    """사유 코드 한 줄을 만듭니다. 사유 여러 개는 줄바꿈으로 잇기 때문에 상세 안의 줄바꿈은 공백으로 바꿉니다(7.2.8).
+
+    예: 줄바꿈이 든 Excel 시트 이름이 사유 두 줄로 갈라져 세션에서 버려지지 않게 합니다.
+    """
+    text = "" if detail is None else " ".join(str(detail).splitlines())
+    return "{}|{}".format(code, text)
 
 
 def decode_skip_reason(reason: object) -> tuple[str, str]:

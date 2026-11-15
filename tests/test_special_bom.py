@@ -34,16 +34,16 @@ def bom_test_env(tmp_path):
 
 def test_bom_special_search_json(bom_test_env):
     tmp_path, json_path, xml_path = bom_test_env
-    res = search_directory_fast([str(json_path)], "FO_Developer_Letter_Book", special_mode="json")
+    res = search_directory_fast([str(json_path)], "FO_Developer_Letter_Book", special_mode="JSON")
     results = res.get("results", [])
     assert len(results) > 0
-    assert "FO_Developer_Letter_Book" in results[0][2][0][1]
+    assert "FO_Developer_Letter_Book" in results[0][2][0][2]  # 구조 검색 결과의 값 칸
 
 
 def test_bom_special_search_xml(bom_test_env):
     tmp_path, json_path, xml_path = bom_test_env
-    res = search_directory_fast([str(xml_path)], "FO_Developer_Letter_Book", special_mode="xml")
+    res = search_directory_fast([str(xml_path)], "FO_Developer_Letter_Book", special_mode="XML")
     results = res.get("results", [])
     assert len(results) > 0
-    assert "FO_Developer_Letter_Book" in results[0][2][0][1]
+    assert "FO_Developer_Letter_Book" in results[0][2][0][2]  # 구조 검색 결과의 값 칸
 

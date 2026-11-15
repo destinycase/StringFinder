@@ -8,7 +8,8 @@ from PySide6.QtWidgets import QComboBox
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants as C
 from sf_utils.localization import get_language, set_language
-from ui.panels import SearchOptionsPanel, normalize_special_search_mode
+from core.search_mode import normalize as normalize_mode
+from ui.panels import SearchOptionsPanel
 from ui.search_tab import SearchTab
 
 
@@ -188,7 +189,7 @@ def test_mode_combo_works_with_keyboard(qtbot, language):
 
 @pytest.mark.parametrize("old_mode", ["끄기", "기본", "Default", "Off", "Normal", None, 123, {}, []])
 def test_old_default_labels_restore_to_disabled(old_mode, language):
-    assert normalize_special_search_mode(old_mode) == AppStrings.SPECIAL_SEARCH_OFF
+    assert normalize_mode(old_mode) == AppStrings.SPECIAL_SEARCH_OFF
 
 
 @pytest.mark.parametrize("old_mode,index", [

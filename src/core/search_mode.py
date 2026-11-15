@@ -41,10 +41,11 @@ def normalize(value: Any) -> str:
     text = value.strip()
     if text in VALUES or text == EXACT:
         return text
-    exact = "정확" in text or EXACT in text.casefold()
-    # 형식 이름은 고정 값과 같은 대소문자로 찾습니다(예전 판별과 같음).
+    folded = text.casefold()
+    exact = "정확" in text or EXACT in folded
+    # 손으로 고친 값(예: "json exact", "EXCEL")도 받도록 형식 이름은 대소문자를 가리지 않습니다(7.2.8).
     for kind in (KIND_XML, KIND_JSON, KIND_EXCEL, KIND_ARCHIVE):
-        if kind in text:
+        if kind.casefold() in folded:
             return make(kind, exact)
     # 형식 없이 "정확히 일치"만 있으면 일반 텍스트 정확히 일치입니다.
     return EXACT if exact else NORMAL
@@ -66,11 +67,3 @@ def is_exact(value: Any) -> bool:
 def is_normal(value: Any) -> bool:
     """형식이 없는(일반 텍스트) 검색인지입니다. 일반 텍스트 정확히 일치도 포함합니다."""
     return kind(value) is None
-
-
-def menu_label(value: Any) -> str:
-    """지금 언어의 메뉴 문구입니다."""
-    from sf_utils.app_strings import AppStrings
-
-    normalized = normalize(value)
-    return AppStrings.SPECIAL_SEARCH_MENU_ITEMS[VALUES.index(NORMAL if normalized == EXACT else normalized)]
