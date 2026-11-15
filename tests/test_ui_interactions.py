@@ -179,9 +179,9 @@ def test_excel_location_in_normal_mode(qtbot, search_tab_fixture):
     """일반 모드에서 엑셀 파일 결과가 정확한 헤더/위치를 표시하는지 확인."""
     from sf_utils.app_strings import AppStrings
 
-    # 엑셀의 개선된 4-튜플 구조 모킹 (Line, Sheet, Cell, Value)
+    # 일반 검색의 Excel 결과는 내용이 "시트\t셀\t값"으로 묶여 옵니다.
     excel_path = "D:/test/data.xlsx"
-    matches = [(0, "Sheet1", "A1", "Match 1"), (0, "Sheet1", "B5", "Match 2")]
+    matches = [(0, "Sheet1\tA1\tMatch 1", None, None), (0, "Sheet1\tB5\tMatch 2", None, None)]
 
     search_tab_fixture.ext_panel.set_special_mode(AppStrings.SPECIAL_SEARCH_OFF)
 
@@ -257,7 +257,7 @@ def test_excel_sheet_name_containing_pipe_is_not_mistaken_for_packed_result(sear
     model = search_tab_fixture.result_view_panel.match_model
     model.set_matches(
         "D:/test/data.xlsx",
-        [(0, "Area | A1", "B2", "value")],
+        [(0, "Area | A1\tB2\tvalue", None, None)],
         search_text="value",
         search_mode=AppStrings.SPECIAL_SEARCH_OFF,
     )

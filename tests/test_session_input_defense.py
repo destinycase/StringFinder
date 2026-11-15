@@ -36,7 +36,7 @@ def test_valid_search_settings_roundtrip(qtbot, value):
         C.PAYLOAD_SPECIAL_MODE: AppStrings.SPECIAL_SEARCH_OFF,
     }
     # 예전 세션의 검색 모드 값(use_complex_search)은 오류 없이 무시됩니다.
-    panel.load_state({**state, C.PAYLOAD_USE_COMPLEX_SEARCH: value})
+    panel.load_state({**state, "use_complex_search": value})
     assert panel.get_state() == state
 
 

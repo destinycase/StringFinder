@@ -52,10 +52,10 @@ def test_stranded_config_backup_is_validated_and_loaded(mock_config_manager):
 
 
 @pytest.mark.parametrize("mode,path,matches,column,expected", [
-    (C.MODE_JSON, "data.json", [(1, "v", "None")], 2, "None"),
-    (C.MODE_XML, "data.xml", [(1, "root", "None")], 2, "None"),
+    (C.MODE_JSON, "data.json", [(1, "v", "None", None, None)], 2, "None"),
+    (C.MODE_XML, "data.xml", [(1, "root", "None", None, None)], 2, "None"),
     (C.MODE_NORMAL, "data.txt", [(1, "None")], 0, "None"),
-    (C.MODE_NORMAL, "data.xlsx", [(1, "NoneSheet", "A1", "None", None, None)], 0, "None"),
+    (C.MODE_NORMAL, "data.xlsx", [(1, "NoneSheet\tA1\tNone", None, None)], 0, "None"),
     (C.MODE_EXCEL, "data.xlsx", [(1, "NoneSheet", "A1", "None", None, None)], 2, "None"),
 ])
 def test_literal_none_is_not_hidden(mode, path, matches, column, expected):
@@ -66,7 +66,7 @@ def test_literal_none_is_not_hidden(mode, path, matches, column, expected):
 
 
 @pytest.mark.parametrize("mode,path,matches", [
-    (C.MODE_JSON, "data.json", [(1, "v", None)]),
+    (C.MODE_JSON, "data.json", [(1, "v", None, None, None)]),
     (C.MODE_XML, "data.xml", [(1, "v", None, None, None)]),
     (C.MODE_EXCEL, "data.xlsx", [(1, "sheet", "A1", None, None, None)]),
 ])
@@ -77,14 +77,10 @@ def test_actual_none_remains_empty(mode, path, matches):
         assert model.data(model.index(0, 2), role) == ""
 
 
-@pytest.mark.parametrize("path,matches", [
-    ("data.xlsx", [(1, "NoneSheet", "A1", None, None, None)]),
-    ("data.txt", [(1, None)]),
-])
-def test_normal_view_does_not_stringify_actual_none(path, matches):
+def test_normal_view_does_not_stringify_actual_none():
     model = MatchDetailModel()
-    model.set_matches(path, matches, "", C.MODE_NORMAL)
-    assert model._all_data_buffer[0].extra_1 == "" if path.endswith("xlsx") else model._all_data_buffer[0].content == ""
+    model.set_matches("data.txt", [(1, None)], "", C.MODE_NORMAL)
+    assert model._all_data_buffer[0].content == ""
 
 
 @pytest.mark.parametrize("prefix", ["ß" * 4500, "İ" * 4500, "가" * 4500, "a" * 4500])

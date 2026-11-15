@@ -27,7 +27,7 @@ def test_filter_normal_mode(match_model):
 def test_filter_normal_excel_row_includes_cell_value(match_model):
     match_model.set_matches(
         "book.xls",
-        [(0, "120", "A120", "tribe.ForgattenField.SkeletonLord.A")],
+        [(0, "120\tA120\ttribe.ForgattenField.SkeletonLord.A", None, None)],
         "SkeletonLord",
         Constants.MODE_NORMAL,
     )

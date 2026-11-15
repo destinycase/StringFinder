@@ -54,6 +54,9 @@ def test_config_manager_tab_order(mock_config_manager):
 
 def test_search_tab_state_serialization(qtbot, mock_config_manager):
     """test_search_tab_state_serialization 함수."""
+    # 엔진을 처음 불러올 때 남는 로그가 탭 로그에 섞이지 않게 먼저 불러 둡니다(이 파일만 따로 돌릴 때).
+    import core.search_engine  # noqa: F401
+
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
 
@@ -143,7 +146,7 @@ def test_search_tab_load_state_with_malformed_results(qtbot, mock_config_manager
         Constants.STATE_KEY_SESSION_FORMAT: Constants.SESSION_FORMAT_VERSION,
         Constants.PAYLOAD_INPUTS: {},
         Constants.PAYLOAD_RESULTS: [
-            ("C:/legacy/a.txt", 3, [(1, "a"), (2, "b"), (3, "c")]),
+            ("C:/legacy/a.txt", 3, [(1, "a"), (2, "b"), (3, "c")]),  # 예전 3칸 모양은 읽지 않음(7.2.4)
             [5, "b.txt", "C:/modern", "C:/modern/b.txt", [(1, "match")]],
             {"invalid": True},
             ["too", "short"],
@@ -154,9 +157,9 @@ def test_search_tab_load_state_with_malformed_results(qtbot, mock_config_manager
 
     tab.load_state(state)
 
-    assert tab.result_view_panel.result_model.get_total_result_count() == 3
-    assert tab.total_files == 3
-    assert tab.total_matches == 1007
+    assert tab.result_view_panel.result_model.get_total_result_count() == 2
+    assert tab.total_files == 2
+    assert tab.total_matches == 1004
 
 
 def test_search_tab_load_state_uses_count_for_total_matches(qtbot, mock_config_manager):

@@ -1161,20 +1161,17 @@ class ResultView(QWidget):
 
     @staticmethod
     def _unpack_excel_preview_fields(sheet, cell, value):
-        """Rust/구버전 결과의 ``시트\t셀\t값`` 묶음 형식을 미리보기용으로 분리합니다."""
+        """일반 검색 Excel 결과의 ``시트\t셀\t값`` 묶음을 미리보기용으로 나눕니다."""
         packed = None
         if "\t" in sheet:
             packed = sheet
-        elif value is None and ("\t" in cell or cell.count(" | ") >= 2):
+        elif value is None and "\t" in cell:
             packed = cell
-        elif cell in ("", "None") and value in (None, "", "None") and sheet.count(" | ") >= 2:
-            packed = sheet
 
         if packed is None:
             return sheet, cell, value
 
-        separator = "\t" if "\t" in packed else " | "
-        parts = packed.split(separator, 2)
+        parts = packed.split("\t", 2)
         if len(parts) != 3 or not parts[0].strip() or not parts[1].strip():
             return sheet, cell, value
         return parts[0].strip(), parts[1].strip(), parts[2]

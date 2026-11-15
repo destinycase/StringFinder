@@ -553,8 +553,6 @@ class SearchTab(QMainWindow):
         inputs.update(self.filename_panel.get_state())
         inputs[Constants.CONFIG_KEY_FOLDERS] = self.folder_panel.get_state()
         inputs[Constants.CONFIG_KEY_FOLDER_GROUPS] = self.folder_panel.get_group_state()
-        if Constants.PAYLOAD_FILENAME_FILTER in inputs:
-            inputs[Constants.STATE_KEY_FILENAME] = inputs[Constants.PAYLOAD_FILENAME_FILTER]
         inputs[Constants.STATE_KEY_INPUTS_TRACKED] = True
         return inputs
 
@@ -604,13 +602,6 @@ class SearchTab(QMainWindow):
             file_name = row[1] if isinstance(row[1], str) and row[1] else os.path.basename(file_path)
             folder = row[2] if isinstance(row[2], str) and row[2] else os.path.dirname(file_path)
             return [count, file_name, folder, file_path, list(matches)]
-        if len(row) >= 3 and isinstance(row[0], str):
-            file_path = row[0]
-            matches = row[2] if isinstance(row[2], (list, tuple)) else []
-            count = row[1] if isinstance(row[1], int) else len(matches)
-            if not isinstance(count, int) or count < 0:
-                count = len(matches)
-            return [count, os.path.basename(file_path), os.path.dirname(file_path), file_path, list(matches)]
         return None
 
     def _normalize_state_results(self, results: Any) -> List[List[Any]]:
@@ -650,9 +641,6 @@ class SearchTab(QMainWindow):
         inputs = state.get(Constants.PAYLOAD_INPUTS, {})
         if not isinstance(inputs, dict):
             inputs = {}
-        # 과거 키를 최신 키로 매핑
-        if Constants.STATE_KEY_FILENAME in inputs and Constants.PAYLOAD_FILENAME_FILTER not in inputs:
-            inputs[Constants.PAYLOAD_FILENAME_FILTER] = inputs[Constants.STATE_KEY_FILENAME]
         # Restoring one tab must not write intermediate filter states to the
         # shared configuration or retain unrelated filters from another tab.
         with QSignalBlocker(self.ext_panel), QSignalBlocker(self.filename_panel), QSignalBlocker(self.folder_panel):

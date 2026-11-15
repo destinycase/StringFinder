@@ -85,8 +85,9 @@ def test_legacy_filename_history_does_not_replace_filters(qtbot, mock_config_man
     assert manager.save_immediately()
     loaded = manager._load()
     assert loaded[Constants.CONFIG_KEY_HISTORY] == ["first", "second"]
+    # 파일명 필터는 저장된 목록만 읽습니다(예전 쉼표 문자열은 읽지 않음, 7.2.4).
     panel = FilenameFilterPanel()
     qtbot.addWidget(panel)
-    panel.load_state({Constants.CONFIG_KEY_FILENAMES: {}, Constants.PAYLOAD_FILENAME_FILTER: "report,invoice"})
+    panel.load_state({Constants.CONFIG_KEY_FILENAMES: {"report": True, "invoice": True}})
     assert panel.get_selected_filenames() == ["report", "invoice"]
-    assert panel.get_state()[Constants.PAYLOAD_FILENAME_FILTER] == ""
+    assert Constants.PAYLOAD_FILENAME_FILTER not in panel.get_state()

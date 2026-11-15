@@ -938,178 +938,59 @@ class MatchDetailModel(QAbstractTableModel):
         return item
 
     def _normalize_match_raw(self, m, file_path: str) -> Optional[SearchMatchSchema]:
-        from core.search_engine import json_path_for_display
+        """지금 엔진이 주는 결과 모양만 정리합니다(7.2.4, 예전 세션 모양은 읽지 않음).
 
-        search_mode = self.search_mode
-        mode_upper = str(search_mode or "").upper()
-        is_excel_file = file_path.lower().endswith(EXCEL_EXTENSIONS)
-        excel_cell_pattern = EXCEL_CELL_PATTERN if is_excel_file else None
-        # Rust/구버전 세션은 Excel 필드를 content 하나에 탭(또는 " | ")으로 묶을 수 있습니다.
-        # UI 모델 진입 시 한 번만 분리하여 목록·필터·미리보기가 동일한 스키마를 사용하게 합니다.
-        if is_excel_file and len(m) >= 2 and isinstance(m[1], str):
-            packed = m[1]
-            has_explicit_cell = (
-                len(m) > 2
-                and isinstance(m[2], str)
-                and excel_cell_pattern is not None
-                and excel_cell_pattern.fullmatch(m[2].strip()) is not None
+        - 일반: (줄, 내용, 오프셋, 길이). 일반 검색의 Excel 결과는 내용이 ``시트\t셀\t값``으로 묶여 옵니다.
+        - JSON·XML: (줄, 경로, 값, 오프셋, 길이)
+        - Excel 값만: (줄, 시트, 셀, 값, 오프셋, 길이)
+        - UE archive: (줄, Namespace, Key, 원문, 번역문, 오프셋, 길이)
+        """
+        mode_kind = sm.kind(self.search_mode)
+        if mode_kind == sm.KIND_ARCHIVE:
+            if len(m) < 5:
+                return None
+            return SearchMatchSchema(
+                position="" if m[0] in (None, 0, "") else str(m[0]),
+                content=str(m[1] or ""),
+                extra_1=str(m[2] or ""),
+                extra_2=str(m[3] or ""),
+                extra_3=str(m[4] or ""),
+                offset=m[5] if len(m) > 5 else None,
+                length=m[6] if len(m) > 6 else None,
             )
-            separator = None
-            if "\t" in packed:
-                separator = "\t"
-            elif not has_explicit_cell and " | " in packed:
-                separator = " | "
-            if separator:
-                parts = packed.split(separator, 2)
-                if len(parts) >= 2:
-                    sheet_candidate = parts[0].strip()
-                    cell_candidate = parts[1].strip()
-                    if excel_cell_pattern and excel_cell_pattern.fullmatch(cell_candidate):
-                        value_candidate = parts[2] if len(parts) == 3 else ""
-                        pos = f"{sheet_candidate}!{cell_candidate}"
-                        return (
-                            SearchMatchSchema(
-                                position=sheet_candidate,
-                                content=cell_candidate,
-                                extra_1=value_candidate,
-                                offset=m[2] if len(m) > 2 and m[2] is not None else pos,
-                                length=m[3] if len(m) > 3 else None,
-                            )
-                        )
-        # UE 현지화 archive: (Key 줄 번호, Namespace, Key, 원문, 번역문, [Offset, Length])
-        # 상한 안내 행(-1/-2)은 JSON처럼 첫 데이터 열에 안내 문구를 둡니다.
-        if Constants.MODE_ARCHIVE.upper() in mode_upper:
-            if str(m[0]) in {"-1", "-2"}:
-                return (
-                    SearchMatchSchema(position=str(m[0]), content=str(m[1]), extra_1="", extra_2="",
-                                      extra_3="")
-                )
-            elif len(m) >= 5:
-                return (
-                    SearchMatchSchema(
-                        position="" if m[0] in (None, 0, "") else str(m[0]),
-                        content=str(m[1] or ""),
-                        extra_1=str(m[2] or ""),
-                        extra_2=str(m[3] or ""),
-                        extra_3=str(m[4] or ""),
-                        offset=m[5] if len(m) > 5 else None,
-                        length=m[6] if len(m) > 6 else None,
-                    )
-                )
-            return None
-        # Case 1: Excel 모드 (Line, Sheet, Cell, Val, [Offset, Length])
-        if Constants.MODE_EXCEL.upper() in mode_upper and len(m) >= 4 and isinstance(m[1], str):
-            s, c = str(m[1]).strip(), str(m[2]).strip()
-            v = str(m[3]).strip() if m[3] is not None else ""
-            off = m[4] if (len(m) > 4 and m[4] is not None) else f"{s}!{c}"
-            return (
-                SearchMatchSchema(
-                    position=s, content=c, extra_1=v, offset=off, length=m[5] if len(m) > 5 else None
-                )
+        if mode_kind == sm.KIND_EXCEL:
+            if len(m) < 4:
+                return None
+            sheet, cell = str(m[1]).strip(), str(m[2]).strip()
+            value = str(m[3]).strip() if m[3] is not None else ""
+            return SearchMatchSchema(
+                position=sheet, content=cell, extra_1=value,
+                offset=m[4] if len(m) > 4 and m[4] is not None else f"{sheet}!{cell}",
+                length=m[5] if len(m) > 5 else None,
             )
-        # Case 2: XML/JSON 모드
-        # 5-tuple: search_engine에서 이미 key/value 분리 (line, path, val, offset, length)
-        # 4-tuple: Rust 엔진 원시값 — m[1]에 "key\tvalue" 형태 (분리 안됨)
-        # 3-tuple: Python 파서 반환값 — (line, key, value) 형태
-        elif Constants.MODE_XML.upper() in mode_upper or Constants.MODE_JSON.upper() in mode_upper:
-            if len(m) >= 5:
-                # 이미 분리된 5-tuple
-                return (
-                    SearchMatchSchema(
-                        position=str(m[0]),
-                        content=str(m[1]),
-                        extra_1=str(m[2]) if m[2] is not None else "",
-                        offset=m[3],
-                        length=m[4],
-                    )
+        if mode_kind in (sm.KIND_XML, sm.KIND_JSON):
+            if len(m) < 5:
+                return None
+            return SearchMatchSchema(
+                position=str(m[0]), content=str(m[1]),
+                extra_1=str(m[2]) if m[2] is not None else "",
+                offset=m[3], length=m[4],
+            )
+        # 일반 검색. Excel 파일이면 ``시트\t셀\t값``을 나눠 둡니다.
+        content = str(m[1]) if len(m) > 1 and m[1] is not None else ""
+        if file_path.lower().endswith(EXCEL_EXTENSIONS) and "\t" in content:
+            parts = content.split("\t", 2)
+            if len(parts) >= 2 and EXCEL_CELL_PATTERN.fullmatch(parts[1].strip()):
+                sheet, cell = parts[0].strip(), parts[1].strip()
+                return SearchMatchSchema(
+                    position=sheet, content=cell, extra_1=parts[2] if len(parts) == 3 else "",
+                    offset=m[2] if len(m) > 2 and m[2] is not None else f"{sheet}!{cell}",
+                    length=m[3] if len(m) > 3 else None,
                 )
-            elif len(m) == 3:
-                # Python XML/JSON 파서가 반환하는 (line, key, value) 3-tuple
-                key_part = str(m[1])
-                val_part = str(m[2]) if m[2] is not None else ""
-                if Constants.MODE_XML.upper() in mode_upper:
-                    key_part = key_part.lstrip("/").replace("/", " > ")
-                else:
-                    key_part = json_path_for_display(key_part)
-                return (
-                    SearchMatchSchema(
-                        position=str(m[0]),
-                        content=key_part,
-                        extra_1=val_part,
-                        offset=None,
-                        length=None,
-                    )
-                )
-            elif len(m) >= 4 and isinstance(m[1], str):
-                # Rust 엔진 원시 4-tuple: m[1] = "path\tvalue"
-                raw = str(m[1])
-                if "\t" in raw:
-                    key_part, val_part = raw.split("\t", 1)
-                elif " | " in raw:
-                    parts_raw = raw.split(" | ", 1)
-                    key_part, val_part = parts_raw[0], parts_raw[1] if len(parts_raw) > 1 else ""
-                else:
-                    key_part, val_part = raw, ""
-                # XML은 '/' 태그 경로 표기, JSON은 '.' 경로 표기
-                if Constants.MODE_XML.upper() in mode_upper:
-                    key_part = key_part.lstrip("/").replace("/", " > ")
-                else:
-                    key_part = json_path_for_display(key_part)
-                return (
-                    SearchMatchSchema(
-                        position=str(m[0]),
-                        content=key_part,
-                        extra_1=val_part,
-                        offset=m[2] if len(m) > 2 else None,
-                        length=m[3] if len(m) > 3 else None,
-                    )
-                )
-            return None
-        # 일반 텍스트 및 기타 특수 검색 (Line, Content, [Offset, Length])
-        # 엑셀 파일임에도 Normal 모드인 경우의 예외 처리 포함
-        if is_excel_file and search_mode == Constants.MODE_NORMAL and len(m) >= 4 and isinstance(m[1], str):
-            sheet_candidate = str(m[1]).strip()
-            cell_candidate = str(m[2]).strip()
-            if excel_cell_pattern and excel_cell_pattern.fullmatch(cell_candidate):
-                value_candidate = str(m[3]) if len(m) > 3 and m[3] is not None else ""
-                pos = f"{sheet_candidate}!{cell_candidate}"
-                return (
-                    SearchMatchSchema(
-                        position=sheet_candidate,
-                        content=cell_candidate,
-                        extra_1=value_candidate,
-                        offset=pos,
-                    )
-                )
-        # 기본 파싱 (Line, Content, [Offset, Length])
-        line_no = str(m[0])
-        content = str(m[1]) if m[1] is not None else ""
-        offset = m[2] if (len(m) > 2 and m[2] is not None) else None
-        length = m[3] if (len(m) > 3 and m[3] is not None) else None
-
-        # 엑셀 폴백 파싱 (Line, Pos, Val)
-        if is_excel_file and len(m) == 3 and isinstance(m[2], str):
-            pos = str(m[1])
-            content_val = str(m[2])
-
-            if "!" in pos:
-                s, c = pos.split("!", 1)
-                return (
-                    SearchMatchSchema(position=s, content=c, extra_1=content_val, offset=pos)
-                )
-            elif " | " in pos:
-                parts = pos.split(" | ")
-                s = parts[0]
-                c = parts[1] if len(parts) > 1 else ""
-                return (
-                    SearchMatchSchema(position=s, content=c, extra_1=content_val, offset=pos)
-                )
-            else:
-                return (
-                    SearchMatchSchema(position=pos, content="", extra_1=content_val, offset=pos)
-                )
-        return (
-            SearchMatchSchema(position=line_no, content=content, offset=offset, length=length)
+        return SearchMatchSchema(
+            position=str(m[0]), content=content,
+            offset=m[2] if len(m) > 2 and m[2] is not None else None,
+            length=m[3] if len(m) > 3 and m[3] is not None else None,
         )
 
     def set_column_filters(self, filters: dict):

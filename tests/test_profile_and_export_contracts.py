@@ -13,8 +13,8 @@ class TestQAEdgeFixesVerification:
         """검색 방식 통합 뒤에는 예전 세션의 검색 모드 값을 무시하고 다시 저장하지 않습니다."""
         panel = SearchOptionsPanel()
         qtbot.addWidget(panel)
-        panel.load_state({Constants.PAYLOAD_USE_COMPLEX_SEARCH: True})
-        assert Constants.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
+        panel.load_state({"use_complex_search": True})
+        assert "use_complex_search" not in panel.get_state()
 
     def test_excel_complex_search_uppercase_exact_match(self, tmp_path):
         """엑셀 Python 폴백 검색 시 대문자 검색어의 exact_match 탐지 보장 검증"""

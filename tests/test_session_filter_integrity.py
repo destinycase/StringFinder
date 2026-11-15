@@ -133,19 +133,6 @@ def test_filter_action_registration_coalesces_position_updates(qtbot, monkeypatc
     assert len(calls) <= 3
 
 
-def test_filename_legacy_migration_roundtrip_preserves_unchecked_state(qtbot):
-    panel = FilenameFilterPanel()
-    qtbot.addWidget(panel)
-    panel.add_filename("unrelated")
-    panel.load_state({C.PAYLOAD_FILENAME_FILTER: "report, invoice", C.CONFIG_KEY_FILENAMES: {"report": False}})
-    assert panel.get_selected_filenames() == ["invoice"]
-    saved = panel.get_state()
-    restored = FilenameFilterPanel()
-    qtbot.addWidget(restored)
-    restored.load_state(saved)
-    assert restored.get_state() == saved
-
-
 def test_missing_filter_snapshots_keep_defaults_but_explicit_empty_clears(qtbot, mock_config_manager):
     manager = mock_config_manager
     manager.update_filters({"D:/default": True}, ["txt"], ["report"])

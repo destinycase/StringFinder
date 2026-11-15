@@ -1498,13 +1498,6 @@ class FilenameFilterPanel(DenseFilterPanel):
         target_data = data
         if isinstance(data, dict) and Constants.CONFIG_KEY_FILENAMES in data:
             target_data = data.get(Constants.CONFIG_KEY_FILENAMES, {})
-            legacy_text = data.get(Constants.PAYLOAD_FILENAME_FILTER, "")
-            if not isinstance(legacy_text, str):
-                legacy_text = ""
-            if legacy_text.strip():
-                for fn in (part.strip() for part in legacy_text.split(",")):
-                    if fn and not (isinstance(target_data, dict) and fn in target_data):
-                        self.add_filename(fn, checked=True)
         if isinstance(target_data, list):
             for fn in target_data:
                 self.add_filename(fn, checked=True)
@@ -1520,10 +1513,7 @@ class FilenameFilterPanel(DenseFilterPanel):
             widget = self.filename_list.itemWidget(item)
             if isinstance(widget, FilterItemWidget):
                 filename_states[widget.text()] = widget.checkbox.isChecked()
-        return {
-            Constants.PAYLOAD_FILENAME_FILTER: "",
-            Constants.CONFIG_KEY_FILENAMES: filename_states,
-        }
+        return {Constants.CONFIG_KEY_FILENAMES: filename_states}
 
     def load_state(self, state: dict):
         if (Constants.CONFIG_KEY_FILENAMES in state

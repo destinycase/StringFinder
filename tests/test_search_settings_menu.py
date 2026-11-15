@@ -57,7 +57,7 @@ def test_each_choice_sets_one_engine_mode(qtbot, language, value_index):
     choose_search_mode(panel, mode)
     choose_search_mode(panel, mode)
     assert panel.get_state()[C.PAYLOAD_SPECIAL_MODE] == mode
-    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
+    assert "use_complex_search" not in panel.get_state()
     assert panel.search_mode_combo.currentText() == AppStrings.SPECIAL_SEARCH_MENU_ITEMS[value_index]
     assert changed == [mode, mode]
 
@@ -83,7 +83,7 @@ def test_selection_reaches_search_and_survives_session(qtbot, mock_config_manage
     captured = []
     monkeypatch.setattr(restored, "_setup_search_worker", captured.append)
     restored.start_search()
-    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in captured[0]
+    assert "use_complex_search" not in captured[0]
     assert captured[0][C.PAYLOAD_SPECIAL_MODE] == mode
     assert captured[0][C.PAYLOAD_EXTENSIONS] == [C.EXT_JSON]
     restored._set_inputs_enabled(True)
@@ -199,8 +199,8 @@ def test_old_modes_restore_in_current_language(qtbot, old_mode, index, language)
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
     # 예전 세션의 검색 모드 값은 오류 없이 무시합니다.
-    panel.load_state({C.PAYLOAD_USE_COMPLEX_SEARCH: True, C.PAYLOAD_SPECIAL_MODE: old_mode})
-    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in panel.get_state()
+    panel.load_state({"use_complex_search": True, C.PAYLOAD_SPECIAL_MODE: old_mode})
+    assert "use_complex_search" not in panel.get_state()
     assert panel.search_mode_combo.currentData() == AppStrings.SPECIAL_SEARCH_ITEMS[index]
 
 

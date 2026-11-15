@@ -27,7 +27,7 @@ def mock_worker():
     params = {
         Constants.PAYLOAD_SEARCH_PATHS: ["dummy_path"],
         Constants.PAYLOAD_SEARCH_STRING: "search_term",
-        Constants.PAYLOAD_USE_COMPLEX_SEARCH: True  # Python/Batch 경로 강제 진입
+        "use_complex_search": True  # Python/Batch 경로 강제 진입
     }
     worker = SearchWorker(params)
     worker.signals = MockSignals()  # type: ignore
