@@ -979,7 +979,6 @@ class MatchDetailModel(QAbstractTableModel):
                                 length=m[3] if len(m) > 3 else None,
                             )
                         )
-                        return None
         # UE 현지화 archive: (Key 줄 번호, Namespace, Key, 원문, 번역문, [Offset, Length])
         # 상한 안내 행(-1/-2)은 JSON처럼 첫 데이터 열에 안내 문구를 둡니다.
         if Constants.MODE_ARCHIVE.upper() in mode_upper:
@@ -1011,7 +1010,6 @@ class MatchDetailModel(QAbstractTableModel):
                     position=s, content=c, extra_1=v, offset=off, length=m[5] if len(m) > 5 else None
                 )
             )
-            return None
         # Case 2: XML/JSON 모드
         # 5-tuple: search_engine에서 이미 key/value 분리 (line, path, val, offset, length)
         # 4-tuple: Rust 엔진 원시값 — m[1]에 "key\tvalue" 형태 (분리 안됨)
@@ -1086,7 +1084,6 @@ class MatchDetailModel(QAbstractTableModel):
                         offset=pos,
                     )
                 )
-                return None
         # 기본 파싱 (Line, Content, [Offset, Length])
         line_no = str(m[0])
         content = str(m[1]) if m[1] is not None else ""
@@ -1114,11 +1111,9 @@ class MatchDetailModel(QAbstractTableModel):
                 return (
                     SearchMatchSchema(position=pos, content="", extra_1=content_val, offset=pos)
                 )
-            return None
         return (
             SearchMatchSchema(position=line_no, content=content, offset=offset, length=length)
         )
-        return None
 
     def set_column_filter(self, column: int, text: str):
         """상세 목록의 특정 컬럼에 대한 필터를 설정합니다."""

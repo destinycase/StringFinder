@@ -13,12 +13,6 @@ from sf_utils.constants import Constants
 
 
 MemoryPressureReason = Literal["low_available_memory", "process_tree_limit"]
-ProjectedMemoryPressureReason = Literal[
-    "projected_available_memory",
-    "projected_process_tree_limit",
-]
-StructuredDocumentKind = Literal["json", "xml", "excel"]
-StructuredEngineKind = Literal["rust", "python"]
 
 
 @dataclass(frozen=True)
@@ -147,49 +141,6 @@ def available_processing_budget_bytes(
     available_headroom = max(0, available - limits.reserve_bytes)
     process_headroom = max(0, limits.process_limit_bytes - process_rss)
     return min(available_headroom, process_headroom)
-
-
-def estimate_structured_memory_bytes(
-    file_size: int,
-    document_kind: StructuredDocumentKind,
-    engine_kind: StructuredEngineKind,
-) -> int:
-    """Conservatively estimate incremental memory for one structured document."""
-    size = max(0, int(file_size))
-    profile = (document_kind.casefold(), engine_kind.casefold())
-    if profile in {("json", "rust"), ("xml", "rust")}:
-        # mmap/read buffer, decoded UTF-8 buffer, and parser/search workspace.
-        return (size * 5 + 1) // 2 + 64 * 1024 * 1024
-    if profile == ("xml", "python"):
-        # Python text representation plus Expat handler/path state.
-        return size * 4 + 64 * 1024 * 1024
-    if profile == ("json", "python"):
-        # Decoded text and the Python object graph created by json.loads().
-        return size * 6 + 128 * 1024 * 1024
-    if profile == ("excel", "python"):
-        return size * 8 + 128 * 1024 * 1024
-    if profile == ("excel", "rust"):
-        return size * 8 + 128 * 1024 * 1024
-    raise ValueError(f"Unsupported structured-memory profile: {profile!r}")
-
-
-def projected_memory_pressure_reason(
-    snapshot: Mapping[str, object] | None,
-    required_bytes: int,
-) -> Optional[ProjectedMemoryPressureReason]:
-    """Return a file-local reason when one projected allocation is unsafe."""
-    values = memory_snapshot() if snapshot is None else snapshot
-    available, total, process_rss, valid = _snapshot_values(values)
-    required = max(0, int(required_bytes))
-    if not valid or required == 0:
-        return None
-
-    limits = calculate_memory_limits(total)
-    if available - required < limits.reserve_bytes:
-        return "projected_available_memory"
-    if process_rss + required >= limits.process_limit_bytes:
-        return "projected_process_tree_limit"
-    return None
 
 
 def memory_pressure_message(snapshot: Dict[str, int] | None = None) -> str:

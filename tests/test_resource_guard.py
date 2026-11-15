@@ -11,10 +11,8 @@ from sf_utils.constants import Constants
 from sf_utils.resource_guard import (
     available_processing_budget_bytes,
     calculate_memory_limits,
-    estimate_structured_memory_bytes,
     memory_pressure_detected,
     memory_pressure_reason,
-    projected_memory_pressure_reason,
 )
 import sf_utils.resource_guard as resource_guard
 
@@ -72,27 +70,6 @@ def test_memory_pressure_boundaries_and_system_percent_are_independent():
 )
 def test_invalid_memory_telemetry_never_stops_a_search(snapshot):
     assert memory_pressure_reason(snapshot) is None
-    assert projected_memory_pressure_reason(snapshot, 2 * GIB) is None
-
-
-def test_projected_memory_budget_uses_available_and_process_headroom():
-    total = 8 * GIB
-    limits = calculate_memory_limits(total)
-    required = 256 * MIB
-    safe = {
-        "available": limits.reserve_bytes + required,
-        "total": total,
-        "process_rss": limits.process_limit_bytes - required - 1,
-        "system_percent": 95,
-    }
-
-    assert projected_memory_pressure_reason(safe, required) is None
-    assert projected_memory_pressure_reason({**safe, "available": safe["available"] - 1}, required) == (
-        "projected_available_memory"
-    )
-    assert projected_memory_pressure_reason(
-        {**safe, "process_rss": limits.process_limit_bytes - required}, required
-    ) == "projected_process_tree_limit"
 
 
 def test_available_processing_budget_uses_the_tighter_headroom():
@@ -105,19 +82,6 @@ def test_available_processing_budget_uses_the_tighter_headroom():
     }
 
     assert available_processing_budget_bytes(snapshot) == 2 * GIB
-
-
-def test_structured_memory_estimates_are_stable_and_engine_specific():
-    file_size = 10 * MIB
-
-    assert estimate_structured_memory_bytes(file_size, "json", "rust") == 89 * MIB
-    assert estimate_structured_memory_bytes(file_size, "xml", "rust") == 89 * MIB
-    assert estimate_structured_memory_bytes(file_size, "xml", "python") == 104 * MIB
-    assert estimate_structured_memory_bytes(file_size, "json", "python") == 188 * MIB
-    assert estimate_structured_memory_bytes(file_size, "excel", "rust") == 208 * MIB
-    assert estimate_structured_memory_bytes(file_size, "excel", "python") == 208 * MIB
-    with pytest.raises(ValueError):
-        estimate_structured_memory_bytes(file_size, "yaml", "python")  # type: ignore[arg-type]
 
 
 def test_memory_pressure_uses_available_memory_and_process_rss():

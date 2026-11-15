@@ -1,4 +1,3 @@
-import ctypes
 from contextlib import contextmanager
 from contextvars import ContextVar
 import logging
@@ -119,11 +118,6 @@ def _positive_int_or_none(value: Any) -> Optional[int]:
     return number if number > 0 else None
 
 
-def _rust_policy_kwargs() -> dict[str, Any]:
-    options = _build_rust_options()
-    return {"options": options} if options is not None else {}
-
-
 def _get_structured_memory_budget() -> int:
     """Return one shared budget for concurrent native structured searches."""
     try:
@@ -186,7 +180,6 @@ except Exception as e:
 
 SearchMatch = Tuple[Any, ...]
 SearchResult = Tuple[str, int, List[SearchMatch]]
-SkippedResult = Tuple[str, str]
 
 
 RUST_MATCH_MARKER_BINARY = "__SF_BINARY_MATCH__|"
@@ -938,28 +931,6 @@ def normalize_unicode(text: Any) -> str:
     if text is None:
         return ""
     return unicodedata.normalize("NFC", str(text))
-
-
-def is_hidden_windows(path: str) -> bool:
-    """Windows 전용: 파일 또는 폴더의 숨김 속성 여부를 반환합니다."""
-    if os.name != "nt":
-        return False
-    try:
-        attrs = ctypes.windll.kernel32.GetFileAttributesW(path)
-        return attrs != -1 and bool(attrs & 0x02)
-    except Exception:
-        return False
-
-
-def is_hidden_path(path: str) -> bool:
-    """Match Rust directory traversal semantics for hidden paths on Windows.
-
-    The Rust ``ignore`` walker treats dot-prefixed files and directories as
-    hidden even on Windows, while the Win32 attribute check alone does not.
-    Keep the Python-side path checks consistent with that rule.
-    """
-    name = os.path.basename(os.fspath(path))
-    return name.startswith(".") and name not in {".", ".."} or is_hidden_windows(path)
 
 
 def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False) -> int:
