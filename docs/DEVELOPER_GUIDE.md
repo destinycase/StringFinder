@@ -1,10 +1,10 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
-- **문서 버전:** 2.1 (StringFinder v7.2.1 안정 버전 기준)
+- **문서 버전:** 2.2 (StringFinder v7.3.1 안정 버전 기준)
 - **최종 수정일:** 2026-11-15
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
-> Documentation baseline: **StringFinder 7.2.1 (stable)** · Updated: **2026-11-15**
+> Documentation baseline: **StringFinder 7.3.1 (stable)** · Updated: **2026-11-15**
 >
 > 7 버전부터 검색은 Rust 엔진 하나로만 합니다. 그 전의 설계 경위·측정·검토 기록은 [v7 이전 기록](archive/before-v7/README.md)에 보관했습니다.
 
@@ -89,7 +89,7 @@ StringFinder/
 │   ├── sf_main.py                 # 애플리케이션 진입점, 싱글톤 잠금, 경고 필터
 │   ├── core/                      # Python 코어 계층 (검색 자체는 하지 않음)
 │   │   ├── search_engine.py       # Rust FFI 래퍼: 옵션·모드 비트 변환, 결과 정규화
-│   │   ├── search_mode.py         # 검색 모드 고정 값과 판별(형식·정확히 일치), 메뉴 문구 연결
+│   │   ├── search_mode.py         # 검색 모드 고정 값과 판별(형식·정확히 일치)
 │   │   ├── search_query.py        # 검색어 길이 검증과 입력 오류 계약
 │   │   ├── skip_reason_codes.py   # 공통 스킵 코드 계약
 │   │   ├── skip_reason_formatter.py # 스킵 사유 코드를 보여 줄 때 지금 언어 문장으로(render_skip_reason)
