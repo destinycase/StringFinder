@@ -18,7 +18,8 @@
 import os
 from typing import Any, List, Optional, Tuple
 
-from core.search_engine import EXCEL_EXTS, render_skip_reason, search_directory_fast
+from core.search_engine import EXCEL_EXTS, search_directory_fast
+from core.skip_reason_formatter import render_skip_reason
 from sf_utils.constants import Constants
 
 last_skipped: List[Tuple[str, str]] = []

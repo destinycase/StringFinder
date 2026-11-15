@@ -1,5 +1,6 @@
 """Regression coverage for structured-document integrity and partial failures."""
 from folder_search_helper import rendered_skips
+from core import skip_reason_formatter
 import zipfile
 from datetime import date
 
@@ -154,7 +155,7 @@ def test_new_notices_localize_after_session_language_change():
     try:
         notices = ("ERR_DECODING|", "INFO_EXCEL_PARTIAL|Broken0")  # 코드로 저장(7.2.5)
         set_language("en")
-        translated = [se.render_skip_reason(reason) for reason in notices]
+        translated = [skip_reason_formatter.render_skip_reason(reason) for reason in notices]
         assert translated == [AppStrings.ERROR_DOCUMENT_ENCODING,
                               AppStrings.SKIP_REASON_EXCEL_PARTIAL.format("Broken0")]
     finally:

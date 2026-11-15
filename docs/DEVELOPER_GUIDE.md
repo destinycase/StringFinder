@@ -88,11 +88,11 @@ StringFinder/
 ├── src/
 │   ├── sf_main.py                 # 애플리케이션 진입점, 싱글톤 잠금, 경고 필터
 │   ├── core/                      # Python 코어 계층 (검색 자체는 하지 않음)
-│   │   ├── search_engine.py       # Rust FFI 래퍼: 옵션·모드 비트 변환, 결과 정규화, 스킵 사유 번역
+│   │   ├── search_engine.py       # Rust FFI 래퍼: 옵션·모드 비트 변환, 결과 정규화
 │   │   ├── search_mode.py         # 검색 모드 고정 값과 판별(형식·정확히 일치), 메뉴 문구 연결
 │   │   ├── search_query.py        # 검색어 길이 검증과 입력 오류 계약
 │   │   ├── skip_reason_codes.py   # 공통 스킵 코드 계약
-│   │   ├── skip_reason_formatter.py # 내부 스킵 사유를 사용자 언어로 변환
+│   │   ├── skip_reason_formatter.py # 스킵 사유 코드를 보여 줄 때 지금 언어 문장으로(render_skip_reason)
 │   │   ├── worker.py              # 백그라운드 SearchWorker와 진행·결과 시그널
 │   │   └── system_manager.py      # 애플리케이션 로그 보관·정리 정책
 │   ├── rust_engine/               # Rust 네이티브 크레이트 (sf_engine)
@@ -160,7 +160,7 @@ UI (src/ui)
 
 - **UI 계층**은 검색 입력·표시·사용자 동작을 책임집니다. `SearchTab`은 탭 상태와 검색 패널을 연결하고, `ResultView`는 결과 표시·미리보기·내보내기를, `models.py`는 테이블 데이터 모델을 담당합니다. UI에서 파일 탐색이나 문서 파싱을 직접 하지 않습니다.
 - **작업 오케스트레이션**은 `core/worker.py`의 `SearchWorker`가 맡습니다. 진행·결과·스킵·오류·완료를 Qt 시그널로 전달하고, 중지와 전체 결과 제한을 조정합니다. Python 프로세스 풀은 쓰지 않습니다.
-- **검색 정책/어댑터**는 `core/search_engine.py`가 맡습니다. 검색 옵션 정규화, Rust 모드 비트 변환, Rust 결과의 Python 계약 변환, 스킵 사유 번역, 구조화 문서 메모리 예측 검사가 여기에 모입니다. 검색 자체는 하지 않습니다.
+- **검색 정책/어댑터**는 `core/search_engine.py`가 맡습니다. 검색 옵션 정규화, Rust 모드 비트 변환, Rust 결과의 Python 계약 변환, 구조화 문서 메모리 예측 검사가 여기에 모입니다. 검색 자체는 하지 않습니다. 스킵 사유를 문장으로 만드는 일은 7.2.7부터 `core/skip_reason_formatter.py`가 따로 맡습니다.
 - **Rust 엔진**은 파일 순회와 기본 검색 구현을 담당합니다. PyO3 진입점은 `lib.rs`, 공통 데이터 형식은 `types.rs`, 인코딩·패턴 처리는 `utils.rs`, 구조화 파서는 `json_search.rs`, `xml_search.rs`, `excel_search.rs`에 둡니다.
 - **공통 유틸리티**는 UI와 코어 간 순환 의존을 만들지 않습니다. `settings_defaults.py`는 기본값과 버전, `constants.py`는 설정 키와 모드 계약, `config_manager.py`는 저장·검증·마이그레이션을 담당합니다. 현지화 카탈로그는 UI 모듈보다 먼저 적용되어야 합니다.
 - **테스트**는 사용자 데이터나 실제 저장소 상태에 의존하지 않아야 합니다. 임시 경로·fixture를 사용하고, 임시 산출물이 Git에 들어가지 않는지 확인합니다.

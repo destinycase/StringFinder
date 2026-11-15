@@ -1,5 +1,6 @@
 """Exercise actual UI events and exclusion feedback without changing search policy."""
 from unittest.mock import Mock
+from core import skip_reason_formatter
 
 import pytest
 
@@ -76,10 +77,10 @@ def test_junction_notice_survives_other_results(tmp_path, monkeypatch):
     assert len(result["results"]) == 1
     assert len(result["skipped"]) == 2
     assert result["skipped"][0] == (root, "INFO_ROOT_JUNCTION|")
-    assert se.render_skip_reason(result["skipped"][0][1]) == AppStrings.SKIP_ROOT_JUNCTION
+    assert skip_reason_formatter.render_skip_reason(result["skipped"][0][1]) == AppStrings.SKIP_ROOT_JUNCTION
 
 
 def test_saved_junction_reason_follows_language(language):
     saved = "INFO_ROOT_JUNCTION|"  # 사유는 코드로 저장하고 보여 줄 때 지금 언어로 만듭니다(7.2.5)
     set_language("en" if language == "ko" else "ko")
-    assert se.render_skip_reason(saved) == AppStrings.SKIP_ROOT_JUNCTION
+    assert skip_reason_formatter.render_skip_reason(saved) == AppStrings.SKIP_ROOT_JUNCTION

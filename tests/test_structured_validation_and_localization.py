@@ -3,7 +3,8 @@ import json
 import pytest
 
 from core import search_engine
-from core.search_engine import format_skip_reason, search_directory_fast
+from core.search_engine import search_directory_fast
+from core.skip_reason_formatter import format_skip_reason
 from folder_search_helper import search_in_json_special, search_in_xml_special
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants

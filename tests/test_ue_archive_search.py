@@ -4,6 +4,7 @@
 표본 구조는 5.5.0까지 제공하던 archive 샘플 생성 스크립트와 같습니다.
 """
 import json
+from core import skip_reason_formatter
 
 import pytest
 from PySide6.QtCore import Qt
@@ -207,10 +208,10 @@ def test_format_error_reason_survives_language_switch(tmp_path):
     try:
         saved = "ERR_ARCHIVE_FORMAT|/Children/0/Key"
         set_language("ko")
-        korean = engine.render_skip_reason(saved)
+        korean = skip_reason_formatter.render_skip_reason(saved)
         set_language("en-US")
-        assert engine.render_skip_reason(saved) == AppStrings.ERROR_ARCHIVE_FORMAT.format("/Children/0/Key")
-        assert korean != engine.render_skip_reason(saved)
+        assert skip_reason_formatter.render_skip_reason(saved) == AppStrings.ERROR_ARCHIVE_FORMAT.format("/Children/0/Key")
+        assert korean != skip_reason_formatter.render_skip_reason(saved)
     finally:
         set_language(previous)
 

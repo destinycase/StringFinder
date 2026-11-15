@@ -3,6 +3,7 @@
 import pytest
 
 from core.skip_reason_codes import UNKNOWN_WALK_PATH_PREFIX
+from core.skip_reason_formatter import render_skip_reason
 from sf_utils.app_strings import AppStrings
 from sf_utils.localization import get_language, set_language
 from ui.result_view import SkippedFilesDialog, _format_skipped_files_text, normalize_skipped_files
@@ -69,7 +70,7 @@ def test_walk_failure_banner_and_accumulation(qtbot, mock_config_manager):
     (206, "SKIP_DETAIL_PATH_TOO_LONG"),
 ])
 def test_windows_walk_error_codes_are_localized(code, resource):
-    from core.search_engine import format_skip_reason
+    from core.skip_reason_formatter import format_skip_reason
     import os
     if os.name != "nt":
         pytest.skip("Windows error codes")
@@ -89,5 +90,5 @@ def test_native_traversal_failures_preserve_missing_root_paths(operation, tmp_pa
     assert all(reason.startswith("ERR_WALK|") for path, reason in skipped)
     entries = normalize_skipped_files(skipped)
     assert len(entries) == 2
-    assert all(AppStrings.SKIP_DETAIL_FILE_NOT_FOUND in search_engine.render_skip_reason(reason)
+    assert all(AppStrings.SKIP_DETAIL_FILE_NOT_FOUND in render_skip_reason(reason)
                for path, reason in entries)

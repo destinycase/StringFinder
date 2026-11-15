@@ -225,7 +225,7 @@ def _format_skipped_files_text(skipped_files, total_count):
             path = AppStrings.SKIPPED_WALK_ENTRY.format(path)
         lines = [f"{index}. {path}"]
         if reason:
-            from core.search_engine import render_skip_reason
+            from core.skip_reason_formatter import render_skip_reason
 
             lines.append(f"   {AppStrings.SKIPPED_FILES_REASON.format(render_skip_reason(reason))}")
         blocks.append("\n".join(lines))
@@ -285,7 +285,7 @@ def _result_note(result_model, path) -> str:
     note_for = getattr(result_model, "note_for", None)
     if not callable(note_for):
         return ""
-    from core.search_engine import render_skip_reason
+    from core.skip_reason_formatter import render_skip_reason
 
     return render_skip_reason(note_for(path))
 

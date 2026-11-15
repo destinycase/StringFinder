@@ -62,7 +62,7 @@ def short_file_note(reason: str) -> str:
 
     알려진 일부만 검색한 사유 4종은 짧은 문구로, 그 밖의 사유는 문장에서 앞의 꼬리표만 떼어 씁니다.
     """
-    from core.search_engine import render_skip_reason
+    from core.skip_reason_formatter import render_skip_reason
     from core.skip_reason_codes import (
         SKIP_CODE_DECODE_PARTIAL,
         SKIP_CODE_EXCEL_PARTIAL,
@@ -344,7 +344,7 @@ class SearchResultModel(QAbstractTableModel):
             if role == Qt.ItemDataRole.EditRole:
                 return self._notes.get(path, "")
             if role == Qt.ItemDataRole.ToolTipRole:
-                from core.search_engine import render_skip_reason
+                from core.skip_reason_formatter import render_skip_reason
 
                 return render_skip_reason(self._notes.get(path)) or None
             if role == Qt.ItemDataRole.TextAlignmentRole:

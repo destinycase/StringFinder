@@ -1,4 +1,5 @@
 from folder_search_helper import rendered_skips
+from core import skip_reason_formatter
 import pytest
 
 from core import search_engine
@@ -281,7 +282,7 @@ def test_partial_limit_markers_are_combined_into_one_file_notice(monkeypatch):
     )
 
     assert reason == "INFO_FILE_MATCH_LIMIT|2\nINFO_JSON_DEPTH_LIMIT|3"  # 코드로 만듭니다(7.2.5)
-    shown = search_engine.render_skip_reason(reason)
+    shown = skip_reason_formatter.render_skip_reason(reason)
     assert AppStrings.SKIP_REASON_FILE_MATCH_LIMIT.format(2) in shown
     assert AppStrings.SKIP_REASON_JSON_DEPTH_LIMIT.format(3) in shown
     assert shown.count("\n") == 1

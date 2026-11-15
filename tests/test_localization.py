@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 from PySide6.QtWidgets import QLabel
 
-from core.search_engine import (
+from core.skip_reason_formatter import (
     format_excel_panic_reason,
     format_skip_reason,
     render_skip_reason,
@@ -217,7 +217,7 @@ assert 'sf_utils.constants' not in sys.modules
 assert sf_main.apply_saved_language() == 'en'
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
-from core.search_engine import format_excel_panic_reason
+from core.skip_reason_formatter import format_excel_panic_reason
 assert AppStrings.SEARCH_BTN == 'Search'
 assert Constants.MODE_EXACT == 'exact'
 reason = format_excel_panic_reason('xls|range start index 6 out of range for slice of length 4')

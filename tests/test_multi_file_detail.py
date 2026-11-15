@@ -140,7 +140,7 @@ def test_note_column_shows_short_reason_and_tooltip(qtbot, mock_config_manager):
     assert shown.index("</span>") < shown.index(AppStrings.FILE_NOTE_MATCH_LIMIT.format(2))
     row_b = next(r for r in range(model.rowCount())
                  if model.data(model.index(r, 0), Qt.ItemDataRole.UserRole)[0] == "D:/d/b.txt")
-    from core.search_engine import render_skip_reason
+    from core.skip_reason_formatter import render_skip_reason
 
     assert model.data(model.index(row_b, 3), Qt.ItemDataRole.ToolTipRole) == render_skip_reason(reason)
 

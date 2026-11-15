@@ -27,7 +27,8 @@ from typing import Any, cast
 
 import pytest
 
-from core.search_engine import format_excel_panic_reason, search_directory_fast
+from core.search_engine import search_directory_fast
+from core.skip_reason_formatter import format_excel_panic_reason
 import folder_search_helper
 from folder_search_helper import search_in_file
 from core.worker import SearchWorker
