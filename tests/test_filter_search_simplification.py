@@ -119,7 +119,7 @@ def test_retired_snapshot_requires_research(qtbot, mock_config_manager, metadata
 def test_old_input_option_cannot_discard_real_results(qtbot, mock_config_manager):
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
-    tab.load_state({"inputs": {"search": "needle", "existence_only": True},
+    tab.load_state({"session_format": 2, "inputs": {"search": "needle", "existence_only": True},
                     "results": [[1, "file.txt", "", "file.txt", [[1, "needle actual content"]]]]})
     assert tab.result_view_panel.result_model.get_all_results()[0][4][0][1] == "needle actual content"
     tab.close()

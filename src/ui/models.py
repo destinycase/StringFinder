@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Union
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QRunnable, Qt, QThreadPool, Signal
 
+from core import search_mode as sm
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from ui.widgets import GROUP_ROLE
@@ -840,16 +841,17 @@ class MatchDetailModel(QAbstractTableModel):
         결과는 미리 한꺼번에 다듬지 않고 보는 페이지의 행만 그때그때 정리합니다.
         파일당 상한·부분 검색 안내 행(-1/-2)은 파일 목록의 기타 칸에 보이므로 여기서는 뺍니다.
         """
-        if search_mode == AppStrings.SPECIAL_SEARCH_OFF or not search_mode:
-            search_mode = Constants.MODE_NORMAL
+        # 검색 모드는 고정 값으로 맞춰 둡니다(core/search_mode.py).
+        search_mode = sm.normalize(search_mode)
+        mode_kind = sm.kind(search_mode)
 
         # 모델 리셋 전 헤더 정보를 미리 갱신하여 UI 캐시가 올바르게 반영되도록 합니다.
         self.search_mode = search_mode
-        if Constants.MODE_JSON in search_mode:
+        if mode_kind == sm.KIND_JSON:
             self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_JSON_KEY, AppStrings.HEADER_JSON_VALUE]
-        elif Constants.MODE_XML in search_mode:
+        elif mode_kind == sm.KIND_XML:
             self._headers = [AppStrings.HEADER_POSITION, AppStrings.HEADER_XML_NAME, AppStrings.HEADER_XML_VALUE]
-        elif Constants.MODE_ARCHIVE in search_mode:
+        elif mode_kind == sm.KIND_ARCHIVE:
             self._headers = [
                 AppStrings.HEADER_LINE_NUMBER,
                 AppStrings.HEADER_ARCHIVE_NAMESPACE,
@@ -857,7 +859,7 @@ class MatchDetailModel(QAbstractTableModel):
                 AppStrings.HEADER_ARCHIVE_SOURCE,
                 AppStrings.HEADER_ARCHIVE_TRANSLATION,
             ]
-        elif Constants.MODE_EXCEL in search_mode:
+        elif mode_kind == sm.KIND_EXCEL:
             self._headers = [
                 AppStrings.HEADER_EXCEL_SHEET,
                 AppStrings.HEADER_EXCEL_CELL,

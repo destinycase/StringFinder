@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core import search_mode as sm
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from core.search_query import validate_search_query
@@ -532,25 +533,10 @@ class FilterListWidget(QListWidget):
 
 
 def normalize_special_search_mode(value: Any) -> str:
-    """Keep saved mode labels independent of menu order and UI language."""
-    if not isinstance(value, str):
-        return AppStrings.SPECIAL_SEARCH_OFF
-    value = value.strip()
-    if value in AppStrings.SPECIAL_SEARCH_ITEMS:
-        return cast(str, value)
-    normalized = value.casefold()
-    exact = "정확" in value or "exact" in normalized
-    if "xml" in normalized:
-        index = 2 if exact else 1
-    elif "json" in normalized:
-        index = 4 if exact else 3
-    elif "excel" in normalized:
-        index = 6 if exact else 5
-    elif Constants.MODE_ARCHIVE in normalized:
-        index = 8 if exact else 7
-    else:
-        index = 0
-    return AppStrings.SPECIAL_SEARCH_ITEMS[index]
+    """검색 모드를 고정 값으로 바꿉니다(core/search_mode.py)."""
+    from core import search_mode
+
+    return search_mode.normalize(value)
 
 
 class SearchOptionsPanel(QWidget):
@@ -1318,20 +1304,15 @@ class ExtensionFilterPanel(DenseFilterPanel):
 
     def get_selected_extensions(self) -> List[str]:
         special_mode = self._special_mode
-        if special_mode == AppStrings.SPECIAL_SEARCH_OFF:
-            return self.get_checked_extensions()
-        else:
-            # 선택된 특수 검색 모드에 따라 처리 대상을 결정합니다.
-            if Constants.MODE_XML in special_mode:
-                return [Constants.EXT_XML]
-            elif Constants.MODE_JSON in special_mode:
-                return [Constants.EXT_JSON]
-            elif Constants.MODE_EXCEL in special_mode:
-                return list(Constants.EXT_EXCEL)
-            elif Constants.MODE_ARCHIVE in special_mode:
-                return [Constants.EXT_ARCHIVE]
-            else:
-                return [special_mode.lower()]
+        # 검색 모드가 정한 형식만 검색하고, 기본이면 체크한 확장자를 씁니다.
+        targets = {
+            sm.KIND_XML: [Constants.EXT_XML],
+            sm.KIND_JSON: [Constants.EXT_JSON],
+            sm.KIND_EXCEL: list(Constants.EXT_EXCEL),
+            sm.KIND_ARCHIVE: [Constants.EXT_ARCHIVE],
+        }
+        mode_kind = sm.kind(special_mode)
+        return targets[mode_kind] if mode_kind else self.get_checked_extensions()
     def get_checked_extensions(self) -> List[str]:
         extensions: List[str] = []
         for index in range(self.ext_list.count()):

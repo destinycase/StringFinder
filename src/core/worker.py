@@ -42,7 +42,9 @@ class SearchWorker(QRunnable):
         self.exclude_hidden = params.get(Constants.PAYLOAD_EXCLUDE_HIDDEN, True)
         self.exclude_binary = params.get(Constants.PAYLOAD_EXCLUDE_BINARY, True)
         self.stop_event = threading.Event()
-        if self.special_mode and self.special_mode.startswith(Constants.MODE_EXCEL):
+        from core import search_mode as sm
+
+        if sm.kind(self.special_mode) == sm.KIND_EXCEL:
             from core.search_engine import EXCEL_EXTS
             self.extensions = [ext.lstrip(".") for ext in EXCEL_EXTS]
             logger.debug(AppStrings.LOG_WKR_EXCEL_SCAN)

@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from sf_utils.file_helper import is_potentially_executable_file, open_in_external_editor
 from core.worker import SearchWorker
 from core.search_query import validate_search_query
+from core import search_mode
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from sf_utils.logger import logger, normalize_log_level
@@ -521,15 +522,15 @@ class SearchTab(QMainWindow):
         inputs = self.get_inputs()
         total_skipped = self.skipped_count
         return {
+            Constants.STATE_KEY_SESSION_FORMAT: Constants.SESSION_FORMAT_VERSION,
             Constants.PAYLOAD_INPUTS: inputs,
             Constants.PAYLOAD_RESULTS: self.result_view_panel.result_model.get_all_results()
             if self.result_view_panel.result_model
             else [],
             "results_search_context": {
                 "search_text": self.result_view_panel.search_text,
-                "search_mode": self._result_mode_code(self.result_view_panel.search_mode),
-                "exact": any(marker in str(self.result_view_panel.search_mode).casefold()
-                             for marker in ("정확", "exact")),
+                # 언어와 상관없는 검색 모드 고정 값(core/search_mode.py)
+                "search_mode": search_mode.normalize(self.result_view_panel.search_mode),
                 "filename_filters": list(self.result_view_panel.result_model.filename_filters),
             },
             Constants.PAYLOAD_SUMMARY: {
@@ -622,14 +623,6 @@ class SearchTab(QMainWindow):
                 normalized.append(normalized_row)
         return normalized
 
-    @staticmethod
-    def _result_mode_code(mode):
-        """Persist a language-independent result format, not a UI label."""
-        for code in (Constants.MODE_JSON, Constants.MODE_XML, Constants.MODE_EXCEL, Constants.MODE_ARCHIVE):
-            if isinstance(mode, str) and code.casefold() in mode.casefold():
-                return code
-        return Constants.MODE_NORMAL
-
     def _session_folder_groups(self, inputs):
         """세션의 폴더 그룹입니다. 예전 버전이 저장한 세션에 그룹이 없으면 설정에 저장된 그룹을 씁니다.
 
@@ -669,36 +662,25 @@ class SearchTab(QMainWindow):
             if Constants.CONFIG_KEY_FOLDERS in inputs:
                 self.folder_panel.load_state(inputs[Constants.CONFIG_KEY_FOLDERS], self._session_folder_groups(inputs))
 
+        # 지금 형식이 아닌 세션(7.2.3 이전)은 검색 조건만 살리고 결과는 다시 검색하게 합니다.
+        retired_results = state.get(Constants.STATE_KEY_SESSION_FORMAT) != Constants.SESSION_FORMAT_VERSION
+
         # Restore result-producing conditions separately from editable drafts.
         search_text = self.search_panel.search_combo.currentText()
-        search_mode = self.ext_panel.get_special_mode()
+        mode = self.ext_panel.get_special_mode()
         result_context = state.get("results_search_context")
-        if isinstance(result_context, dict):
+        if isinstance(result_context, dict) and not retired_results:
             saved_text = result_context.get("search_text")
-            saved_mode = result_context.get("search_mode")
             if isinstance(saved_text, str):
                 search_text = saved_text
-            if saved_mode in (
-                Constants.MODE_NORMAL,
-                Constants.MODE_JSON,
-                Constants.MODE_XML,
-                Constants.MODE_EXCEL,
-                Constants.MODE_ARCHIVE,
-            ):
-                search_mode = saved_mode
-                if result_context.get("exact") is True and saved_mode != Constants.MODE_NORMAL:
-                    search_mode = f"{saved_mode} ({Constants.MODE_EXACT})"
+            mode = search_mode.normalize(result_context.get("search_mode"))
         filename_filters = self.filename_panel.get_selected_filenames()
-        if isinstance(result_context, dict) and isinstance(result_context.get("filename_filters"), list):
+        if (isinstance(result_context, dict) and not retired_results
+                and isinstance(result_context.get("filename_filters"), list)):
             filename_filters = [value for value in result_context["filename_filters"] if isinstance(value, str)]
 
-        # Retired existence-only snapshots do not contain full result details.
-        # Preserve inputs, but require a fresh search rather than inventing data.
-        retired_results = state.get("results_existence_only") is True or (
-            isinstance(result_context, dict) and result_context.get("existence_only") is True
-        )
         results = [] if retired_results else self._normalize_state_results(state.get(Constants.PAYLOAD_RESULTS, []))
-        self.result_view_panel.set_search_context(search_text, search_mode)
+        self.result_view_panel.set_search_context(search_text, mode)
         self.result_view_panel.set_filename_filters(filename_filters)
         self.total_matches = 0
         self.total_files = 0

@@ -931,14 +931,16 @@ def get_rust_mode_bits(special_mode: Optional[str], exclude_binary: bool = False
 
     if not special_mode:
         return bits
-    if Constants.MODE_XML in special_mode:
-        bits |= Constants.RUST_MODE_XML
-    if Constants.MODE_JSON in special_mode:
-        bits |= Constants.RUST_MODE_JSON
-    if Constants.MODE_ARCHIVE in special_mode:
-        bits |= Constants.RUST_MODE_ARCHIVE
+    from core import search_mode
 
-    if Constants.MODE_EXACT in special_mode:
+    mode_kind = search_mode.kind(special_mode)
+    if mode_kind == search_mode.KIND_XML:
+        bits |= Constants.RUST_MODE_XML
+    elif mode_kind == search_mode.KIND_JSON:
+        bits |= Constants.RUST_MODE_JSON
+    elif mode_kind == search_mode.KIND_ARCHIVE:
+        bits |= Constants.RUST_MODE_ARCHIVE
+    if search_mode.is_exact(special_mode):
         bits |= Constants.RUST_MODE_EXACT
     return bits
 

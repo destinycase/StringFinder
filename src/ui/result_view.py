@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core import search_mode as sm
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
 from sf_utils.logger import logger
@@ -1132,7 +1133,7 @@ class ResultView(QWidget):
     def _is_excel_preview(self):
         """검색 모드 또는 파일 확장자로 Excel 전용 미리보기 여부를 판별합니다."""
         modes = (self.search_mode, getattr(self.match_model, "search_mode", None))
-        if any(Constants.MODE_EXCEL.upper() in str(mode or "").upper() for mode in modes):
+        if any(sm.kind(mode) == sm.KIND_EXCEL for mode in modes):
             return True
         file_path = self.selected_file_path or getattr(self.match_model, "current_file_path", "")
         return str(file_path or "").lower().endswith(self.EXCEL_PREVIEW_EXTENSIONS)
@@ -1140,7 +1141,7 @@ class ResultView(QWidget):
     def _is_archive_preview(self):
         """UE 현지화 archive 결과는 위·아래 문맥 대신 검색한 항목의 값을 보여줍니다."""
         modes = (self.search_mode, getattr(self.match_model, "search_mode", None))
-        return any(Constants.MODE_ARCHIVE in str(mode or "") for mode in modes)
+        return any(sm.kind(mode) == sm.KIND_ARCHIVE for mode in modes)
 
     def _show_archive_context_preview(self, match_item):
         """검색할 때 확보한 줄 번호·Namespace·Key·원문·번역문만 사용해 파일을 다시 읽지 않고 표시합니다."""
@@ -1590,13 +1591,9 @@ class ResultView(QWidget):
 
     def set_search_context(self, search_text, search_mode):
         self.search_text = search_text
-        # 특수 검색 비활성화 시 모드 값을 기본값으로 변환합니다.
-        if search_mode == AppStrings.SPECIAL_SEARCH_OFF:
-            self.search_mode = Constants.MODE_NORMAL
-        else:
-            self.search_mode = search_mode
-        mode_upper = str(self.search_mode or "").upper()
-        no_context_mode = Constants.MODE_EXCEL.upper() in mode_upper or Constants.MODE_ARCHIVE.upper() in mode_upper
+        # 검색 모드는 고정 값으로 맞춰 둡니다(core/search_mode.py).
+        self.search_mode = sm.normalize(search_mode)
+        no_context_mode = sm.kind(self.search_mode) in (sm.KIND_EXCEL, sm.KIND_ARCHIVE)
         self._set_context_line_settings_visible(not no_context_mode)
         self.update_ui_visibility()
 

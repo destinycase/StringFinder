@@ -17,6 +17,7 @@ def test_invalid_query_recovers_without_discarding_results(qtbot, mock_config_ma
     qtbot.addWidget(tab)
     details = [[1, "needle actual content"]]
     tab.load_state({
+        C.STATE_KEY_SESSION_FORMAT: C.SESSION_FORMAT_VERSION,
         C.PAYLOAD_INPUTS: {C.STATE_KEY_SEARCH: value},
         C.PAYLOAD_RESULTS: [[1, "data.txt", "", "data.txt", details]],
     })

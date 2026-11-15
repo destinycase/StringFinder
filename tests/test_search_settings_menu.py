@@ -217,19 +217,16 @@ def test_old_modes_restore_in_current_language(qtbot, old_mode, index, language)
     ("UE localization archive (contains)", 7), ("UE localization archive (exact)", 8),
 ])
 def test_legacy_saved_values_remain_engine_values(qtbot, language, precise, saved_mode, index):
-    expected = (["사용 안함", "XML (부분 일치)", "XML (정확히 일치)",
-                 "JSON (부분 일치)", "JSON (정확히 일치)", "Excel (부분 일치)", "Excel (정확히 일치)",
-                 "UE 현지화 archive (부분 일치)", "UE 현지화 archive (정확히 일치)"]
-                if language == "ko" else
-                ["Off", "XML (contains)", "XML (exact)", "JSON (contains)", "JSON (exact)",
-                 "Excel (contains)", "Excel (exact)",
-                 "UE localization archive (contains)", "UE localization archive (exact)"])
-    assert AppStrings.SPECIAL_SEARCH_ITEMS == expected
+    """예전 화면 문구로 저장된 모드도 언어와 상관없는 고정 값으로 바뀝니다(7.2.3)."""
+    from core import search_mode
+
+    expected = list(search_mode.VALUES)
+    assert AppStrings.SPECIAL_SEARCH_ITEMS == expected  # 두 언어 모두 같은 고정 값
     panel = SearchOptionsPanel()
     qtbot.addWidget(panel)
-    panel.load_state({C.PAYLOAD_USE_COMPLEX_SEARCH: precise, C.PAYLOAD_SPECIAL_MODE: saved_mode})
+    panel.load_state({"use_complex_search": precise, C.PAYLOAD_SPECIAL_MODE: saved_mode})
     state = panel.get_state()
-    assert C.PAYLOAD_USE_COMPLEX_SEARCH not in state
+    assert "use_complex_search" not in state
     assert state[C.PAYLOAD_SPECIAL_MODE] == expected[index]
 
 

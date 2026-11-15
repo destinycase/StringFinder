@@ -106,7 +106,7 @@ def test_exact_result_policy_is_preserved(qtbot, mock_config_manager):
     qtbot.addWidget(source)
     source.result_view_panel.set_search_context("needle", f"JSON ({C.MODE_EXACT})")
     saved = source.get_state()
-    assert saved["results_search_context"]["exact"] is True
+    assert saved["results_search_context"]["search_mode"] == "JSON exact"
     source.ext_panel.set_special_mode(C.MODE_NORMAL)
     source.load_state(saved)
     assert C.MODE_EXACT in source.result_view_panel.search_mode

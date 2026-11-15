@@ -173,7 +173,7 @@ class AppStrings:
     SEARCH_MODE_LABEL = "검색 모드"
     SPECIAL_SEARCH_OFF_DISPLAY = "기본"
     FILENAME_FILTER_INVALID_GROUP = "쉼표 사이에 파일명 조건을 입력하세요."
-    SESSION_RESEARCH_REQUIRED = "이전 존재 확인 결과는 전체 검색 결과가 아닙니다. 다시 검색해 주세요."
+    SESSION_RESEARCH_REQUIRED = "예전 형식으로 저장된 탭이라 검색 조건만 불러왔습니다. 다시 검색해 주세요."
     DOCK_FILTER_TITLE = "필터"
     FILTER_EXTENSION_TAB = "확장자({})"
     FILTER_FILENAME_TAB = "파일명({})"
@@ -242,19 +242,20 @@ class AppStrings:
     FILENAME_FILTER_USAGE = "파일명의 일부를 지정하여, 불필요한 검색을 줄일 수 있습니다.\n여러 조건을 쉼표로 묶어 한 항목에 추가할 수 있습니다."
     FILENAME_FILTER_ALL = '파일명 제한 없음'
     FILENAME_FILTER_SELECTED = '파일명 필터 {}개 선택 - {}'
-    SPECIAL_SEARCH_OFF = "사용 안함"
+    # 검색 모드의 저장·판별 값은 언어와 상관없는 고정 값입니다(core/search_mode.py, 7.2.3). 번역하지 않습니다.
+    SPECIAL_SEARCH_OFF = "Normal"
     SPECIAL_SEARCH_ITEMS = [
         SPECIAL_SEARCH_OFF,
-        "XML (부분 일치)",
-        "XML (정확히 일치)",
-        "JSON (부분 일치)",
-        "JSON (정확히 일치)",
-        "Excel (부분 일치)",
-        "Excel (정확히 일치)",
-        "UE 현지화 archive (부분 일치)",
-        "UE 현지화 archive (정확히 일치)",
+        "XML",
+        "XML exact",
+        "JSON",
+        "JSON exact",
+        "Excel",
+        "Excel exact",
+        "archive",
+        "archive exact",
     ]
-    # Stable engine/session values above; independently editable menu labels below.
+    # 화면 메뉴 문구입니다(위 값과 같은 순서).
     SPECIAL_SEARCH_MENU_ITEMS = [
         SPECIAL_SEARCH_OFF_DISPLAY,
         "XML (부분 일치)",
@@ -393,7 +394,6 @@ class AppStrings:
     SKIP_EMPTY_FILE = "[건너뜀] 빈 파일"
 
     # 기존 검색 모드명 (안전성 확보를 위해 확인)
-    SEARCH_MODE_EXACT = "정확히 일치"
     # =========================================================================
     # [7] 내보내기 (Export)
     # =========================================================================

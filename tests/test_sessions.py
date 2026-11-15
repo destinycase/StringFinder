@@ -140,6 +140,7 @@ def test_search_tab_load_state_with_malformed_results(qtbot, mock_config_manager
     qtbot.addWidget(tab)
 
     state = {
+        Constants.STATE_KEY_SESSION_FORMAT: Constants.SESSION_FORMAT_VERSION,
         Constants.PAYLOAD_INPUTS: {},
         Constants.PAYLOAD_RESULTS: [
             ("C:/legacy/a.txt", 3, [(1, "a"), (2, "b"), (3, "c")]),
@@ -164,6 +165,7 @@ def test_search_tab_load_state_uses_count_for_total_matches(qtbot, mock_config_m
 
     truncated_matches = [(i, f"line-{i}") for i in range(1000)]
     state = {
+        Constants.STATE_KEY_SESSION_FORMAT: Constants.SESSION_FORMAT_VERSION,
         Constants.PAYLOAD_INPUTS: {},
         Constants.PAYLOAD_RESULTS: [[15000, "big.txt", "C:/modern", "C:/modern/big.txt", truncated_matches]],
         Constants.PAYLOAD_LOGS: "",
@@ -179,6 +181,7 @@ def test_session_preserves_normal_result_after_option_toggle(qtbot, mock_config_
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
     state = {
+        Constants.STATE_KEY_SESSION_FORMAT: Constants.SESSION_FORMAT_VERSION,
         Constants.PAYLOAD_INPUTS: {
             Constants.STATE_KEY_SEARCH: "needle",
         },
@@ -194,6 +197,7 @@ def test_search_tab_discards_invalid_saved_skip_and_log_records(qtbot, mock_conf
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
     state = {
+        Constants.STATE_KEY_SESSION_FORMAT: Constants.SESSION_FORMAT_VERSION,
         Constants.PAYLOAD_INPUTS: {},
         Constants.PAYLOAD_RESULTS: [],
         Constants.PAYLOAD_SKIPPED: [
@@ -220,3 +224,42 @@ def test_search_tab_discards_non_text_saved_logs(qtbot, mock_config_manager):
     tab.load_state({Constants.PAYLOAD_INPUTS: {}, Constants.PAYLOAD_LOGS: {"bad": "data"}})
 
     assert tab.logs_output.toPlainText() == ""
+
+
+def test_old_format_session_keeps_conditions_but_asks_to_search_again(qtbot, mock_config_manager, tmp_path):
+    """형식 번호가 없는 예전 세션은 검색 조건만 살리고 결과는 비운 채 안내합니다(7.2.3)."""
+    from sf_utils.app_strings import AppStrings
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    old = {
+        Constants.PAYLOAD_INPUTS: {
+            Constants.STATE_KEY_SEARCH: "needle",
+            Constants.PAYLOAD_SPECIAL_MODE: "JSON (정확히 일치)",
+            Constants.CONFIG_KEY_FOLDERS: {str(tmp_path): True},
+        },
+        Constants.PAYLOAD_RESULTS: [[1, "a.json", str(tmp_path), str(tmp_path / "a.json"), [[1, "needle"]]]],
+        Constants.PAYLOAD_SKIPPED: [[str(tmp_path / "b.json"), "[오류] 무언가"]],
+    }
+    tab.load_state(old)
+    assert tab.search_panel.search_combo.currentText() == "needle"
+    assert tab.ext_panel.get_special_mode() == "JSON exact"
+    assert str(tmp_path) in tab.folder_panel.get_state()
+    assert tab.result_view_panel.result_model.get_all_results() == []
+    assert tab.skipped_files_list == []
+    assert tab.result_view_panel.empty_label.text() == AppStrings.SESSION_RESEARCH_REQUIRED
+
+
+def test_current_format_session_round_trip_keeps_results_and_mode(qtbot, mock_config_manager, tmp_path):
+    source = SearchTab(mock_config_manager)
+    qtbot.addWidget(source)
+    source.result_view_panel.set_search_context("needle", "XML exact")
+    source.result_view_panel.set_results([[1, "a.xml", str(tmp_path), str(tmp_path / "a.xml"), [[1, "x", "needle"]]]])
+    saved = source.get_state()
+    assert saved[Constants.STATE_KEY_SESSION_FORMAT] == Constants.SESSION_FORMAT_VERSION
+    assert saved["results_search_context"]["search_mode"] == "XML exact"
+    target = SearchTab(mock_config_manager)
+    qtbot.addWidget(target)
+    target.load_state(saved)
+    assert target.result_view_panel.search_mode == "XML exact"
+    assert len(target.result_view_panel.result_model.get_all_results()) == 1

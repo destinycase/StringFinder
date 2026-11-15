@@ -262,7 +262,7 @@ def test_legacy_korean_special_mode_is_restored_in_english(qtbot):
 
     panel.load_state({"special_mode": "XML (정확히 일치)"})
 
-    assert panel.get_special_mode() == "XML (exact)"
+    assert panel.get_special_mode() == "XML exact"  # 언어와 상관없는 고정 값(7.2.3)
 
 
 def test_general_settings_label_spacing_and_user_guide_button(

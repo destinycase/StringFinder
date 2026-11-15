@@ -164,7 +164,7 @@ ENGLISH_STRINGS = {
     "SEARCH_MODE_LABEL": "Search mode",
     "SPECIAL_SEARCH_OFF_DISPLAY": "Default",
     "FILENAME_FILTER_INVALID_GROUP": "Enter a filename term between each comma.",
-    "SESSION_RESEARCH_REQUIRED": "Saved existence-only results are not full results. Please search again.",
+    "SESSION_RESEARCH_REQUIRED": "This tab was saved in an older format, so only its search conditions were restored. Please search again.",
     "DOCK_FILTER_TITLE": "Filters",
     "FILTER_EXTENSION_TAB": "Extensions ({})",
     "FILTER_FILENAME_TAB": "Filenames ({})",
@@ -219,18 +219,6 @@ ENGLISH_STRINGS = {
         '<p>- No results does not necessarily mean all files were searched completely.</p>'
         '<p>- StringFinder searches are case-insensitive.</p>'
     ),
-    "SPECIAL_SEARCH_OFF": "Off",
-    "SPECIAL_SEARCH_ITEMS": [
-        "Off",
-        "XML (contains)",
-        "XML (exact)",
-        "JSON (contains)",
-        "JSON (exact)",
-        "Excel (contains)",
-        "Excel (exact)",
-        "UE localization archive (contains)",
-        "UE localization archive (exact)",
-    ],
     "SPECIAL_SEARCH_MENU_ITEMS": [
         "Default",
         "XML (contains)",
@@ -357,7 +345,6 @@ ENGLISH_STRINGS = {
         "Do you trust its source and want to open it?"
     ),
     "SKIP_EMPTY_FILE": "[Skipped] Empty file",
-    "SEARCH_MODE_EXACT": "exact",
     "RESULT_EXPORT_TITLE": "Export results",
     "RESULT_EXPORT_FILTER": "Excel files (*.xlsx);;Text files (*.txt)",
     "RESULT_EXPORT_ALL": "Export all",
