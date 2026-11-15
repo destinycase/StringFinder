@@ -115,6 +115,7 @@ StringFinder/
 │   │   ├── models.py              # SearchResultModel, MatchDetailModel, 비동기 정렬
 │   │   ├── panels.py              # 폴더, 확장자, 파일명, 검색 조건 도크 패널
 │   │   ├── settings_dialog.py     # 일반/고급 설정 UI
+│   │   ├── settings_transfer.py   # 설정 내보내기·불러오기 파일과 불러오기 창
 │   │   ├── proxies.py             # 결과 테이블 정렬·필터 프록시
 │   │   ├── widgets.py             # 공통 Qt 위젯
 │   │   ├── styles.py              # 앱 QSS 및 상태 색상

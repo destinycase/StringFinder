@@ -127,6 +127,19 @@ class Constants:
     CONFIG_KEY_LOCK_DOCK_LAYOUT = "lock_dock_layout"
     CONFIG_KEY_TABS = "tabs"
     CONFIG_KEY_CURRENT_TAB = "current_tab"
+    CONFIG_KEY_IMPORTED_CONDITIONS = "imported_conditions_pending"
+    # 설정 내보내기·불러오기(7.1.30)
+    SETTINGS_EXPORT_FORMAT_KEY = "format"
+    SETTINGS_EXPORT_FORMAT = "StringFinder-settings"
+    SETTINGS_EXPORT_FORMAT_VERSION_KEY = "format_version"
+    SETTINGS_EXPORT_FORMAT_VERSION = 1
+    SETTINGS_EXPORT_FILE_PREFIX = "StringFinder_Settings"
+    SETTINGS_SECTION_SETTINGS = "settings"
+    SETTINGS_SECTION_LAYOUT = "layout"
+    SETTINGS_SECTION_CONDITIONS = "conditions"
+    SETTINGS_SECTION_HISTORY = "history"
+    SETTINGS_SECTIONS = (SETTINGS_SECTION_SETTINGS, SETTINGS_SECTION_LAYOUT,
+                         SETTINGS_SECTION_CONDITIONS, SETTINGS_SECTION_HISTORY)
     OBJ_NAME_SEARCH_DOCK = "SearchDock"
     OBJ_NAME_FOLDER_DOCK = "FolderDock"
     

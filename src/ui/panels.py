@@ -1,6 +1,7 @@
+import os
 from typing import Any, Dict, List, Union, cast
 
-from PySide6.QtCore import QEvent, QPoint, QRegularExpression, QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRegularExpression, QRunnable, QSignalBlocker, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QPainter,
@@ -99,6 +100,40 @@ class DragHandle(QWidget):
         painter.end()
 
 
+class _PathCheckSignals(QObject):
+    finished = Signal(int, object)
+
+
+class PathExistsWorker(QRunnable):
+    """폴더(또는 파일)가 지금 PC에 있는지 백그라운드에서 확인합니다. 느린 네트워크 드라이브가 화면을 막지 않게 합니다(7.1.30)."""
+
+    def __init__(self, request: int, paths):
+        super().__init__()
+        self.request = request
+        self.paths = list(paths)
+        self.signals = _PathCheckSignals()
+
+    def run(self):
+        result = {}
+        for path in self.paths:
+            try:
+                result[path] = os.path.exists(path)
+            except (OSError, ValueError):
+                result[path] = False
+        try:
+            self.signals.finished.emit(self.request, result)
+        except RuntimeError:
+            pass  # 확인 중에 창이 닫힌 경우
+
+
+def check_paths_async(paths, callback, request: int = 0):
+    """``callback(request, {경로: 있음})``을 확인이 끝난 뒤 화면 스레드에서 부릅니다."""
+    worker = PathExistsWorker(request, paths)
+    worker.signals.finished.connect(callback)
+    QThreadPool.globalInstance().start(worker)
+    return worker
+
+
 class FilterItemWidget(QWidget):
     """
     리스트 위젯 내에서 개별 필터 항목(폴더 또는 확장자)을 표시하는 커스텀 위젯입니다.
@@ -144,6 +179,13 @@ class FilterItemWidget(QWidget):
         layout.addWidget(self.checkbox)
         layout.addSpacing(2 - layout.spacing())
         layout.addWidget(self.name_label)
+        # 지금 PC에 없는 폴더 표시(7.1.30). 확인 결과가 나오면 보입니다.
+        self.missing_label = QLabel("⚠")
+        self.missing_label.setStyleSheet("QLabel { color: #E8A33D; }")
+        self.missing_label.setToolTip(AppStrings.FOLDER_MISSING_TOOLTIP)
+        self.missing_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.missing_label.hide()
+        layout.addWidget(self.missing_label)
         layout.addStretch()
         layout.addWidget(self.delete_btn)
 
@@ -174,11 +216,20 @@ class FilterItemWidget(QWidget):
     def isChecked(self):
         return self.checkbox.isChecked()
 
+    def set_missing(self, missing: bool):
+        missing = bool(missing)
+        self.missing_label.setVisible(missing)
+        self.setToolTip(AppStrings.FOLDER_MISSING_TOOLTIP if missing else "")
+
+    def is_missing(self) -> bool:
+        return not self.missing_label.isHidden()
+
     def clone(self):
         """순서를 옮길 때 다시 붙일, 이름·체크·밀도·콜백이 같은 새 위젯을 만듭니다."""
         widget = FilterItemWidget(self.text(), self.isChecked(), on_delete=self._on_delete, on_change=self._on_change)
         if self._compact is not None:
             widget.set_compact(self._compact)
+        widget.set_missing(self.is_missing())
         return widget
 
 
@@ -723,10 +774,14 @@ class FolderFilterPanel(DenseFilterPanel):
     """
 
     filter_changed = Signal()
+    folder_status_checked = Signal()
     # 그룹 안 폴더의 들여쓰기 폭입니다. 머리글의 펼치기 단추 너비와 비슷하게 맞춥니다.
     GROUP_INDENT = 18
 
     def __init__(self, parent=None):
+        self._missing_folders: set = set()
+        self._folder_check_request = 0
+        self._folder_check_worker = None
         super().__init__(parent)
         self._init_ui()
 
@@ -832,8 +887,28 @@ class FolderFilterPanel(DenseFilterPanel):
             folder, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self._on_folder_toggled()
         )
         widget.set_compact(self._compact_rows)
+        widget.set_missing(folder in self._missing_folders)
         item.setSizeHint(widget.sizeHint())
         self.folder_list.setItemWidget(item, widget)
+
+    def refresh_folder_status(self):
+        """목록의 폴더가 지금 있는지 백그라운드에서 확인해 없는 폴더에 ⚠를 붙입니다(7.1.30)."""
+        folders = [cast(FilterItemWidget, self._widget(row)).text() for row in self._folder_rows()]
+        self._folder_check_request += 1
+        if not folders:
+            self._missing_folders = set()
+            return
+        self._folder_check_worker = check_paths_async(folders, self._apply_folder_status, self._folder_check_request)
+
+    def _apply_folder_status(self, request: int, result: dict):
+        if request != self._folder_check_request:
+            return  # 더 새로운 확인이 있음
+        self._missing_folders = {path for path, exists in result.items() if not exists}
+        for row in self._folder_rows():
+            widget = cast(FilterItemWidget, self._widget(row))
+            if widget.text() in result:
+                widget.set_missing(widget.text() in self._missing_folders)
+        self.folder_status_checked.emit()
 
     def _insert_header_row(self, row: int, name: str, collapsed: bool = False):
         item = QListWidgetItem()
@@ -962,6 +1037,7 @@ class FolderFilterPanel(DenseFilterPanel):
             row = self._ungrouped_end()
         self._insert_folder_row(row, folder, checked)
         self._refresh_groups()
+        self.refresh_folder_status()
         self.filter_changed.emit()
 
     def add_group(self, name: str, collapsed: bool = False) -> bool:
@@ -1083,6 +1159,7 @@ class FolderFilterPanel(DenseFilterPanel):
                 self._insert_folder_row(self.folder_list.count(), folder, folders[folder])
         self._refresh_groups()
         self._refresh_status()
+        self.refresh_folder_status()
 
     def load_state(self, state: dict, groups: Any = None):
         self.restore_state(state, groups)

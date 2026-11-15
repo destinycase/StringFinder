@@ -206,20 +206,7 @@ class SearchTab(QMainWindow):
         result_layout.addWidget(self.results_dock)
         self.setCentralWidget(self.result_container)
         # 설정에서 필터 복원
-        self.folder_panel.blockSignals(True)
-        self.ext_panel.blockSignals(True)
-        self.filename_panel.blockSignals(True)
-        try:
-            filters = self.config_manager.get_filters()
-            self.folder_panel.restore_state(
-                filters.get(Constants.CONFIG_KEY_FOLDERS, {}), filters.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
-            )
-            self.ext_panel.restore_state(filters.get(Constants.CONFIG_KEY_EXTENSIONS, {}))
-            self.filename_panel.restore_state(filters.get(Constants.CONFIG_KEY_FILENAMES, {}))
-        finally:
-            self.folder_panel.blockSignals(False)
-            self.ext_panel.blockSignals(False)
-            self.filename_panel.blockSignals(False)
+        self.apply_config_filters(refresh=False)
         self._load_histories()
         # 도크 레이아웃 복원
         dock_state = self.config_manager.get_dock_state()
@@ -571,6 +558,25 @@ class SearchTab(QMainWindow):
         inputs[Constants.STATE_KEY_INPUTS_TRACKED] = True
         return inputs
 
+    def apply_config_filters(self, refresh: bool = True):
+        """설정에 저장된 검색 조건(폴더·그룹·확장자·파일명)을 이 탭에 넣습니다."""
+        self.folder_panel.blockSignals(True)
+        self.ext_panel.blockSignals(True)
+        self.filename_panel.blockSignals(True)
+        try:
+            filters = self.config_manager.get_filters()
+            self.folder_panel.restore_state(
+                filters.get(Constants.CONFIG_KEY_FOLDERS, {}), filters.get(Constants.CONFIG_KEY_FOLDER_GROUPS)
+            )
+            self.ext_panel.restore_state(filters.get(Constants.CONFIG_KEY_EXTENSIONS, {}))
+            self.filename_panel.restore_state(filters.get(Constants.CONFIG_KEY_FILENAMES, {}))
+        finally:
+            self.folder_panel.blockSignals(False)
+            self.ext_panel.blockSignals(False)
+            self.filename_panel.blockSignals(False)
+        if refresh:
+            self._refresh_filter_ui()
+
     def inherit_conditions_from(self, source):
         """새 탭이 지금 보고 있는 탭의 폴더·그룹·확장자·파일명 필터를 이어받습니다.
 
@@ -789,6 +795,8 @@ class SearchTab(QMainWindow):
                 QMessageBox.warning(self, AppStrings.ERROR_TITLE, str(error))
                 return
             selected_folders = self.folder_panel.get_selected_folders()
+            # 검색할 때 폴더가 아직 있는지 다시 확인해 없는 폴더에 ⚠를 붙입니다(7.1.30).
+            self.folder_panel.refresh_folder_status()
             selected_exts = self.ext_panel.get_selected_extensions()
             special_mode = self.ext_panel.get_special_mode()
             # 입력값 검증

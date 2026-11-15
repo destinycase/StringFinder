@@ -99,6 +99,7 @@ class ConfigManager:
             Constants.CONFIG_KEY_EXCLUDE_BINARY: True,
             Constants.CONFIG_KEY_TABS: [],
             Constants.CONFIG_KEY_CURRENT_TAB: "",
+            Constants.CONFIG_KEY_IMPORTED_CONDITIONS: False,
             Constants.CONFIG_KEY_ADVANCED: {
                 key: spec["default"]
                 for key, spec in Constants.ADVANCED_SETTING_SPECS.items()
@@ -163,96 +164,10 @@ class ConfigManager:
             try:
                 with open(load_path, "r", encoding=Constants.ENC_UTF8) as f:
                     data = json.load(f)
-                    if not isinstance(data, dict):
-                        logger.warning(AppStrings.LOG_CFG_INVALID_VER)
-                        return copy.deepcopy(self._defaults)
-                    loaded_version = data.get(Constants.CONFIG_KEY_VERSION, 0)
-                    if type(loaded_version) is not int or loaded_version < 0:
-                        logger.warning("Invalid configuration version; applying current defaults")
-                        loaded_version = 0
-                    if loaded_version < self.CURRENT_CONFIG_VERSION:
-                        logger.info(AppStrings.LOG_CFG_MIGRATION.format(loaded_version, self.CURRENT_CONFIG_VERSION))
-                        data = self._migrate_config(data, loaded_version)
-                    elif loaded_version > self.CURRENT_CONFIG_VERSION:
-                        logger.warning(
-                            AppStrings.LOG_CFG_MIGRATE_WARN.format(loaded_version, self.CURRENT_CONFIG_VERSION)
-                        )
-                    merged = copy.deepcopy(self._defaults)
-                    for k, v in data.items():
-                        if k in merged and v is not None:
-                            if isinstance(merged[k], list) and not isinstance(v, list):
-                                continue
-                            if isinstance(merged[k], dict) and not isinstance(v, dict):
-                                continue
-                            merged[k] = v
-                    # Validate scalar settings before UI code consumes them.
-                    # A malformed JSON value must not prevent application start.
-                    language = merged.get(Constants.CONFIG_KEY_LANGUAGE)
-                    if not isinstance(language, str) or language not in {"ko", "en"}:
-                        merged[Constants.CONFIG_KEY_LANGUAGE] = self._defaults[
-                            Constants.CONFIG_KEY_LANGUAGE
-                        ]
-                    theme = merged.get(Constants.CONFIG_KEY_THEME)
-                    if not isinstance(theme, str) or theme.lower() not in {"dark", "light", "auto"}:
-                        merged[Constants.CONFIG_KEY_THEME] = self._defaults.get(
-                            Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME
-                        )
-                    if merged.get(Constants.CONFIG_KEY_FILTER_LAYOUT) not in (
-                        Constants.FILTER_LAYOUT_TABS,
-                        Constants.FILTER_LAYOUT_STACKED,
-                    ):
-                        merged[Constants.CONFIG_KEY_FILTER_LAYOUT] = Constants.DEFAULT_FILTER_LAYOUT
-                    # 예전 키의 값(대부분 당시 기본값)은 쓰지 않고 지웁니다.
-                    merged.pop(Constants.LEGACY_CONFIG_KEY_FILTER_LAYOUT, None)
-                    for key in (
-                        Constants.CONFIG_KEY_COMPACT_RESULT_ROWS,
-                        Constants.CONFIG_KEY_EXCLUDE_HIDDEN,
-                        Constants.CONFIG_KEY_EXCLUDE_BINARY,
-                        Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT,
-                    ):
-                        if not isinstance(merged.get(key), bool):
-                            merged[key] = self._defaults[key]
-                    for key in (
-                        Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES,
-                        Constants.CONFIG_KEY_CONTEXT_AFTER_LINES,
-                    ):
-                        merged[key] = self._normalize_bounded_int(
-                            merged.get(key),
-                            self._defaults[key],
-                            0,
-                            Constants.MAX_CONTEXT_PREVIEW_LINES,
-                        )
-                    for key in (
-                        Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS,
-                        Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS,
-                    ):
-                        default_widths = self._defaults[key]
-                        widths = merged.get(key)
-                        if (
-                            not isinstance(widths, list)
-                            or len(widths) != len(default_widths)
-                            or any(type(width) is not int or not 0 <= width <= 10_000 for width in widths)
-                        ):
-                            merged[key] = copy.deepcopy(default_widths)
-                    for key in (
-                        Constants.CONFIG_KEY_GEOMETRY,
-                        Constants.CONFIG_KEY_WINDOW_STATE,
-                        Constants.CONFIG_KEY_MAIN_SPLITTER_STATE,
-                        Constants.CONFIG_KEY_RESULT_SPLITTER_STATE,
-                        Constants.CONFIG_KEY_FILTER_SPLITTER_STATE,
-                        Constants.CONFIG_KEY_DOCK_LAYOUT_STATE,
-                    ):
-                        value = merged.get(key)
-                        if value is not None and not isinstance(value, str):
-                            merged[key] = self._defaults.get(key)
-                    merged[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(
-                        merged.get(Constants.CONFIG_KEY_ADVANCED),
-                    )
-                    merged[Constants.CONFIG_KEY_LOG_RETENTION] = self._normalize_log_retention(
-                        merged.get(Constants.CONFIG_KEY_LOG_RETENTION)
-                    )
-                    merged = self._apply_default_version_updates(merged, data)
-                    return merged
+                if not isinstance(data, dict):
+                    logger.warning(AppStrings.LOG_CFG_INVALID_VER)
+                    return copy.deepcopy(self._defaults)
+                return self._normalize_config_data(data)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning(AppStrings.LOG_CFG_LOAD_FAIL.format(e))
                 self._backup_unreadable_config()
@@ -261,6 +176,100 @@ class ConfigManager:
             except Exception as e:
                 logger.error(AppStrings.LOG_CFG_UNEXPECTED_LOAD_ERROR.format(e))
         return copy.deepcopy(self._defaults)
+
+    def _normalize_config_data(self, data: dict) -> dict:
+        """읽은 설정을 지금 형식으로 바꿉니다. 예전 키는 옮기고, 모르는 키는 버리고, 없거나 잘못된 값은 기본값으로 채웁니다.
+
+        설정 파일을 읽을 때와 설정 불러오기(7.1.30)가 같이 씁니다.
+        """
+        loaded_version = data.get(Constants.CONFIG_KEY_VERSION, 0)
+        if type(loaded_version) is not int or loaded_version < 0:
+            logger.warning("Invalid configuration version; applying current defaults")
+            loaded_version = 0
+        if loaded_version < self.CURRENT_CONFIG_VERSION:
+            logger.info(AppStrings.LOG_CFG_MIGRATION.format(loaded_version, self.CURRENT_CONFIG_VERSION))
+            data = self._migrate_config(data, loaded_version)
+        elif loaded_version > self.CURRENT_CONFIG_VERSION:
+            logger.warning(
+                AppStrings.LOG_CFG_MIGRATE_WARN.format(loaded_version, self.CURRENT_CONFIG_VERSION)
+            )
+        merged = copy.deepcopy(self._defaults)
+        for k, v in data.items():
+            if k in merged and v is not None:
+                if isinstance(merged[k], list) and not isinstance(v, list):
+                    continue
+                if isinstance(merged[k], dict) and not isinstance(v, dict):
+                    continue
+                merged[k] = v
+        # Validate scalar settings before UI code consumes them.
+        # A malformed JSON value must not prevent application start.
+        language = merged.get(Constants.CONFIG_KEY_LANGUAGE)
+        if not isinstance(language, str) or language not in {"ko", "en"}:
+            merged[Constants.CONFIG_KEY_LANGUAGE] = self._defaults[
+                Constants.CONFIG_KEY_LANGUAGE
+            ]
+        theme = merged.get(Constants.CONFIG_KEY_THEME)
+        if not isinstance(theme, str) or theme.lower() not in {"dark", "light", "auto"}:
+            merged[Constants.CONFIG_KEY_THEME] = self._defaults.get(
+                Constants.CONFIG_KEY_THEME, Constants.DEFAULT_THEME
+            )
+        if merged.get(Constants.CONFIG_KEY_FILTER_LAYOUT) not in (
+            Constants.FILTER_LAYOUT_TABS,
+            Constants.FILTER_LAYOUT_STACKED,
+        ):
+            merged[Constants.CONFIG_KEY_FILTER_LAYOUT] = Constants.DEFAULT_FILTER_LAYOUT
+        # 예전 키의 값(대부분 당시 기본값)은 쓰지 않고 지웁니다.
+        merged.pop(Constants.LEGACY_CONFIG_KEY_FILTER_LAYOUT, None)
+        for key in (
+            Constants.CONFIG_KEY_IMPORTED_CONDITIONS,
+            Constants.CONFIG_KEY_COMPACT_RESULT_ROWS,
+            Constants.CONFIG_KEY_EXCLUDE_HIDDEN,
+            Constants.CONFIG_KEY_EXCLUDE_BINARY,
+            Constants.CONFIG_KEY_LOCK_DOCK_LAYOUT,
+        ):
+            if not isinstance(merged.get(key), bool):
+                merged[key] = self._defaults[key]
+        for key in (
+            Constants.CONFIG_KEY_CONTEXT_BEFORE_LINES,
+            Constants.CONFIG_KEY_CONTEXT_AFTER_LINES,
+        ):
+            merged[key] = self._normalize_bounded_int(
+                merged.get(key),
+                self._defaults[key],
+                0,
+                Constants.MAX_CONTEXT_PREVIEW_LINES,
+            )
+        for key in (
+            Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS,
+            Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS,
+        ):
+            default_widths = self._defaults[key]
+            widths = merged.get(key)
+            if (
+                not isinstance(widths, list)
+                or len(widths) != len(default_widths)
+                or any(type(width) is not int or not 0 <= width <= 10_000 for width in widths)
+            ):
+                merged[key] = copy.deepcopy(default_widths)
+        for key in (
+            Constants.CONFIG_KEY_GEOMETRY,
+            Constants.CONFIG_KEY_WINDOW_STATE,
+            Constants.CONFIG_KEY_MAIN_SPLITTER_STATE,
+            Constants.CONFIG_KEY_RESULT_SPLITTER_STATE,
+            Constants.CONFIG_KEY_FILTER_SPLITTER_STATE,
+            Constants.CONFIG_KEY_DOCK_LAYOUT_STATE,
+        ):
+            value = merged.get(key)
+            if value is not None and not isinstance(value, str):
+                merged[key] = self._defaults.get(key)
+        merged[Constants.CONFIG_KEY_ADVANCED] = self._normalize_advanced_settings(
+            merged.get(Constants.CONFIG_KEY_ADVANCED),
+        )
+        merged[Constants.CONFIG_KEY_LOG_RETENTION] = self._normalize_log_retention(
+            merged.get(Constants.CONFIG_KEY_LOG_RETENTION)
+        )
+        merged = self._apply_default_version_updates(merged, data)
+        return merged
 
     def _backup_unreadable_config(self) -> None:
         """읽지 못한 설정 파일을 기본값으로 덮어쓰기 전에 옆에 보관합니다(검수 E-1).
@@ -382,6 +391,9 @@ class ConfigManager:
 
     def save_immediately(self) -> bool:
         """설정 파일을 원자적으로 즉시 저장한다."""
+        if self.__dict__.get("_frozen_after_import"):
+            # 불러온 설정을 쓴 뒤 종료하는 동안 창 크기 등이 다시 저장되어 덮어쓰지 않게 합니다.
+            return True
         # 교착 상태 방지: _save_lock을 먼저 획득한 후 내부에서 _config_lock을 잡습니다.
         # 다른 메서드들과의 획득 순서를 일원화합니다.
         with self._save_lock:
@@ -625,6 +637,120 @@ class ConfigManager:
                 return
             self._config[Constants.CONFIG_KEY_CURRENT_TAB] = name if isinstance(name, str) else ""
         self.save()
+
+    # ----- 설정 내보내기·불러오기(7.1.30) -----
+    SETTINGS_SECTION_KEYS = {
+        Constants.SETTINGS_SECTION_LAYOUT: (
+            Constants.CONFIG_KEY_GEOMETRY,
+            Constants.CONFIG_KEY_WINDOW_STATE,
+            Constants.CONFIG_KEY_MAIN_SPLITTER_STATE,
+            Constants.CONFIG_KEY_RESULT_SPLITTER_STATE,
+            Constants.CONFIG_KEY_FILTER_SPLITTER_STATE,
+            Constants.CONFIG_KEY_RESULT_COLUMN_WIDTHS,
+            Constants.CONFIG_KEY_MATCH_COLUMN_WIDTHS,
+            Constants.CONFIG_KEY_DOCK_LAYOUT_STATE,
+        ),
+        Constants.SETTINGS_SECTION_CONDITIONS: (Constants.CONFIG_KEY_FILTERS,),
+        Constants.SETTINGS_SECTION_HISTORY: (Constants.CONFIG_KEY_HISTORY,),
+    }
+    # 내보내지 않는 키: 탭 구성, 파일명 입력 기록, 내부 표시.
+    SETTINGS_EXCLUDED_KEYS = (
+        Constants.CONFIG_KEY_VERSION,
+        Constants.CONFIG_KEY_TABS,
+        Constants.CONFIG_KEY_CURRENT_TAB,
+        Constants.CONFIG_KEY_FILENAME_HISTORY,
+        Constants.CONFIG_KEY_IMPORTED_CONDITIONS,
+    )
+
+    def _section_keys(self, section: str) -> tuple:
+        if section == Constants.SETTINGS_SECTION_SETTINGS:
+            taken = {key for keys in self.SETTINGS_SECTION_KEYS.values() for key in keys}
+            return tuple(
+                key for key in self._defaults
+                if key not in taken and key not in self.SETTINGS_EXCLUDED_KEYS
+            )
+        return self.SETTINGS_SECTION_KEYS.get(section, ())
+
+    def build_settings_export(self, exported_at: str) -> dict:
+        """지금 설정을 네 묶음(설정·창 크기·검색 조건·검색 히스토리)으로 담은 내보내기 내용을 만듭니다."""
+        with self._config_lock:
+            config = copy.deepcopy(self._config)
+        sections = {
+            section: {key: config.get(key, copy.deepcopy(self._defaults.get(key))) for key in self._section_keys(section)}
+            for section in Constants.SETTINGS_SECTIONS
+        }
+        return {
+            Constants.SETTINGS_EXPORT_FORMAT_KEY: Constants.SETTINGS_EXPORT_FORMAT,
+            Constants.SETTINGS_EXPORT_FORMAT_VERSION_KEY: Constants.SETTINGS_EXPORT_FORMAT_VERSION,
+            "app_version": AppStrings.APP_VERSION,
+            "exported_at": exported_at,
+            "config_version": self.CURRENT_CONFIG_VERSION,
+            "sections": sections,
+        }
+
+    @staticmethod
+    def parse_settings_export(data) -> dict:
+        """StringFinder 설정 내보내기 파일인지 확인합니다. 아니면 ValueError("invalid"|"newer")를 냅니다."""
+        if (
+            not isinstance(data, dict)
+            or data.get(Constants.SETTINGS_EXPORT_FORMAT_KEY) != Constants.SETTINGS_EXPORT_FORMAT
+            or not isinstance(data.get("sections"), dict)
+        ):
+            raise ValueError("invalid")
+        version = data.get(Constants.SETTINGS_EXPORT_FORMAT_VERSION_KEY)
+        if type(version) is not int or version < 1:
+            raise ValueError("invalid")
+        if version > Constants.SETTINGS_EXPORT_FORMAT_VERSION:
+            raise ValueError("newer")
+        return data
+
+    def import_settings(self, data: dict, sections, backup_name: str) -> str:
+        """고른 묶음만 덮어써 저장하고, 종료하는 동안 더 저장하지 않게 잠급니다. 백업 파일 경로를 돌려줍니다.
+
+        파일의 묶음 내용은 설정 파일을 읽을 때와 같은 과정을 거칩니다. 지금 없는 설정은 버리고,
+        파일에 없거나 잘못된 설정은 기본값이 됩니다.
+        """
+        import shutil
+
+        data = self.parse_settings_export(data)
+        file_sections = data["sections"]
+        chosen = [section for section in Constants.SETTINGS_SECTIONS
+                  if section in sections and isinstance(file_sections.get(section), dict)]
+        raw: dict = {}
+        for section in chosen:
+            allowed = set(self._section_keys(section))
+            raw.update({key: value for key, value in file_sections[section].items() if key in allowed})
+        config_version = data.get("config_version")
+        raw[Constants.CONFIG_KEY_VERSION] = config_version if type(config_version) is int and config_version >= 0 else 0
+        normalized = self._normalize_config_data(raw)
+
+        backup_path = os.path.join(self.config_dir, backup_name)
+        if os.path.exists(self.config_path):
+            shutil.copy2(self.config_path, backup_path)
+        with self._config_lock:
+            for section in chosen:
+                for key in self._section_keys(section):
+                    self._config[key] = copy.deepcopy(normalized.get(key, self._defaults.get(key)))
+            if Constants.SETTINGS_SECTION_CONDITIONS in chosen:
+                # 다시 켰을 때 처음 보이는 탭에도 불러온 검색 조건을 넣습니다.
+                self._config[Constants.CONFIG_KEY_IMPORTED_CONDITIONS] = True
+        if Constants.SETTINGS_SECTION_CONDITIONS in chosen:
+            self._ensure_filters_dict()
+        if not self.save_immediately():
+            raise OSError(self.config_path)
+        self._frozen_after_import = True
+        logger.info(AppStrings.LOG_CFG_SETTINGS_IMPORTED.format(", ".join(chosen), backup_path))
+        return backup_path
+
+    def take_imported_conditions_flag(self) -> bool:
+        """불러온 검색 조건을 아직 탭에 넣지 않았으면 True를 돌려주고 표시를 지웁니다."""
+        with self._config_lock:
+            pending = self._config.get(Constants.CONFIG_KEY_IMPORTED_CONDITIONS) is True
+            if pending:
+                self._config[Constants.CONFIG_KEY_IMPORTED_CONDITIONS] = False
+        if pending:
+            self.save()
+        return pending
 
     def _sanitize_session_name(self, name: str) -> str:
         """세션 이름을 안전한 파일명으로 정규화한다."""

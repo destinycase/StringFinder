@@ -30,6 +30,9 @@ from ui.styles import UIStyles
 
 class SettingsDialog(QDialog):
     display_density_changed = Signal()
+    # 설정 내보내기·불러오기는 탭·창 상태가 필요해 메인 창이 처리합니다(7.1.30).
+    export_settings_requested = Signal()
+    import_settings_requested = Signal()
 
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
@@ -248,6 +251,12 @@ class SettingsDialog(QDialog):
         open_dir_btn = QPushButton(AppStrings.OPEN_DATA_DIR_BTN)
         open_dir_btn.clicked.connect(self._open_data_dir)
         tab_general_layout.addWidget(open_dir_btn)
+        self.export_settings_btn = QPushButton(AppStrings.SETTINGS_EXPORT_BTN)
+        self.export_settings_btn.clicked.connect(self.export_settings_requested.emit)
+        tab_general_layout.addWidget(self.export_settings_btn)
+        self.import_settings_btn = QPushButton(AppStrings.SETTINGS_IMPORT_BTN)
+        self.import_settings_btn.clicked.connect(self.import_settings_requested.emit)
+        tab_general_layout.addWidget(self.import_settings_btn)
         clear_data_btn = QPushButton(AppStrings.CLEAR_ALL_DATA_BTN)
         clear_data_btn.setStyleSheet(f"QPushButton {{ {UIStyles.STYLE_DANGER_TEXT} }}")
         clear_data_btn.clicked.connect(self._clear_all_data)

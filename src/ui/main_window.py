@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QFileDialog,
     QDialogButtonBox,
     QHBoxLayout,
     QInputDialog,
@@ -227,6 +228,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.currentChanged.connect(self._sync_status_bar_with_active_tab)
         self.tab_widget.currentChanged.connect(self._reload_shared_settings_in_tab)
         self._load_all_tabs()
+        self._apply_imported_conditions()
 
     def _show_search_help(self):
         """Keep local search guidance available without blocking a running search."""
@@ -512,8 +514,85 @@ class MainWindow(QMainWindow):
         """설정 다이얼로그를 모달 형식으로 띄우고 변경 사항을 반영합니다."""
         dialog = SettingsDialog(self.config_manager, self)
         dialog.display_density_changed.connect(self._apply_display_density)
+        dialog.export_settings_requested.connect(lambda: self.export_settings(dialog))
+        dialog.import_settings_requested.connect(lambda: self.import_settings(dialog))
         if dialog.exec():
             self._apply_theme()
+
+    def _prepare_settings_export(self):
+        """화면에 보이는 그대로 담기도록 창 상태·배치·보이는 탭의 검색 조건을 먼저 저장합니다."""
+        self.config_manager.set_window_state(self.saveGeometry(), self.saveState())
+        tab = self.tab_widget.currentWidget()
+        if isinstance(tab, SearchTab):
+            tab.save_shared_layout()
+            tab._sync_filters_to_config()
+
+    def export_settings(self, parent=None):
+        """설정을 StringFinder_Settings_년월일_시분초.json으로 내보냅니다(7.1.30)."""
+        from datetime import datetime
+
+        from ui.settings_transfer import export_file_name, write_export_file
+
+        parent = parent or self
+        now = datetime.now()
+        default_path = os.path.join(os.path.expanduser("~"), export_file_name(now))
+        path, _ = QFileDialog.getSaveFileName(parent, AppStrings.SETTINGS_EXPORT_TITLE, default_path,
+                                              AppStrings.SETTINGS_FILE_FILTER)
+        if not path:
+            return None
+        self._prepare_settings_export()
+        try:
+            payload = self.config_manager.build_settings_export(now.strftime("%Y-%m-%d %H:%M:%S"))
+            write_export_file(path, payload)
+        except (OSError, TypeError, ValueError) as error:
+            QMessageBox.warning(parent, AppStrings.SETTINGS_EXPORT_TITLE, AppStrings.SETTINGS_EXPORT_FAIL.format(error))
+            return None
+        logger.info(AppStrings.LOG_CFG_SETTINGS_EXPORTED.format(path))
+        QMessageBox.information(parent, AppStrings.SETTINGS_EXPORT_TITLE, AppStrings.SETTINGS_EXPORT_DONE.format(path))
+        return path
+
+    def import_settings(self, parent=None):
+        """StringFinder 설정 파일인지 확인하고, 고른 묶음을 덮어쓴 뒤 프로그램을 종료합니다(7.1.30)."""
+        from datetime import datetime
+
+        from ui.settings_transfer import SettingsImportDialog, read_export_file
+
+        parent = parent or self
+        if self._search_lock_owner is not None:
+            QMessageBox.warning(parent, AppStrings.SETTINGS_IMPORT_TITLE, AppStrings.SETTINGS_IMPORT_BLOCKED_SEARCHING)
+            return False
+        path, _ = QFileDialog.getOpenFileName(parent, AppStrings.SETTINGS_IMPORT_TITLE, os.path.expanduser("~"),
+                                              AppStrings.SETTINGS_FILE_FILTER)
+        if not path:
+            return False
+        try:
+            data = self.config_manager.parse_settings_export(read_export_file(path))
+        except ValueError as error:
+            message = AppStrings.SETTINGS_IMPORT_NEWER if str(error) == "newer" else AppStrings.SETTINGS_IMPORT_INVALID
+            QMessageBox.warning(parent, AppStrings.SETTINGS_IMPORT_TITLE, message)
+            return False
+        dialog = SettingsImportDialog(data, path, parent)
+        if not dialog.exec():
+            return False
+        backup_name = f"config_backup_before_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        try:
+            self.config_manager.import_settings(data, dialog.selected_sections(), backup_name)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(parent, AppStrings.SETTINGS_IMPORT_TITLE, AppStrings.SETTINGS_IMPORT_FAIL.format(error))
+            return False
+        if isinstance(parent, QDialog) and parent is not self:
+            parent.reject()
+        QTimer.singleShot(0, self.close)
+        return True
+
+    def _apply_imported_conditions(self):
+        """불러온 검색 조건을 다시 켠 뒤 처음 보이는 탭에 넣습니다(7.1.30)."""
+        if not self.config_manager.take_imported_conditions_flag():
+            return
+        tab = self.tab_widget.currentWidget()
+        if isinstance(tab, SearchTab):
+            tab.apply_config_filters()
+            self._save_tab_inputs(tab)
 
     def _reload_shared_settings_in_tab(self, index):
         """탭을 바꿀 때 떠나는 탭의 배치를 저장하고, 새 탭에 공통 설정·히스토리·배치를 적용합니다."""
