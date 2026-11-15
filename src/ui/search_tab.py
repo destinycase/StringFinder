@@ -650,7 +650,7 @@ class SearchTab(QMainWindow):
             if Constants.CONFIG_KEY_FOLDERS in inputs:
                 self.folder_panel.load_state(inputs[Constants.CONFIG_KEY_FOLDERS], self._session_folder_groups(inputs))
 
-        # 지금 형식이 아닌 세션(7.2.3 이전)은 검색 조건만 살리고 결과는 다시 검색하게 합니다.
+        # 지금 형식이 아닌 세션(7.2.5 이전)은 검색 조건만 살리고 결과는 다시 검색하게 합니다.
         retired_results = state.get(Constants.STATE_KEY_SESSION_FORMAT) != Constants.SESSION_FORMAT_VERSION
 
         # Restore result-producing conditions separately from editable drafts.
