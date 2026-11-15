@@ -10,6 +10,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QRunnable,
 
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
+from ui.widgets import GROUP_ROLE
 
 logger = logging.getLogger(__name__)
 
@@ -551,8 +552,6 @@ class MatchDetailModel(QAbstractTableModel):
         self._cache: Dict[int, SearchMatchSchema] = {}
         self._filtered_indices: Union[range, List[int]] = range(0)
         self.multi_file = False
-        # 여러 파일을 고를 때 파일별 묶음(머리줄)으로 보일지입니다. 꺼져 있으면 맨 앞 파일 칸으로 보입니다.
-        self.group_by_file = False
         # 머리줄에 붙일 기타 칸 짧은 문구를 찾는 함수입니다(파일 목록 모델이 넘김).
         self.note_lookup = None
         self._page_size = 100
@@ -571,23 +570,9 @@ class MatchDetailModel(QAbstractTableModel):
         return self._total
 
     @property
-    def show_file_column(self) -> bool:
-        return self.multi_file and not self.group_by_file
-
-    @property
     def grouped(self) -> bool:
-        return self.multi_file and self.group_by_file
-
-    def set_group_by_file(self, enabled: bool):
-        """보기 방식을 바꾸고 지금 페이지를 다시 그립니다."""
-        enabled = bool(enabled)
-        if enabled == self.group_by_file:
-            return
-        self.beginResetModel()
-        self.group_by_file = enabled
-        self._load_current_page_data_no_reset()
-        self.endResetModel()
-        self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, max(0, self.columnCount() - 1))
+        """여러 파일을 고르면 파일마다 머리줄을 두고 그 아래에 결과를 보입니다(7.1.27부터 이 방식만 씀)."""
+        return self.multi_file
 
     def is_group_row(self, row: int) -> bool:
         return 0 <= row < len(self._data) and isinstance(self._data[row], FileGroupHeader)
@@ -599,6 +584,8 @@ class MatchDetailModel(QAbstractTableModel):
         return super().flags(index)
 
     def _group_header_data(self, header: "FileGroupHeader", col: int, role):
+        if role == GROUP_ROLE:
+            return "header"
         if role == Qt.ItemDataRole.BackgroundRole:
             from PySide6.QtGui import QColor
 
@@ -607,7 +594,7 @@ class MatchDetailModel(QAbstractTableModel):
             return "" if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole) else None
         note = self.note_lookup(header.path) if callable(self.note_lookup) else ""
         if role == Qt.ItemDataRole.DisplayRole:
-            parts = [f"<b>{escape(header.path)}</b>",
+            parts = [f"📄 <b>{escape(header.path)}</b>",
                      f"<span style='color: #9aa0a6;'>{escape(AppStrings.GROUP_HEADER_COUNT.format(f'{header.count:,}'))}</span>"]
             if header.continued:
                 parts.append(f"<span style='color: #9aa0a6;'>· {escape(AppStrings.GROUP_HEADER_CONTINUED)}</span>")
@@ -628,10 +615,9 @@ class MatchDetailModel(QAbstractTableModel):
     def columnCount(self, parent=QModelIndex()):
         # [UX] 검색 모드에 따라 컬럼 수 결정 (Normal은 1컬럼, 나머지는 헤더 수만큼)
         search_mode = str(self.search_mode or Constants.MODE_NORMAL)
-        file_col = 1 if self.show_file_column else 0
         if search_mode == Constants.MODE_NORMAL or search_mode == AppStrings.SPECIAL_SEARCH_OFF:
-            return 1 + file_col
-        return len(self._headers) + file_col
+            return 1
+        return len(self._headers)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or not (0 <= index.row() < len(self._data)):
@@ -643,17 +629,9 @@ class MatchDetailModel(QAbstractTableModel):
         row_path = row_data.source_path or self.current_file_path or ""
         if role == Qt.ItemDataRole.UserRole:
             return row_path
-        if self.show_file_column:
-            # 여러 파일을 합쳐 볼 때 맨 앞 칸은 파일 이름입니다. 복사·거르기용 값과 설명은 전체 경로입니다.
-            if col == 0:
-                if role == Qt.ItemDataRole.DisplayRole:
-                    return escape(os.path.basename(row_path))
-                if role in (Qt.ItemDataRole.EditRole, Qt.ItemDataRole.ToolTipRole):
-                    return row_path
-                if role == Qt.ItemDataRole.TextAlignmentRole:
-                    return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-                return None
-            col -= 1
+        if role == GROUP_ROLE:
+            # 묶음 안의 결과는 첫 칸을 들여써서 머리줄 아래 소속임을 보입니다.
+            return "child" if self.grouped and col == 0 else None
 
         # search_mode가 None일 경우를 대비한 안전 로직
         search_mode = str(self.search_mode or Constants.MODE_NORMAL)
@@ -851,10 +829,6 @@ class MatchDetailModel(QAbstractTableModel):
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             mode = self.search_mode or Constants.MODE_NORMAL
-            if self.show_file_column:
-                if section == 0:
-                    return AppStrings.HEADER_FILE
-                section -= 1
             if (mode == Constants.MODE_NORMAL or mode == AppStrings.SPECIAL_SEARCH_OFF) and section == 0:
                 return AppStrings.HEADER_LIST
             if section < len(self._headers):

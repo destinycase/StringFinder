@@ -621,7 +621,6 @@ class ResultView(QWidget):
         self.file_info_header.setVisible(False)
         self.match_view = QTableView()
         self.match_model = MatchDetailModel()
-        self.match_model.group_by_file = self.config_manager.get(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, False) is True
         self.match_model.note_lookup = lambda path: self.result_model.short_note_for(path)
         self.match_proxy_model = MatchProxyModel()
         self.match_proxy_model.setSourceModel(self.match_model)
@@ -1062,28 +1061,22 @@ class ResultView(QWidget):
             self.match_view.selectRow(row)
 
     def _apply_group_spans(self):
-        """파일별 묶음 보기의 머리줄이 표 전체 폭을 차지하게 합니다(7.1.26)."""
+        """파일 머리줄이 표 전체 폭을 차지하고, 위쪽 여백·윗선 몫만큼 높게 보이게 합니다(7.1.26~7.1.27).
+
+        지금 페이지의 행만 봅니다(행 높이를 내용에 맞춰 다시 재는 계산은 쓰지 않음).
+        """
+        from ui.widgets import GROUP_HEADER_GAP, GROUP_HEADER_LINE
+
         view = self.match_view
         view.clearSpans()
         columns = self.match_proxy_model.columnCount()
-        if columns <= 1:
-            return
+        header_height = view.verticalHeader().defaultSectionSize() + GROUP_HEADER_GAP + GROUP_HEADER_LINE
         for row in range(self.match_proxy_model.rowCount()):
             source_row = self.match_proxy_model.mapToSource(self.match_proxy_model.index(row, 0)).row()
             if self.match_model.is_group_row(source_row):
-                view.setSpan(row, 0, 1, columns)
-
-    def apply_match_view_mode(self):
-        """설정의 여러 파일 상세 목록 보기 방식을 적용합니다."""
-        grouped = self.config_manager.get(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, False) is True
-        if grouped == self.match_model.group_by_file:
-            return
-        self.match_model.set_group_by_file(grouped)
-        self.match_view.reset()
-        self._apply_group_spans()
-        self._adjust_match_column_widths()
-        if self.match_model.match_count > 0:
-            self._select_first_match_row()
+                if columns > 1:
+                    view.setSpan(row, 0, 1, columns)
+                view.setRowHeight(row, header_height)
 
     def _on_match_column_resized(self, index, _old_width, _new_width):
         """상세 뷰의 컬럼 크기가 변경될 때 호출되는 로그 핸들러"""
@@ -1612,7 +1605,7 @@ class ResultView(QWidget):
 
     def apply_display_density(self):
         """공통 표시 설정을 두 표에 적용하며 문맥 미리보기는 유지합니다."""
-        self.apply_match_view_mode()
+        self._apply_group_spans()
         compact = self.config_manager.get(Constants.CONFIG_KEY_COMPACT_RESULT_ROWS, True) is True
         for view, normal_height in (
             (self.result_view, self._normal_result_row_height),
@@ -2122,15 +2115,9 @@ class ResultView(QWidget):
             for i in range(self.match_proxy_model.columnCount()):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
 
-            if self.search_mode == Constants.MODE_NORMAL and not self.match_model.show_file_column:
+            if self.search_mode == Constants.MODE_NORMAL:
                 # 일반 모드(단일 컬럼)는 항상 뷰포트에 꽉 채우도록 설정
                 header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            elif self.search_mode == Constants.MODE_NORMAL:
-                # 여러 파일: 파일 이름 칸은 내용에 맞추고(최대 260px) 목록 칸이 나머지를 채웁니다.
-                self.match_view.resizeColumnToContents(0)
-                if self.match_view.columnWidth(0) > 260:
-                    self.match_view.setColumnWidth(0, 260)
-                header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             else:
                 # 특수 검색 모드(다중 컬럼)
                 # [M-04] 상세 뷰도 대용량(1000행 초과)일 경우 자동 리사이즈 생략

@@ -68,14 +68,13 @@ def test_multiple_selected_files_are_combined_in_list_order(qtbot, mock_config_m
     _select_rows(view, [0, 1, 2])
     qtbot.waitUntil(lambda: view.match_model.multi_file)
     model = view.match_model
-    assert model.columnCount() == 2
-    assert model.headerData(0, Qt.Orientation.Horizontal) == AppStrings.HEADER_FILE
+    # 파일 칸 방식은 없앴고(7.1.27) 파일마다 머리줄이 붙습니다.
+    assert model.columnCount() == 1 and model.grouped
     order = [_path_of_row(view, r) for r in range(3)]
-    shown_paths = [row[0] for row in _rows(view)]
-    assert list(dict.fromkeys(shown_paths)) == order
+    header_paths = [model.data(model.index(r, 0), Qt.ItemDataRole.UserRole)
+                    for r in range(model.rowCount()) if model.is_group_row(r)]
+    assert header_paths == order
     assert model.match_count == 6
-    assert model.data(model.index(0, 0)) == order[0].split("/")[-1]
-    assert model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole) == order[0]
     assert AppStrings.SELECTED_FILES_INFO_TEMPLATE.format(3, "6") == view.file_info_label.text()
 
 
@@ -91,12 +90,12 @@ def test_clicking_combined_row_previews_and_opens_that_rows_file(qtbot, mock_con
     _select_rows(view, [0, 1, 2])
     qtbot.waitUntil(lambda: view.match_model.multi_file)
     last = view.match_proxy_model.rowCount() - 1
-    expected = _rows(view)[last][0]
+    expected = view.match_model.data(view.match_model.index(last, 0), Qt.ItemDataRole.UserRole)
     opened = []
     view.match_double_clicked.connect(lambda path, line: opened.append((path, line)))
-    view._on_match_clicked(view.match_proxy_model.index(last, 1))
+    view._on_match_clicked(view.match_proxy_model.index(last, 0))
     assert view.selected_file_path == expected and view.match_model.current_file_path == expected
-    view._emit_match_open(view.match_proxy_model.index(last, 1))
+    view._emit_match_open(view.match_proxy_model.index(last, 0))
     assert opened and opened[-1][0] == expected
 
 
@@ -107,7 +106,8 @@ def test_detail_only_normalizes_the_visible_page():
     model.set_files([("D:/x/big1.txt", big), ("D:/x/big2.txt", big)], "sword", Constants.MODE_NORMAL)
     elapsed = time.perf_counter() - started
     assert model.match_count == 400_000
-    assert model.rowCount() == 100 and len(model._cache) <= 100
+    # 머리줄(첫 파일 하나)을 더해 101줄, 정리한 결과는 한 페이지 분량뿐입니다.
+    assert model.rowCount() == 101 and len(model._cache) <= 100
     assert elapsed < 2.0
     model.go_to_page(model.get_total_pages())
     last = model.get_match(model.rowCount() - 1)
@@ -175,7 +175,6 @@ def _grouped_model(entries, page_size=100):
     from ui.models import FileGroupHeader
 
     model = MatchDetailModel()
-    model.group_by_file = True
     model.set_page_size(page_size)
     model.set_files(entries, "", Constants.MODE_NORMAL)
     return model, FileGroupHeader
@@ -229,33 +228,52 @@ def test_single_file_is_same_in_both_modes():
     assert not any(isinstance(row, header_cls) for row in model._data) and model.columnCount() == 1
 
 
-def test_setting_switches_open_detail_view(qtbot, mock_config_manager):
+def test_group_rows_are_taller_spanned_and_skipped_by_selection(qtbot, mock_config_manager):
+    from ui.widgets import GROUP_HEADER_GAP, GROUP_HEADER_LINE, GROUP_ROLE
+
     view = _view(qtbot, mock_config_manager)
     _select_rows(view, [0, 1, 2])
     qtbot.waitUntil(lambda: view.match_model.multi_file)
-    assert view.match_model.columnCount() == 2
-    mock_config_manager.set(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, True)
-    view.apply_display_density()
-    assert view.match_model.grouped and view.match_model.columnCount() == 1
-    assert view.match_model.is_group_row(0)
-    # 복사는 고른 결과 행만 대상입니다(머리줄은 고를 수 없음).
+    model = view.match_model
+    default = view.match_view.verticalHeader().defaultSectionSize()
+    for row in range(model.rowCount()):
+        if model.is_group_row(row):
+            assert view.match_view.rowHeight(row) == default + GROUP_HEADER_GAP + GROUP_HEADER_LINE
+            assert model.data(model.index(row, 0), GROUP_ROLE) == "header"
+            assert "📄" in model.data(model.index(row, 0))
+        else:
+            assert view.match_view.rowHeight(row) == default
+            assert model.data(model.index(row, 0), GROUP_ROLE) == "child"
     view.match_view.selectAll()
     selected_rows = {index.row() for index in view.match_view.selectionModel().selectedRows()}
-    assert all(not view.match_model.is_group_row(row) for row in selected_rows)
-    mock_config_manager.set(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE, False)
-    view.apply_display_density()
-    assert view.match_model.columnCount() == 2 and not view.match_model.is_group_row(0)
+    assert selected_rows and all(not model.is_group_row(row) for row in selected_rows)
 
 
-def test_settings_dialog_has_match_view_option(qtbot, mock_config_manager):
-    from ui.settings_dialog import SettingsDialog
+def test_single_file_rows_are_not_indented(qtbot, mock_config_manager):
+    from ui.widgets import GROUP_ROLE
 
-    dialog = SettingsDialog(mock_config_manager)
-    qtbot.addWidget(dialog)
-    combo = dialog.match_view_combo
-    assert combo.currentData() is False
-    assert [combo.itemText(i) for i in range(combo.count())] == [AppStrings.MATCH_VIEW_FILE_COLUMN, AppStrings.MATCH_VIEW_GROUPED]
-    emitted = []
-    dialog.display_density_changed.connect(lambda: emitted.append(1))
-    combo.setCurrentIndex(1)
-    assert mock_config_manager.get(Constants.CONFIG_KEY_MATCH_GROUP_BY_FILE) is True and emitted
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0])
+    qtbot.waitUntil(lambda: view.match_model.match_count > 0)
+    assert view.match_model.data(view.match_model.index(0, 0), GROUP_ROLE) is None
+
+
+def test_page_switch_stays_fast_with_large_grouped_detail(qtbot, mock_config_manager):
+    """머리줄 여백·들여쓰기를 넣어도 큰 결과의 페이지 전환은 보는 페이지만 다룹니다(7.1.27)."""
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    view.set_search_context("x", Constants.MODE_NORMAL)
+    files = [[2000, f"f{i}.txt", "D:/d", f"D:/d/f{i}.txt", [[n, f"x {n}", 0, 1] for n in range(1, 2001)]]
+             for i in range(200)]
+    view.set_results(files)
+    view.result_view.selectAll()
+    qtbot.waitUntil(lambda: view.match_model.match_count == 400_000, timeout=5000)
+    view.match_model.set_page_size(500)
+    started = time.perf_counter()
+    for page in (2, 3, 400, 800):
+        view.match_model.go_to_page(page)
+        qtbot.wait(1)
+    per_page = (time.perf_counter() - started) / 4
+    assert per_page < 0.5
