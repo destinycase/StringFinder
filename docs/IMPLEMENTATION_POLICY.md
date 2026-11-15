@@ -259,7 +259,7 @@ Rust의 `walk_error_entries()`는 `ignore::Error`의 경로·깊이·행 번호 
 ### 3.10 설정 내보내기·불러오기 계약(7.1.30)
 
 - 내보내기 파일은 `{"format": "StringFinder-settings", "format_version": 1, "app_version", "exported_at", "config_version", "sections"}`이고, 묶음은 `settings`(아래 셋과 제외 키를 뺀 설정 키 전부)·`layout`·`conditions`(`filters`)·`history`(`history`)입니다. 탭 순서·마지막 탭·파일명 입력 기록·내부 표시는 담지 않습니다. 이름은 `StringFinder_Settings_YYYYmmdd_HHMMSS.json`, 임시 파일에 쓴 뒤 바꿔 넣습니다.
-- 불러오기는 형식 표시·`sections`·정수 `format_version`을 확인하고, 더 새로운 형식 버전은 거부합니다. 고른 묶음의 키만 모아 `config_version`과 함께 설정 파일 읽기와 같은 `_normalize_config_data`(옮기기·모르는 키 버림·기본값 채움·범위 조정)를 거친 뒤 그 묶음의 키만 덮어씁니다. 덮어쓰기 전에 `config_backup_before_import_*.json`을 남기고(최근 5개 유지), 새 설정은 사본으로 먼저 저장한 뒤 성공했을 때만 메모리 설정을 바꿉니다(7.1.33, 실패하면 메모리·이후 저장 모두 그대로). 저장 뒤에는 종료 중 저장이 불러온 값을 덮지 않도록 설정 저장을 잠급니다. 불러오기 창은 기본이 아닌 줄 열기 프로그램을 보여 줍니다. 검색 중에는 불러오지 않습니다.
+- 불러오기는 형식 표시·`sections`·정수 `format_version`을 확인하고, 더 새로운 형식 버전은 거부합니다. 고른 묶음의 키만 모아 `config_version`과 함께 설정 파일 읽기와 같은 `_normalize_config_data`(옮기기·모르는 키 버림·기본값 채움·범위 조정)를 거친 뒤 그 묶음의 키만 덮어씁니다. 덮어쓰기 전에 `config_backup_before_import_*.json`을 남기고(최근 5개 유지), 새 설정은 사본으로 먼저 저장한 뒤 성공했을 때만 메모리 설정을 바꿉니다(7.1.33, 실패하면 메모리·이후 저장 모두 그대로). 파일 저장·메모리 교체·이후 저장 잠금은 `_save_lock` 하나 안에서 끝내고, 일반 저장도 그 잠금 안에서 잠금 여부를 확인해 기다리던 저장이 불러온 값을 덮지 못하게 합니다(7.1.34). 불러오기 창은 기본이 아닌 줄 열기 프로그램을 보여 줍니다. 검색 중에는 불러오지 않습니다.
 - 불러온 검색 조건은 `imported_conditions_pending` 표시로 다음 시작 때 처음 보이는 탭에 한 번 넣고 표시를 지웁니다.
 - 폴더 존재 확인은 `PathExistsWorker`(스레드 풀)로 하여 느린 드라이브가 화면을 막지 않게 하고, 늦게 끝난 이전 확인 결과는 버립니다.
 

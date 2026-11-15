@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import time
 from datetime import datetime
 
 import pytest
@@ -252,13 +253,13 @@ def test_failed_import_save_leaves_memory_and_later_saves_untouched(mock_config_
     mock_config_manager.save_immediately()
     payload = mock_config_manager.build_settings_export("now")
     payload["sections"]["settings"][C.CONFIG_KEY_THEME] = "Light"
-    original_save = mock_config_manager.save_immediately
-    monkeypatch.setattr(mock_config_manager, "save_immediately", lambda snapshot=None: False)
+    original_write = mock_config_manager._write_config_snapshot_locked
+    monkeypatch.setattr(mock_config_manager, "_write_config_snapshot_locked", lambda snapshot: False)
     with pytest.raises(OSError):
         mock_config_manager.import_settings(payload, ALL, "b.json")
     assert mock_config_manager.get(C.CONFIG_KEY_THEME) == "Dark"
     assert mock_config_manager.get(C.CONFIG_KEY_IMPORTED_CONDITIONS) is False
-    monkeypatch.setattr(mock_config_manager, "save_immediately", original_save)
+    monkeypatch.setattr(mock_config_manager, "_write_config_snapshot_locked", original_write)
     assert mock_config_manager.save_immediately()
     saved = json.loads(open(mock_config_manager.config_path, encoding="utf-8").read())
     assert saved[C.CONFIG_KEY_THEME] == "Dark"
@@ -299,3 +300,45 @@ def test_import_dialog_shows_custom_line_opener(qtbot, mock_config_manager):
     dialog = SettingsImportDialog(payload, "a.json")
     qtbot.addWidget(dialog)
     assert dialog.editor_label.text() == AppStrings.SETTINGS_IMPORT_EDITOR_INFO.format(r"C:\Tools\open.exe")
+
+
+
+def test_concurrent_save_cannot_overwrite_imported_settings(mock_config_manager, monkeypatch):
+    """불러오기의 파일 저장 직후 다른 저장이 끼어들어도 예전 설정을 다시 쓰지 못합니다(7.1.34).
+
+    검수 재현과 같이, 불러오기가 파일을 쓴 순간 다른 스레드가 저장을 시작하게 순서를 맞춥니다.
+    """
+    import threading
+
+    mock_config_manager.set(C.CONFIG_KEY_THEME, "Dark")
+    mock_config_manager.save_immediately()
+    payload = mock_config_manager.build_settings_export("now")
+    payload["sections"]["settings"][C.CONFIG_KEY_THEME] = "Light"
+
+    written = threading.Event()
+    other_started = threading.Event()
+    original_write = mock_config_manager._write_config_snapshot_locked
+
+    def write_then_pause(snapshot):
+        ok = original_write(snapshot)
+        if snapshot.get(C.CONFIG_KEY_THEME) == "Light":
+            written.set()
+            other_started.wait(2)
+            time.sleep(0.2)  # 다른 저장이 잠금을 기다릴 시간을 줍니다.
+        return ok
+
+    monkeypatch.setattr(mock_config_manager, "_write_config_snapshot_locked", write_then_pause)
+
+    def other_save():
+        written.wait(2)
+        other_started.set()
+        mock_config_manager.save_immediately()  # 메모리에는 아직 Dark였던 시점의 저장
+
+    other = threading.Thread(target=other_save)
+    other.start()
+    mock_config_manager.import_settings(payload, ALL, "b.json")
+    other.join(5)
+    assert not other.is_alive()
+    saved = json.loads(open(mock_config_manager.config_path, encoding="utf-8").read())
+    assert saved[C.CONFIG_KEY_THEME] == "Light"
+    assert mock_config_manager.get(C.CONFIG_KEY_THEME) == "Light"

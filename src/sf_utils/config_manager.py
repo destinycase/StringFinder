@@ -391,12 +391,13 @@ class ConfigManager:
 
     def save_immediately(self, snapshot: Optional[dict] = None) -> bool:
         """설정 파일을 원자적으로 즉시 저장한다. ``snapshot``을 주면 메모리 설정 대신 그 내용을 씁니다."""
-        if self.__dict__.get("_frozen_after_import"):
-            # 불러온 설정을 쓴 뒤 종료하는 동안 창 크기 등이 다시 저장되어 덮어쓰지 않게 합니다.
-            return True
         # 교착 상태 방지: _save_lock을 먼저 획득한 후 내부에서 _config_lock을 잡습니다.
         # 다른 메서드들과의 획득 순서를 일원화합니다.
         with self._save_lock:
+            # 불러온 설정을 쓴 뒤에는(종료 중) 다른 저장이 덮어쓰지 않게 합니다. 잠금 안에서 확인해야
+            # 불러오기의 저장·교체 사이에 기다리던 저장이 끼어들지 않습니다(7.1.34).
+            if self.__dict__.get("_frozen_after_import"):
+                return True
             if self._save_timer is not None:
                 self._save_timer.cancel()
                 self._save_timer = None
@@ -407,49 +408,52 @@ class ConfigManager:
             else:
                 with self._config_lock:
                     config_snapshot = copy.deepcopy(self._config)
+            return self._write_config_snapshot_locked(config_snapshot)
 
-            for attempt in range(5):
-                temp_path = None
-                try:
-                    config_dir = os.path.dirname(self.config_path)
-                    if not os.path.exists(config_dir):
-                        os.makedirs(config_dir, exist_ok=True)
-                    
-                    candidate = os.path.join(config_dir, f".config_{uuid.uuid4().hex}{Constants.TEMP_FILE_SUFFIX}")
-                    # Exclusive creation protects other writers. Unlike the
-                    # Windows tempfile helper, permission failures are bounded
-                    # by our five retries rather than an internal name loop.
-                    with open(candidate, "x", encoding=Constants.ENC_UTF8) as f:
-                        # Register before writing so a partial serialization is
-                        # also cleaned up. Close before replacing on Windows.
-                        temp_path = candidate
-                        json.dump(config_snapshot, f, indent=4, ensure_ascii=False)
-                    if not os.path.exists(self.config_path):
-                        os.rename(temp_path, self.config_path)
-                    else:
-                        # Retry without moving the previous settings away.
-                        # Failed replacement must preserve the original path.
-                        os.replace(temp_path, self.config_path)
-                    return True
-                except (IOError, OSError) as e:
-                    # 종료 시에도 기존 설정 보존을 위해 같은 재시도 정책을 씁니다.
-                    # 대기 합계는 1초이며 파일 I/O와 저장 락 대기 시간은 별도입니다.
-                    if attempt < 4:
-                        logger.debug(AppStrings.LOG_CFG_SAVE_RETRY.format(attempt + 1, e))
-                        time.sleep(0.1 * (attempt + 1))
-                    else:
-                        logger.error(AppStrings.LOG_CFG_SAVE_FAIL.format(e))
-                except Exception as e:
-                    logger.error(AppStrings.LOG_CFG_SAVE_FAIL.format(e), exc_info=True)
-                    break
-                finally:
-                    if temp_path is not None and os.path.exists(temp_path):
-                        try:
-                            os.remove(temp_path)
-                        except OSError as e:
-                            logger.debug(AppStrings.LOG_CFG_TEMP_REMOVE_FAIL.format(e))
-            # 루프 종료 후 성공하지 못했음이 명시적임
-            return False
+    def _write_config_snapshot_locked(self, config_snapshot: dict) -> bool:
+        """``_save_lock``을 잡은 상태에서 설정 내용을 파일에 원자적으로 씁니다."""
+        for attempt in range(5):
+            temp_path = None
+            try:
+                config_dir = os.path.dirname(self.config_path)
+                if not os.path.exists(config_dir):
+                    os.makedirs(config_dir, exist_ok=True)
+                
+                candidate = os.path.join(config_dir, f".config_{uuid.uuid4().hex}{Constants.TEMP_FILE_SUFFIX}")
+                # Exclusive creation protects other writers. Unlike the
+                # Windows tempfile helper, permission failures are bounded
+                # by our five retries rather than an internal name loop.
+                with open(candidate, "x", encoding=Constants.ENC_UTF8) as f:
+                    # Register before writing so a partial serialization is
+                    # also cleaned up. Close before replacing on Windows.
+                    temp_path = candidate
+                    json.dump(config_snapshot, f, indent=4, ensure_ascii=False)
+                if not os.path.exists(self.config_path):
+                    os.rename(temp_path, self.config_path)
+                else:
+                    # Retry without moving the previous settings away.
+                    # Failed replacement must preserve the original path.
+                    os.replace(temp_path, self.config_path)
+                return True
+            except (IOError, OSError) as e:
+                # 종료 시에도 기존 설정 보존을 위해 같은 재시도 정책을 씁니다.
+                # 대기 합계는 1초이며 파일 I/O와 저장 락 대기 시간은 별도입니다.
+                if attempt < 4:
+                    logger.debug(AppStrings.LOG_CFG_SAVE_RETRY.format(attempt + 1, e))
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    logger.error(AppStrings.LOG_CFG_SAVE_FAIL.format(e))
+            except Exception as e:
+                logger.error(AppStrings.LOG_CFG_SAVE_FAIL.format(e), exc_info=True)
+                break
+            finally:
+                if temp_path is not None and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError as e:
+                        logger.debug(AppStrings.LOG_CFG_TEMP_REMOVE_FAIL.format(e))
+        # 루프 종료 후 성공하지 못했음이 명시적임
+        return False
 
     def get(self, key, default=None):
         """설정 값을 조회한다."""
@@ -741,13 +745,19 @@ class ConfigManager:
         if Constants.SETTINGS_SECTION_CONDITIONS in chosen:
             # 다시 켰을 때 처음 보이는 탭에도 불러온 검색 조건을 넣습니다.
             updated[Constants.CONFIG_KEY_IMPORTED_CONDITIONS] = True
-        if not self.save_immediately(snapshot=updated):
-            raise OSError(self.config_path)
-        with self._config_lock:
-            self._config = updated
+        # 파일 저장·메모리 교체·이후 저장 잠금을 저장 잠금 하나 안에서 끝내, 기다리던 다른 저장이
+        # 그 사이에 예전 설정을 다시 쓰지 못하게 합니다(7.1.34). 잠금 순서는 _save_lock → _config_lock.
+        with self._save_lock:
+            if self._save_timer is not None:
+                self._save_timer.cancel()
+                self._save_timer = None
+            if not self._write_config_snapshot_locked(updated):
+                raise OSError(self.config_path)
+            with self._config_lock:
+                self._config = updated
+            self._frozen_after_import = True
         if Constants.SETTINGS_SECTION_CONDITIONS in chosen:
             self._ensure_filters_dict()
-        self._frozen_after_import = True
         logger.info(AppStrings.LOG_CFG_SETTINGS_IMPORTED.format(", ".join(chosen), backup_path))
         return backup_path
 
