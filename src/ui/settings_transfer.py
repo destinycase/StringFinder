@@ -8,10 +8,14 @@ import os
 import tempfile
 from datetime import datetime
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
     QLabel,
     QVBoxLayout,
 )
@@ -71,38 +75,63 @@ def _conditions_folders(section) -> list:
 
 
 class SettingsImportDialog(QDialog):
-    """불러올 묶음을 체크 상자로 고르는 창입니다."""
+    """불러올 묶음을 체크 상자로 고르는 창입니다.
+
+    위에 파일 정보, 가운데 불러올 항목(체크 상자 | 설명 두 칸 정렬), 아래에 종료 안내와 단추를 둡니다(7.1.31).
+    """
 
     def __init__(self, data: dict, file_path: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle(AppStrings.SETTINGS_IMPORT_TITLE)
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(520)
         sections = data.get("sections", {})
         layout = QVBoxLayout(self)
-        info = QLabel(AppStrings.SETTINGS_IMPORT_FILE_INFO.format(
-            os.path.basename(file_path), str(data.get("app_version", "?")), str(data.get("exported_at", "?"))))
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        layout.setSpacing(12)
 
+        file_group = QGroupBox(AppStrings.SETTINGS_IMPORT_GROUP_FILE)
+        file_form = QFormLayout(file_group)
+        file_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        file_name = QLabel(os.path.basename(file_path))
+        file_name.setToolTip(file_path)
+        file_name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        file_form.addRow(AppStrings.SETTINGS_IMPORT_FILE_LABEL, file_name)
+        file_form.addRow(AppStrings.SETTINGS_IMPORT_VERSION_LABEL, QLabel(str(data.get("app_version", "?"))))
+        file_form.addRow(AppStrings.SETTINGS_IMPORT_TIME_LABEL, QLabel(str(data.get("exported_at", "?"))))
+        layout.addWidget(file_group)
+
+        section_group = QGroupBox(AppStrings.SETTINGS_IMPORT_GROUP_SECTIONS)
+        grid = QGridLayout(section_group)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(1, 1)
         self.checkboxes = {}
+        self.descriptions = {}
         self.folder_status_label = None
+        row = 0
         for section in Constants.SETTINGS_SECTIONS:
             title_name, desc_name = SECTION_LABELS[section]
             available = isinstance(sections.get(section), dict)
-            desc = getattr(AppStrings, desc_name) if available else AppStrings.SETTINGS_SECTION_MISSING
-            box = QCheckBox(f"{getattr(AppStrings, title_name)}  —  {desc}")
+            box = QCheckBox(getattr(AppStrings, title_name))
             box.setChecked(available)
             box.setEnabled(available)
             box.toggled.connect(self._update_ok_button)
-            layout.addWidget(box)
+            desc = QLabel(getattr(AppStrings, desc_name) if available else AppStrings.SETTINGS_SECTION_MISSING)
+            desc.setEnabled(available)
+            desc.setStyleSheet("QLabel { color: #9aa0a6; }")
+            grid.addWidget(box, row, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            grid.addWidget(desc, row, 1, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             self.checkboxes[section] = box
+            self.descriptions[section] = desc
+            row += 1
             if section == Constants.SETTINGS_SECTION_CONDITIONS and available:
                 folders = _conditions_folders(sections[section])
                 if folders:
+                    # 폴더 확인 결과는 설명 칸 아래에 맞춰 둡니다.
                     self.folder_status_label = QLabel(AppStrings.SETTINGS_IMPORT_CHECKING_FOLDERS)
-                    self.folder_status_label.setContentsMargins(24, 0, 0, 0)
-                    layout.addWidget(self.folder_status_label)
+                    grid.addWidget(self.folder_status_label, row, 1)
+                    row += 1
                     self._folder_worker = check_paths_async(folders, self._on_folders_checked)
+        layout.addWidget(section_group)
 
         note = QLabel(AppStrings.SETTINGS_IMPORT_RESTART_NOTE)
         note.setWordWrap(True)
@@ -124,6 +153,7 @@ class SettingsImportDialog(QDialog):
         missing = [path for path, exists in result.items() if not exists]
         if missing:
             self.folder_status_label.setText(AppStrings.SETTINGS_IMPORT_MISSING_FOLDERS.format(len(result), len(missing)))
+            self.folder_status_label.setStyleSheet("QLabel { color: #E8A33D; }")
             self.folder_status_label.setToolTip("\n".join(missing))
         else:
             self.folder_status_label.setText(AppStrings.SETTINGS_IMPORT_ALL_FOLDERS_FOUND.format(len(result)))

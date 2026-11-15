@@ -130,7 +130,11 @@ def test_import_dialog_checkboxes_missing_section_and_folder_status(qtbot, mock_
     dialog = SettingsImportDialog(payload, "x/StringFinder_Settings_1.json")
     qtbot.addWidget(dialog)
     assert not dialog.checkboxes["layout"].isEnabled()
-    assert AppStrings.SETTINGS_SECTION_MISSING in dialog.checkboxes["layout"].text()
+    assert dialog.descriptions["layout"].text() == AppStrings.SETTINGS_SECTION_MISSING
+    # 체크 상자와 설명이 두 칸으로 정렬되어 있습니다(7.1.31).
+    dialog.show()
+    xs = {dialog.descriptions[section].mapTo(dialog, dialog.descriptions[section].rect().topLeft()).x() for section in ALL}
+    assert len(xs) == 1
     assert dialog.selected_sections() == ["settings", "conditions", "history"]
     qtbot.waitUntil(lambda: dialog.folder_status_label.text() != AppStrings.SETTINGS_IMPORT_CHECKING_FOLDERS)
     assert dialog.folder_status_label.text() == AppStrings.SETTINGS_IMPORT_MISSING_FOLDERS.format(2, 1)
