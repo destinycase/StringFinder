@@ -327,6 +327,7 @@ python -m pip install -e ".[dev]"
 ### 6.3 Rust 엔진 릴리스 빌드
 
 Windows 환경에서 `.pyd`를 단일 경로에 배포하는 통합 스크립트를 사용합니다. 새 바이너리를 대상 폴더의 임시 파일에 복사한 뒤 교체하며, 잠금으로 교체에 실패하면 기존 파일을 보존하고 오류로 종료합니다. 다른 프로세스를 강제 종료하지 않으므로 엔진을 사용 중인 앱을 직접 닫은 후 재시도하세요.
+빌드할 때 `--remap-path-prefix`로 Cargo·rustup 폴더와 프로젝트 폴더를 `/cargo`·`/rustup`·`/stringfinder`로 바꿔 넣어, 빌드한 PC의 경로(계정 이름 포함)가 엔진에 남지 않게 합니다(7.3.3). 이 옵션은 `CARGO_ENCODED_RUSTFLAGS`로 넘기며 기존 `RUSTFLAGS`는 유지합니다. `cargo build`를 직접 실행하면 이 처리가 빠지므로 배포용 엔진은 반드시 이 스크립트로 만듭니다. `tests/test_build_path_privacy.py`가 커밋된 엔진에 로컬 경로가 없는지 확인합니다.
 ```bash
 python build_rust.py
 ```

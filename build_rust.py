@@ -63,6 +63,41 @@ def clean_non_ssot_engine_binaries():
                 print(f"Debug: Non-SSOT engine cleanup skipped for {path}: {e}")
 
 
+def _home_dir(env: dict, name: str, default_leaf: str) -> str:
+    value = env.get(name)
+    if value:
+        return os.path.abspath(value)
+    return os.path.join(os.path.expanduser("~"), default_leaf)
+
+
+def path_remap_rustflags(env: dict) -> list[str]:
+    """빌드한 PC의 경로(계정 이름 포함)가 엔진 바이너리에 남지 않도록 바꿔 넣는 옵션.
+
+    Rust는 외부 라이브러리 오류 위치를 빌드한 PC의 절대 경로로 기록합니다. Cargo·rustup 폴더와
+    프로젝트 폴더를 고정 이름으로 바꿔, 누가 어디서 빌드했는지 바이너리에서 알 수 없게 합니다.
+    """
+    pairs = [
+        (_home_dir(env, "CARGO_HOME", ".cargo"), "/cargo"),
+        (_home_dir(env, "RUSTUP_HOME", ".rustup"), "/rustup"),
+        (PROJECT_ROOT, "/stringfinder"),
+    ]
+    return [f"--remap-path-prefix={src}={dst}" for src, dst in pairs]
+
+
+def rust_build_env(base: dict) -> dict:
+    """엔진 빌드용 환경 변수. 기존 RUSTFLAGS는 유지하고 경로 치환 옵션을 덧붙입니다."""
+    env = dict(base)
+    # Python 3.14 등 상위 버전 호환성을 위한 환경 변수 설정
+    env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
+    existing = env.pop("CARGO_ENCODED_RUSTFLAGS", None)
+    flags = existing.split("\x1f") if existing else env.get("RUSTFLAGS", "").split()
+    flags = [flag for flag in flags if flag] + path_remap_rustflags(env)
+    # 공백이 든 경로도 깨지지 않도록 구분 문자(0x1F)로 잇는 형식을 씁니다.
+    env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
+    env.pop("RUSTFLAGS", None)
+    return env
+
+
 def build_rust_engine(clean_target=False):
     """Rust 엔진(sf_engine) 컴파일 및 배포"""
     # 빌드 시작 시 기존 부산물(.old_*) 선제적 정리
@@ -84,9 +119,7 @@ def build_rust_engine(clean_target=False):
         print(f"Error: Rust directory {rust_dir} not found.")
         sys.exit(1)
 
-    # Python 3.14 등 상위 버전 호환성을 위한 환경 변수 설정
-    env = os.environ.copy()
-    env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
+    env = rust_build_env(os.environ)
 
     try:
         # 1. Cargo로 컴파일합니다. --locked: Cargo.lock을 빌드 중에 바꾸지 않습니다(CI와 같은 조건).
