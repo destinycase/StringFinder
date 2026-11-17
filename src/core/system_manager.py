@@ -25,8 +25,8 @@ class SystemManager:
                 max_files = 1
                 max_days = 0
             else:
-                max_files = retention_config.get("max_files", 5)
-                max_days = retention_config.get("max_days", 7)
+                max_files = retention_config.get("max_files", 10)
+                max_days = retention_config.get("max_days", 3)
 
             # 수정일(mtime) 기준으로 정렬하여 보관 정책을 유지합니다.
             log_files = sorted(all_log_files, key=os.path.getmtime, reverse=True)

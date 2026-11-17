@@ -193,3 +193,22 @@ def test_syntax_highlighter_applies_formats_to_context_document(qtbot):
     formats = editor.document().firstBlock().layout().formats()
     assert formats
     assert any(item.format.foreground().color().isValid() for item in formats)
+
+
+def test_xml_preview_colors_whole_tags_and_comments(qtbot):
+    """XML 미리보기는 여러 글자 태그·속성 있는 태그·주석 전체에 색을 입힙니다(7.3.2)."""
+    editor = QPlainTextEdit()
+    qtbot.addWidget(editor)
+    highlighter = LightweightSyntaxHighlighter(editor.document(), "xml", is_dark_mode=False)
+    line = '<root><item id="1">v</item><!-- note --></root>'
+    editor.setPlainText(line)
+    highlighter.rehighlight()
+
+    colored = set()
+    for item in editor.document().firstBlock().layout().formats():
+        if item.format.foreground().color().isValid():
+            colored.update(range(item.start, item.start + item.length))
+    for piece in ("<root>", '<item id="1">', "</item>", "<!-- note -->", "</root>"):
+        start = line.index(piece)
+        assert set(range(start, start + len(piece))) <= colored, piece
+    assert line.index(">v<") + 1 not in colored

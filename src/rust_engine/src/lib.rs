@@ -575,11 +575,9 @@ fn search_file(
 ) -> Result<Vec<SearchMatch>, PyErr> {
     validate_query_length(&pattern)?;
     let mut encoding = None;
-    let mut include_junctions = false;
     if let Some(config) = options.as_ref() {
         let config = config.bind(py).borrow();
         encoding = crate::utils::requested_encoding(config.encoding.as_deref());
-        include_junctions = config.include_junctions;
         if config.mode_bits.is_some() {
             mode_bits = config.mode_bits;
         }
@@ -598,7 +596,6 @@ fn search_file(
         }
     }
 
-    let _ = include_junctions; // No traversal in the single-file entry point.
     let (is_json, is_xml, is_exact, is_excel, exclude_binary) = parse_search_mode(mode_bits);
     let is_archive = mode_bits.unwrap_or(0) & types::MODE_ARCHIVE != 0;
     let (matcher, ac) = build_search_matchers(

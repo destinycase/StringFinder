@@ -221,7 +221,7 @@ class SettingsDialog(QDialog):
         max_files_label = QLabel(AppStrings.MAX_FILES_LABEL)
         self.max_files_spinbox = QSpinBox()
         self.max_files_spinbox.setRange(1, 100)
-        self.max_files_spinbox.setValue(retention_config.get("max_files", 5))
+        self.max_files_spinbox.setValue(retention_config.get("max_files", 10))
         self.max_files_spinbox.setEnabled(enabled)
         self.max_files_spinbox.valueChanged.connect(self._on_max_files_changed)
         self.max_files_spinbox.setFixedWidth(INPUT_WIDTH)

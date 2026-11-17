@@ -105,8 +105,8 @@ class LightweightSyntaxHighlighter(QSyntaxHighlighter):
         elif self.language == "xml":
             self._rules.extend(
                 [
-                    (QRegularExpression(r"<!--[\\s\\S]*?-->"), comment_format),
-                    (QRegularExpression(r"</?[A-Za-z_][\\w:.-]*(?:\\s[^<>]*)?/?>"), tag_format),
+                    (QRegularExpression(r"<!--[\s\S]*?-->"), comment_format),
+                    (QRegularExpression(r"</?[A-Za-z_][\w:.-]*(?:\s[^<>]*)?/?>"), tag_format),
                 ]
             )
         elif self.language == "python":
