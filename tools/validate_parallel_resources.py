@@ -18,6 +18,7 @@ import time
 import psutil
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRATCH = ROOT / "scratch"
 MIB = 1024 * 1024
 
 
@@ -110,7 +111,8 @@ def main():
         return
     if psutil.virtual_memory().available < 4 * 1024 * MIB:
         raise RuntimeError("At least 4 GiB available memory required for this bounded QA run")
-    with tempfile.TemporaryDirectory(prefix="sf-resource-qa-", dir=ROOT) as directory:
+    SCRATCH.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="sf-resource-qa-", dir=SCRATCH) as directory:
         root = Path(directory)
         print("Generating 8 fixtures per format...", flush=True)
         make_data(root)

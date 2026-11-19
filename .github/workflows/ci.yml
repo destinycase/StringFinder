@@ -23,7 +23,7 @@ jobs:
     env:
       PYTHONUTF8: "1"
       QT_QPA_PLATFORM: offscreen
-      APPDATA: ${{ github.workspace }}/docs_dev/ci/appdata
+      APPDATA: ${{ github.workspace }}/scratch/ci/appdata
     defaults:
       run:
         shell: pwsh
@@ -58,7 +58,7 @@ jobs:
       - name: Python lint
         run: python -m ruff check src tests tools
       - name: Product and benchmark tool type checks
-        run: python -m mypy src tools/benchmark.py --cache-dir docs_dev/ci/mypy_cache
+        run: python -m mypy src tools/benchmark.py --cache-dir scratch/ci/mypy_cache
       - name: Rust formatting
         run: cargo fmt --manifest-path src/rust_engine/Cargo.toml --check
       - name: Rust lint
@@ -66,12 +66,12 @@ jobs:
       - name: Rust tests
         run: cargo test --manifest-path src/rust_engine/Cargo.toml --locked
       - name: Isolated Python suite
-        run: python -m pytest -q -p no:cacheprovider --basetemp docs_dev/ci/basic --junitxml docs_dev/ci/basic.xml
+        run: python -m pytest -q -p no:cacheprovider --basetemp scratch/ci/basic --junitxml scratch/ci/basic.xml
       - name: Extended stress and chaos suite
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: python -m pytest -q -o addopts= -m 'stress or chaos' -p no:cacheprovider --basetemp docs_dev/ci/extended --junitxml docs_dev/ci/extended.xml
+        run: python -m pytest -q -o addopts= -m 'stress or chaos' -p no:cacheprovider --basetemp scratch/ci/extended --junitxml scratch/ci/extended.xml
       - name: Native Windows clipboard integration
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
           QT_QPA_PLATFORM: windows
-        run: python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp docs_dev/ci/clipboard --junitxml docs_dev/ci/clipboard.xml
+        run: python -m pytest -q -o addopts= -m os_clipboard -p no:cacheprovider --basetemp scratch/ci/clipboard --junitxml scratch/ci/clipboard.xml
