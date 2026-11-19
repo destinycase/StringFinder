@@ -482,7 +482,7 @@ class SearchTab(QMainWindow):
             try:
                 self.restoreState(QByteArray.fromHex(dock_state.encode()), self.DOCK_LAYOUT_VERSION)
             except Exception:
-                logger.debug("dock layout restore failed", exc_info=True)
+                logger.debug(AppStrings.LOG_DOCK_RESTORE_FAIL, exc_info=True)
         self._apply_lock_layout()
         self.result_view_panel.restore_shared_layout()
 
@@ -860,7 +860,7 @@ class SearchTab(QMainWindow):
                     self.config_manager.add_history(search_text)
                     self._load_histories()
                 except Exception:
-                    logger.exception("Failed to save search history")
+                    logger.exception(AppStrings.LOG_HISTORY_SAVE_FAIL)
         except Exception as e:
             # [하] L-02: 예외 처리 단일화 및 메시지 정책 정리
             logger.error(AppStrings.LOG_SCH_ERROR_START.format(e), exc_info=True)
@@ -1109,7 +1109,7 @@ class SearchTab(QMainWindow):
                     self.result_view_panel.show_no_result_conditions(self.search_panel.get_search_text(), **conditions)
             self.search_finished_with_data.emit()
         except Exception as e:
-            logger.error(f"Error in _on_search_finished: {e}")
+            logger.error(AppStrings.LOG_SEARCH_FINISH_FAIL.format(e))
         finally:
             self._search_finalized = True
             self._restore_search_button()

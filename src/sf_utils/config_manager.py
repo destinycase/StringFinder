@@ -184,7 +184,7 @@ class ConfigManager:
         """
         loaded_version = data.get(Constants.CONFIG_KEY_VERSION, 0)
         if type(loaded_version) is not int or loaded_version < 0:
-            logger.warning("Invalid configuration version; applying current defaults")
+            logger.warning(AppStrings.LOG_CFG_INVALID_VERSION)
             loaded_version = 0
         if loaded_version < self.CURRENT_CONFIG_VERSION:
             logger.info(AppStrings.LOG_CFG_MIGRATION.format(loaded_version, self.CURRENT_CONFIG_VERSION))
@@ -348,8 +348,7 @@ class ConfigManager:
             value = raw_value if is_valid else default
             if key in source and not is_valid:
                 logger.warning(
-                    "Invalid advanced setting %s; restoring its default value",
-                    key,
+                    AppStrings.LOG_CFG_INVALID_ADVANCED.format(key),
                 )
             normalized[key] = value
         return normalized
@@ -777,6 +776,19 @@ class ConfigManager:
             except OSError:
                 pass
 
+    def _remove_import_backups(self):
+        """"모든 데이터 삭제" 때 불러오기 전 백업도 지웁니다."""
+        try:
+            names = os.listdir(self.config_dir)
+        except OSError:
+            return
+        for name in names:
+            if name.startswith(self.IMPORT_BACKUP_PREFIX) and name.endswith(".json"):
+                try:
+                    os.remove(os.path.join(self.config_dir, name))
+                except OSError as e:
+                    logger.debug(AppStrings.LOG_CFG_DELETE_FAIL_MSG.format(e))
+
     def take_imported_conditions_flag(self) -> bool:
         """불러온 검색 조건을 아직 탭에 넣지 않았으면 True를 돌려주고 표시를 지웁니다."""
         with self._config_lock:
@@ -1153,7 +1165,7 @@ class ConfigManager:
         logger.info(AppStrings.LOG_CFG_LOG_CLEANUP_DONE_MSG.format(deleted_count))
 
     def clear_all_data(self):
-        """설정/세션/로그를 초기화한다."""
+        """설정·세션·로그·불러오기 전 백업을 초기화한다."""
         self.wait_for_session_saves()
         self.clear_all_logs()
         try:
@@ -1169,6 +1181,8 @@ class ConfigManager:
                 os.remove(self.config_path)
             except OSError as e:
                 logger.error(AppStrings.LOG_CFG_DELETE_FAIL_MSG.format(e))
+        self._remove_import_backups()
+        self.__dict__.pop("_session_title_cache", None)
         with self._config_lock:
             self._config = copy.deepcopy(self._defaults)
         self.save()

@@ -6,6 +6,15 @@ use std::path::Path;
 
 const EXCEL_MARKER_SHEET_ERROR_PREFIX: &str = "__SF_EXCEL_SHEET_ERR__|";
 
+/// 시트 오류 안내 내용: `표시|시트 이름|오류`. 시트 이름에는 `|`가 들어갈 수 있으므로
+/// 오류 문구의 `|`를 `/`로 바꿔, 받는 쪽이 마지막 `|`에서 시트 이름과 오류를 나눌 수 있게 합니다.
+fn sheet_error_content(sheet_name: &str, error: &str) -> String {
+    format!(
+        "{EXCEL_MARKER_SHEET_ERROR_PREFIX}{sheet_name}|{}",
+        error.replace('|', "/")
+    )
+}
+
 enum SheetCells {
     Dense(Range<Data>),
     Sparse(Vec<Cell<Data>>),
@@ -134,7 +143,7 @@ where
             Ok(Err(e)) => {
                 results.push((
                     0,
-                    format!("{}{}|{:?}", EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, e),
+                    sheet_error_content(&sheet_name, &format!("{e:?}")),
                     None,
                     None,
                     ResultKind::SheetError,
@@ -144,10 +153,7 @@ where
                 let msg = panic_to_string(panic_err);
                 results.push((
                     0,
-                    format!(
-                        "{}{}|[Library Panic] {}",
-                        EXCEL_MARKER_SHEET_ERROR_PREFIX, sheet_name, msg
-                    ),
+                    sheet_error_content(&sheet_name, &format!("[Library Panic] {msg}")),
                     None,
                     None,
                     ResultKind::SheetError,
@@ -160,7 +166,7 @@ where
         if let Some(Err(error)) = ctx.date_cells.borrow().get(&sheet_name) {
             results.push((
                 0,
-                format!("{EXCEL_MARKER_SHEET_ERROR_PREFIX}{sheet_name}|{error}"),
+                sheet_error_content(&sheet_name, &error.to_string()),
                 None,
                 None,
                 ResultKind::SheetError,
@@ -641,5 +647,19 @@ mod tests {
         ] {
             assert_cell_match(Data::String(value.to_owned()), query, true, expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod sheet_error_content_tests {
+    use super::sheet_error_content;
+
+    #[test]
+    fn keeps_pipe_in_sheet_name_and_removes_it_from_error() {
+        let content = sheet_error_content("A|B", "bad | cell");
+        let detail = content.split_once('|').unwrap().1;
+        let (sheet, error) = detail.rsplit_once('|').unwrap();
+        assert_eq!(sheet, "A|B");
+        assert_eq!(error, "bad / cell");
     }
 }

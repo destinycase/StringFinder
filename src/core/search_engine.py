@@ -108,7 +108,7 @@ def _get_structured_memory_budget() -> int:
         if budget > 0:
             return budget
     except Exception as exc:
-        logger.debug("Structured memory budget calculation failed: %s", exc)
+        logger.debug(AppStrings.LOG_MEMORY_BUDGET_FAIL.format(exc))
     return Constants.MIN_AVAILABLE_MEMORY_BYTES
 
 
@@ -227,7 +227,7 @@ def _normalize_rust_matches(
             except (TypeError, ValueError):
                 bin_cnt += 1
         elif kind == "sheet_error":
-            sheet_name, _, detail = str(m.detail or "").partition("|")
+            sheet_name, _, detail = str(m.detail or "").rpartition("|")
             _log_raw_skip_detail(f"Excel sheet {sheet_name.strip()}", detail)
             sheet_skips.append((sheet_name.strip(), AppStrings.EXCEL_DETAIL_SHEET_FAILURE))
         # "partial"(일부만 검색)은 파일 단위 안내로 따로 처리합니다. 파일을 못 읽은 오류는 결과가 아니라
@@ -284,7 +284,7 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
     for m in _metadata_items(matches):
         kind, code, detail = m.kind, m.code, m.detail
         if kind == "sheet_error":
-            sheet, _, raw_error = str(detail or "").partition("|")
+            sheet, _, raw_error = str(detail or "").rpartition("|")
             _log_raw_skip_detail(f"Excel sheet {sheet}", raw_error)
             failed_sheets.append(sheet)
         elif kind == "truncated":
