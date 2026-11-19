@@ -182,6 +182,15 @@ def _split_json_match_content(content: str) -> List[str]:
     return content.split("\t", 1)
 
 
+def _split_sheet_error(detail: Any) -> Tuple[str, str]:
+    """시트 오류 안내(`시트 이름|오류`)를 나눕니다. 시트 이름에 `|`가 들 수 있어 마지막 `|`에서 나눕니다.
+
+    엔진은 늘 `|`를 넣고 오류 문구의 `|`는 `/`로 바꿔 보냅니다. `|`가 없으면 전체를 시트 이름으로 봅니다.
+    """
+    sheet, sep, error = str(detail or "").rpartition("|")
+    return (sheet, error) if sep else (error, "")
+
+
 def _normalize_rust_matches(
     matches: List[Any],
     special_mode: Optional[str] = None,
@@ -227,7 +236,7 @@ def _normalize_rust_matches(
             except (TypeError, ValueError):
                 bin_cnt += 1
         elif kind == "sheet_error":
-            sheet_name, _, detail = str(m.detail or "").rpartition("|")
+            sheet_name, detail = _split_sheet_error(m.detail)
             _log_raw_skip_detail(f"Excel sheet {sheet_name.strip()}", detail)
             sheet_skips.append((sheet_name.strip(), AppStrings.EXCEL_DETAIL_SHEET_FAILURE))
         # "partial"(일부만 검색)은 파일 단위 안내로 따로 처리합니다. 파일을 못 읽은 오류는 결과가 아니라
@@ -284,7 +293,7 @@ def _extract_partial_skip_reason(matches: Any) -> Optional[str]:
     for m in _metadata_items(matches):
         kind, code, detail = m.kind, m.code, m.detail
         if kind == "sheet_error":
-            sheet, _, raw_error = str(detail or "").rpartition("|")
+            sheet, raw_error = _split_sheet_error(detail)
             _log_raw_skip_detail(f"Excel sheet {sheet}", raw_error)
             failed_sheets.append(sheet)
         elif kind == "truncated":

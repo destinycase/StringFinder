@@ -30,3 +30,8 @@ def test_sheet_name_with_pipe_is_kept_whole():
     assert sheet_skips[0][0] == "A|B"
     reason = search_engine._extract_partial_skip_reason([_sheet_error("A|B|parse failure")])
     assert "A|B" in (reason or "")
+
+
+def test_sheet_error_without_separator_keeps_whole_text_as_sheet_name():
+    assert search_engine._split_sheet_error("Sheet1") == ("Sheet1", "")
+    assert search_engine._split_sheet_error(None) == ("", "")
