@@ -103,7 +103,7 @@ class AppStrings:
     ADVANCED_MAX_TOTAL_MATCHES = "전체 검색 결과 수 제한"
     ADVANCED_MAX_PER_FILE_MATCHES = "파일당 검색 결과 수 제한"
     ADVANCED_MAX_SEARCH_FILE_SIZE = "검색 파일 크기 제한"
-    ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION = "모든 검색 방식과 파일 형식에 적용되는 파일 크기 상한입니다. 설정한 크기를 초과하는 파일은 건너뜁니다. 최대 1GB까지 설정할 수 있습니다."
+    ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION = "UE 현지화 archive를 뺀 모든 검색 방식과 파일 형식에 적용되는 파일 크기 상한입니다. 설정한 크기를 초과하는 파일은 건너뜁니다. 최대 1GB까지 설정할 수 있습니다. UE 현지화 archive는 이 값과 상관없이 8GB까지 검색합니다."
     ADVANCED_MAX_JSON_DEPTH = "JSON 최대 깊이 제한"
 
 

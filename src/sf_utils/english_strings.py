@@ -102,7 +102,7 @@ ENGLISH_STRINGS = {
     "ADVANCED_MAX_TOTAL_MATCHES": "Total match limit",
     "ADVANCED_MAX_PER_FILE_MATCHES": "Per-file match limit",
     "ADVANCED_MAX_SEARCH_FILE_SIZE": "Search file size limit",
-    "ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION": "This file-size limit applies to every search mode and file format. Files larger than the selected size are skipped. The maximum is 1 GB.",
+    "ADVANCED_MAX_SEARCH_FILE_SIZE_DESCRIPTION": "This file-size limit applies to every search mode and file format except UE localization archives. Files larger than the selected size are skipped. The maximum is 1 GB. UE localization archives are searched up to 8 GB regardless of this value.",
     "ADVANCED_MAX_JSON_DEPTH": "Maximum JSON nesting depth",
     "UNIT_COUNT": "items",
     "UNIT_DEPTH": "levels",

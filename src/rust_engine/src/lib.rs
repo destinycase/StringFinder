@@ -99,6 +99,10 @@ const MATCH_META_DECODE_PARTIAL_PREFIX: &str = "__SF_DECODE_PARTIAL__|";
 
 const MONITOR_INTERVAL_MS: u64 = 100;
 const LARGE_STRUCTURED_FILE_BYTES: u64 = 8 * 1024 * 1024;
+/// UE 현지화 archive의 파일 크기 상한입니다. 검색 크기 상한 설정(최대 1GB)과 별도입니다(7.4.5).
+const ARCHIVE_MAX_FILE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// archive 검색이 파일 크기와 상관없이 쓰는 몫(뼈대·일치 항목)으로 예약하는 메모리입니다.
+const ARCHIVE_FIXED_OVERHEAD: u64 = 64 * 1024 * 1024;
 
 struct StructuredMemoryLimiter {
     capacity: u64,
@@ -185,11 +189,13 @@ fn estimated_structured_memory(
         .and_then(|value| value.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
+    if is_archive && extension == "archive" {
+        return estimated_archive_memory(path);
+    }
     let memory_profile =
         if is_excel || ["xlsx", "xlsm", "xlsb", "xls"].contains(&extension.as_str()) {
             Some((8, 128 * 1024 * 1024))
         } else if (is_json && extension == "json")
-            || (is_archive && extension == "archive")
             || (is_xml && ["xml", "sf_xml"].contains(&extension.as_str()))
         {
             Some((5, 64 * 1024 * 1024))
@@ -213,6 +219,28 @@ fn estimated_structured_memory(
         .saturating_add(1)
         .saturating_div(2)
         .saturating_add(fixed_overhead)
+}
+
+/// archive는 문서를 트리로 만들지 않으므로(7.4.4) UTF-8이면 고정 몫만 예약합니다. 다른 인코딩은 검색 전에
+/// 파일 전체를 UTF-8로 바꾼 사본을 만들므로 그 크기(최대 파일의 1.5배)를 더합니다.
+fn estimated_archive_memory(path: &Path) -> u64 {
+    let Ok(mut file) = File::open(path) else {
+        return 0;
+    };
+    let file_size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+    if file_size < LARGE_STRUCTURED_FILE_BYTES {
+        return 0;
+    }
+    let mut prefix = vec![0u8; 64 * 1024];
+    let read = file.read(&mut prefix).unwrap_or(0);
+    prefix.truncate(read);
+    if crate::utils::detect_encoding_with(&prefix, false) == encoding_rs::UTF_8 {
+        return ARCHIVE_FIXED_OVERHEAD;
+    }
+    file_size
+        .saturating_mul(3)
+        .saturating_div(2)
+        .saturating_add(ARCHIVE_FIXED_OVERHEAD)
 }
 
 fn acquire_structured_permit(
@@ -459,6 +487,21 @@ fn search_walk_builder(
         builder.threads(1);
     }
     builder
+}
+
+/// 파일 크기 상한입니다. UE 현지화 archive는 문서 전체를 메모리에 쌓지 않고 읽으므로(7.4.4)
+/// 검색 크기 상한 설정과 별도로 8GB까지 검색합니다(7.4.5).
+fn file_size_limit_for(path: &Path, is_archive: bool, common_limit: u64) -> u64 {
+    let archive_document = is_archive
+        && path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("archive"));
+    if archive_document {
+        ARCHIVE_MAX_FILE_BYTES
+    } else {
+        common_limit
+    }
 }
 
 fn size_check_metadata(
@@ -1688,7 +1731,7 @@ fn search_file_internal(params: InternalSearchParams) -> Option<Result<Vec<RawMa
     if f_len == 0 {
         return None;
     }
-    let file_size_limit = max_json_size;
+    let file_size_limit = file_size_limit_for(path, is_archive, max_json_size);
     if f_len > file_size_limit {
         return Some(Err(encode_skip_reason(
             REASON_ERR_TOO_LARGE,
@@ -2209,8 +2252,10 @@ pub fn search_dir(
                                 || excel_extension,
                             common_file_size_limit,
                         );
+                        let size_limit =
+                            file_size_limit_for(path, is_archive, common_file_size_limit);
                         if let Some(metadata) = metadata {
-                            if metadata.len() > common_file_size_limit {
+                            if metadata.len() > size_limit {
                                 let f_path = path.to_string_lossy().to_string();
                                 let mut skipped = skip_ref
                                     .lock()
@@ -3106,6 +3151,92 @@ mod tests {
         let matcher = textkey::Matcher::new("INVALID_UTF8").unwrap();
         assert!(!matcher.equals_trimmed(&String::from_utf8_lossy(b"\xff")));
         assert!(matcher.equals_trimmed("invalid_utf8"));
+    }
+
+    fn unique_temp_root(name: &str) -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("sf-{name}-{unique}"));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    /// archive만 검색 크기 상한 설정과 별도로 8GB까지 검색합니다(7.4.5).
+    #[test]
+    fn archive_uses_its_own_size_limit() {
+        assert_eq!(
+            file_size_limit_for(Path::new("a/Game.archive"), true, 8),
+            ARCHIVE_MAX_FILE_BYTES
+        );
+        assert_eq!(
+            file_size_limit_for(Path::new("a/Game.ARCHIVE"), true, 8),
+            ARCHIVE_MAX_FILE_BYTES
+        );
+        // archive 모드가 아니거나 확장자가 다르면 공통 상한입니다.
+        assert_eq!(
+            file_size_limit_for(Path::new("a/Game.archive"), false, 8),
+            8
+        );
+        assert_eq!(file_size_limit_for(Path::new("a/Game.json"), true, 8), 8);
+
+        let root = unique_temp_root("archive-limit");
+        let path = root.join("Game.archive");
+        fs::write(
+            &path,
+            r#"{"Children":[{"Key":"K","Source":{"Text":"needle"},"Translation":{"Text":""}}]}"#,
+        )
+        .unwrap();
+        let ac = build_test_ac("needle");
+        let result = search_file_internal(InternalSearchParams {
+            encoding: None,
+            allow_duplicate_json_keys: false,
+            path: &path,
+            matcher: &textkey::Matcher::new("needle").unwrap(),
+            ac: &ac,
+            is_exact: false,
+            is_json: false,
+            is_archive: true,
+            is_xml: false,
+            is_excel: false,
+            exclude_hidden: false,
+            exclude_binary: false,
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            max_per_file: 10,
+            max_json_depth: 100,
+            // 공통 상한(8바이트)보다 커도 archive는 검색합니다.
+            max_json_size: 8,
+        });
+        assert_eq!(result.unwrap().unwrap().len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// UTF-8 archive는 고정 몫만, 다른 인코딩은 UTF-8 사본 크기(1.5배)를 더해 예약합니다.
+    #[test]
+    fn archive_memory_estimate_depends_on_encoding() {
+        let root = unique_temp_root("archive-memory");
+        let size = 9 * 1024 * 1024usize;
+
+        let utf8 = root.join("utf8.archive");
+        fs::write(&utf8, vec![b' '; size]).unwrap();
+        assert_eq!(estimated_archive_memory(&utf8), ARCHIVE_FIXED_OVERHEAD);
+
+        let utf16 = root.join("utf16.archive");
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend(std::iter::repeat_n([b' ', 0u8], size / 2).flatten());
+        fs::write(&utf16, &bytes).unwrap();
+        let length = bytes.len() as u64;
+        assert_eq!(
+            estimated_archive_memory(&utf16),
+            length * 3 / 2 + ARCHIVE_FIXED_OVERHEAD
+        );
+
+        // 작은 파일은 예약하지 않습니다.
+        let small = root.join("small.archive");
+        fs::write(&small, b"{}").unwrap();
+        assert_eq!(estimated_archive_memory(&small), 0);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
