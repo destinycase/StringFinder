@@ -965,6 +965,11 @@ impl Matcher {
         if value.is_ascii() {
             return target.is_ascii() && value.trim().eq_ignore_ascii_case(target);
         }
+        // 한글 음절처럼 변환해도 그대로인 글자와 ASCII로만 된 값은 `key(value)`가 ASCII 소문자화와
+        // 같습니다. 새 문자열을 만들지 않고 원본에서 바로 비교합니다(7.4.3).
+        if is_key_trivial(value) {
+            return value.trim().eq_ignore_ascii_case(target);
+        }
         key(value).trim() == target
     }
 }
@@ -1680,5 +1685,64 @@ mod tests {
         assert_eq!(next_flagged("abc 한글".as_bytes(), 0, false), None);
         assert_eq!(next_flagged("Привет abc".as_bytes(), 0, true), None);
         assert!(next_flagged("Привет abc".as_bytes(), 0, false).is_some());
+    }
+}
+
+#[cfg(test)]
+mod equals_trimmed_tests {
+    use super::*;
+
+    /// 정의대로 계산한 정확히 일치입니다.
+    fn reference(value: &str, query: &str) -> bool {
+        let target = key_reference(query);
+        let target = target.trim();
+        !target.is_empty() && key_reference(value).trim() == target
+    }
+
+    /// 빠른 경로가 정의와 같은지 무작위 값으로 확인합니다(7.4.3).
+    #[test]
+    fn equals_trimmed_matches_reference_on_random_values() {
+        let pool: Vec<char> = "aA \u{3000}\u{a0}\u{e9}\u{c9}\u{df}\u{130}\u{212A}\u{fb00}\u{3a3}\u{3c2}\u{1100}\u{1161}\u{11a8}\u{ac00}\u{ac01}\u{d7a3}\u{301}\u{308}\u{ff21}\u{ff41}\u{1e9e}가목단어"
+            .chars()
+            .collect();
+        let queries = [
+            "가목", "단어", "a가", "AA", "ss", "\u{df}", "\u{e9}", "\u{ac00}", " 가 ", "\u{ff41}",
+        ];
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        for query in queries {
+            let matcher = Matcher::new(query).unwrap();
+            for _ in 0..40_000 {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let mut value = String::new();
+                if state.is_multiple_of(4) {
+                    value = format!(" {query}\u{3000}");
+                } else {
+                    for step in 0..(state % 6) as usize {
+                        let pick =
+                            (state.rotate_left(step as u32 * 9) % pool.len() as u64) as usize;
+                        value.push(pool[pick]);
+                    }
+                }
+                assert_eq!(
+                    matcher.equals_trimmed(&value),
+                    reference(&value, query),
+                    "{value:?} / {query:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn equals_trimmed_fast_path_cases() {
+        let matcher = Matcher::new("목표단어").unwrap();
+        assert!(matcher.equals_trimmed("  목표단어 "));
+        assert!(!matcher.equals_trimmed("목표단어2"));
+        assert!(Matcher::new("Abc가").unwrap().equals_trimmed("aBC가"));
+        // 분해형 한글은 빠른 경로를 타지 않고 변환해 비교합니다.
+        assert!(matcher.equals_trimmed(
+            "\u{1106}\u{1169}\u{11a8}\u{1111}\u{116d}\u{1103}\u{1161}\u{11ab}\u{110b}\u{1165}"
+        ));
     }
 }
