@@ -249,14 +249,16 @@ pub fn search_xml_file(
             Ok(Event::Eof) => break,
             Ok(Event::Start(e)) => {
                 document.on_start()?;
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                ctx.push_tag(&name);
+                // 올바른 UTF-8 태그 이름은 복사하지 않고 빌려 씁니다.
+                let qname = e.name();
+                ctx.push_tag(&String::from_utf8_lossy(qname.as_ref()));
                 process_xml_attributes(&e, start_pos, &mut ctx)?;
             }
             Ok(Event::Empty(e)) => {
                 document.on_empty()?;
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                ctx.push_tag(&name);
+                // 올바른 UTF-8 태그 이름은 복사하지 않고 빌려 씁니다.
+                let qname = e.name();
+                ctx.push_tag(&String::from_utf8_lossy(qname.as_ref()));
                 process_xml_attributes(&e, start_pos, &mut ctx)?;
                 ctx.pop_tag();
             }
@@ -348,15 +350,13 @@ fn process_xml_text_item(
     }
 }
 
-fn attribute_value(
-    attr: &quick_xml::events::attributes::Attribute<'_>,
-) -> Result<String, XmlSearchError> {
+/// 변환이 필요 없는 값은 원본을 빌려 돌려줍니다.
+fn attribute_value<'b>(
+    attr: &'b quick_xml::events::attributes::Attribute<'_>,
+) -> Result<Cow<'b, str>, XmlSearchError> {
     let raw = std::str::from_utf8(attr.value.as_ref()).map_err(XmlSearchError::parse)?;
     if !raw.bytes().any(|b| matches!(b, b'\t' | b'\r' | b'\n')) {
-        return attr
-            .unescape_value()
-            .map(|v| v.into_owned())
-            .map_err(XmlSearchError::parse);
+        return attr.unescape_value().map_err(XmlSearchError::parse);
     }
     // XML normalizes literal attribute whitespace BEFORE expanding references.
     // Thus &#xA; remains a newline, whereas a literal CRLF becomes one space.
@@ -375,7 +375,7 @@ fn attribute_value(
         }
     }
     quick_xml::escape::unescape(&normalized)
-        .map(|v| v.into_owned())
+        .map(|v| Cow::Owned(v.into_owned()))
         .map_err(XmlSearchError::parse)
 }
 
@@ -386,7 +386,6 @@ fn process_xml_attributes(
 ) -> Result<(), XmlSearchError> {
     for attr in e.attributes() {
         let attr = attr.map_err(XmlSearchError::parse)?;
-        let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
         let val = attribute_value(&attr)?;
 
         // Iteration and unescaping still validate attributes after collection stops.
@@ -428,6 +427,8 @@ fn process_xml_attributes(
             let line_offset = value_start.or(location.map(|(offset, _)| offset));
             let line = line_offset.map(|offset| ctx.line_counter.line_at(ctx.mmap, offset));
 
+            // 속성 이름은 일치했을 때만 문자열로 바꿉니다.
+            let key = String::from_utf8_lossy(attr.key.as_ref());
             ctx.results.push((
                 line.unwrap_or(0),
                 format!("/{}/@{}\t{}", ctx.tag_path_cache, key, val),

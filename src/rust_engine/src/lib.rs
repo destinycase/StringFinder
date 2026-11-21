@@ -808,6 +808,8 @@ struct Utf8TextSearch<'a> {
     line: Option<(usize, usize)>,
     line_no: Option<usize>,
     last_exact_line_start: Option<usize>,
+    // 한 줄에 일치가 여러 번 있을 때 같은 줄 내용을 다시 만들지 않도록 기억합니다(긴 줄 제외).
+    last_raw_line: Option<(usize, String)>,
     results: &'a mut Vec<RawMatch>,
     // UTF-8 유효성을 확인한 위치와, 해석하지 못한 바이트를 만났는지 여부입니다.
     utf8_checked: usize,
@@ -933,6 +935,20 @@ impl Utf8TextSearch<'_> {
             }
             return;
         }
+        // 같은 줄의 다음 일치는 앞서 만든 줄 내용을 그대로 씁니다. 긴 줄은 일치 위치마다 미리보기가 달라 캐시하지 않습니다.
+        if let Some((cached_start, content)) = &self.last_raw_line {
+            if *cached_start == line_start {
+                let content = content.clone();
+                self.results.push((
+                    line,
+                    content,
+                    Some(match_start),
+                    Some(match_len),
+                    ResultKind::Match,
+                ));
+                return;
+            }
+        }
         // Each hit retains its line preview and byte range.
         let (content, kind) = extract_line_content_bytes(
             self.buf,
@@ -947,6 +963,9 @@ impl Utf8TextSearch<'_> {
         } else {
             (Some(match_start), Some(match_len))
         };
+        if kind == ResultKind::Match {
+            self.last_raw_line = Some((line_start, content.clone()));
+        }
         self.results.push((line, content, offset, length, kind));
     }
 
@@ -1199,6 +1218,7 @@ fn search_utf8_text(
         line: None,
         line_no: None,
         last_exact_line_start: None,
+        last_raw_line: None,
         results,
         utf8_checked: 0,
         invalid_utf8: false,
@@ -1389,6 +1409,23 @@ fn search_utf8_with_triggers(search: &mut Utf8TextSearch<'_>, triggers: &textkey
 fn apply_match_limit(matches: Vec<RawMatch>, max_per_file: usize) -> Vec<RawMatch> {
     // 파일 단위 안내(종류가 메타데이터)는 실제 매치가 아닙니다.
     // 매치 상한 계산에서 제외하고, 잘림 이후에도 반드시 보존합니다. 종류는 만든 곳에서 정해 옵니다.
+    // 안내 항목이 없고 상한 이하이면 그대로 돌려줍니다(새 배열을 만들지 않음).
+    let has_metadata = matches.iter().any(|item| item.4.is_metadata());
+    if !has_metadata && matches.len() <= max_per_file {
+        return matches;
+    }
+    if !has_metadata {
+        let mut matches = matches;
+        matches.truncate(max_per_file);
+        matches.push((
+            0,
+            MATCH_META_TRUNCATED.to_string(),
+            None,
+            None,
+            ResultKind::Truncated,
+        ));
+        return matches;
+    }
     let (mut visible_matches, mut metadata): (Vec<_>, Vec<_>) =
         matches.into_iter().partition(|item| !item.4.is_metadata());
     if visible_matches.len() > max_per_file {
@@ -2372,16 +2409,16 @@ pub fn search_dir(
         join_auxiliary_threads(dispatcher_handle, monitor_handle)
     });
 
-    let final_res = to_python_file_matches(
-        results
+    let final_res = to_python_file_matches(std::mem::take(
+        &mut *results
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone(),
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    ));
+    let final_skip = std::mem::take(
+        &mut *skipped
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
     );
-    let final_skip = skipped
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
     if let Some(error) = merge_completion_errors(callback_state.error_message(), thread_error) {
         return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error));
     }
@@ -3644,5 +3681,61 @@ mod tests {
         assert_eq!(matches[0].4, ResultKind::LongLine);
         assert_eq!((matches[0].2, matches[0].3), (None, None));
         assert!(!matches[0].4.is_metadata());
+    }
+}
+
+#[cfg(test)]
+mod repeated_line_tests {
+    use super::*;
+
+    fn run(buf: &[u8]) -> Vec<RawMatch> {
+        let matcher = textkey::Matcher::new("ab").unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut results = Vec::new();
+        search_utf8_text(buf, &matcher, false, &stop, 1000, &mut results);
+        results
+    }
+
+    /// 한 줄의 여러 일치는 같은 줄 내용과 각자의 위치를 보고합니다(7.4.6 줄 내용 재사용).
+    #[test]
+    fn repeated_hits_on_one_line_keep_their_offsets() {
+        let results = run(b"x ab ab\r\nab cd ab\nzz");
+        let got: Vec<_> = results
+            .iter()
+            .map(|(line, content, offset, length, kind)| {
+                (*line, content.as_str(), *offset, *length, *kind)
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (1, "x ab ab", Some(2), Some(2), ResultKind::Match),
+                (1, "x ab ab", Some(5), Some(2), ResultKind::Match),
+                (2, "ab cd ab", Some(9), Some(2), ResultKind::Match),
+                (2, "ab cd ab", Some(15), Some(2), ResultKind::Match),
+            ]
+        );
+    }
+
+    /// 긴 줄은 일치마다 미리보기가 달라 재사용하지 않습니다.
+    #[test]
+    fn long_line_previews_follow_each_hit() {
+        let mut line = "ab".to_string();
+        line.push_str(&"x".repeat(6000));
+        line.push_str("ab");
+        let results = run(line.as_bytes());
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|item| item.4 == ResultKind::LongLine));
+        assert_ne!(results[0].1, results[1].1);
+    }
+
+    #[test]
+    fn match_limit_without_metadata_appends_notice_last() {
+        let item = |n: usize| (n, format!("m{n}"), None, None, ResultKind::Match);
+        let limited = apply_match_limit(vec![item(1), item(2), item(3)], 2);
+        assert_eq!(limited.len(), 3);
+        assert_eq!(limited[2].4, ResultKind::Truncated);
+        let same = apply_match_limit(vec![item(1), item(2)], 2);
+        assert_eq!(same.len(), 2);
     }
 }
