@@ -337,3 +337,18 @@ def test_small_detail_filter_applies_immediately(qtbot, mock_config_manager):
     qtbot.waitUntil(lambda: view.match_model.match_count > 0)
     view.match_filter_1_edit.setText("zzz-none")
     assert len(view.match_model._filtered_indices) == 0
+
+
+def test_multi_selection_survives_result_list_rebuild(qtbot, mock_config_manager):
+    """검색 중 파일 목록이 다시 만들어져도 여러 개 고른 선택이 풀리지 않습니다(7.5.2)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0, 2])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    chosen = {_path_of_row(view, 0), _path_of_row(view, 2)}
+    current = _path_of_row(view, view.result_view.currentIndex().row())
+    view.result_model.beginResetModel()
+    view.result_model.endResetModel()
+    rows = {index.row() for index in view.result_view.selectionModel().selectedRows()}
+    assert {_path_of_row(view, r) for r in rows} == chosen
+    assert _path_of_row(view, view.result_view.currentIndex().row()) == current
+    assert view.match_model.multi_file and view.match_model.match_count == 4

@@ -5,7 +5,7 @@ import sys
 import threading
 import tempfile
 from pathlib import Path
-from PySide6.QtCore import QByteArray, QItemSelectionModel, QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QItemSelection, QItemSelectionModel, QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtCore import QEvent, QObject, QRunnable, QThreadPool
 from PySide6.QtGui import (
     QAction,
@@ -574,6 +574,7 @@ class ResultView(QWidget):
         self.result_view.selectionModel().selectionChanged.connect(lambda *_: self._detail_refresh_timer.start())
         # 검색 중 결과가 추가되며 목록을 다시 만들 때 선택한 파일을 유지합니다(검수 U-3).
         self._reselect_path = None
+        self._reselect_paths = set()
         self.proxy_model.modelAboutToBeReset.connect(self._remember_result_selection)
         self.proxy_model.modelReset.connect(self._restore_result_selection)
         self.result_view.doubleClicked.connect(self._on_result_double_clicked)
@@ -946,32 +947,63 @@ class ResultView(QWidget):
         finally:
             self.result_view.setUpdatesEnabled(True)
 
+    def _path_at_proxy_index(self, index):
+        item = self.result_model.get_item(self.proxy_model.mapToSource(index).row())
+        return item[0] if item else None
+
     def _remember_result_selection(self):
+        """목록을 다시 만들기 전에 보던 파일과 고른 파일 전체를 기억합니다(7.5.2: 여러 개 선택 유지)."""
         index = self.result_view.currentIndex()
-        self._reselect_path = None
-        if index.isValid():
-            item = self.result_model.get_item(self.proxy_model.mapToSource(index).row())
-            if item:
-                self._reselect_path = item[0]
+        self._reselect_path = self._path_at_proxy_index(index) if index.isValid() else None
+        selection = self.result_view.selectionModel()
+        paths = set()
+        if selection is not None:
+            for selected in selection.selectedRows():
+                path = self._path_at_proxy_index(selected)
+                if path:
+                    paths.add(path)
+        self._reselect_paths = paths
 
     def _restore_result_selection(self):
-        path, self._reselect_path = self._reselect_path, None
-        if not path:
+        current_path, self._reselect_path = self._reselect_path, None
+        paths, self._reselect_paths = self._reselect_paths, set()
+        if current_path:
+            paths.add(current_path)
+        if not paths:
             return
-        for row in range(self.proxy_model.rowCount()):
-            index = self.proxy_model.index(row, 0)
-            item = self.result_model.get_item(self.proxy_model.mapToSource(index).row())
-            if item and item[0] == path:
-                selection = self.result_view.selectionModel()
-                # 같은 파일을 다시 고르는 것이므로 상세 목록을 다시 만들지 않습니다.
-                selection.blockSignals(True)
-                selection.setCurrentIndex(
-                    index,
-                    QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
-                )
-                selection.blockSignals(False)
-                self.result_view.viewport().update()
-                return
+        selection = self.result_view.selectionModel()
+        if selection is None:
+            return
+        last_column = max(0, self.proxy_model.columnCount() - 1)
+        restored = QItemSelection()
+        current_index = None
+        run_start = None
+        row_count = self.proxy_model.rowCount()
+        for row in range(row_count + 1):
+            path = self._path_at_proxy_index(self.proxy_model.index(row, 0)) if row < row_count else None
+            hit = path is not None and path in paths
+            if hit and path == current_path:
+                current_index = self.proxy_model.index(row, 0)
+            if hit and run_start is None:
+                run_start = row
+            elif not hit and run_start is not None:
+                # 이어진 줄은 한 범위로 묶어 수천 개를 골라도 한 번에 되살립니다.
+                restored.select(self.proxy_model.index(run_start, 0), self.proxy_model.index(row - 1, last_column))
+                run_start = None
+        if restored.isEmpty():
+            return
+        # 같은 파일들을 다시 고르는 것이므로 상세 목록을 다시 만들지 않습니다.
+        selection.blockSignals(True)
+        try:
+            selection.select(
+                restored,
+                QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
+            )
+            if current_index is not None:
+                selection.setCurrentIndex(current_index, QItemSelectionModel.SelectionFlag.NoUpdate)
+        finally:
+            selection.blockSignals(False)
+        self.result_view.viewport().update()
 
     def _selected_result_entries(self):
         """선택한 파일들의 (경로, 결과)를 파일 목록에 보이는 순서대로 돌려줍니다."""
