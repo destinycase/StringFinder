@@ -239,10 +239,11 @@ def test_group_checkbox_lines_up_with_ungrouped_folder_checkboxes(panel):
     assert game.checkbox.x() == loose.checkbox.x()
     # 펼치기 단추는 체크 상자와 이름 사이에 있습니다(7.1.22).
     assert game.checkbox.x() < game.toggle_btn.x() < game.name_label.x() < game.count_label.x()
-    # 개수는 이름 길이와 상관없이 줄 오른쪽 끝에 맞춰집니다(7.1.23).
+    # 개수는 그룹 이름 바로 오른쪽에 붙습니다(7.4.9).
     _, work = header(panel, "Work")
-    assert game.count_label.geometry().right() == work.count_label.geometry().right()
-    assert game.count_label.x() > game.name_label.geometry().right() + 20
+    for item in (game, work):
+        gap = item.count_label.x() - item.name_label.geometry().right()
+        assert 0 < gap <= item.layout().spacing() + 1
 
 
 @pytest.mark.parametrize("panel_type", [FolderFilterPanel, ExtensionFilterPanel, FilenameFilterPanel])

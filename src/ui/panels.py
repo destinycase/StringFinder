@@ -238,7 +238,7 @@ class FolderGroupHeader(FilterItemWidget):
     """검색 폴더 그룹의 머리글 행입니다.
 
     그룹 안 폴더를 한꺼번에 선택·해제하는 체크(일부만 선택되면 부분 표시), 선택/전체 개수, 펼치기/접기 단추를 보여줍니다.
-    체크가 일반 폴더 행의 체크와 같은 세로줄에 오도록 펼치기 단추는 개수 오른쪽에 둡니다.
+    펼치기 단추는 체크 상자와 이름 사이, 개수는 이름 바로 오른쪽에 둡니다.
     """
 
     def __init__(self, name, collapsed=False, on_delete=None, on_toggle=None, on_check=None):
@@ -264,8 +264,9 @@ class FolderGroupHeader(FilterItemWidget):
         self.checkbox.clicked.connect(lambda _checked=False: self._on_check(self) if self._on_check else None)
         self.count_label = QLabel()
         self.count_label.setStyleSheet("QLabel { color: #888; }")
-        # 개수는 줄의 오른쪽 끝(삭제 단추 앞)에 둡니다(7.1.23).
-        layout.insertWidget(layout.indexOf(self.delete_btn), self.count_label)
+        self.count_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        # 개수는 그룹 이름 바로 오른쪽에 붙여 둡니다(7.4.9).
+        layout.insertWidget(layout.indexOf(self.name_label) + 1, self.count_label)
         # 펼치기 단추는 체크 상자와 이름 사이에 둡니다(7.1.22).
         layout.insertWidget(layout.indexOf(self.name_label), self.toggle_btn)
         self.set_collapsed(collapsed)
