@@ -183,6 +183,7 @@ fn estimated_structured_memory(
     is_archive: bool,
     is_xml: bool,
     is_excel: bool,
+    selected: Option<&'static Encoding>,
 ) -> u64 {
     let extension = path
         .extension()
@@ -190,7 +191,7 @@ fn estimated_structured_memory(
         .unwrap_or("")
         .to_ascii_lowercase();
     if is_archive && extension == "archive" {
-        return estimated_archive_memory(path);
+        return estimated_archive_memory(path, selected);
     }
     let memory_profile =
         if is_excel || ["xlsx", "xlsm", "xlsb", "xls"].contains(&extension.as_str()) {
@@ -221,28 +222,52 @@ fn estimated_structured_memory(
         .saturating_add(fixed_overhead)
 }
 
+/// UTF-16 외 인코딩(CP949 등)은 UTF-8 사본과 변환 버퍼를 합쳐 파일 크기의 약 2.7배를 쓴다고 측정됐습니다(7.4.6 검수).
+const ARCHIVE_LEGACY_MULTIPLIER: u64 = 3;
+
 /// archive는 문서를 트리로 만들지 않으므로(7.4.4) UTF-8이면 고정 몫만 예약합니다. 다른 인코딩은 검색 전에
-/// 파일 전체를 UTF-8로 바꾼 사본을 만들므로 그 크기(최대 파일의 1.5배)를 더합니다.
-fn estimated_archive_memory(path: &Path) -> u64 {
-    let Ok(mut file) = File::open(path) else {
+/// 파일 전체를 UTF-8로 바꾼 사본을 만들므로 그 몫을 더합니다. UTF-16은 1.5배, 그 밖의 인코딩은 3배입니다.
+/// 인코딩은 실제 검색과 같은 순서로 정합니다(7.4.7): 사용자가 고른 인코딩, BOM과 앞부분의 UTF-16 판정,
+/// 그다음 파일 전체가 올바른 UTF-8인지. 판정하지 못하면 큰 쪽(3배)으로 예약합니다.
+fn estimated_archive_memory(path: &Path, selected: Option<&'static Encoding>) -> u64 {
+    let Ok(file) = File::open(path) else {
         return 0;
     };
     let file_size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
     if file_size < LARGE_STRUCTURED_FILE_BYTES {
         return 0;
     }
-    let mut prefix = vec![0u8; 64 * 1024];
-    let read = file.read(&mut prefix).unwrap_or(0);
-    prefix.truncate(read);
-    if crate::utils::detect_encoding_with(&prefix, false) == encoding_rs::UTF_8 {
-        return ARCHIVE_FIXED_OVERHEAD;
+    let copy_of = |multiplier: u64, divisor: u64| {
+        file_size
+            .saturating_mul(multiplier)
+            .saturating_div(divisor)
+            .saturating_add(ARCHIVE_FIXED_OVERHEAD)
+    };
+    let legacy = copy_of(ARCHIVE_LEGACY_MULTIPLIER, 1);
+    let utf16 = copy_of(3, 2);
+    let encoding = match selected {
+        Some(encoding) => encoding,
+        None => {
+            // 파일 전체를 확인하려고 매핑합니다. 읽은 내용은 운영체제 캐시에 남아 바로 이은 검색이 다시 씁니다.
+            let Ok(mmap) = (unsafe { Mmap::map(&file) }) else {
+                return legacy;
+            };
+            match crate::utils::detect_until_korean(&mmap) {
+                crate::utils::Detection::Encoding(encoding) => encoding,
+                crate::utils::Detection::KoreanCheck => return legacy,
+            }
+        }
+    };
+    if encoding == UTF_8 {
+        ARCHIVE_FIXED_OVERHEAD
+    } else if encoding == UTF_16LE || encoding == UTF_16BE {
+        utf16
+    } else {
+        legacy
     }
-    file_size
-        .saturating_mul(3)
-        .saturating_div(2)
-        .saturating_add(ARCHIVE_FIXED_OVERHEAD)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn acquire_structured_permit(
     limiter: &Option<Arc<StructuredMemoryLimiter>>,
     path: &Path,
@@ -250,12 +275,14 @@ fn acquire_structured_permit(
     is_archive: bool,
     is_xml: bool,
     is_excel: bool,
+    selected: Option<&'static Encoding>,
     stop_flag: &Arc<AtomicBool>,
 ) -> Result<Option<StructuredMemoryPermit>, StructuredPermitError> {
     let Some(limiter) = limiter else {
         return Ok(None);
     };
-    let estimate = estimated_structured_memory(path, is_json, is_archive, is_xml, is_excel);
+    let estimate =
+        estimated_structured_memory(path, is_json, is_archive, is_xml, is_excel, selected);
     if estimate == 0 {
         return Ok(None);
     }
@@ -461,10 +488,19 @@ fn load_file_snapshot(
         let _ = fs2::FileExt::unlock(&file);
     }
 
+    // 매핑하지 못한 큰 파일을 통째로 읽으면 메모리 예약 밖에서 파일 크기만큼 씁니다. 1GB를 넘으면 건너뜁니다(7.4.7).
+    if expected_len > SNAPSHOT_COPY_MAX_BYTES {
+        return Err(format!(
+            "file is being changed or locked; not copied ({expected_len} bytes)"
+        ));
+    }
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
     Ok(FileSnapshot::Owned(bytes))
 }
+
+/// 매핑하지 못했을 때 통째로 읽어도 되는 최대 크기입니다(공통 검색 크기 상한의 최댓값과 같음).
+const SNAPSHOT_COPY_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 fn search_walk_builder(
     root_path: &Path,
@@ -2316,6 +2352,7 @@ pub fn search_dir(
                             is_archive,
                             is_xml,
                             is_excel,
+                            encoding,
                             &stop_ref,
                         ) {
                             Ok(permit) => permit,
@@ -3142,7 +3179,8 @@ mod tests {
                 false,
                 false,
                 false,
-                false
+                false,
+                None
             ),
             0
         );
@@ -3249,7 +3287,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    /// UTF-8 archive는 고정 몫만, 다른 인코딩은 UTF-8 사본 크기(1.5배)를 더해 예약합니다.
+    /// UTF-8 archive는 고정 몫만, UTF-16은 1.5배, 그 밖의 인코딩은 3배를 더해 예약합니다.
     #[test]
     fn archive_memory_estimate_depends_on_encoding() {
         let root = unique_temp_root("archive-memory");
@@ -3257,7 +3295,10 @@ mod tests {
 
         let utf8 = root.join("utf8.archive");
         fs::write(&utf8, vec![b' '; size]).unwrap();
-        assert_eq!(estimated_archive_memory(&utf8), ARCHIVE_FIXED_OVERHEAD);
+        assert_eq!(
+            estimated_archive_memory(&utf8, None),
+            ARCHIVE_FIXED_OVERHEAD
+        );
 
         let utf16 = root.join("utf16.archive");
         let mut bytes = vec![0xFF, 0xFE];
@@ -3265,14 +3306,35 @@ mod tests {
         fs::write(&utf16, &bytes).unwrap();
         let length = bytes.len() as u64;
         assert_eq!(
-            estimated_archive_memory(&utf16),
+            estimated_archive_memory(&utf16, None),
             length * 3 / 2 + ARCHIVE_FIXED_OVERHEAD
         );
 
         // 작은 파일은 예약하지 않습니다.
         let small = root.join("small.archive");
         fs::write(&small, b"{}").unwrap();
-        assert_eq!(estimated_archive_memory(&small), 0);
+        assert_eq!(estimated_archive_memory(&small, None), 0);
+
+        // 앞 64KB가 영문뿐이어도 뒤에 CP949 글자가 있으면 3배로 예약합니다(7.4.7).
+        let cp949 = root.join("cp949.archive");
+        let mut bytes = vec![b' '; size];
+        bytes.extend_from_slice(&[0xC7, 0xD1, 0xB1, 0xDB]);
+        fs::write(&cp949, &bytes).unwrap();
+        let legacy = bytes.len() as u64 * 3 + ARCHIVE_FIXED_OVERHEAD;
+        assert_eq!(estimated_archive_memory(&cp949, None), legacy);
+        // 사용자가 고른 인코딩을 따릅니다.
+        assert_eq!(
+            estimated_archive_memory(&utf8, Some(encoding_rs::EUC_KR)),
+            size as u64 * 3 + ARCHIVE_FIXED_OVERHEAD
+        );
+        assert_eq!(
+            estimated_archive_memory(&cp949, Some(UTF_8)),
+            ARCHIVE_FIXED_OVERHEAD
+        );
+        assert_eq!(
+            estimated_archive_memory(&utf8, Some(UTF_16LE)),
+            size as u64 * 3 / 2 + ARCHIVE_FIXED_OVERHEAD
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

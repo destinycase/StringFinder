@@ -72,7 +72,7 @@ Excel 검색은 파서가 읽은 셀 값과 **저장된 수식 계산 결과 캐
 ### 1.7 UE 현지화 archive 값만 검색
 
 - **위치:** [`src/rust_engine/src/ue_archive_search.rs`](../src/rust_engine/src/ue_archive_search.rs)
-- 대상은 `.archive` 확장자입니다. 인코딩 감지는 JSON 값만 검색과 같습니다. 크기 상한은 공통 상한 설정과 별도로 8GB입니다(`ARCHIVE_MAX_FILE_BYTES`, 7.4.5). 구조 문서 메모리 예약은 UTF-8이면 고정 64MB, 다른 인코딩이면 UTF-8로 바꾼 사본 몫(파일 크기의 1.5배)을 더합니다. 문서를 트리로 만들지 않기 때문입니다(7.4.4).
+- 대상은 `.archive` 확장자입니다. 인코딩 감지는 JSON 값만 검색과 같습니다. 크기 상한은 공통 상한 설정과 별도로 8GB입니다(`ARCHIVE_MAX_FILE_BYTES`, 7.4.5). 구조 문서 메모리 예약은 UTF-8이면 고정 64MB이고, 다른 인코딩이면 UTF-8로 바꾼 사본 몫(UTF-16은 파일 크기의 1.5배, CP949 등은 3배)을 더합니다. 문서를 트리로 만들지 않기 때문입니다(7.4.4). 예약할 인코딩은 실제 검색과 같은 순서로 정합니다(사용자 선택, BOM·앞부분 UTF-16 판정, 파일 전체 UTF-8 확인). 정하지 못하면 3배로 잡습니다(7.4.7). 매핑하지 못한 파일을 통째로 읽는 대체 경로는 1GB까지만 씁니다(`SNAPSHOT_COPY_MAX_BYTES`, 7.4.7).
 - 문서 전체를 JSON 파서로 먼저 검증한 뒤 구조를 해석합니다. 중복 키는 **JSON 중복 키 설정과 관계없이** 오류입니다. 구조 필드가 하나씩만 있어야 하기 때문입니다.
 - 최상위 노드와 각 `Subnamespaces` 노드는 선택적으로 `Namespace`(문자열)·`Children`(배열)·`Subnamespaces`(배열)를 가집니다. 최상위에는 `Children`이나 `Subnamespaces` 중 하나가 있어야 합니다. 각 항목은 `Key`·`Source.Text`·`Translation.Text` 문자열이 필수이고, 다른 필드는 무시합니다.
 - 방문 순서는 노드의 `Children`을 먼저, 그다음 `Subnamespaces`를 문서 순서대로입니다. Namespace는 비어 있지 않은 값을 `.`으로 이어 표시합니다.
