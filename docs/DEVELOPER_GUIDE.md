@@ -1,7 +1,7 @@
 # StringFinder 개발자 가이드 (Developer Guide)
 
 - **문서 버전:** 2.2 (StringFinder v7.5.1 안정 버전 기준)
-- **최종 수정일:** 2026-11-19
+- **최종 수정일:** 2026-11-21
 - **대상 독자:** 코어 검색 엔진 및 UI/UX 개발자, 기여자(Maintainers & Contributors)
 
 > Documentation baseline: **StringFinder 7.5.1 (stable)** · Updated: **2026-11-21**
