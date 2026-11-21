@@ -233,10 +233,14 @@ fn estimated_archive_memory(path: &Path, selected: Option<&'static Encoding>) ->
     let Ok(file) = File::open(path) else {
         return 0;
     };
-    let file_size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+    let Ok(meta) = file.metadata() else {
+        return 0;
+    };
+    let file_size = meta.len();
     if file_size < LARGE_STRUCTURED_FILE_BYTES {
         return 0;
     }
+    let modified = meta.modified().ok();
     let copy_of = |multiplier: u64, divisor: u64| {
         file_size
             .saturating_mul(multiplier)
@@ -249,9 +253,17 @@ fn estimated_archive_memory(path: &Path, selected: Option<&'static Encoding>) ->
         Some(encoding) => encoding,
         None => {
             // 파일 전체를 확인하려고 매핑합니다. 읽은 내용은 운영체제 캐시에 남아 바로 이은 검색이 다시 씁니다.
+            // 검색 본문과 같이 공유 잠금을 얻고 크기·수정 시각이 그대로일 때만 매핑합니다(구현 정책 1.1, 7.4.8).
+            // 그렇지 않으면 매핑하지 않고 큰 쪽으로 예약합니다.
+            if fs2::FileExt::try_lock_shared(&file).is_err() {
+                return legacy;
+            }
             let Ok(mmap) = (unsafe { Mmap::map(&file) }) else {
                 return legacy;
             };
+            if !metadata_matches(&file, file_size, modified) {
+                return legacy;
+            }
             match crate::utils::detect_until_korean(&mmap) {
                 crate::utils::Detection::Encoding(encoding) => encoding,
                 crate::utils::Detection::KoreanCheck => return legacy,
@@ -491,7 +503,7 @@ fn load_file_snapshot(
     // 매핑하지 못한 큰 파일을 통째로 읽으면 메모리 예약 밖에서 파일 크기만큼 씁니다. 1GB를 넘으면 건너뜁니다(7.4.7).
     if expected_len > SNAPSHOT_COPY_MAX_BYTES {
         return Err(format!(
-            "file is being changed or locked; not copied ({expected_len} bytes)"
+            "file is being used by another process or changed; not copied ({expected_len} bytes)"
         ));
     }
     let mut bytes = Vec::new();
@@ -3799,5 +3811,41 @@ mod repeated_line_tests {
         assert_eq!(limited[2].4, ResultKind::Truncated);
         let same = apply_match_limit(vec![item(1), item(2)], 2);
         assert_eq!(same.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod archive_reservation_lock_tests {
+    use super::*;
+    use std::fs;
+
+    /// 다른 핸들이 배타 잠금을 걸어 둔 archive는 매핑하지 않고 큰 쪽(3배)으로 예약합니다(7.4.8).
+    #[test]
+    fn locked_archive_is_not_mapped_for_reservation() {
+        let root = std::env::temp_dir().join(format!(
+            "sf-archive-lock-{}",
+            SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("locked.archive");
+        let size = 9 * 1024 * 1024usize;
+        fs::write(&path, vec![b' '; size]).unwrap();
+        assert_eq!(
+            estimated_archive_memory(&path, None),
+            ARCHIVE_FIXED_OVERHEAD
+        );
+
+        let holder = File::open(&path).unwrap();
+        fs2::FileExt::lock_exclusive(&holder).unwrap();
+        let locked = estimated_archive_memory(&path, None);
+        fs2::FileExt::unlock(&holder).unwrap();
+        drop(holder);
+        if cfg!(windows) {
+            assert_eq!(locked, size as u64 * 3 + ARCHIVE_FIXED_OVERHEAD);
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 }

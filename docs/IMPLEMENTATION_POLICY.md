@@ -12,7 +12,7 @@
 
 - **위치:** [`src/rust_engine/src/lib.rs`](../src/rust_engine/src/lib.rs)
 - 검색 중 다른 프로세스가 파일을 줄이거나 변경하여 발생할 수 있는 mmap 접근 오류 위험을 줄입니다. 모든 OS 오류나 동시 수정으로부터 완전한 격리를 보장하는 장치는 아닙니다.
-- `fs2::FileExt::try_lock_shared`로 공유 락을 획득하고 파일 메타데이터(크기 및 수정 시간)가 일치할 때만 `FileSnapshot::Mapped`를 사용하며, 잠금 실패 시 `FileSnapshot::Owned(Vec<u8>)` 인메모리 버퍼로 자동 격리합니다.
+- `fs2::FileExt::try_lock_shared`로 공유 락을 획득하고 파일 메타데이터(크기 및 수정 시간)가 일치할 때만 `FileSnapshot::Mapped`를 사용하며, 잠금 실패 시 `FileSnapshot::Owned(Vec<u8>)` 인메모리 버퍼로 자동 격리합니다. 이 대체 경로는 1GB(`SNAPSHOT_COPY_MAX_BYTES`)까지만 쓰고, 넘으면 "다른 프로그램에서 사용 중"으로 건너뜁니다(7.4.7~7.4.8). archive 메모리 예약을 정하려고 파일 전체를 확인할 때도 같은 잠금·메타데이터 확인을 거치며, 실패하면 매핑하지 않고 3배로 예약합니다(7.4.8).
 
 ### 1.2 `serde_json Visitor` 기반 스트리밍 파싱
 

@@ -122,6 +122,10 @@ pub fn selected_encoding_valid(data: &[u8], encoding: &'static Encoding) -> bool
     {
         return false;
     }
+    // UTF-8은 사본을 만들지 않고 검사합니다. 잘못된 큰 파일에서 파일 크기만큼 임시 문자열을 만들지 않습니다(7.4.8).
+    if encoding == UTF_8 {
+        return simd_from_utf8(data).is_ok();
+    }
     let (_, errors) = encoding.decode_without_bom_handling(data);
     !errors
 }
@@ -167,6 +171,14 @@ pub fn decode_structured_bytes(
 #[cfg(test)]
 mod structured_decode_tests {
     use super::*;
+
+    #[test]
+    fn selected_utf8_is_checked_without_decoding() {
+        assert!(selected_encoding_valid("한글 abc".as_bytes(), UTF_8));
+        assert!(selected_encoding_valid(b"\xef\xbb\xbfabc", UTF_8));
+        assert!(!selected_encoding_valid(b"abc \xc7\xd1", UTF_8));
+        assert!(!selected_encoding_valid(b"\xff\xfea\x00", UTF_8));
+    }
 
     #[test]
     fn malformed_utf16_is_not_repaired_into_a_document() {

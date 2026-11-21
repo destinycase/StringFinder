@@ -92,3 +92,11 @@ def test_native_traversal_failures_preserve_missing_root_paths(operation, tmp_pa
     assert len(entries) == 2
     assert all(AppStrings.SKIP_DETAIL_FILE_NOT_FOUND in render_skip_reason(reason)
                for path, reason in entries)
+
+
+def test_locked_large_file_skip_is_shown_as_in_use():
+    """매핑하지 못한 1GB 초과 파일의 엔진 안내는 '다른 프로그램에서 사용 중'으로 보입니다(7.4.8)."""
+    from core.skip_reason_formatter import format_skip_reason
+
+    reason = "ERR_MMAP|file is being used by another process or changed; not copied (1074790400 bytes)"
+    assert AppStrings.SKIP_DETAIL_FILE_IN_USE in format_skip_reason(reason)
