@@ -40,6 +40,6 @@ python run.py
 - [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 채택한 설계의 배경, 개발·검증 절차
 - [구현 정책](docs/IMPLEMENTATION_POLICY.md) — 현재 검색·설정·UI 계약
 - [개발 히스토리](docs/DEVELOPMENT_HISTORY.md) — 7.1.1부터의 버전별 기능 변경
-- [벤치마크 기준선](docs/BENCHMARK_BASELINE.md) — 7.5.1 성능 기준값·표본·판정 규칙(7.6.1 측정 보류)
+- [벤치마크 기준선](docs/BENCHMARK_BASELINE.md) — 7.6.1 성능 기준값·표본·판정 규칙
 - [성능 기록](docs/PERFORMANCE_HISTORY.md) — 기준선과 비교한 측정 결과
 - [v7 이전 기록](docs/archive/before-v7/README.md) — 6.x까지의 이력·성능 기록·설계 검토

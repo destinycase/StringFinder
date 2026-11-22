@@ -9,7 +9,7 @@
 | 개발 방법과 설계 | [개발자 가이드](DEVELOPER_GUIDE.md) | 구조·책임·FFI·설계 배경·빌드·검증 절차 |
 | 구현을 위한 정책 | [구현 정책](IMPLEMENTATION_POLICY.md) | 현재 구현이 지켜야 하는 검색·오류·자원·설정·UI 계약 |
 | 버전별 변경 | [개발 히스토리](DEVELOPMENT_HISTORY.md) | 7.1.1부터의 기능 추가·개선·제거, 안정 버전 지정 |
-| 성능 기준값 | [벤치마크 기준선](BENCHMARK_BASELINE.md) | 표본 목록·7.5.1 기준값·판정 규칙(7.6.1 측정 보류) (값 원본: `benchmark_baseline.json`) |
+| 성능 기준값 | [벤치마크 기준선](BENCHMARK_BASELINE.md) | 표본 목록·7.6.1 기준값·판정 규칙 (값 원본: `benchmark_baseline.json`) |
 | 성능 측정 이력 | [성능 기록](PERFORMANCE_HISTORY.md) | 기준선과 비교한 측정 결과와 해석 |
 | 안정 버전 | [v7.6.1 고정 문서](master-baseline-v7.6.1.md) · [v7.5.1](master-baseline-v7.5.1.md) · [v7.4.1](master-baseline-v7.4.1.md) · [v7.3.1](master-baseline-v7.3.1.md) · [v7.2.1](master-baseline-v7.2.1.md) · [v7.1.1](master-baseline-v7.1.1.md) | 기준 커밋·실행 파일 해시·직전 안정 버전 이후 기능 |
 | 보관 | [v7 이전 기록](archive/before-v7/README.md) | 6.x까지의 이력·성능 기록·설계 검토·1차 안정 버전 문서 |
