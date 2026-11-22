@@ -5,6 +5,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileIconProvider
 
 from sf_utils.app_strings import AppStrings
+from sf_utils.constants import Constants as C
 from ui.result_view import ResultView
 
 LONG_SOURCE = "Confirm and proceed to the next stage of the adventure " * 6
@@ -122,3 +123,14 @@ def test_header_click_without_drag_does_not_store_ratio(qtbot, mock_config_manag
     qtbot.wait(100)
     assert not ResultView._match_user_ratios
     assert sum(_widths(view)) == view.match_view.viewport().width()
+
+
+def test_tab_switch_does_not_apply_other_mode_pixel_widths(qtbot, mock_config_manager):
+    """다른 검색 방식 탭의 저장 폭(열 수가 다름)을 덮어쓰지 않고 표 폭에 맞춰 다시 나눕니다(7.5.7)."""
+    view = _archive_view(qtbot, mock_config_manager)
+    for other_widths in ([459], [40, 80, 339]):
+        mock_config_manager.save_column_widths(C.VIEW_MATCH, other_widths)
+        view.restore_shared_layout()
+        widths = _widths(view)
+        assert sum(widths) == view.match_view.viewport().width(), (other_widths, widths)
+        assert abs(widths[3] - widths[4]) <= 1

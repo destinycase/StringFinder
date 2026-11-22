@@ -205,6 +205,7 @@ class SearchTab(QMainWindow):
         from sf_utils.logger import qt_log_handler
 
         qt_log_handler.signaler.level_message_logged.connect(self._on_log_message)
+        self._log_signal_connected = True
         result_layout.addWidget(self.results_dock)
         self.setCentralWidget(self.result_container)
         # 설정에서 필터 복원
@@ -315,7 +316,11 @@ class SearchTab(QMainWindow):
         for tab in list(SearchTab._instances):
             tab._pending_logs.clear()
             tab._log_shown_seq = last_seq
-            tab.logs_output.clear()
+            try:
+                tab.logs_output.clear()
+            except RuntimeError:
+                # 닫히는 중인 탭의 로그 창은 이미 지워졌을 수 있습니다. 남은 탭은 계속 비웁니다.
+                SearchTab._instances.discard(tab)
 
     def _on_log_message(self, level: str, message: str):
         # 로그는 프로그램 전체 기록 하나이며 모든 탭의 로그 창에 같은 내용이 보입니다(7.5.3).
@@ -396,6 +401,18 @@ class SearchTab(QMainWindow):
                 pass
             self.worker.stop()
             self.worker = None
+        # 닫은 탭이 다른 탭의 "로그 지우기"·로그 신호에 남아 지워진 창을 건드리지 않게 합니다(7.5.7).
+        SearchTab._instances.discard(self)
+        if getattr(self, "_log_signal_connected", False):
+            self._log_signal_connected = False
+            try:
+                from sf_utils.logger import qt_log_handler
+
+                qt_log_handler.signaler.level_message_logged.disconnect(self._on_log_message)
+            except (RuntimeError, TypeError):
+                pass
+        if hasattr(self, "_log_throttle_timer"):
+            self._log_throttle_timer.stop()
         if hasattr(self, "result_view_panel"):
             self.result_view_panel.cleanup()
 

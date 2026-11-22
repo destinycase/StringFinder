@@ -394,3 +394,31 @@ def test_search_finish_still_selects_first_file_when_nothing_was_chosen(qtbot, m
     view.result_view.selectionModel().clearSelection()
     view.auto_select_first_result()
     assert [i.row() for i in view.result_view.selectionModel().selectedRows()] == [0]
+
+
+def test_detail_follows_selection_when_filter_hides_a_chosen_file(qtbot, mock_config_manager):
+    """파일 필터로 고른 파일 일부가 숨으면 상세 목록도 남은 파일만 보여 줍니다(7.5.7)."""
+    view = _view(qtbot, mock_config_manager)
+    rows = [r for r in range(3) if not _path_of_row(view, r).endswith("c.txt")]
+    _select_rows(view, rows)
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    view.result_model.set_filters("a.txt", "")
+    qtbot.waitUntil(lambda: view._detail_signature == ("D:/d/a.txt",))
+    assert not view.match_model.multi_file
+    assert view.match_model.current_file_path.endswith("a.txt")
+
+
+def test_ctrl_deselected_current_file_is_not_reselected_on_rebuild(qtbot, mock_config_manager):
+    """Ctrl+클릭으로 선택을 푼 현재 위치 파일은 목록이 다시 만들어져도 다시 골라지지 않습니다(7.5.7)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0, 1])
+    current_path = _path_of_row(view, 0)
+    other_path = _path_of_row(view, 1)
+    selection = view.result_view.selectionModel()
+    selection.select(view.proxy_model.index(0, 0),
+                     QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
+    assert _path_of_row(view, view.result_view.currentIndex().row()) == current_path
+    view.add_results([[1, "d.txt", "D:/d", "D:/d/d.txt", [[1, "sword", 0, 5]]]])
+    selected = {_path_of_row(view, i.row()) for i in selection.selectedRows()}
+    assert selected == {other_path}
+    assert _path_of_row(view, view.result_view.currentIndex().row()) == current_path

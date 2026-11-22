@@ -1023,7 +1023,10 @@ class ResultView(QWidget):
     def _restore_result_selection(self):
         current_path, self._reselect_path = self._reselect_path, None
         paths, self._reselect_paths = self._reselect_paths, set()
-        if current_path:
+        # 고른 파일만 되살립니다. Ctrl+클릭으로 선택을 푼 현재 위치 파일은 다시 고르지 않고 위치만 지킵니다.
+        # 고른 파일이 하나도 없을 때만 보던 파일을 고릅니다(7.5.7, 검수 4).
+        remembered = set(paths)
+        if not paths and current_path:
             paths.add(current_path)
         if not paths:
             return
@@ -1032,14 +1035,20 @@ class ResultView(QWidget):
             return
         last_column = max(0, self.proxy_model.columnCount() - 1)
         restored = QItemSelection()
+        restored_paths: set = set()
         current_index = None
+        first_hit_index = None
         run_start = None
         row_count = self.proxy_model.rowCount()
         for row in range(row_count + 1):
             path = self._path_at_proxy_index(self.proxy_model.index(row, 0)) if row < row_count else None
             hit = path is not None and path in paths
-            if hit and path == current_path:
+            if path is not None and path == current_path:
                 current_index = self.proxy_model.index(row, 0)
+            if hit:
+                if not restored_paths:
+                    first_hit_index = self.proxy_model.index(row, 0)
+                restored_paths.add(path)
             if hit and run_start is None:
                 run_start = row
             elif not hit and run_start is not None:
@@ -1048,6 +1057,9 @@ class ResultView(QWidget):
                 run_start = None
         if restored.isEmpty():
             return
+        if current_index is None:
+            # 보던 파일이 목록에서 빠졌으면 남은 선택의 첫 파일을 현재 위치로 둡니다.
+            current_index = first_hit_index
         # 같은 파일들을 다시 고르는 것이므로 상세 목록을 다시 만들지 않습니다.
         selection.blockSignals(True)
         try:
@@ -1060,6 +1072,10 @@ class ResultView(QWidget):
         finally:
             selection.blockSignals(False)
         self.result_view.viewport().update()
+        if remembered and restored_paths != remembered:
+            # 파일 필터 등으로 고른 파일 일부가 목록에서 빠졌습니다. 신호를 막아 두었으므로
+            # 상세 목록을 남은 선택에 맞춰 직접 다시 만듭니다(7.5.7, 검수 3).
+            self._detail_refresh_timer.start()
 
     def _selected_result_entries(self):
         """선택한 파일들의 (경로, 결과)를 파일 목록에 보이는 순서대로 돌려줍니다."""
@@ -1721,10 +1737,16 @@ class ResultView(QWidget):
             self.config_manager.save_column_widths(Constants.VIEW_MATCH, widths)
 
     def _restore_column_widths(self, view_type):
+        if view_type == Constants.VIEW_MATCH:
+            # 검색 상세는 저장된 픽셀 폭을 쓰지 않습니다. 탭마다 검색 방식(열 수)이 달라 다른 탭의 폭을
+            # 덮어쓰면 열이 어긋나고 가로 스크롤이 생깁니다. 현재 표 폭과 직접 끈 비율로 다시 나눕니다(7.5.7).
+            # 한 열인 일반 모드는 늘 표 폭을 채우므로 따로 할 일이 없습니다.
+            self._layout_match_columns()
+            return
         widths = self.config_manager.get_column_widths(view_type)
         if not widths:
             return
-        target_view = self.result_view if view_type == Constants.VIEW_RESULT else self.match_view
+        target_view = self.result_view
         for i, w in enumerate(widths):
             target_view.setColumnWidth(i, w)
 

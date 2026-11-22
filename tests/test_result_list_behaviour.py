@@ -205,3 +205,21 @@ def test_toggling_log_level_does_not_duplicate_pending_line(qtbot, mock_config_m
     tab._log_level_checkboxes["INFO"].setChecked(True)
     assert tab.logs_output.toPlainText().count("pending line for level toggle") == 1
     tab.cleanup()
+
+
+def test_clear_logs_after_closing_another_tab(qtbot, mock_config_manager):
+    """탭을 닫은 뒤 다른 탭에서 로그를 지워도 오류 없이 남은 탭이 비워집니다(7.5.7)."""
+    from sf_utils.logger import logger
+    from ui.search_tab import SearchTab
+
+    first, second = SearchTab(mock_config_manager), SearchTab(mock_config_manager)
+    qtbot.addWidget(second)
+    first.cleanup()
+    assert first not in SearchTab._instances
+    first.deleteLater()
+    qtbot.wait(20)
+    logger.info("line after closing a tab")
+    assert "line after closing a tab" in second.logs_output.toPlainText()
+    second._clear_logs()
+    assert second.logs_output.toPlainText() == ""
+    second.cleanup()
