@@ -470,3 +470,38 @@ def test_fresh_results_still_select_first_file_on_finish(qtbot, mock_config_mana
     view.result_view.selectionModel().clearSelection()
     view.auto_select_first_result()
     assert [i.row() for i in view.result_view.selectionModel().selectedRows()] == [0]
+
+
+def test_changing_result_page_keeps_detail(qtbot, mock_config_manager):
+    """파일 목록 페이지를 넘겨 고른 파일이 안 보여도 상세 목록은 그대로 남습니다(7.6.1)."""
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    view.set_search_context("sword", Constants.MODE_NORMAL)
+    view.set_results([[1, f"f{i:03d}.txt", "D:/d", f"D:/d/f{i:03d}.txt", [[1, "sword", 0, 5]]] for i in range(250)])
+    view.result_model.set_page_size(100)
+    view._update_pagination_ui()
+    # 결과를 넣을 때 시작된 백그라운드 정렬이 끝난 뒤 고릅니다(정렬 완료 때 첫 파일 자동 선택이 있음).
+    qtbot.wait(300)
+    _select_rows(view, [0])
+    chosen = _path_of_row(view, 0)
+    qtbot.waitUntil(lambda: view._detail_signature == (chosen,))
+    view._on_next_page()
+    qtbot.wait(20)
+    assert view.result_model.get_current_page() == 2
+    assert view._detail_signature == (chosen,)
+    assert view.match_model.rowCount() > 0
+
+
+def test_detail_shows_remaining_file_after_ctrl_deselecting_one_of_two(qtbot, mock_config_manager):
+    """두 개 중 현재 위치 파일을 Ctrl+클릭으로 풀면 상세는 남은 파일을 보여 줍니다(7.6.1)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0, 1])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    remaining = _path_of_row(view, 1)
+    view.result_view.selectionModel().select(
+        view.proxy_model.index(0, 0),
+        QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
+    qtbot.waitUntil(lambda: view._detail_signature == (remaining,))
+    assert not view.match_model.multi_file

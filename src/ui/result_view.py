@@ -620,6 +620,7 @@ class ResultView(QWidget):
         # 검색 중 결과가 추가되며 목록을 다시 만들 때 선택한 파일을 유지합니다(검수 U-3).
         self._reselect_path = None
         self._reselect_paths = set()
+        self._result_page_changing = False
         self.proxy_model.modelAboutToBeReset.connect(self._remember_result_selection)
         self.proxy_model.modelReset.connect(self._restore_result_selection)
         self.result_view.doubleClicked.connect(self._on_result_double_clicked)
@@ -954,17 +955,28 @@ class ResultView(QWidget):
         # 페이지 이동 후에도 내용에 맞춰 컬럼 폭을 최적화합니다.
         self._adjust_match_column_widths()
 
+    def _change_result_page(self, change):
+        """파일 목록의 페이지를 바꿉니다. 넘어간 페이지에 고른 파일이 없어도 상세 목록은 그대로 둡니다(7.6.1).
+
+        필터로 고른 파일이 모두 숨을 때만 상세를 비웁니다(7.5.8). 페이지 이동은 숨기는 것이 아니므로 예외입니다.
+        """
+        self._result_page_changing = True
+        try:
+            change()
+        finally:
+            self._result_page_changing = False
+
     def _on_prev_page(self):
         curr = self.result_model.get_current_page()
         if curr > 1:
-            self.result_model.go_to_page(curr - 1)
+            self._change_result_page(lambda: self.result_model.go_to_page(curr - 1))
             self._update_pagination_ui()
 
     def _on_next_page(self):
         curr = self.result_model.get_current_page()
         total = self.result_model.get_total_pages()
         if curr < total:
-            self.result_model.go_to_page(curr + 1)
+            self._change_result_page(lambda: self.result_model.go_to_page(curr + 1))
             self._update_pagination_ui()
 
     def _on_page_jump(self):
@@ -972,7 +984,7 @@ class ResultView(QWidget):
             val = int(self.current_page_edit.text())
             total = self.result_model.get_total_pages()
             if 1 <= val <= total:
-                self.result_model.go_to_page(val)
+                self._change_result_page(lambda: self.result_model.go_to_page(val))
                 self._update_pagination_ui()
             else:
                 self.current_page_edit.setText(str(self.result_model.get_current_page()))
@@ -983,7 +995,7 @@ class ResultView(QWidget):
         size_str = self.page_size_combo.itemText(index)
         try:
             size = int(size_str)
-            self.result_model.set_page_size(size)
+            self._change_result_page(lambda: self.result_model.set_page_size(size))
             self._update_pagination_ui()
         except ValueError:
             pass
@@ -1094,6 +1106,9 @@ class ResultView(QWidget):
             if had_selection:
                 self._detail_refresh_timer.start()
             return
+        if getattr(self, "_result_page_changing", False):
+            # 다른 페이지로 넘어갔을 뿐이므로 보던 상세 목록을 그대로 둡니다(7.6.1).
+            return
         self._clear_detail_view()
 
     def _user_cleared_selection(self) -> bool:
@@ -1133,6 +1148,11 @@ class ResultView(QWidget):
     def _refresh_detail_from_selection(self):
         """파일 목록의 선택에 맞춰 상세 목록을 만듭니다. 여러 파일이면 결과를 합쳐 보여 줍니다(7.1.24)."""
         entries = self._selected_result_entries()
+        if len(entries) == 1 and self._detail_entry_path(self.result_view.currentIndex()) != entries[0][0]:
+            # 여러 개 중 Ctrl+클릭으로 풀어 하나만 남으면, 방금 푼 현재 위치 파일이 아니라 남은 파일을 보여 줍니다(7.6.1).
+            if (entries[0][0],) != self._detail_signature:
+                self._show_detail_entries(entries)
+            return
         if len(entries) <= 1:
             current = self.result_view.currentIndex()
             if not current.isValid():
@@ -1147,6 +1167,11 @@ class ResultView(QWidget):
         if signature == self._detail_signature:
             return
         self._show_detail_entries(entries)
+
+    def _detail_entry_path(self, index):
+        if not index.isValid():
+            return None
+        return self._path_at_proxy_index(index)
 
     def _on_result_clicked(self, index):
         if not index.isValid():
