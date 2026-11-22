@@ -505,3 +505,47 @@ def test_detail_shows_remaining_file_after_ctrl_deselecting_one_of_two(qtbot, mo
         QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
     qtbot.waitUntil(lambda: view._detail_signature == (remaining,))
     assert not view.match_model.multi_file
+
+
+def test_filter_after_page_change_clears_hidden_detail(qtbot, mock_config_manager):
+    """페이지를 넘긴 뒤 필터로 상세의 파일을 숨기면 상세를 비우고, 남아 있으면 그대로 둡니다(7.6.2)."""
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    view.set_search_context("sword", Constants.MODE_NORMAL)
+    view.set_results([[1, f"f{i:03d}.txt", "D:/d", f"D:/d/f{i:03d}.txt", [[1, "sword", 0, 5]]] for i in range(250)])
+    view.result_model.set_page_size(100)
+    view._update_pagination_ui()
+    qtbot.wait(300)
+    _select_rows(view, [0])
+    chosen = _path_of_row(view, 0)
+    qtbot.waitUntil(lambda: view._detail_signature == (chosen,))
+    view._on_next_page()
+    qtbot.wait(20)
+    # 상세의 파일이 필터 결과에 남아 있으면(다른 페이지 포함) 그대로 둡니다.
+    view.result_file_filter_edit.setText("f0")
+    view._on_result_filters_changed()
+    qtbot.wait(20)
+    assert view._detail_signature == (chosen,)
+    # 상세의 파일이 필터로 숨으면 비웁니다.
+    view.result_file_filter_edit.setText("f2")
+    view._on_result_filters_changed()
+    qtbot.wait(20)
+    assert view._detail_signature is None and view.match_model.rowCount() == 0
+
+
+def test_deselecting_last_remaining_file_keeps_its_detail(qtbot, mock_config_manager):
+    """a·b 중 a를 풀고(상세 b) b까지 풀면 상세가 a로 돌아가지 않고 b에 머뭅니다(7.6.2)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0, 1])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    second = _path_of_row(view, 1)
+    selection = view.result_view.selectionModel()
+    flags = QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows
+    selection.select(view.proxy_model.index(0, 0), flags)
+    qtbot.waitUntil(lambda: view._detail_signature == (second,))
+    selection.select(view.proxy_model.index(1, 0), flags)
+    qtbot.wait(20)
+    assert not selection.hasSelection()
+    assert view._detail_signature == (second,)

@@ -621,6 +621,7 @@ class ResultView(QWidget):
         self._reselect_path = None
         self._reselect_paths = set()
         self._result_page_changing = False
+        self._result_filter_changing = False
         self.proxy_model.modelAboutToBeReset.connect(self._remember_result_selection)
         self.proxy_model.modelReset.connect(self._restore_result_selection)
         self.result_view.doubleClicked.connect(self._on_result_double_clicked)
@@ -1040,6 +1041,10 @@ class ResultView(QWidget):
         # 고르지 않습니다(7.5.8, 7.5.7 검수 3.2).
         remembered = set(paths)
         if not paths and not current_path:
+            if getattr(self, "_result_filter_changing", False):
+                # 페이지를 넘겨 고른 것이 없는 상태에서 필터를 바꾼 경우입니다. 상세가 보여 주던 파일이
+                # 필터 결과에 하나도 없으면 상세를 비웁니다(7.6.2, 7.6.1 검수 7.4).
+                self._clear_detail_if_filtered_out()
             return
         selection = self.result_view.selectionModel()
         if selection is None:
@@ -1104,12 +1109,22 @@ class ResultView(QWidget):
                 selection.blockSignals(False)
             self.result_view.viewport().update()
             if had_selection:
-                self._detail_refresh_timer.start()
+                # 숨은 파일들의 상세를 보던 중이었으므로 현재 위치 파일의 상세로 바꿉니다.
+                self._on_result_clicked(current_index)
             return
         if getattr(self, "_result_page_changing", False):
             # 다른 페이지로 넘어갔을 뿐이므로 보던 상세 목록을 그대로 둡니다(7.6.1).
             return
         self._clear_detail_view()
+
+    def _clear_detail_if_filtered_out(self):
+        """상세가 보여 주는 파일이 필터 결과(모든 페이지)에 하나도 없으면 상세를 비웁니다."""
+        shown = set(self._detail_signature or ())
+        if not shown:
+            return
+        visible = {item[3] for item in self.result_model._filtered_buffer if len(item) > 3}
+        if not shown & visible:
+            self._clear_detail_view()
 
     def _user_cleared_selection(self) -> bool:
         """사용자가 Ctrl+클릭으로 선택을 모두 푼 상태인지 봅니다.
@@ -1148,6 +1163,10 @@ class ResultView(QWidget):
     def _refresh_detail_from_selection(self):
         """파일 목록의 선택에 맞춰 상세 목록을 만듭니다. 여러 파일이면 결과를 합쳐 보여 줍니다(7.1.24)."""
         entries = self._selected_result_entries()
+        if not entries and self._detail_signature is not None:
+            # Ctrl+클릭으로 선택을 모두 풀면 직전에 보던 상세를 그대로 둡니다. 현재 위치(먼저 푼 파일)로
+            # 되돌아가지 않습니다(7.6.2, 7.6.1 검수 7.4).
+            return
         if len(entries) == 1 and self._detail_entry_path(self.result_view.currentIndex()) != entries[0][0]:
             # 여러 개 중 Ctrl+클릭으로 풀어 하나만 남으면, 방금 푼 현재 위치 파일이 아니라 남은 파일을 보여 줍니다(7.6.1).
             if (entries[0][0],) != self._detail_signature:
@@ -1891,7 +1910,11 @@ class ResultView(QWidget):
         """결과 목록 필터 변경 시 호출됩니다."""
         file_text = self.result_file_filter_edit.text()
         folder_text = self.result_folder_filter_edit.text()
-        self.result_model.set_filters(file_text, folder_text)
+        self._result_filter_changing = True
+        try:
+            self.result_model.set_filters(file_text, folder_text)
+        finally:
+            self._result_filter_changing = False
 
     MATCH_FILTER_DEBOUNCE_MIN = 20_000
 
