@@ -1024,11 +1024,10 @@ class ResultView(QWidget):
         current_path, self._reselect_path = self._reselect_path, None
         paths, self._reselect_paths = self._reselect_paths, set()
         # 고른 파일만 되살립니다. Ctrl+클릭으로 선택을 푼 현재 위치 파일은 다시 고르지 않고 위치만 지킵니다.
-        # 고른 파일이 하나도 없을 때만 보던 파일을 고릅니다(7.5.7, 검수 4).
+        # 고른 것이 없고 현재 위치만 있는 상태는 사용자가 선택을 모두 푼 경우뿐이라, 보던 파일을 대신
+        # 고르지 않습니다(7.5.8, 7.5.7 검수 3.2).
         remembered = set(paths)
-        if not paths and current_path:
-            paths.add(current_path)
-        if not paths:
+        if not paths and not current_path:
             return
         selection = self.result_view.selectionModel()
         if selection is None:
@@ -1056,6 +1055,7 @@ class ResultView(QWidget):
                 restored.select(self.proxy_model.index(run_start, 0), self.proxy_model.index(row - 1, last_column))
                 run_start = None
         if restored.isEmpty():
+            self._restore_without_selection(selection, current_index, bool(remembered))
             return
         if current_index is None:
             # 보던 파일이 목록에서 빠졌으면 남은 선택의 첫 파일을 현재 위치로 둡니다.
@@ -1076,6 +1076,46 @@ class ResultView(QWidget):
             # 파일 필터 등으로 고른 파일 일부가 목록에서 빠졌습니다. 신호를 막아 두었으므로
             # 상세 목록을 남은 선택에 맞춰 직접 다시 만듭니다(7.5.7, 검수 3).
             self._detail_refresh_timer.start()
+
+    def _restore_without_selection(self, selection, current_index, had_selection: bool):
+        """되살릴 선택이 없을 때 목록과 상세를 맞춥니다(7.5.8, 7.5.7 검수 3.1·3.2).
+
+        - 현재 위치 파일이 목록에 있으면 고르지 않고 위치만 지킵니다. 숨은 파일들의 상세를 보던 중이었다면
+          선택 없음 상태(현재 위치 파일)에 맞춰 상세를 다시 만듭니다.
+        - 현재 위치 파일도 목록에 없으면(예: 고른 파일이 필터로 모두 숨음) 상세를 비웁니다.
+        """
+        if current_index is not None:
+            selection.blockSignals(True)
+            try:
+                selection.setCurrentIndex(current_index, QItemSelectionModel.SelectionFlag.NoUpdate)
+            finally:
+                selection.blockSignals(False)
+            self.result_view.viewport().update()
+            if had_selection:
+                self._detail_refresh_timer.start()
+            return
+        self._clear_detail_view()
+
+    def _user_cleared_selection(self) -> bool:
+        """사용자가 Ctrl+클릭으로 선택을 모두 푼 상태인지 봅니다.
+
+        고른 것은 없지만 현재 위치가 있고 상세가 그 파일을 보여 주고 있으면 그렇습니다. 이때는 검색 종료·정렬 완료
+        때도 첫 파일을 대신 고르지 않습니다(7.5.8, 7.5.7 검수 3.2). 새 검색은 clear()로 상세가 비어 해당하지 않습니다.
+        """
+        selection = self.result_view.selectionModel()
+        if selection is not None and selection.hasSelection():
+            return False
+        return self.result_view.currentIndex().isValid() and self._detail_signature is not None
+
+    def _clear_detail_view(self):
+        """오른쪽 상세 목록·파일 정보 줄·미리보기를 비웁니다. 파일 목록과 결과는 그대로 둡니다."""
+        self.selected_file_path = ""
+        self._detail_signature = None
+        self.file_info_label.clear()
+        self.file_info_header.setVisible(False)
+        self._clear_context_preview()
+        self.match_model.clear()
+        self.match_pagination_widget.setVisible(False)
 
     def _selected_result_entries(self):
         """선택한 파일들의 (경로, 결과)를 파일 목록에 보이는 순서대로 돌려줍니다."""
@@ -1460,6 +1500,8 @@ class ResultView(QWidget):
             if self.result_view.model() is not None and self.result_model.rowCount() > 0:
                 selection_model = self.result_view.selectionModel()
                 if selection_model and selection_model.hasSelection() and not force:
+                    return
+                if not force and self._user_cleared_selection():
                     return
 
                 if selection_model:
@@ -2212,6 +2254,8 @@ class ResultView(QWidget):
         """
         selection = self.result_view.selectionModel()
         if selection is not None and selection.hasSelection():
+            return
+        if self._user_cleared_selection():
             return
         if self.proxy_model.rowCount() > 0:
             index = self.proxy_model.index(0, 0)

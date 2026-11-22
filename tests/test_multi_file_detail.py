@@ -422,3 +422,51 @@ def test_ctrl_deselected_current_file_is_not_reselected_on_rebuild(qtbot, mock_c
     selected = {_path_of_row(view, i.row()) for i in selection.selectedRows()}
     assert selected == {other_path}
     assert _path_of_row(view, view.result_view.currentIndex().row()) == current_path
+
+
+def test_detail_is_cleared_when_filter_hides_all_chosen_files(qtbot, mock_config_manager):
+    """고른 파일이 필터로 모두 숨으면 상세를 비우고, 필터를 지워도 숨었던 파일로 돌아가지 않습니다(7.5.8)."""
+    view = _view(qtbot, mock_config_manager)
+    rows = [r for r in range(3) if not _path_of_row(view, r).endswith("c.txt")]
+    _select_rows(view, rows)
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    view.result_model.set_filters("c.txt", "")
+    qtbot.wait(20)
+    assert not view.result_view.selectionModel().hasSelection()
+    assert view.match_model.rowCount() == 0 and view._detail_signature is None
+    assert view.file_info_header.isHidden()
+    view.result_model.set_filters("", "")
+    qtbot.wait(20)
+    assert view.match_model.rowCount() == 0 and view._detail_signature is None
+
+
+def test_single_file_deselected_stays_deselected_through_rebuild_and_finish(qtbot, mock_config_manager):
+    """하나만 골랐다 Ctrl+클릭으로 풀면 목록 갱신·검색 종료 뒤에도 다시 골라지지 않습니다(7.5.8)."""
+    view = _view(qtbot, mock_config_manager)
+    row_b = next(r for r in range(3) if _path_of_row(view, r).endswith("b.txt"))
+    _select_rows(view, [row_b])
+    qtbot.waitUntil(lambda: view.match_model.current_file_path.endswith("b.txt"))
+    selection = view.result_view.selectionModel()
+    selection.select(view.proxy_model.index(row_b, 0),
+                     QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
+    assert not selection.hasSelection()
+    view.add_results([[1, "d.txt", "D:/d", "D:/d/d.txt", [[1, "sword", 0, 5]]]])
+    qtbot.wait(20)
+    assert not selection.hasSelection()
+    assert _path_of_row(view, view.result_view.currentIndex().row()).endswith("b.txt")
+    view.auto_select_first_result()  # 검색 종료 처리
+    assert not selection.hasSelection()
+    # 상세는 계속 현재 위치 파일(b)을 보여 줍니다.
+    assert view.match_model.current_file_path.endswith("b.txt")
+
+
+def test_fresh_results_still_select_first_file_on_finish(qtbot, mock_config_manager):
+    """아무것도 고르지 않은 새 검색은 검색이 끝나면 지금처럼 첫 파일을 고릅니다."""
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.show()
+    view.set_search_context("sword", Constants.MODE_NORMAL)
+    view.result_model.add_results([[1, "a.txt", "D:/d", "D:/d/a.txt", [[1, "sword", 0, 5]]]])
+    view.result_view.selectionModel().clearSelection()
+    view.auto_select_first_result()
+    assert [i.row() for i in view.result_view.selectionModel().selectedRows()] == [0]
