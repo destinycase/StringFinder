@@ -27,8 +27,10 @@ class QtLogHandler(logging.Handler):
 
 
 LOG_HISTORY_MAX_COUNT = 5000
-_log_history: "collections.deque[tuple[str, str]]" = collections.deque(maxlen=LOG_HISTORY_MAX_COUNT)
+# (번호, 수준, 줄). 번호는 1부터 늘기만 해서, 로그 창은 마지막으로 보인 번호 뒤의 줄만 붙입니다(7.5.6).
+_log_history: "collections.deque[tuple[int, str, str]]" = collections.deque(maxlen=LOG_HISTORY_MAX_COUNT)
 _log_history_lock = threading.Lock()
+_log_history_seq = 0
 
 
 class LogHistoryHandler(logging.Handler):
@@ -39,14 +41,41 @@ class LogHistoryHandler(logging.Handler):
             entry = (normalize_log_level(record.levelname), self.format(record))
         except Exception:
             return
+        global _log_history_seq
         with _log_history_lock:
-            _log_history.append(entry)
+            _log_history_seq += 1
+            _log_history.append((_log_history_seq, entry[0], entry[1]))
 
 
 def get_log_history() -> "list[tuple[str, str]]":
     """지금까지 모은 (수준, 줄) 목록의 사본입니다."""
     with _log_history_lock:
-        return list(_log_history)
+        return [(level, message) for _, level, message in _log_history]
+
+
+def get_log_snapshot() -> "tuple[int, list[tuple[str, str]]]":
+    """(마지막 번호, (수준, 줄) 목록)을 한 번에 돌려줍니다. 화면을 다시 그릴 때 씁니다."""
+    with _log_history_lock:
+        return _log_history_seq, [(level, message) for _, level, message in _log_history]
+
+
+def get_log_entries_after(seq: int, limit: int) -> "list[tuple[int, str, str]]":
+    """번호가 `seq`보다 큰 (번호, 수준, 줄)을 오래된 것부터 최대 `limit`개 돌려줍니다."""
+    with _log_history_lock:
+        if not _log_history or _log_history[-1][0] <= seq:
+            return []
+        result = []
+        for entry in _log_history:
+            if entry[0] > seq:
+                result.append(entry)
+                if len(result) >= limit:
+                    break
+        return result
+
+
+def get_last_log_seq() -> int:
+    with _log_history_lock:
+        return _log_history_seq
 
 
 def clear_log_history() -> None:

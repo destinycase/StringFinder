@@ -1,6 +1,7 @@
 """검색 상세 열 폭 배분: 표 폭에 맞춤, 미리보기 창 크기에 따라 다시 나눔, 직접 끈 비율 유지(7.5.4)."""
 import pytest
-from PySide6.QtCore import QItemSelectionModel, Qt
+from PySide6.QtCore import QItemSelectionModel, QPoint, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileIconProvider
 
 from sf_utils.app_strings import AppStrings
@@ -69,10 +70,13 @@ def test_columns_follow_preview_splitter(qtbot, mock_config_manager):
 def test_user_dragged_ratio_is_kept_for_next_layout(qtbot, mock_config_manager):
     view = _archive_view(qtbot, mock_config_manager)
     header = view.match_view.horizontalHeader()
-    # 사용자가 키 열 경계를 넓게 끈 것처럼 만듭니다.
+    # 사용자가 머리글을 누른 채 키 열 경계를 넓게 끈 것처럼 만듭니다.
+    press_point = QPoint(header.sectionPosition(2) + 5, header.height() // 2)
+    QTest.mousePress(header.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, press_point)
     header.resizeSection(2, header.sectionSize(2) + 200)
     assert view._match_user_resized
-    view._on_match_column_drag_finished()
+    QTest.mouseRelease(header.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, press_point)
+    assert ResultView._match_user_ratios
     widths = _widths(view)
     assert sum(widths) == view.match_view.viewport().width()
     ratio_key = widths[2] / sum(widths)
@@ -90,3 +94,31 @@ def test_long_cell_has_full_text_tooltip(qtbot, mock_config_manager):
     tooltip = model.data(model.index(0, 3), Qt.ItemDataRole.ToolTipRole)
     assert tooltip.startswith("<qt>") and LONG_SOURCE.strip()[:40] in tooltip
     assert model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole) is None
+
+
+def test_window_resize_keeps_columns_fitted_after_old_adjust_timer(qtbot, mock_config_manager):
+    """창 크기를 바꿔도 200ms 뒤의 예전 열 폭 조정이 상세 배분을 덮지 않습니다(7.5.6, 검수 3.1)."""
+    view = _archive_view(qtbot, mock_config_manager)
+    for width in (1000, 1700):
+        view.resize(width, 800)
+        # 예전 조정 타이머(200ms)와 상세 배분(50ms)이 모두 돈 뒤를 봅니다.
+        qtbot.wait(400)
+        widths = _widths(view)
+        assert sum(widths) == view.match_view.viewport().width(), (width, widths)
+        qtbot.waitUntil(lambda: not view.match_view.horizontalScrollBar().isVisible())
+        assert abs(widths[3] - widths[4]) <= 1
+    # 프로그램이 바꾼 폭은 "사용자가 끈 비율"로 기억하지 않습니다.
+    assert not view._match_user_resized
+    assert not ResultView._match_user_ratios
+
+
+def test_header_click_without_drag_does_not_store_ratio(qtbot, mock_config_manager):
+    view = _archive_view(qtbot, mock_config_manager)
+    header = view.match_view.horizontalHeader()
+    view.resize(1100, 800)
+    qtbot.wait(400)
+    point = QPoint(header.sectionPosition(3) + 20, header.height() // 2)
+    QTest.mouseClick(header.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
+    qtbot.wait(100)
+    assert not ResultView._match_user_ratios
+    assert sum(_widths(view)) == view.match_view.viewport().width()

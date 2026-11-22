@@ -182,3 +182,26 @@ def test_name_sort_orders_same_names_by_path(qtbot, mock_config_manager):
             view.proxy_model.sort(1, order)
         paths = [row[3] for row in model.get_all_results()]
         assert paths == sorted(paths)
+
+
+def test_toggling_log_level_does_not_duplicate_pending_line(qtbot, mock_config_manager, monkeypatch):
+    """로그를 모아 두는 0.1초 안에 수준 체크를 바꿔도 같은 줄이 두 번 보이지 않습니다(7.5.6, 검수 3.2)."""
+    from sf_utils.logger import logger
+    from ui.search_tab import SearchTab
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    # 실제 프로그램처럼 바로 붙이지 않고 모아 둡니다.
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    logger.info("pending line for level toggle")
+    debug_box = tab._log_level_checkboxes["DEBUG"]
+    debug_box.setChecked(False)
+    debug_box.setChecked(True)
+    tab._flush_pending_logs()
+    assert tab.logs_output.toPlainText().count("pending line for level toggle") == 1
+    # 수준 거르기: INFO를 끄면 그 줄이 사라지고, 켜면 다시 한 번 보입니다.
+    tab._log_level_checkboxes["INFO"].setChecked(False)
+    assert "pending line for level toggle" not in tab.logs_output.toPlainText()
+    tab._log_level_checkboxes["INFO"].setChecked(True)
+    assert tab.logs_output.toPlainText().count("pending line for level toggle") == 1
+    tab.cleanup()

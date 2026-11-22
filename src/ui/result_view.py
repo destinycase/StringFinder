@@ -119,18 +119,27 @@ class MatchColumnWatcher(QObject):
         self._on_width_changed = on_width_changed
         self._on_drag_finished = on_drag_finished
         self._last_width = -1
-        view.viewport().installEventFilter(self)
-        view.horizontalHeader().viewport().installEventFilter(self)
+        # 머리글에서 마우스를 누르고 있는 동안만 참입니다. 이때 바뀐 열 폭만 "사용자가 끈 폭"으로 봅니다(7.5.6).
+        self.header_pressed = False
+        # 표가 지워지는 중에도 이벤트가 오므로, 감시 대상은 미리 잡아 두고 이벤트마다 표를 부르지 않습니다.
+        self._viewport = view.viewport()
+        self._header_viewport = view.horizontalHeader().viewport()
+        self._viewport.installEventFilter(self)
+        self._header_viewport.installEventFilter(self)
 
     def eventFilter(self, watched, event):
         event_type = event.type()
-        if event_type == QEvent.Type.Resize and watched is self._view.viewport():
+        if event_type == QEvent.Type.Resize and watched is self._viewport:
             width = watched.width()
             if width != self._last_width:
                 self._last_width = width
                 self._on_width_changed()
-        elif event_type == QEvent.Type.MouseButtonRelease and watched is self._view.horizontalHeader().viewport():
-            self._on_drag_finished()
+        elif watched is self._header_viewport:
+            if event_type == QEvent.Type.MouseButtonPress:
+                self.header_pressed = True
+            elif event_type == QEvent.Type.MouseButtonRelease:
+                self.header_pressed = False
+                self._on_drag_finished()
         return False
 
 
@@ -1147,8 +1156,10 @@ class ResultView(QWidget):
         """상세 뷰의 컬럼 크기가 변경될 때 호출되는 로그 핸들러"""
         if self._applying_match_widths:
             return
-        if self._is_multi_column_match_mode():
-            # 사용자가 열 경계를 끌고 있습니다. 놓으면 비율을 기억하고 표 폭에 다시 맞춥니다.
+        watcher = getattr(self, "_match_column_watcher", None)
+        if self._is_multi_column_match_mode() and watcher is not None and watcher.header_pressed:
+            # 사용자가 머리글에서 열 경계를 끌고 있습니다. 놓으면 비율을 기억하고 표 폭에 다시 맞춥니다.
+            # 프로그램이 바꾼 폭이나 머리글을 누르기만 한 경우(정렬)는 비율로 기억하지 않습니다(7.5.6, 검수 3.1).
             self._match_user_resized = True
         # Stretch 모드는 레이아웃 엔진에 의해 폭이 자동 결정되므로 저장 대상에서 제외 (진동 루프 방지)
         header = self.match_view.horizontalHeader()
@@ -2144,7 +2155,13 @@ class ResultView(QWidget):
         if not self.result_view.isVisible():
             return
 
-        for view in [self.result_view, self.match_view]:
+        views = [self.result_view, self.match_view]
+        if self._is_multi_column_match_mode():
+            # 열이 여러 개인 검색 상세는 _layout_match_columns가 표 폭에 맞춰 나눕니다.
+            # 여기서 "내용에 맞춤"을 다시 적용하면 그 배분을 덮어 가로 스크롤이 생깁니다(7.5.6, 검수 3.1).
+            views = [self.result_view]
+            self._match_layout_timer.start()
+        for view in views:
             header = view.horizontalHeader()
             # 1. 성능을 위해 resizeColumnsToContents()는 큰 테이블에서 비용이 높으므로
             # PySide에서 제공하는 기본 최적화 옵션이 있다면 활용하거나,

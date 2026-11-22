@@ -30,7 +30,13 @@ from core.search_query import validate_search_query
 from core import search_mode
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
-from sf_utils.logger import clear_log_history, get_log_history, logger, normalize_log_level
+from sf_utils.logger import (
+    clear_log_history,
+    get_last_log_seq,
+    get_log_entries_after,
+    get_log_snapshot,
+    logger,
+)
 from ui.panels import ExtensionFilterPanel, FilenameFilterPanel, FolderFilterPanel, SearchOptionsPanel
 from ui.result_view import ResultView, normalize_skipped_files
 
@@ -82,6 +88,8 @@ class SearchTab(QMainWindow):
         self._log_level_checkboxes: Dict[str, QCheckBox] = {}
         # 로그 스로틀링을 위한 버퍼 및 타이머
         self._pending_logs: List[Tuple[str, str]] = []
+        # 이 탭의 로그 창에 마지막으로 붙인 공용 기록 번호입니다(7.5.6).
+        self._log_shown_seq = 0
         self._inputs_save_timer = QTimer(self)
         self._inputs_save_timer.setSingleShot(True)
         self._inputs_save_timer.setInterval(self.INPUTS_SAVE_DELAY_MS)
@@ -289,7 +297,12 @@ class SearchTab(QMainWindow):
         self.logs_output.setUpdatesEnabled(False)
         try:
             # 필터링된 로그를 한 번에 조인하여 UI에 설정
-            filtered_gen = (msg for level, msg in get_log_history() if level in visible_checkboxes)
+            # 다시 그린 화면에는 그 시점까지의 줄이 모두 들어가므로, 모아 둔 줄은 버리고 번호를 맞춥니다.
+            # 그래야 수준 체크를 바꾸는 순간의 줄이 두 번 붙지 않습니다(7.5.6, 검수 3.2).
+            last_seq, entries = get_log_snapshot()
+            self._log_shown_seq = last_seq
+            self._pending_logs = []
+            filtered_gen = (msg for level, msg in entries if level in visible_checkboxes)
             self.logs_output.setPlainText("\n".join(filtered_gen))
             self.logs_output.moveCursor(QTextCursor.MoveOperation.End)
         finally:
@@ -298,8 +311,10 @@ class SearchTab(QMainWindow):
     def _clear_logs(self, _checked: bool = False):
         """로그는 모든 탭이 함께 보므로, 지우면 모든 탭의 로그 창이 함께 비워집니다(7.5.3)."""
         clear_log_history()
+        last_seq = get_last_log_seq()
         for tab in list(SearchTab._instances):
             tab._pending_logs.clear()
+            tab._log_shown_seq = last_seq
             tab.logs_output.clear()
 
     def _on_log_message(self, level: str, message: str):
@@ -317,48 +332,30 @@ class SearchTab(QMainWindow):
             self._log_throttle_timer.start()
 
     def _flush_pending_logs(self):
-        """버퍼링된 로그를 한꺼번에 UI에 출력합니다."""
-        if not self._pending_logs:
+        """공용 기록에서 아직 이 창에 붙이지 않은 줄을 한꺼번에 붙입니다.
+
+        신호로 받은 줄 대신 기록 번호로 가져오므로, 화면을 다시 그린 뒤 늦게 도착한 신호가 같은 줄을
+        한 번 더 붙이지 않습니다(7.5.6).
+        """
+        self._pending_logs = []
+        # [성능 가드] 한 번에 1,000줄까지만 붙이고 나머지는 다음 타이머에서 붙여 UI 멈춤을 막습니다.
+        max_batch_lines = 1000
+        entries = get_log_entries_after(self._log_shown_seq, max_batch_lines)
+        if not entries:
             self._log_throttle_timer.stop()
             return
-
-        # 1. 데크 업데이트 및 출력할 텍스트 수집
-        logs_to_show = []
+        self._log_shown_seq = entries[-1][0]
         visible_levels = {lvl for lvl, cb in self._log_level_checkboxes.items() if cb.isChecked()}
-
-        # 현재 배치의 모든 로그를 처리
-        current_batch = self._pending_logs
-        self._pending_logs = []
-
-        for level, message in current_batch:
-            normalized_level = normalize_log_level(level)
-            # 원본 기록은 로거의 공용 기록에 이미 들어 있어 필터를 바꿔도 사라지지 않습니다.
-            if normalized_level in visible_levels:
-                logs_to_show.append((normalized_level, str(message)))
-
-        # 2. UI 일괄 업데이트
-        if logs_to_show:
-            # [성능 가드] 한 배치가 너무 크면 나눠서 처리하거나 요약하여 UI 프리징 방지
-            MAX_BATCH_LINES = 1000
-            if len(logs_to_show) > MAX_BATCH_LINES:
-                # overflow 재삽입 시 원본 레벨(info/warn 등)을 보존함
-                # 가시성 로그만 추출하여 append하고 나머지는 pending으로 돌려보냄
-                processed = logs_to_show[:MAX_BATCH_LINES]
-                overflow = logs_to_show[MAX_BATCH_LINES:]
-
-                self.logs_output.appendPlainText("\n".join(msg for _, msg in processed))
-
-                for lvl, msg in reversed(overflow):
-                    # 레벨 정보를 포함하여 대기열 상단에 재삽입
-                    self._pending_logs.insert(0, (lvl, msg))
-                # Timer will restart naturally because _pending_logs is non-empty
-                return
-            else:
-                self.logs_output.appendPlainText("\n".join(msg for _, msg in logs_to_show))
-
-        # 아직 버퍼가 남아있지 않으면 정지
-        if not self._pending_logs:
-            self._log_throttle_timer.stop()
+        lines = [message for _, level, message in entries if level in visible_levels]
+        if lines:
+            self.logs_output.appendPlainText("\n".join(lines))
+        if len(entries) >= max_batch_lines:
+            # 남은 줄이 있을 수 있어 타이머를 계속 돌립니다.
+            self._pending_logs.append(("INFO", ""))
+            if not self._log_throttle_timer.isActive():
+                self._log_throttle_timer.start()
+            return
+        self._log_throttle_timer.stop()
 
     def reload_shared_settings(self):
         """모든 탭이 함께 쓰는 설정·검색 히스토리를 다시 읽습니다. 탭을 바꿔 볼 때 부릅니다."""
