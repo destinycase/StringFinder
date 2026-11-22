@@ -2167,7 +2167,13 @@ class ResultView(QWidget):
             header.setSectionResizeMode(header.count() - 1, QHeaderView.ResizeMode.Stretch)
 
     def auto_select_first_result(self):
-        """검색 완료 후 첫 번째 행을 자동으로 선택하고 내용을 호출합니다."""
+        """검색 완료 후 첫 번째 행을 자동으로 선택하고 내용을 호출합니다.
+
+        검색 중에 사용자가 이미 파일을 골라 두었으면(여러 개 포함) 그 선택을 그대로 둡니다(7.5.5).
+        """
+        selection = self.result_view.selectionModel()
+        if selection is not None and selection.hasSelection():
+            return
         if self.proxy_model.rowCount() > 0:
             index = self.proxy_model.index(0, 0)
             if index.isValid():

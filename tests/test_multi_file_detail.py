@@ -352,3 +352,45 @@ def test_multi_selection_survives_result_list_rebuild(qtbot, mock_config_manager
     assert {_path_of_row(view, r) for r in rows} == chosen
     assert _path_of_row(view, view.result_view.currentIndex().row()) == current
     assert view.match_model.multi_file and view.match_model.match_count == 4
+
+
+def test_selection_made_during_search_survives_search_finish(qtbot, mock_config_manager):
+    """검색 중 여러 파일을 골라 두면 검색이 끝나도 첫 파일로 바뀌지 않습니다(7.5.5).
+
+    7.5.2는 목록 재구성만 막았고, 검색 종료 때 첫 결과를 강제로 고르는 단계가 선택을 풀었습니다.
+    """
+    import time
+
+    from ui.search_tab import SearchTab
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    tab._setup_search_worker({})
+    tab.search_state = Constants.SearchState.SCANNING
+    tab.scan_start_time = time.time() - 1
+    panel = tab.result_view_panel
+    panel.set_search_context("sword", Constants.MODE_NORMAL)
+    panel.add_results([
+        [3, "a.txt", "D:/d", "D:/d/a.txt", [[1, "sword", 0, 5]] * 3],
+        [2, "b.txt", "D:/d", "D:/d/b.txt", [[1, "sword", 0, 5]] * 2],
+        [1, "c.txt", "D:/d", "D:/d/c.txt", [[1, "sword", 0, 5]]],
+    ])
+    qtbot.wait(20)
+    rows = [r for r in range(3) if not _path_of_row(panel, r).endswith("a.txt")]
+    _select_rows(panel, rows)
+    chosen = {_path_of_row(panel, r) for r in rows}
+    tab.total_files, tab.total_matches, tab.scanned_count = 3, 6, 3
+
+    tab._on_search_finished(3, 6, 0)
+    qtbot.wait(50)
+
+    selected = {_path_of_row(panel, i.row()) for i in panel.result_view.selectionModel().selectedRows()}
+    assert selected == chosen
+    tab.cleanup()
+
+
+def test_search_finish_still_selects_first_file_when_nothing_was_chosen(qtbot, mock_config_manager):
+    view = _view(qtbot, mock_config_manager)
+    view.result_view.selectionModel().clearSelection()
+    view.auto_select_first_result()
+    assert [i.row() for i in view.result_view.selectionModel().selectedRows()] == [0]
