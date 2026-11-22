@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 # 상세 목록의 파일 묶음 표시용 역할: "header"(파일 머리줄) 또는 "child"(묶음 안 결과의 첫 칸)입니다(7.1.27).
 GROUP_ROLE = Qt.ItemDataRole(Qt.ItemDataRole.UserRole.value + 1)
+ELLIPSIS = "…"
 GROUP_HEADER_GAP = 6
 GROUP_HEADER_LINE = 2
 GROUP_HEADER_LINE_COLOR = QColor(91, 127, 176)
@@ -70,10 +71,24 @@ class HtmlDelegate(QStyledItemDelegate):
             rect.height() - top_offset,
         )
         painter.translate(rect.left(), rect.top())  # HTML 렌더링을 위해 좌표계를 셀 위치로 이동합니다.
-        clip = QRectF(0, 0, rect.width(), rect.height())
+        # 셀보다 긴 내용은 끝을 "…"로 줄여 잘린 것을 알립니다(7.5.4). 파일 머리줄은 여러 칸에 걸쳐 그대로 둡니다.
+        ellipsis_width = 0
+        if kind != "header" and doc.idealWidth() > rect.width():
+            ellipsis_width = options.fontMetrics.horizontalAdvance(ELLIPSIS)  # type: ignore
+        clip = QRectF(0, 0, max(0, rect.width() - ellipsis_width), rect.height())
         painter.setClipRect(clip)
         ctx = QAbstractTextDocumentLayout.PaintContext()
         doc.documentLayout().draw(painter, ctx)
+        if ellipsis_width and rect.width() > ellipsis_width:
+            painter.setClipping(False)
+            painter.setFont(options.font)  # type: ignore
+            painter.setPen(QColor(text_color))
+            first_line_height = int(doc.documentLayout().blockBoundingRect(doc.begin()).height()) or rect.height()
+            painter.drawText(
+                QRect(rect.width() - ellipsis_width, 0, ellipsis_width, first_line_height),
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+                ELLIPSIS,
+            )
         painter.restore()
 
     def sizeHint(self, option, index):

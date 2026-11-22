@@ -107,6 +107,33 @@ def _read_context_lines_from_file(file_path, target_line, before_lines, after_li
     return context
 
 
+class MatchColumnWatcher(QObject):
+    """검색 상세 표의 보이는 폭 변화와 열 경계 끌기 끝을 알려 줍니다(7.5.4).
+
+    미리보기 창과의 분할선을 옮기거나 창 크기를 바꾸면 표의 보이는 폭이 바뀌어 열 폭을 다시 나눕니다.
+    """
+
+    def __init__(self, view, on_width_changed, on_drag_finished):
+        super().__init__(view)
+        self._view = view
+        self._on_width_changed = on_width_changed
+        self._on_drag_finished = on_drag_finished
+        self._last_width = -1
+        view.viewport().installEventFilter(self)
+        view.horizontalHeader().viewport().installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        event_type = event.type()
+        if event_type == QEvent.Type.Resize and watched is self._view.viewport():
+            width = watched.width()
+            if width != self._last_width:
+                self._last_width = width
+                self._on_width_changed()
+        elif event_type == QEvent.Type.MouseButtonRelease and watched is self._view.horizontalHeader().viewport():
+            self._on_drag_finished()
+        return False
+
+
 class ContextPreviewSignals(QObject):
     finished = Signal(int, object, object, bool)
 
@@ -418,6 +445,15 @@ class SearchShimmer(QWidget):
 
 class ResultView(QWidget):
     CONTEXT_RADIUS = Constants.DEFAULT_CONTEXT_PREVIEW_LINES
+    # 검색 상세 열 폭 배분(7.5.4)
+    MATCH_LAYOUT_DELAY_MS = 50
+    MATCH_POSITION_MAX_WIDTH = 120
+    MATCH_KEY_MIN_WIDTH = 80
+    MATCH_KEY_MAX_RATIO = 0.15
+    MATCH_VALUE_MIN_RATIO = 0.5
+    MATCH_COLUMN_MIN_WIDTH = 40
+    # 사용자가 열 경계를 직접 끈 비율입니다. 검색 방식(열 구성)마다 기억하며 모든 탭이 함께 씁니다.
+    _match_user_ratios: dict = {}
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
     CONTEXT_MAX_SCAN_LINES = 200_000
     CONTEXT_MAX_LINE_CHARS = 4_000
@@ -636,6 +672,17 @@ class ResultView(QWidget):
             m_header.setResizeContentsPrecision(50)
         m_header.setStretchLastSection(True)  # 마지막 컬럼이 남는 공간 채움
         m_header.sectionResized.connect(self._on_match_column_resized)
+        # 열 폭 배분(7.5.4): 내용 폭은 파일을 고를 때 한 번 재고, 보이는 폭이 바뀌면 비율만 다시 나눕니다.
+        self._match_natural_widths: list = []
+        self._applying_match_widths = False
+        self._match_user_resized = False
+        self._match_layout_timer = QTimer(self)
+        self._match_layout_timer.setSingleShot(True)
+        self._match_layout_timer.setInterval(self.MATCH_LAYOUT_DELAY_MS)
+        self._match_layout_timer.timeout.connect(self._layout_match_columns)
+        self._match_column_watcher = MatchColumnWatcher(
+            self.match_view, self._match_layout_timer.start, self._on_match_column_drag_finished
+        )
         self.match_view.clicked.connect(self._on_match_clicked)
         self.match_view.selectionModel().currentRowChanged.connect(lambda curr, _prev: self._on_match_clicked(curr))
         self.match_view.doubleClicked.connect(self._on_match_double_clicked)
@@ -1098,6 +1145,11 @@ class ResultView(QWidget):
 
     def _on_match_column_resized(self, index, _old_width, _new_width):
         """상세 뷰의 컬럼 크기가 변경될 때 호출되는 로그 핸들러"""
+        if self._applying_match_widths:
+            return
+        if self._is_multi_column_match_mode():
+            # 사용자가 열 경계를 끌고 있습니다. 놓으면 비율을 기억하고 표 폭에 다시 맞춥니다.
+            self._match_user_resized = True
         # Stretch 모드는 레이아웃 엔진에 의해 폭이 자동 결정되므로 저장 대상에서 제외 (진동 루프 방지)
         header = self.match_view.horizontalHeader()
         if index < header.count() and header.sectionResizeMode(index) == QHeaderView.ResizeMode.Stretch:
@@ -2130,59 +2182,142 @@ class ResultView(QWidget):
         if hasattr(self, "_resize_timer"):
             self._resize_timer.start()
 
-        # 2. 상세 테이블 가시성 확인 후 즉시 폭 조정
-        if hasattr(self, "match_view") and self.match_view.isVisible():
-            self._adjust_match_column_widths()
+        # 2. 상세 테이블 폭은 MatchColumnWatcher가 보이는 폭 변화를 보고 다시 나눕니다(7.5.4).
 
     def _adjust_match_column_widths(self):
-        """[UI/UX] 검색 상세 테이블의 컬럼 폭을 최적화합니다.
-        파일 선택, 페이지 이동, 창 크기 변경 시에 호출됩니다.
+        """[UI/UX] 검색 상세 테이블의 컬럼 폭을 정합니다(7.5.4).
+        파일 선택, 페이지 이동 때 내용 폭을 다시 재고 표 폭에 맞춰 나눕니다.
         """
         if not hasattr(self, "match_view"):
             return
-
-        # [Bug Fix] width() <= 0 guard 제거:
-        # 위젯이 Splitter 안에 있으면 표시 전에도 너비가 0이 될 수 있어
-        # 100ms 지연 후 재시도에서도 조정이 스킵되는 문제 해결.
-        # (match_model이 데이터를 가지고 있으면 너비 계산 수행)
         if not self.match_model or self.match_model.rowCount() == 0:
             return
-
         header = self.match_view.horizontalHeader()
-        header.blockSignals(True)  # 무한 루프 방지
-        from PySide6.QtWidgets import QHeaderView
-
-        try:
-            # 1. 모든 컬럼의 리사이즈 모드 초기화 (Stretch 충돌 방지)
-            for i in range(self.match_proxy_model.columnCount()):
-                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-
-            if self.search_mode == Constants.MODE_NORMAL:
-                # 일반 모드(단일 컬럼)는 항상 뷰포트에 꽉 채우도록 설정
+        if not self._is_multi_column_match_mode():
+            # 일반 모드(단일 컬럼)는 항상 뷰포트에 꽉 채우도록 설정
+            self._applying_match_widths = True
+            try:
+                header.setStretchLastSection(True)
                 header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            else:
-                # 특수 검색 모드(다중 컬럼)
-                # [M-04] 상세 뷰도 대용량(1000행 초과)일 경우 자동 리사이즈 생략
-                row_count = self.match_proxy_model.rowCount()
-                if row_count <= 1000:
-                    self.match_view.resizeColumnsToContents()
-                else:
-                    logger.debug(AppStrings.LOG_PERF_SKIP_MATCH_RESIZE.format(row_count))
+            finally:
+                self._applying_match_widths = False
+            return
+        try:
+            self._match_natural_widths = self._measure_match_natural_widths()
+        except Exception as e:
+            logger.debug(AppStrings.LOG_PERF_ADJUST_MATCH_FAIL.format(e))
+            return
+        self._layout_match_columns()
 
-                # [UI/UX] 내용이 너무 길어 컬럼 폭이 부풀려지는 것을 방지 (최대 500px 제한)
-                for i in range(self.match_proxy_model.columnCount()):
-                    w = self.match_view.columnWidth(i)
-                    if w > 500:
-                        self.match_view.setColumnWidth(i, 500)
+    def _is_multi_column_match_mode(self) -> bool:
+        return (
+            self.search_mode != Constants.MODE_NORMAL
+            and self.match_proxy_model is not None
+            and self.match_proxy_model.columnCount() > 1
+        )
 
-                # 내용(Content) 또는 마지막 주요 데이터 컬럼은 Stretch 정책 적용
-                last_col = self.match_proxy_model.columnCount() - 1
-                if last_col >= 0:
-                    header.setSectionResizeMode(last_col, QHeaderView.ResizeMode.Stretch)
+    def _match_column_key(self) -> tuple:
+        """사용자 비율을 기억하는 열 구성 이름입니다(검색 방식과 열 수)."""
+        return (str(self.search_mode), self.match_proxy_model.columnCount())
 
-                # 파일 변경 시 자동 조절이 우선되도록 기존 고정 폭 복원 로직 제거
-                # 사용자가 수동으로 조절한 폭은 필요 시 별도 시점에서 복원하도록 관리
+    def _match_value_columns(self, count: int) -> list:
+        """남는 폭을 나눠 가질 값 열입니다. UE archive는 원문·번역 두 열, 나머지는 마지막 열입니다."""
+        headers = [self.match_model.headerData(i, Qt.Orientation.Horizontal) for i in range(count)]
+        source, translation = AppStrings.HEADER_ARCHIVE_SOURCE, AppStrings.HEADER_ARCHIVE_TRANSLATION
+        if count >= 3 and source in headers and translation in headers:
+            return [headers.index(source), headers.index(translation)]
+        return [count - 1]
+
+    def _measure_match_natural_widths(self) -> list:
+        """열마다 한 줄로 그렸을 때의 폭입니다. 결과가 1,000줄을 넘으면 직전 값이나 기본값을 씁니다."""
+        count = self.match_proxy_model.columnCount()
+        header = self.match_view.horizontalHeader()
+        previous = list(self._match_natural_widths)
+        row_count = self.match_proxy_model.rowCount()
+        if row_count > 1000:
+            logger.debug(AppStrings.LOG_PERF_SKIP_MATCH_RESIZE.format(row_count))
+            if len(previous) == count:
+                return previous
+            return [60] + [150] * (count - 1)
+        widths = []
+        for column in range(count):
+            content = self.match_view.sizeHintForColumn(column)
+            widths.append(max(int(content), int(header.sectionSizeHint(column)), self.MATCH_COLUMN_MIN_WIDTH))
+        return widths
+
+    def _compute_match_column_widths(self, available: int) -> list:
+        """보이는 폭 `available`을 열마다 나눕니다. 합이 정확히 `available`이 되어 가로 스크롤이 생기지 않습니다.
+
+        - 사용자가 직접 끈 비율이 있으면 그 비율대로 나눕니다.
+        - 없으면 위치 열은 내용 폭(최대 120px), 이름·키 열은 내용 폭이되 표 폭의 15%(최소 80px)까지,
+          남는 폭은 값 열(UE archive는 원문·번역)이 똑같이 나눕니다. 값 열 몫이 표 폭의 절반보다 작으면
+          이름·키 열을 같은 비율로 줄입니다.
+        """
+        count = self.match_proxy_model.columnCount()
+        minimum = self.MATCH_COLUMN_MIN_WIDTH
+        if count <= 0:
+            return []
+        available = max(int(available), minimum * count)
+        ratios = self._match_user_ratios.get(self._match_column_key())
+        if ratios and len(ratios) == count:
+            widths = [max(minimum, int(available * ratio)) for ratio in ratios]
+        else:
+            natural = list(self._match_natural_widths)
+            if len(natural) != count:
+                natural = [60] + [150] * (count - 1)
+            value_columns = self._match_value_columns(count)
+            key_cap = max(self.MATCH_KEY_MIN_WIDTH, int(available * self.MATCH_KEY_MAX_RATIO))
+            widths = [0] * count
+            fixed_columns = [column for column in range(count) if column not in value_columns]
+            for column in fixed_columns:
+                cap = self.MATCH_POSITION_MAX_WIDTH if column == 0 else key_cap
+                widths[column] = max(minimum, min(natural[column], cap))
+            value_floor = int(available * self.MATCH_VALUE_MIN_RATIO)
+            fixed_total = sum(widths[column] for column in fixed_columns)
+            if fixed_total > available - value_floor and fixed_total > 0:
+                scale = max(0.0, (available - value_floor) / fixed_total)
+                for column in fixed_columns:
+                    widths[column] = max(minimum, int(widths[column] * scale))
+            remaining = available - sum(widths[column] for column in fixed_columns)
+            share = max(minimum, remaining // len(value_columns))
+            for column in value_columns:
+                widths[column] = share
+        # 반올림으로 남거나 모자란 폭은 마지막 열이 맡아 합을 표 폭에 정확히 맞춥니다.
+        widths[-1] = max(minimum, widths[-1] + available - sum(widths))
+        return widths
+
+    def _layout_match_columns(self):
+        """현재 보이는 폭에 맞춰 열 폭을 나눕니다. 미리보기 창 분할선·창 크기가 바뀔 때도 불립니다."""
+        if not hasattr(self, "match_view") or not self._is_multi_column_match_mode():
+            return
+        if not self.match_model or self.match_model.rowCount() == 0:
+            return
+        available = self.match_view.viewport().width()
+        if available <= 0:
+            return
+        widths = self._compute_match_column_widths(available)
+        header = self.match_view.horizontalHeader()
+        self._applying_match_widths = True
+        try:
+            header.setStretchLastSection(False)
+            for column, width in enumerate(widths):
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
+                if header.sectionSize(column) != width:
+                    header.resizeSection(column, width)
         except Exception as e:
             logger.debug(AppStrings.LOG_PERF_ADJUST_MATCH_FAIL.format(e))
         finally:
-            header.blockSignals(False)
+            self._applying_match_widths = False
+
+    def _on_match_column_drag_finished(self):
+        """열 경계 끌기를 마치면 그 비율을 기억하고, 다음 파일·미리보기 크기 변경에도 같은 비율을 씁니다."""
+        if not self._match_user_resized or not self._is_multi_column_match_mode():
+            return
+        self._match_user_resized = False
+        count = self.match_proxy_model.columnCount()
+        widths = [self.match_view.columnWidth(column) for column in range(count)]
+        total = sum(widths)
+        if total <= 0:
+            return
+        ResultView._match_user_ratios[self._match_column_key()] = [width / total for width in widths]
+        self._layout_match_columns()

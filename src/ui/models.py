@@ -540,6 +540,8 @@ class MatchDetailModel(QAbstractTableModel):
     특정 파일 내의 상세 매칭 정보(라인 번호, 내용)를 관리하는 모델입니다.
     """
 
+    TOOLTIP_MAX_CHARS = 2000
+
     def __init__(self):
         """모델을 초기화하고 매칭 상세 정보(라인, 내용)의 헤더를 설정합니다."""
         super().__init__()
@@ -704,6 +706,18 @@ class MatchDetailModel(QAbstractTableModel):
             if self.search_text and col > 0:
                 return self._render_highlighted(val)
             return escape(val)
+        elif role == Qt.ItemDataRole.ToolTipRole:
+            # 열 폭에 맞춰 "…"로 줄인 셀도 마우스를 올리면 전체 내용을 볼 수 있습니다(7.5.4).
+            if search_mode == Constants.MODE_NORMAL or col <= 0 or col >= len(self._headers):
+                return None
+            val_obj = row_data[col]
+            if val_obj is None or str(val_obj) == "":
+                return None
+            text = str(val_obj)
+            if len(text) > self.TOOLTIP_MAX_CHARS:
+                text = text[: self.TOOLTIP_MAX_CHARS] + "…"
+            # 서식 있는 툴팁은 화면 폭에서 줄바꿈되어 긴 문장도 한눈에 보입니다.
+            return f"<qt>{escape(text)}</qt>"
         elif role == Qt.ItemDataRole.TextAlignmentRole:
             if col == 0:
                 return Qt.AlignmentFlag.AlignCenter
