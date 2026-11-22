@@ -1,6 +1,4 @@
-import collections
 import os
-import re
 import time
 import weakref
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,7 +30,7 @@ from core.search_query import validate_search_query
 from core import search_mode
 from sf_utils.app_strings import AppStrings
 from sf_utils.constants import Constants
-from sf_utils.logger import logger, normalize_log_level
+from sf_utils.logger import clear_log_history, get_log_history, logger, normalize_log_level
 from ui.panels import ExtensionFilterPanel, FilenameFilterPanel, FolderFilterPanel, SearchOptionsPanel
 from ui.result_view import ResultView, normalize_skipped_files
 
@@ -57,10 +55,6 @@ class SearchTab(QMainWindow):
     inputs_changed = Signal()
     DOCK_LAYOUT_VERSION = 2  # Pre-merge layouts contain two obsolete filter docks.
     LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
-    _LOG_LEVEL_PATTERN = re.compile(r"\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]")
-    _INVALID_STORED_LOG_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-    _INVALID_STORED_LOG_CODE_PATTERN = re.compile(r"(?<![A-Z0-9_])ERR_MAP(?![A-Z0-9_])")
-    _MAX_STORED_LOG_LINE_LENGTH = 65536
 
     def __init__(self, config_manager):
         """검색 탭 객체를 초기화하고 기본 변수들을 설정합니다."""
@@ -85,8 +79,6 @@ class SearchTab(QMainWindow):
         self.pending_restart = False
         self._memory_alert_shown = False
         self.current_filename_filters: List[str] = []
-        self._max_log_count = 5000  # QPlainTextEdit 표시 제한에 맞춤
-        self._log_entries: collections.deque[Tuple[str, str]] = collections.deque(maxlen=self._max_log_count)
         self._log_level_checkboxes: Dict[str, QCheckBox] = {}
         # 로그 스로틀링을 위한 버퍼 및 타이머
         self._pending_logs: List[Tuple[str, str]] = []
@@ -200,6 +192,8 @@ class SearchTab(QMainWindow):
         clear_logs_btn.clicked.connect(self._clear_logs)
         log_filter_layout.addWidget(clear_logs_btn)
         logs_tab_layout.addLayout(log_filter_layout)
+        # 탭을 나중에 열어도 프로그램 시작 후의 로그가 모두 보이도록 공용 기록을 먼저 채웁니다(7.5.3).
+        self._refresh_logs_output()
         from sf_utils.logger import qt_log_handler
 
         qt_log_handler.signaler.level_message_logged.connect(self._on_log_message)
@@ -283,22 +277,9 @@ class SearchTab(QMainWindow):
         for panel in (self.folder_panel, self.ext_panel, self.filename_panel):
             panel.apply_display_density(compact)
 
-    @classmethod
-    def _extract_log_level_from_line(cls, line: str) -> str:
-        match = cls._LOG_LEVEL_PATTERN.search(str(line or ""))
-        if match:
-            return normalize_log_level(match.group(1))
-        return "INFO"
-
     def _is_log_level_visible(self, level: str) -> bool:
         checkbox = self._log_level_checkboxes.get(level)
         return bool(checkbox and checkbox.isChecked())
-
-    def _append_log_entry(self, level: str, message: str, skip_ui: bool = False):
-        normalized_level = normalize_log_level(level)
-        self._log_entries.append((normalized_level, str(message)))
-        if not skip_ui and self._is_log_level_visible(normalized_level):
-            self.logs_output.appendPlainText(str(message))
 
     def _refresh_logs_output(self, _state: Optional[int] = None):
         # 대량 로그 필터링 시 제너레이터를 사용하여 메모리 할당 및 중간 객체 생성 최소화
@@ -308,69 +289,21 @@ class SearchTab(QMainWindow):
         self.logs_output.setUpdatesEnabled(False)
         try:
             # 필터링된 로그를 한 번에 조인하여 UI에 설정
-            filtered_gen = (msg for level, msg in self._log_entries if level in visible_checkboxes)
+            filtered_gen = (msg for level, msg in get_log_history() if level in visible_checkboxes)
             self.logs_output.setPlainText("\n".join(filtered_gen))
             self.logs_output.moveCursor(QTextCursor.MoveOperation.End)
         finally:
             self.logs_output.setUpdatesEnabled(True)
 
     def _clear_logs(self, _checked: bool = False):
-        self._log_entries.clear()
-        self.logs_output.clear()
-
-    def _serialize_logs(self) -> str:
-        # _log_entries가 있으면 이를 우선 사용하며, 없으면 UI 텍스트 반환
-        if len(self._log_entries) > 0:
-            return "\n".join(msg for _, msg in self._log_entries)
-        return self.logs_output.toPlainText().strip()  # 테스트 기대값 일치를 위해 strip 추가
-
-    def _sanitize_stored_logs(self, logs_text: Any) -> str:
-        """Discard malformed saved-log records before restoring them into the UI."""
-        if not isinstance(logs_text, str):
-            return ""
-        valid_lines: collections.deque[str] = collections.deque(maxlen=self._max_log_count)
-        for line in logs_text.splitlines():
-            if (
-                len(line) > self._MAX_STORED_LOG_LINE_LENGTH
-                or self._INVALID_STORED_LOG_CONTROL_PATTERN.search(line)
-                or self._INVALID_STORED_LOG_CODE_PATTERN.search(line)
-            ):
-                continue
-            valid_lines.append(line)
-        return "\n".join(valid_lines)
-
-    def _restore_logs_from_text(self, logs_text: Any):
-        self._clear_logs()
-        sanitized_logs = self._sanitize_stored_logs(logs_text)
-        if not sanitized_logs:
-            return
-        pending_level: Optional[str] = None
-        pending_lines: List[str] = []
-        for raw_line in sanitized_logs.splitlines():
-            level = self._extract_log_level_from_line(raw_line)
-            has_level_tag = bool(self._LOG_LEVEL_PATTERN.search(raw_line))
-            if has_level_tag:
-                if pending_lines:
-                    self._append_log_entry(pending_level or "INFO", "\n".join(pending_lines))
-                pending_level = level
-                pending_lines = [raw_line]
-                continue
-            if pending_lines:
-                pending_lines.append(raw_line)
-            else:
-                pending_level = "INFO"
-                pending_lines = [raw_line]
-        if pending_lines:
-            self._append_log_entry(pending_level or "INFO", "\n".join(pending_lines))
-        self._refresh_logs_output()
+        """로그는 모든 탭이 함께 보므로, 지우면 모든 탭의 로그 창이 함께 비워집니다(7.5.3)."""
+        clear_log_history()
+        for tab in list(SearchTab._instances):
+            tab._pending_logs.clear()
+            tab.logs_output.clear()
 
     def _on_log_message(self, level: str, message: str):
-        # 로그에는 어느 탭의 검색인지 표시가 없습니다. 검색 중인 탭이 있으면 그 탭(들)에만 쌓고,
-        # 없으면(시작·설정 등 공통 로그) 모든 탭에 쌓습니다(검수 U-8).
-        if self.search_state == Constants.SearchState.IDLE and any(
-            tab is not self and tab.search_state != Constants.SearchState.IDLE for tab in list(SearchTab._instances)
-        ):
-            return
+        # 로그는 프로그램 전체 기록 하나이며 모든 탭의 로그 창에 같은 내용이 보입니다(7.5.3).
         # [Security] MainWindow에서 처리하므로 여기서는 로그 기록 기능만 수행
         # 테스트 환경에서는 즉시 플러시하여 UI 검증 로직이 깨지지 않도록 함
         if os.environ.get("PYTEST_CURRENT_TEST"):
@@ -399,8 +332,7 @@ class SearchTab(QMainWindow):
 
         for level, message in current_batch:
             normalized_level = normalize_log_level(level)
-            # 모든 로그는 일단 _log_entries에 기록되어야 필터 전환 시 소실되지 않음
-            self._log_entries.append((normalized_level, str(message)))
+            # 원본 기록은 로거의 공용 기록에 이미 들어 있어 필터를 바꿔도 사라지지 않습니다.
             if normalized_level in visible_levels:
                 logs_to_show.append((normalized_level, str(message)))
 
@@ -541,7 +473,8 @@ class SearchTab(QMainWindow):
                 "total_match_limit_count": self.total_match_limit_count,
             },
             Constants.PAYLOAD_SKIPPED: [list(item) for item in self.skipped_files_list],
-            Constants.PAYLOAD_LOGS: self._serialize_logs(),
+            # 로그는 이번 실행의 공용 기록이라 세션에 저장하지 않습니다(7.5.3). 키는 형식 호환용입니다.
+            Constants.PAYLOAD_LOGS: "",
             Constants.PAYLOAD_TIMESTAMP: time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -709,12 +642,7 @@ class SearchTab(QMainWindow):
             )
         if retired_results:
             self.result_view_panel.empty_label.setText(AppStrings.SESSION_RESEARCH_REQUIRED)
-        # 로그 복원
-        logs = state.get(Constants.PAYLOAD_LOGS, "")
-        if logs:
-            self._restore_logs_from_text(logs)
-        else:
-            self._clear_logs()
+        # 저장된 이전 실행의 로그는 불러오지 않습니다(7.5.3: 프로그램 시작 후 로그만 보임).
         self._refresh_filter_ui()
 
     def _sync_filters_to_config(self):
@@ -801,7 +729,6 @@ class SearchTab(QMainWindow):
             }
             self.result_view_panel.set_filename_filters(self.current_filename_filters)
             self.result_view_panel.clear()
-            self._clear_logs()
             self._set_inputs_enabled(False)
             self.search_status_changed.emit(True)
             self.search_state = Constants.SearchState.SCANNING

@@ -95,22 +95,28 @@ def test_select_all_notifies_once(qtbot):
         assert len(changes) == 1
 
 
-def test_logs_go_only_to_the_searching_tab(qtbot, mock_config_manager, monkeypatch):
+def test_log_window_shows_whole_program_log_in_every_tab(qtbot, mock_config_manager):
+    """로그 창은 프로그램 시작 후의 전체 로그를 모든 탭에서 같이 보여 주고, 검색을 시작해도 비우지 않습니다(7.5.3)."""
+    from sf_utils.logger import get_log_history, logger
     from ui.search_tab import SearchTab
 
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    first, second = SearchTab(mock_config_manager), SearchTab(mock_config_manager)
+    logger.info("log before tab was opened")
+    first = SearchTab(mock_config_manager)
     qtbot.addWidget(first)
+    # 탭을 나중에 열어도 그 전 로그가 보입니다.
+    assert "log before tab was opened" in first.logs_output.toPlainText()
+    second = SearchTab(mock_config_manager)
     qtbot.addWidget(second)
     first.search_state = C.SearchState.SCANNING
-    before = len(second._pending_logs)
-    first._on_log_message("INFO", "first tab search log")
-    second._on_log_message("INFO", "first tab search log")
-    assert len(second._pending_logs) == before
-    assert first._pending_logs[-1][1] == "first tab search log"
+    logger.info("first tab search log")
+    # 검색 중인 탭이 아닌 탭에도 같은 로그가 보입니다.
+    for tab in (first, second):
+        assert "first tab search log" in tab.logs_output.toPlainText()
     first.search_state = C.SearchState.IDLE
-    second._on_log_message("INFO", "common log")
-    assert second._pending_logs[-1][1] == "common log"
+    assert any("first tab search log" in message for _, message in get_log_history())
+    first._clear_logs()
+    assert get_log_history() == []
+    assert first.logs_output.toPlainText() == "" and second.logs_output.toPlainText() == ""
     first.cleanup()
     second.cleanup()
 

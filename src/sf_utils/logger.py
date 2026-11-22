@@ -1,6 +1,8 @@
+import collections
 import logging
 import os
 import sys
+import threading
 
 from PySide6.QtCore import QObject, QtMsgType, Signal, qInstallMessageHandler
 
@@ -22,6 +24,34 @@ class QtLogHandler(logging.Handler):
         level = normalize_log_level(record.levelname)
         self.signaler.message_logged.emit(msg)
         self.signaler.level_message_logged.emit(level, msg)
+
+
+LOG_HISTORY_MAX_COUNT = 5000
+_log_history: "collections.deque[tuple[str, str]]" = collections.deque(maxlen=LOG_HISTORY_MAX_COUNT)
+_log_history_lock = threading.Lock()
+
+
+class LogHistoryHandler(logging.Handler):
+    """프로그램 시작 후의 로그를 최근 5,000건까지 모아 둡니다. 모든 탭의 로그 창이 이 기록을 함께 봅니다(7.5.3)."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            entry = (normalize_log_level(record.levelname), self.format(record))
+        except Exception:
+            return
+        with _log_history_lock:
+            _log_history.append(entry)
+
+
+def get_log_history() -> "list[tuple[str, str]]":
+    """지금까지 모은 (수준, 줄) 목록의 사본입니다."""
+    with _log_history_lock:
+        return list(_log_history)
+
+
+def clear_log_history() -> None:
+    with _log_history_lock:
+        _log_history.clear()
 
 
 def normalize_log_level(level_name: str) -> str:
@@ -48,6 +78,9 @@ def get_logger():
     if not _logger_instance.handlers:
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         # 표준 출력을 위한 콘솔 로그 핸들러를 추가합니다.
+        history_handler = LogHistoryHandler()
+        history_handler.setFormatter(formatter)
+        _logger_instance.addHandler(history_handler)
         if sys.stdout:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)

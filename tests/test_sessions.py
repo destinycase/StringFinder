@@ -49,7 +49,6 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
 
     tab.search_panel.search_combo.set_current_text("persistent_query")
     tab.filename_panel.add_filename("report,invoice")
-    tab.logs_output.setPlainText("Test Logs")
 
     test_results = [("path/to/file.txt", 1, [[1, "line content"]])]
     tab.result_view_panel.result_model.add_results(test_results)
@@ -59,7 +58,8 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
     state = tab.get_state()
     assert state["inputs"]["search"] == "persistent_query"
     assert len(state["results"]) == 1
-    assert state["logs"] == "Test Logs"
+    # 로그는 이번 실행의 공용 기록이라 세션에 저장하지 않습니다(7.5.3).
+    assert state["logs"] == ""
     # 건너뛴 사유는 코드로 저장합니다(7.2.5).
     assert state[Constants.PAYLOAD_SKIPPED] == [["C:/restricted/file.xml", "ERR_XML_PARSE|XML 구문 오류"]]
     assert state[Constants.PAYLOAD_SUMMARY]["total_match_limit_count"] == 500_000
@@ -71,7 +71,6 @@ def test_search_tab_state_serialization(qtbot, mock_config_manager):
     assert new_tab.search_panel.search_combo.currentText() == "persistent_query"
     assert new_tab.filename_panel.get_selected_filenames() == ["report", "invoice"]
     assert new_tab.result_view_panel.result_model.rowCount() == 1
-    assert new_tab.logs_output.toPlainText() == "Test Logs"
     assert not new_tab.result_view_panel.result_splitter.isHidden()
     assert new_tab.skipped_files_list == [("C:/restricted/file.xml", "ERR_XML_PARSE|XML 구문 오류")]
     assert not new_tab.result_view_panel.skipped_files_banner.isHidden()
@@ -103,7 +102,8 @@ def test_main_window_tab_restoration(qtbot, mock_config_manager):
         assert isinstance(tab_widget, SearchTab)
         tab = cast(SearchTab, tab_widget)
         assert tab.search_panel.search_combo.currentText() == "restored_query"
-        assert "Restored logs" in tab.logs_output.toPlainText()
+        # 이전 실행의 로그는 불러오지 않습니다(7.5.3).
+        assert "Restored logs" not in tab.logs_output.toPlainText()
     finally:
         main_win.cleanup()
         main_win.close()
@@ -183,7 +183,7 @@ def test_session_preserves_normal_result_after_option_toggle(qtbot, mock_config_
     assert restored[1] == "needle actual content"
 
 
-def test_search_tab_discards_invalid_saved_skip_and_log_records(qtbot, mock_config_manager):
+def test_search_tab_discards_invalid_saved_skip_records(qtbot, mock_config_manager):
     tab = SearchTab(mock_config_manager)
     qtbot.addWidget(tab)
     state = {
@@ -204,16 +204,7 @@ def test_search_tab_discards_invalid_saved_skip_and_log_records(qtbot, mock_conf
 
     assert [path for path, _ in tab.skipped_files_list] == ["C:/valid.xml"]
     assert tab.skipped_count == 1
-    assert tab.logs_output.toPlainText() == "[INFO] valid"
-
-
-def test_search_tab_discards_non_text_saved_logs(qtbot, mock_config_manager):
-    tab = SearchTab(mock_config_manager)
-    qtbot.addWidget(tab)
-
-    tab.load_state({Constants.PAYLOAD_INPUTS: {}, Constants.PAYLOAD_LOGS: {"bad": "data"}})
-
-    assert tab.logs_output.toPlainText() == ""
+    assert "[INFO] valid" not in tab.logs_output.toPlainText()
 
 
 def test_old_format_session_keeps_conditions_but_asks_to_search_again(qtbot, mock_config_manager, tmp_path):
