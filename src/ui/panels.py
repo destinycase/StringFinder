@@ -1,12 +1,14 @@
 import os
 from typing import Any, Dict, List, Union, cast
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRegularExpression, QRunnable, QSignalBlocker, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRegularExpression, QRunnable, QSignalBlocker, QSize, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
+    QKeySequence,
     QPainter,
     QPalette,
     QRegularExpressionValidator,
+    QShortcut,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -189,6 +191,12 @@ class FilterItemWidget(QWidget):
         layout.addWidget(self.missing_label)
         layout.addStretch()
         layout.addWidget(self.delete_btn)
+
+    def sizeHint(self):
+        # 목록 항목 높이는 이 값으로 정합니다. 기본 sizeHint는 최소 높이를 반영하지 않아 항목(선택 강조)이
+        # 위젯보다 낮아지고, 이름이 강조 영역의 가운데보다 아래에 보였습니다(7.6.3).
+        hint = super().sizeHint()
+        return QSize(hint.width(), max(hint.height(), self.minimumHeight()))
 
     def set_compact(self, compact):
         self._compact = compact
@@ -774,6 +782,10 @@ class FolderFilterPanel(DenseFilterPanel):
         self.folder_list.items_reordered.connect(self._after_reorder)
         self.folder_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.folder_list.customContextMenuRequested.connect(self._show_context_menu)
+        # F2: 고른 그룹 이름 바꾸기(7.6.3). 목록에 초점이 있을 때만 동작합니다.
+        self._rename_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self.folder_list)
+        self._rename_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._rename_shortcut.activated.connect(self._rename_current_group)
         self.usage_label = self.folder_list.empty_hint
         self.usage_label.setText(AppStrings.FOLDER_FILTER_USAGE)
         # 폴더 목록의 가독성을 위해 적절한 최소 크기를 보장합니다.
@@ -978,7 +990,10 @@ class FolderFilterPanel(DenseFilterPanel):
         row = self.folder_list.row(item) if item is not None else -1
         menu = QMenu(self)
         if row >= 0 and self._is_header_row(row):
-            menu.addAction(AppStrings.FOLDER_GROUP_RENAME, lambda: self._prompt_rename(row))
+            rename_action = menu.addAction(AppStrings.FOLDER_GROUP_RENAME, lambda: self._prompt_rename(row))
+            # 메뉴에 단축키를 보여 줍니다. 실제 F2 처리는 목록의 단축키가 맡습니다(7.6.3).
+            rename_action.setShortcut(QKeySequence(Qt.Key.Key_F2))
+            rename_action.setShortcutVisibleInContextMenu(True)
             menu.addAction(AppStrings.FOLDER_GROUP_DELETE, lambda: self._delete_item(self.folder_list.item(row)))
         elif row >= 0:
             move_menu = menu.addMenu(AppStrings.FOLDER_GROUP_MOVE_TO)
@@ -992,6 +1007,14 @@ class FolderFilterPanel(DenseFilterPanel):
                 action.setEnabled(header_row != current)
         menu.addAction(AppStrings.ADD_FOLDER_GROUP_BTN, self._on_add_group_clicked)
         menu.exec(self.folder_list.viewport().mapToGlobal(position))
+
+    def _rename_current_group(self):
+        """F2: 지금 고른 행이 그룹 머리글이면 이름 바꾸기 창을 엽니다."""
+        if not self.folder_list.isEnabled():
+            return
+        row = self.folder_list.currentRow()
+        if row >= 0 and self._is_header_row(row):
+            self._prompt_rename(row)
 
     def _prompt_rename(self, header_row: int):
         header = cast(FolderGroupHeader, self._widget(header_row))

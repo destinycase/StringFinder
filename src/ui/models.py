@@ -644,25 +644,13 @@ class MatchDetailModel(QAbstractTableModel):
 
                 # EditRole: 필터링용 순수 텍스트
                 if role == Qt.ItemDataRole.EditRole:
+                    location, value_part = self._normal_location_and_value(row_data, row_path)
                     if is_excel:
-                        sheet_or_pos = str(row_data.position or "").strip()
-                        cell_or_value = str(row_data.content if row_data.content is not None else "").strip()
-                        extra_val = row_data.extra_1
-
-                        if "!" in sheet_or_pos:
-                            location = sheet_or_pos
-                            value_part = str(extra_val) if extra_val is not None else cell_or_value
-                        else:
-                            location = (
-                                f"{sheet_or_pos}!{cell_or_value}" if cell_or_value else sheet_or_pos
-                            )
-                            value_part = str(extra_val) if extra_val is not None else ""
-
                         parts = [location]
                         if value_part:
                             parts.append(value_part)
                         return " | ".join(parts)
-                    return f"{row_data.position} | {row_data.content}"
+                    return f"{location} | {value_part}"
 
                 # DisplayRole: 하이라이팅 포함
                 if is_excel:
@@ -1093,6 +1081,34 @@ class MatchDetailModel(QAbstractTableModel):
         self.current_file_path = ""
         self._current_page = 1
         self.endResetModel()
+
+    @staticmethod
+    def _normal_location_and_value(row_data, row_path: str) -> tuple:
+        """일반 모드 결과의 (위치, 내용)입니다. 텍스트는 (줄 번호, 줄), Excel은 (시트!셀, 값)입니다."""
+        if row_path.lower().endswith(EXCEL_EXTENSIONS):
+            sheet_or_pos = str(row_data.position or "").strip()
+            cell_or_value = str(row_data.content if row_data.content is not None else "").strip()
+            extra_val = row_data.extra_1
+            if "!" in sheet_or_pos:
+                return sheet_or_pos, (str(extra_val) if extra_val is not None else cell_or_value)
+            location = f"{sheet_or_pos}!{cell_or_value}" if cell_or_value else sheet_or_pos
+            return location, (str(extra_val) if extra_val is not None else "")
+        return str(row_data.position), str(row_data.content)
+
+    def copy_fields(self, row: int) -> Optional[List[str]]:
+        """복사용 칸 값입니다(7.6.3). 일반 모드는 [위치, 내용], 다른 모드는 열마다 하나씩입니다. 머리줄이면 None."""
+        if not (0 <= row < len(self._data)) or isinstance(self._data[row], FileGroupHeader):
+            return None
+        row_data = self._data[row]
+        search_mode = str(self.search_mode or Constants.MODE_NORMAL)
+        if search_mode == Constants.MODE_NORMAL or search_mode == AppStrings.SPECIAL_SEARCH_OFF:
+            row_path = row_data.source_path or self.current_file_path or ""
+            return list(self._normal_location_and_value(row_data, row_path))
+        values = []
+        for col in range(len(self._headers)):
+            value = row_data[col]
+            values.append("" if value is None else str(value))
+        return values
 
     def get_match(self, row):
         """특정 행의 매치 데이터를 반환합니다. 파일 머리줄이면 None입니다."""

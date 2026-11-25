@@ -549,3 +549,60 @@ def test_deselecting_last_remaining_file_keeps_its_detail(qtbot, mock_config_man
     qtbot.wait(20)
     assert not selection.hasSelection()
     assert view._detail_signature == (second,)
+
+
+def _copy_items(view, monkeypatch):
+    from PySide6.QtWidgets import QMenu
+
+    shown = []
+
+    class RecordingMenu(QMenu):
+        def exec(self, *_args):
+            shown.extend(self.actions())
+
+    monkeypatch.setattr("ui.result_view.QMenu", RecordingMenu)
+    view._show_match_context_menu(view.match_view.visualRect(view.match_proxy_model.index(0, 0)).center())
+    return {a.text(): a for a in shown}
+
+
+def test_normal_detail_copies_location_or_text_only(qtbot, mock_config_manager, monkeypatch):
+    """일반 모드 상세 메뉴: 위치만 복사(줄 번호), 내용만 복사(7.6.3)."""
+    from PySide6.QtWidgets import QApplication
+
+    view = _view(qtbot, mock_config_manager)
+    row_a = next(r for r in range(3) if _path_of_row(view, r).endswith("a.txt"))
+    _select_rows(view, [row_a])
+    qtbot.waitUntil(lambda: view.match_model.current_file_path.endswith("a.txt"))
+    view.match_view.selectAll()
+    items = _copy_items(view, monkeypatch)
+    items[AppStrings.COPY_LOCATION_ONLY].trigger()
+    assert QApplication.clipboard().text() == "1\n2\n3"
+    items[AppStrings.COPY_TEXT_ONLY].trigger()
+    assert QApplication.clipboard().text() == "sword a1\nsword a2\nsword a3"
+
+
+def test_json_detail_offers_copy_per_column(qtbot, mock_config_manager, monkeypatch):
+    """JSON 모드 상세 메뉴: 위치만·키만·값만 복사(열 이름마다 하나, 7.6.3)."""
+    from PySide6.QtWidgets import QApplication
+
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    view.set_search_context("sword", f"JSON ({Constants.MODE_EXACT})")
+    view.set_results([[2, "a.json", "D:/d", "D:/d/a.json",
+                       [[3, "items.0.name", "sword", None, None], [7, "items.1.name", "big sword", None, None]]]])
+    _select_rows(view, [0])
+    qtbot.waitUntil(lambda: view.match_model.rowCount() == 2)
+    model = view.match_model
+    headers = [model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())]
+    assert len(headers) == 3
+    view.match_view.selectAll()
+    items = _copy_items(view, monkeypatch)
+    labels = [AppStrings.COPY_COLUMN_ONLY.format(h) for h in headers]
+    assert all(label in items for label in labels)
+    assert AppStrings.COPY_TEXT_ONLY not in items  # 일반 모드 전용 항목은 없음
+    expected = ["3\n7", "items.0.name\nitems.1.name", "sword\nbig sword"]
+    for label, text in zip(labels, expected):
+        items[label].trigger()
+        assert QApplication.clipboard().text() == text

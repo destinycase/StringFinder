@@ -386,3 +386,48 @@ def test_drag_from_group_toggle_moves_group_without_toggling(panel, qtbot):
     names = [g["name"] for g in panel.get_group_state()]
     assert names[-1] == "Game"
     assert header(panel, "Game")[1].collapsed == collapsed
+
+
+@pytest.mark.parametrize("compact", [True, False])
+def test_row_item_height_matches_widget_so_text_is_centered(panel, qtbot, compact):
+    """목록 항목(선택 강조) 높이가 행 위젯과 같아 이름이 강조 영역의 가운데에 옵니다(7.6.3)."""
+    panel.apply_display_density(compact)
+    qtbot.wait(20)
+    listing = panel.folder_list
+    for row in range(listing.count()):
+        item = listing.item(row)
+        if item.isHidden():
+            continue
+        widget = listing.itemWidget(item)
+        assert listing.visualItemRect(item).height() == widget.height(), row
+        assert item.sizeHint().height() >= widget.minimumHeight()
+
+
+def test_f2_renames_current_group_and_menu_shows_shortcut(panel, qtbot, monkeypatch):
+    """F2로 고른 그룹의 이름 바꾸기 창이 뜨고, 메뉴에는 F2가 표시됩니다(7.6.3)."""
+    from PySide6.QtWidgets import QInputDialog, QMenu
+
+    header_row = next(row for row in range(panel.folder_list.count()) if panel._is_header_row(row))
+    calls = []
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (calls.append(k.get("text")) or ("Renamed", True)))
+    panel.folder_list.setFocus()
+    panel.folder_list.setCurrentRow(header_row)
+    QTest.keyClick(panel.folder_list, Qt.Key.Key_F2)
+    assert calls == ["Game"]
+    assert panel._widget(header_row).text() == "Renamed"
+    # 폴더 행에서는 F2가 아무것도 하지 않습니다.
+    folder_row = next(row for row in range(panel.folder_list.count()) if not panel._is_header_row(row))
+    panel.folder_list.setCurrentRow(folder_row)
+    QTest.keyClick(panel.folder_list, Qt.Key.Key_F2)
+    assert calls == ["Game"]
+    # 메뉴의 이름 바꾸기 항목에 F2가 보입니다.
+    shown = []
+
+    class RecordingMenu(QMenu):
+        def exec(self, *_args):
+            shown.extend(self.actions())
+
+    monkeypatch.setattr("ui.panels.QMenu", RecordingMenu)
+    panel._show_context_menu(panel.folder_list.visualItemRect(panel.folder_list.item(header_row)).center())
+    rename = next(a for a in shown if a.text() == AppStrings.FOLDER_GROUP_RENAME)
+    assert rename.shortcut().toString() == "F2" and rename.isShortcutVisibleInContextMenu()

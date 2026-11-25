@@ -2002,6 +2002,13 @@ class ResultView(QWidget):
             copy_action = QAction(copy_label, self)
             copy_action.triggered.connect(self._copy_selected_match_content)
             menu.addAction(copy_action)
+            # 칸 하나만 복사(7.6.3): 일반 모드는 위치·내용, 다른 모드는 열 이름마다 하나씩입니다.
+            for field_index, label in enumerate(self._match_copy_field_labels()):
+                field_action = QAction(label, self)
+                field_action.triggered.connect(
+                    lambda _checked=False, i=field_index: self._copy_selected_match_field(i)
+                )
+                menu.addAction(field_action)
             menu.addSeparator()
         if self.result_model.rowCount() > 0:
             export_action = QAction(AppStrings.RESULT_EXPORT_ALL, self)
@@ -2057,6 +2064,36 @@ class ResultView(QWidget):
             contents.append("\t".join(row_data))
         if contents:
             self._copy_to_clipboard("\n".join(contents))
+
+    def _match_copy_field_labels(self) -> list:
+        """검색 상세 메뉴의 "칸 하나만 복사" 항목 이름입니다. 순서는 MatchDetailModel.copy_fields와 같습니다."""
+        model = self.match_model
+        if model.columnCount() <= 1:
+            return [AppStrings.COPY_LOCATION_ONLY, AppStrings.COPY_TEXT_ONLY]
+        return [
+            AppStrings.COPY_COLUMN_ONLY.format(model.headerData(col, Qt.Orientation.Horizontal))
+            for col in range(model.columnCount())
+        ]
+
+    def _selected_match_source_rows(self) -> list:
+        """고른 상세 행의 원본 모델 행 번호를 화면 순서대로 돌려줍니다(파일 머리줄 포함, 복사 때 건너뜀)."""
+        selection = self.match_view.selectionModel().selectedRows()
+        if not selection:
+            index = self.match_view.currentIndex()
+            selection = [index] if index.isValid() else []
+        proxy_rows = sorted({index.row() for index in selection})
+        return [self.match_proxy_model.mapToSource(self.match_proxy_model.index(row, 0)).row() for row in proxy_rows]
+
+    def _copy_selected_match_field(self, field_index: int):
+        """고른 상세 행들에서 칸 하나만 줄마다 복사합니다(7.6.3). 예: 위치만, 키만, 값만."""
+        lines = []
+        for source_row in self._selected_match_source_rows():
+            fields = self.match_model.copy_fields(source_row)
+            if fields is None or field_index >= len(fields):
+                continue
+            lines.append(fields[field_index])
+        if lines:
+            self._copy_to_clipboard("\n".join(lines))
 
     def _copy_to_clipboard(self, text):
         clipboard = QApplication.clipboard()
