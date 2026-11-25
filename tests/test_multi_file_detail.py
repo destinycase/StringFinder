@@ -629,3 +629,83 @@ def test_file_header_row_has_no_row_menu(qtbot, mock_config_manager, monkeypatch
     view._show_match_context_menu(view.match_view.visualRect(proxy_index).center())
     assert AppStrings.OPEN_LINE_IN_EDITOR not in shown
     assert AppStrings.COPY_LOCATION_ONLY not in shown
+
+
+def _deselect(view, row):
+    view.result_view.selectionModel().select(
+        view.proxy_model.index(row, 0),
+        QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
+
+
+def _row_of(view, suffix):
+    return next(r for r in range(view.proxy_model.rowCount()) if _path_of_row(view, r).endswith(suffix))
+
+
+def test_single_rule_after_deselecting_all_then_filter(qtbot, mock_config_manager):
+    """선택을 모두 푼 뒤 필터로 상세의 파일을 숨기면 상세를 비웁니다(7.6.6, 7.6.4 검수 3.3 가)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [_row_of(view, "a.txt"), _row_of(view, "b.txt")])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    _deselect(view, _row_of(view, "a.txt"))
+    qtbot.waitUntil(lambda: view._detail_signature == ("D:/d/b.txt",))
+    _deselect(view, _row_of(view, "b.txt"))
+    qtbot.wait(20)
+    assert view._detail_signature == ("D:/d/b.txt",)
+    view.result_file_filter_edit.setText("a.txt")
+    view._on_result_filters_changed()
+    qtbot.wait(20)
+    assert view._detail_signature is None and view.match_model.rowCount() == 0
+
+
+def test_single_rule_after_ctrl_arrow_then_filter(qtbot, mock_config_manager):
+    """선택을 풀고 현재 위치만 옮긴 뒤 필터로 상세의 파일을 숨기면 상세를 비웁니다(7.6.6, 7.6.4 검수 #2)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [_row_of(view, "a.txt")])
+    qtbot.waitUntil(lambda: view._detail_signature == ("D:/d/a.txt",))
+    _deselect(view, _row_of(view, "a.txt"))
+    view.result_view.selectionModel().setCurrentIndex(
+        view.proxy_model.index(_row_of(view, "b.txt"), 0), QItemSelectionModel.SelectionFlag.NoUpdate)
+    qtbot.wait(20)
+    assert view._detail_signature == ("D:/d/a.txt",)
+    view.result_file_filter_edit.setText("b.txt")
+    view._on_result_filters_changed()
+    qtbot.wait(20)
+    assert view._detail_signature is None
+
+
+def test_single_rule_page_change_then_partial_filter_keeps_remaining(qtbot, mock_config_manager):
+    """두 파일 상세를 보며 페이지를 넘긴 뒤 필터로 하나만 남기면 상세는 남은 파일만 보여 줍니다(7.6.6, 검수 3.3 나·#3)."""
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    view.set_search_context("sword", Constants.MODE_NORMAL)
+    view.set_results([[1, f"f{i:03d}.txt", "D:/d", f"D:/d/f{i:03d}.txt", [[1, "sword", 0, 5]]] for i in range(250)])
+    view.result_model.set_page_size(100)
+    view._update_pagination_ui()
+    qtbot.wait(300)
+    _select_rows(view, [0, 1])
+    first, second = _path_of_row(view, 0), _path_of_row(view, 1)
+    qtbot.waitUntil(lambda: view._detail_signature == (first, second))
+    view._on_next_page()
+    qtbot.wait(20)
+    assert view._detail_signature == (first, second)
+    view.result_file_filter_edit.setText(first.rsplit("/", 1)[1])
+    view._on_result_filters_changed()
+    qtbot.waitUntil(lambda: view._detail_signature == (first,))
+    assert not view.match_model.multi_file
+
+
+def test_single_rule_all_selected_hidden_clears_even_if_current_visible(qtbot, mock_config_manager):
+    """고른 파일이 모두 숨으면 현재 위치 파일이 보여도 상세를 비웁니다(7.6.6, 7.5.8의 예외를 한 규칙으로)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [_row_of(view, "a.txt"), _row_of(view, "b.txt")])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    _deselect(view, _row_of(view, "a.txt"))
+    qtbot.waitUntil(lambda: view._detail_signature == ("D:/d/b.txt",))
+    # 현재 위치는 방금 푼 a, 선택은 b. 필터로 b를 숨기고 a만 남깁니다.
+    view.result_file_filter_edit.setText("a.txt")
+    view._on_result_filters_changed()
+    qtbot.wait(20)
+    assert not view.result_view.selectionModel().hasSelection()
+    assert view._detail_signature is None

@@ -620,8 +620,6 @@ class ResultView(QWidget):
         # 검색 중 결과가 추가되며 목록을 다시 만들 때 선택한 파일을 유지합니다(검수 U-3).
         self._reselect_path = None
         self._reselect_paths = set()
-        self._result_page_changing = False
-        self._result_filter_changing = False
         self.proxy_model.modelAboutToBeReset.connect(self._remember_result_selection)
         self.proxy_model.modelReset.connect(self._restore_result_selection)
         self.result_view.doubleClicked.connect(self._on_result_double_clicked)
@@ -956,28 +954,17 @@ class ResultView(QWidget):
         # 페이지 이동 후에도 내용에 맞춰 컬럼 폭을 최적화합니다.
         self._adjust_match_column_widths()
 
-    def _change_result_page(self, change):
-        """파일 목록의 페이지를 바꿉니다. 넘어간 페이지에 고른 파일이 없어도 상세 목록은 그대로 둡니다(7.6.1).
-
-        필터로 고른 파일이 모두 숨을 때만 상세를 비웁니다(7.5.8). 페이지 이동은 숨기는 것이 아니므로 예외입니다.
-        """
-        self._result_page_changing = True
-        try:
-            change()
-        finally:
-            self._result_page_changing = False
-
     def _on_prev_page(self):
         curr = self.result_model.get_current_page()
         if curr > 1:
-            self._change_result_page(lambda: self.result_model.go_to_page(curr - 1))
+            self.result_model.go_to_page(curr - 1)
             self._update_pagination_ui()
 
     def _on_next_page(self):
         curr = self.result_model.get_current_page()
         total = self.result_model.get_total_pages()
         if curr < total:
-            self._change_result_page(lambda: self.result_model.go_to_page(curr + 1))
+            self.result_model.go_to_page(curr + 1)
             self._update_pagination_ui()
 
     def _on_page_jump(self):
@@ -985,7 +972,7 @@ class ResultView(QWidget):
             val = int(self.current_page_edit.text())
             total = self.result_model.get_total_pages()
             if 1 <= val <= total:
-                self._change_result_page(lambda: self.result_model.go_to_page(val))
+                self.result_model.go_to_page(val)
                 self._update_pagination_ui()
             else:
                 self.current_page_edit.setText(str(self.result_model.get_current_page()))
@@ -996,7 +983,7 @@ class ResultView(QWidget):
         size_str = self.page_size_combo.itemText(index)
         try:
             size = int(size_str)
-            self._change_result_page(lambda: self.result_model.set_page_size(size))
+            self.result_model.set_page_size(size)
             self._update_pagination_ui()
         except ValueError:
             pass
@@ -1034,18 +1021,17 @@ class ResultView(QWidget):
         self._reselect_paths = paths
 
     def _restore_result_selection(self):
+        """목록을 다시 만든 뒤 선택을 되살리고 상세를 한 가지 규칙으로 맞춥니다(7.6.6).
+
+        - 고른 파일 가운데 지금 목록(이 페이지)에 보이는 것을 다시 고릅니다. 현재 위치는 고르지 않고 위치만 지킵니다.
+        - 다시 고른 파일이 있으면 상세는 그 선택을 따릅니다.
+        - 다시 고른 파일이 없으면(페이지를 넘김, 필터로 숨김, 선택을 모두 풂) 상세에서 필터 결과(모든 페이지)에
+          없는 파일만 뺍니다. 남은 파일이 있으면 그것만 보여 주고, 하나도 없으면 비웁니다.
+          페이지 이동은 필터 결과를 바꾸지 않으므로 상세가 그대로 남습니다.
+        """
         current_path, self._reselect_path = self._reselect_path, None
         paths, self._reselect_paths = self._reselect_paths, set()
-        # 고른 파일만 되살립니다. Ctrl+클릭으로 선택을 푼 현재 위치 파일은 다시 고르지 않고 위치만 지킵니다.
-        # 고른 것이 없고 현재 위치만 있는 상태는 사용자가 선택을 모두 푼 경우뿐이라, 보던 파일을 대신
-        # 고르지 않습니다(7.5.8, 7.5.7 검수 3.2).
         remembered = set(paths)
-        if not paths and not current_path:
-            if getattr(self, "_result_filter_changing", False):
-                # 페이지를 넘겨 고른 것이 없는 상태에서 필터를 바꾼 경우입니다. 상세가 보여 주던 파일이
-                # 필터 결과에 하나도 없으면 상세를 비웁니다(7.6.2, 7.6.1 검수 7.4).
-                self._clear_detail_if_filtered_out()
-            return
         selection = self.result_view.selectionModel()
         if selection is None:
             return
@@ -1055,7 +1041,7 @@ class ResultView(QWidget):
         current_index = None
         first_hit_index = None
         run_start = None
-        row_count = self.proxy_model.rowCount()
+        row_count = self.proxy_model.rowCount() if (paths or current_path) else 0
         for row in range(row_count + 1):
             path = self._path_at_proxy_index(self.proxy_model.index(row, 0)) if row < row_count else None
             hit = path is not None and path in paths
@@ -1071,60 +1057,42 @@ class ResultView(QWidget):
                 # 이어진 줄은 한 범위로 묶어 수천 개를 골라도 한 번에 되살립니다.
                 restored.select(self.proxy_model.index(run_start, 0), self.proxy_model.index(row - 1, last_column))
                 run_start = None
-        if restored.isEmpty():
-            self._restore_without_selection(selection, current_index, bool(remembered))
-            return
-        if current_index is None:
+        if not restored.isEmpty() and current_index is None:
             # 보던 파일이 목록에서 빠졌으면 남은 선택의 첫 파일을 현재 위치로 둡니다.
             current_index = first_hit_index
-        # 같은 파일들을 다시 고르는 것이므로 상세 목록을 다시 만들지 않습니다.
+        # 같은 파일들을 다시 고르는 것이므로 신호를 막습니다. 상세는 아래에서 직접 맞춥니다.
         selection.blockSignals(True)
         try:
-            selection.select(
-                restored,
-                QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
-            )
+            if not restored.isEmpty():
+                selection.select(
+                    restored,
+                    QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
+                )
             if current_index is not None:
                 selection.setCurrentIndex(current_index, QItemSelectionModel.SelectionFlag.NoUpdate)
         finally:
             selection.blockSignals(False)
         self.result_view.viewport().update()
-        if remembered and restored_paths != remembered:
-            # 파일 필터 등으로 고른 파일 일부가 목록에서 빠졌습니다. 신호를 막아 두었으므로
-            # 상세 목록을 남은 선택에 맞춰 직접 다시 만듭니다(7.5.7, 검수 3).
-            self._detail_refresh_timer.start()
-
-    def _restore_without_selection(self, selection, current_index, had_selection: bool):
-        """되살릴 선택이 없을 때 목록과 상세를 맞춥니다(7.5.8, 7.5.7 검수 3.1·3.2).
-
-        - 현재 위치 파일이 목록에 있으면 고르지 않고 위치만 지킵니다. 숨은 파일들의 상세를 보던 중이었다면
-          선택 없음 상태(현재 위치 파일)에 맞춰 상세를 다시 만듭니다.
-        - 현재 위치 파일도 목록에 없으면(예: 고른 파일이 필터로 모두 숨음) 상세를 비웁니다.
-        """
-        if current_index is not None:
-            selection.blockSignals(True)
-            try:
-                selection.setCurrentIndex(current_index, QItemSelectionModel.SelectionFlag.NoUpdate)
-            finally:
-                selection.blockSignals(False)
-            self.result_view.viewport().update()
-            if had_selection:
-                # 숨은 파일들의 상세를 보던 중이었으므로 현재 위치 파일의 상세로 바꿉니다.
-                self._on_result_clicked(current_index)
+        if restored_paths:
+            if restored_paths != remembered:
+                # 고른 파일 일부가 목록에서 빠졌습니다. 상세를 남은 선택에 맞춥니다.
+                self._detail_refresh_timer.start()
             return
-        if getattr(self, "_result_page_changing", False):
-            # 다른 페이지로 넘어갔을 뿐이므로 보던 상세 목록을 그대로 둡니다(7.6.1).
-            return
-        self._clear_detail_view()
+        self._prune_detail_to_filtered_results()
 
-    def _clear_detail_if_filtered_out(self):
-        """상세가 보여 주는 파일이 필터 결과(모든 페이지)에 하나도 없으면 상세를 비웁니다."""
-        shown = set(self._detail_signature or ())
+    def _prune_detail_to_filtered_results(self):
+        """고른 파일이 없을 때: 상세에서 필터 결과(모든 페이지)에 없는 파일을 빼고, 하나도 안 남으면 비웁니다."""
+        shown = self._detail_signature
         if not shown:
             return
-        visible = {item[3] for item in self.result_model._filtered_buffer if len(item) > 3}
-        if not shown & visible:
+        visible = {item[3]: item[4] for item in self.result_model._filtered_buffer if len(item) > 4}
+        keep = [path for path in shown if path in visible]
+        if len(keep) == len(shown):
+            return
+        if not keep:
             self._clear_detail_view()
+            return
+        self._show_detail_entries([(path, visible[path]) for path in keep])
 
     def _user_cleared_selection(self) -> bool:
         """사용자가 Ctrl+클릭으로 선택을 모두 푼 상태인지 봅니다.
@@ -1910,11 +1878,7 @@ class ResultView(QWidget):
         """결과 목록 필터 변경 시 호출됩니다."""
         file_text = self.result_file_filter_edit.text()
         folder_text = self.result_folder_filter_edit.text()
-        self._result_filter_changing = True
-        try:
-            self.result_model.set_filters(file_text, folder_text)
-        finally:
-            self._result_filter_changing = False
+        self.result_model.set_filters(file_text, folder_text)
 
     MATCH_FILTER_DEBOUNCE_MIN = 20_000
 
