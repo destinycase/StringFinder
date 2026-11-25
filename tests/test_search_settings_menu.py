@@ -294,3 +294,15 @@ def test_no_result_text_drops_nfd_and_case_paragraph(language):
     text = AppStrings.RESULT_EMPTY_NO_MATCH_TITLE + AppStrings.RESULT_EMPTY_ENCODING_HINT
     assert "NFD" not in text and "ß" not in text
     assert ("인코딩" if language == "ko" else "encoding") in AppStrings.RESULT_EMPTY_ENCODING_HINT
+
+
+def test_empty_search_input_shows_guidance_with_max_length(qtbot, language):
+    """검색어 입력칸이 비어 있으면 대소문자·최대 글자 수 안내가 보입니다(7.7.3)."""
+    from ui.panels import SearchOptionsPanel
+
+    panel = SearchOptionsPanel()
+    qtbot.addWidget(panel)
+    edit = panel.search_combo.lineEdit()
+    expected = AppStrings.SEARCH_EDIT_PLACEHOLDER.format(f"{C.MAX_SEARCH_QUERY_LENGTH:,}")
+    assert edit.placeholderText() == expected
+    assert "1,000" in expected and "{0}" not in expected

@@ -233,7 +233,7 @@ ENGLISH_STRINGS = {
         "UE localization archive (contains)",
         "UE localization archive (exact)",
     ],
-    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for... Case and character form differences (such as decomposed Korean) are matched automatically.",
+    "SEARCH_EDIT_PLACEHOLDER": "Enter text to search for. (Case-insensitive, up to {0} characters.)",
     "EXT_EDIT_PLACEHOLDER": "e.g. txt or xlsx,xlsm",
     "EXTENSION_FILTER_WILDCARD_NOT_ALLOWED": "Extension filters do not support wildcard or pattern characters (*, ?, [, ], \\).",
     "FILENAME_LIST_PLACEHOLDER": 'e.g. report or report,invoice',

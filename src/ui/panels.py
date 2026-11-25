@@ -636,9 +636,12 @@ class SearchOptionsPanel(QWidget):
         self.search_combo.setEditable(True)
         self.search_combo.setMinimumWidth(100)
         self.search_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        self.search_combo.setPlaceholderText(AppStrings.SEARCH_EDIT_PLACEHOLDER)
+        placeholder = AppStrings.SEARCH_EDIT_PLACEHOLDER.format(f"{Constants.MAX_SEARCH_QUERY_LENGTH:,}")
+        self.search_combo.setPlaceholderText(placeholder)
         le = self.search_combo.lineEdit()
         if le:
+            # 입력 가능한 콤보는 입력칸 자체의 안내 문구가 보이므로 입력칸에도 둡니다(7.7.3).
+            le.setPlaceholderText(placeholder)
             le.returnPressed.connect(self.search_started.emit)
         input_layout.addWidget(self.search_mode_combo, 0, 0)
         input_layout.addWidget(self.search_label, 0, 1)

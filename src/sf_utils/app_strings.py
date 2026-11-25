@@ -273,9 +273,8 @@ class AppStrings:
     # =========================================================================
     # [4] 입력 필드 및 플레이스홀더 (Placeholders)
     # =========================================================================
-    SEARCH_EDIT_PLACEHOLDER = (
-        "검색할 문자열 입력… 대소문자와 글자 표현 차이(한글 자모 분리 등)는 자동으로 맞춰 찾습니다."
-    )
+    # {0}: 검색어 최대 글자 수(Constants.MAX_SEARCH_QUERY_LENGTH, 천 단위 쉼표)
+    SEARCH_EDIT_PLACEHOLDER = "검색할 문자열을 입력하세요. (대소문자는 구분하지 않으며, 최대 {0}자를 입력할 수 있습니다.)"
     EXT_EDIT_PLACEHOLDER = "예: txt 또는 xlsx,xlsm"
     EXTENSION_FILTER_WILDCARD_NOT_ALLOWED = "확장자 필터에는 와일드카드·패턴 문자(*, ?, [, ], \\)를 사용할 수 없습니다."
     FILENAME_LIST_PLACEHOLDER = '예: report 또는report,invoice'
