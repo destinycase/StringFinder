@@ -238,3 +238,15 @@ def test_log_window_has_margins_and_larger_default_size(qtbot, mock_config_manag
     assert (tab.log_dialog.width(), tab.log_dialog.height()) == SearchTab.LOG_DIALOG_DEFAULT_SIZE
     assert tab.log_dialog.width() > 760 and tab.log_dialog.height() > 420
     tab.cleanup()
+
+
+def test_filter_groups_have_space_above_titles(qtbot, mock_config_manager):
+    """확장자·파일명 그룹 제목이 도크 제목과 구분선에 붙지 않게 위를 띄웁니다(7.6.9)."""
+    from ui.search_tab import SearchTab
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    top = tab.filter_container.layout().contentsMargins().top()
+    assert top == SearchTab.FILTER_CONTAINER_MARGINS[1] >= 6
+    assert tab.filter_splitter.handleWidth() == SearchTab.FILTER_SPLITTER_HANDLE_WIDTH >= 10
+    tab.cleanup()

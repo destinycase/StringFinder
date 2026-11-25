@@ -61,6 +61,9 @@ class SearchTab(QMainWindow):
     inputs_changed = Signal()
     DOCK_LAYOUT_VERSION = 2  # Pre-merge layouts contain two obsolete filter docks.
     LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
+    # 필터 영역 여백(7.6.9): 그릇 여백(좌·위·우·아래), 확장자·파일명 사이 구분선 두께.
+    FILTER_CONTAINER_MARGINS = (0, 8, 0, 0)
+    FILTER_SPLITTER_HANDLE_WIDTH = 12
     # 로그 창 배치(7.6.4): 처음 크기, 창 안쪽 여백(좌·위·우·아래), 로그 글자 둘레 여백.
     LOG_DIALOG_DEFAULT_SIZE = (1100, 680)
     LOG_DIALOG_MARGINS = (12, 12, 12, 12)
@@ -140,6 +143,8 @@ class SearchTab(QMainWindow):
         self.filter_tabs = QTabWidget()
         self.filter_splitter = QSplitter(Qt.Orientation.Vertical)
         self.filter_splitter.setChildrenCollapsible(False)
+        # 위 그룹과 아래 그룹 제목(파일명) 사이를 띄웁니다(7.6.9).
+        self.filter_splitter.setHandleWidth(self.FILTER_SPLITTER_HANDLE_WIDTH)
         self.ext_group = QGroupBox()
         self.filename_group = QGroupBox()
         self._filter_group_layouts = []
@@ -150,7 +155,8 @@ class SearchTab(QMainWindow):
             self.filter_splitter.addWidget(group)
         self.filter_container = QWidget()
         container_layout = QVBoxLayout(self.filter_container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
+        # 도크 제목("필터")과 첫 그룹 제목(확장자)이 붙어 보이지 않게 위를 띄웁니다(7.6.9).
+        container_layout.setContentsMargins(*self.FILTER_CONTAINER_MARGINS)
         container_layout.addWidget(self.filter_tabs)
         container_layout.addWidget(self.filter_splitter)
         self.filter_dock.setWidget(self.filter_container)
