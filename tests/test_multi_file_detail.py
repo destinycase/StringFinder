@@ -709,3 +709,44 @@ def test_single_rule_all_selected_hidden_clears_even_if_current_visible(qtbot, m
     qtbot.wait(20)
     assert not view.result_view.selectionModel().hasSelection()
     assert view._detail_signature is None
+
+
+def test_clearing_detail_cancels_pending_refresh(qtbot, mock_config_manager):
+    """상세를 비울 때 예약된 상세 갱신을 취소해, 뒤늦게 현재 위치 파일의 상세가 다시 열리지 않습니다(7.6.7)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [_row_of(view, "a.txt"), _row_of(view, "b.txt")])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    # a를 풀어 갱신이 예약된 같은 순간(타이머가 돌기 전)에 필터로 a·b를 모두 숨깁니다.
+    _deselect(view, _row_of(view, "a.txt"))
+    assert view._detail_refresh_timer.isActive()
+    view.result_file_filter_edit.setText("c.txt")
+    view._on_result_filters_changed()
+    assert view._detail_signature is None
+    assert not view._detail_refresh_timer.isActive()
+    qtbot.wait(30)
+    assert view._detail_signature is None and view.match_model.rowCount() == 0
+
+
+def test_prune_only_collects_files_shown_in_detail(qtbot, mock_config_manager, monkeypatch):
+    """선택 없는 상세 정리는 상세에 있는 파일만 찾고 다 찾으면 멈춥니다(7.6.7)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [_row_of(view, "a.txt")])
+    qtbot.waitUntil(lambda: view._detail_signature == ("D:/d/a.txt",))
+    seen = []
+
+    class CountingList(list):
+        def __iter__(self):
+            for item in super().__iter__():
+                seen.append(item[3])
+                yield item
+
+    view.result_model._filtered_buffer = CountingList(view.result_model._filtered_buffer)
+    a_index = next(i for i, item in enumerate(view.result_model._filtered_buffer) if item[3] == "D:/d/a.txt")
+    view._detail_signature = ("D:/d/a.txt", "D:/d/gone.txt")
+    view._prune_detail_to_filtered_results()
+    assert view._detail_signature == ("D:/d/a.txt",)
+    # 다 찾지 못하면 끝까지 훑지만, 사전에는 상세의 파일만 담깁니다. 다 찾는 경우는 아래에서 멈춤을 봅니다.
+    seen.clear()
+    view._detail_signature = ("D:/d/a.txt",)
+    view._prune_detail_to_filtered_results()
+    assert len(seen) == a_index + 1

@@ -1085,7 +1085,14 @@ class ResultView(QWidget):
         shown = self._detail_signature
         if not shown:
             return
-        visible = {item[3]: item[4] for item in self.result_model._filtered_buffer if len(item) > 4}
+        # 결과가 수십만 건이어도 상세에 있는 몇 개 파일만 담고, 다 찾으면 멈춥니다(7.6.7).
+        wanted = set(shown)
+        visible: dict = {}
+        for item in self.result_model._filtered_buffer:
+            if len(item) > 4 and item[3] in wanted:
+                visible[item[3]] = item[4]
+                if len(visible) == len(wanted):
+                    break
         keep = [path for path in shown if path in visible]
         if len(keep) == len(shown):
             return
@@ -1107,6 +1114,8 @@ class ResultView(QWidget):
 
     def _clear_detail_view(self):
         """오른쪽 상세 목록·파일 정보 줄·미리보기를 비웁니다. 파일 목록과 결과는 그대로 둡니다."""
+        # 비우기 전에 예약된 상세 갱신이 뒤늦게 돌아 현재 위치 파일의 상세를 다시 열지 않게 취소합니다(7.6.7).
+        self._detail_refresh_timer.stop()
         self.selected_file_path = ""
         self._detail_signature = None
         self.file_info_label.clear()
