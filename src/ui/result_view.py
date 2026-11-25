@@ -1989,7 +1989,9 @@ class ResultView(QWidget):
         selection = self.match_view.selectionModel().selectedRows()
         if not selection:
             index = self.match_view.indexAt(pos)
-            if index.isValid():
+            source_row = self.match_proxy_model.mapToSource(index).row() if index.isValid() else -1
+            # 여러 파일 묶음 보기의 파일 머리줄에는 줄 열기·복사 메뉴를 띄우지 않습니다(7.6.5).
+            if index.isValid() and not self.match_model.is_group_row(source_row):
                 selection = [index]
         if selection:
             open_line_action = QAction(AppStrings.OPEN_LINE_IN_EDITOR, self)

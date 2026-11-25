@@ -159,7 +159,8 @@ def test_folder_list_marks_missing_folders(qtbot, tmp_path):
                for r in range(panel.folder_list.count())}
     qtbot.waitUntil(lambda: widgets[missing].is_missing())
     assert not widgets[str(tmp_path)].is_missing()
-    assert widgets[missing].toolTip() == AppStrings.FOLDER_MISSING_TOOLTIP
+    # 없는 폴더 툴팁은 전체 경로와 안내를 함께 보여 줍니다(7.6.5).
+    assert widgets[missing].toolTip() == f"{missing}\n{AppStrings.FOLDER_MISSING_TOOLTIP}"
     assert widgets[missing].clone().is_missing()
     os.makedirs(missing)
     panel.refresh_folder_status()

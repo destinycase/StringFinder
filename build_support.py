@@ -154,6 +154,9 @@ def verify_qt_icu(executable):
 
 def smoke_test_executable(executable):
     """Check frozen Qt/theme/engine initialization without loading user sessions."""
+    import shutil
+    import tempfile
+
     import psutil
 
     env = os.environ.copy()
@@ -161,23 +164,30 @@ def smoke_test_executable(executable):
     for key in tuple(env):
         if key.startswith(("QT_", "QML", "PYTHON")):
             env.pop(key)
-    process = subprocess.Popen(
-        [str(Path(executable).resolve()), "--smoke-test"], env=env,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
+    # The check imports the logger, which creates a log file; keep it out of the user's data folder.
+    data_dir = tempfile.mkdtemp(prefix="sf_smoke_")
+    env["APPDATA"] = data_dir
+    env["LOCALAPPDATA"] = data_dir
     try:
-        code = process.wait(timeout=45)
-    except subprocess.TimeoutExpired:
-        # Only terminate the test process tree that this function created.
+        process = subprocess.Popen(
+            [str(Path(executable).resolve()), "--smoke-test"], env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
         try:
-            for child in psutil.Process(process.pid).children(recursive=True):
-                try:
-                    child.kill()
-                except psutil.NoSuchProcess:
-                    pass
-        finally:
-            process.kill()
-            process.wait()
-        raise RuntimeError("Frozen application smoke test timed out") from None
+            code = process.wait(timeout=45)
+        except subprocess.TimeoutExpired:
+            # Only terminate the test process tree that this function created.
+            try:
+                for child in psutil.Process(process.pid).children(recursive=True):
+                    try:
+                        child.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+            finally:
+                process.kill()
+                process.wait()
+            raise RuntimeError("Frozen application smoke test timed out") from None
+    finally:
+        shutil.rmtree(data_dir, ignore_errors=True)
     if code != 0:
         raise RuntimeError(f"Frozen application smoke test failed: exit code {code}")

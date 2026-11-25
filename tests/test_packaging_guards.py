@@ -35,3 +35,32 @@ def test_icu_export_guard(compatible):
         else:
             with pytest.raises(RuntimeError, match="Incompatible bundled"):
                 verify_qt_icu("candidate.exe")
+
+
+def test_smoke_test_uses_temporary_data_folder(monkeypatch, tmp_path):
+    """빌드 기동 검사는 사용자 데이터 폴더(APPDATA)에 로그를 남기지 않게 임시 폴더를 쓰고 지웁니다(7.6.5)."""
+    import os
+    import subprocess
+
+    import build_support
+
+    seen = {}
+
+    class FakeProcess:
+        pid = 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    def fake_popen(args, env=None, creationflags=0):
+        seen["env"] = env
+        os.makedirs(os.path.join(env["APPDATA"], "StringFinder"), exist_ok=True)
+        return FakeProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "real_appdata"))
+    build_support.smoke_test_executable(tmp_path / "StringFinder.exe")
+    data_dir = seen["env"]["APPDATA"]
+    assert data_dir != str(tmp_path / "real_appdata")
+    assert seen["env"]["LOCALAPPDATA"] == data_dir
+    assert not os.path.exists(data_dir)

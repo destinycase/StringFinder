@@ -606,3 +606,26 @@ def test_json_detail_offers_copy_per_column(qtbot, mock_config_manager, monkeypa
     for label, text in zip(labels, expected):
         items[label].trigger()
         assert QApplication.clipboard().text() == text
+
+
+def test_file_header_row_has_no_row_menu(qtbot, mock_config_manager, monkeypatch):
+    """여러 파일 묶음 보기의 파일 머리줄을 오른쪽 클릭하면 줄 열기·복사 메뉴가 뜨지 않습니다(7.6.5)."""
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [0, 1])
+    qtbot.waitUntil(lambda: view.match_model.multi_file)
+    view.match_view.clearSelection()
+    model = view.match_model
+    header_row = next(r for r in range(model.rowCount()) if model.is_group_row(r))
+    proxy_index = view.match_proxy_model.mapFromSource(model.index(header_row, 0))
+    from PySide6.QtWidgets import QMenu
+
+    shown = []
+
+    class RecordingMenu(QMenu):
+        def exec(self, *_args):
+            shown.extend(a.text() for a in self.actions())
+
+    monkeypatch.setattr("ui.result_view.QMenu", RecordingMenu)
+    view._show_match_context_menu(view.match_view.visualRect(proxy_index).center())
+    assert AppStrings.OPEN_LINE_IN_EDITOR not in shown
+    assert AppStrings.COPY_LOCATION_ONLY not in shown

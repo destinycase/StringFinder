@@ -144,6 +144,8 @@ class ElidedLabel(QLabel):
     """
 
     MIN_CHARS = 4
+    # 줄이는 위치입니다. 폴더 경로는 가운데를 줄여 끝(마지막 폴더 이름)이 보이게 합니다(7.6.5).
+    elide_mode = Qt.TextElideMode.ElideRight
 
     def minimumSizeHint(self):
         hint = super().minimumSizeHint()
@@ -155,10 +157,19 @@ class ElidedLabel(QLabel):
     def paintEvent(self, event):
         painter = QPainter(self)
         rect = self.contentsRect()
-        text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, rect.width())
+        text = self.fontMetrics().elidedText(self.text(), self.elide_mode, rect.width())
         painter.setFont(self.font())
         painter.setPen(self.palette().color(self.foregroundRole()))
         painter.drawText(rect, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), text)
+
+
+# Segoe UI 등은 글자 위 여백이 아래보다 커서, 세로 가운데 정렬해도 글자가 1px쯤 아래로 보입니다.
+# 이름·개수·⚠ 칸 아래에 여백을 주어 글자를 이만큼(px) 위로 올립니다(7.6.5, 실제 글꼴로 잼).
+TEXT_RAISE_PX = 1
+
+
+def raise_label_text(label: QLabel):
+    label.setContentsMargins(0, 0, 0, TEXT_RAISE_PX * 2)
 
 
 class FilterItemWidget(QWidget):
@@ -194,6 +205,10 @@ class FilterItemWidget(QWidget):
         self.name_label.setTextFormat(Qt.TextFormat.PlainText)
         # 이름이 남는 폭을 모두 쓰고, 모자라면 이름만 "…"로 줄어 개수·⚠·×가 가려지지 않습니다(7.6.4).
         self.name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        raise_label_text(self.name_label)
+        if fit_to_viewport:
+            # 검색 폴더 경로는 앞은 같고 끝만 다른 경우(…/Game/ko, …/Game/en)가 많아 가운데를 줄입니다(7.6.5).
+            self.name_label.elide_mode = Qt.TextElideMode.ElideMiddle
         self.name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         if on_change:
             self.checkbox.stateChanged.connect(on_change)
@@ -214,6 +229,7 @@ class FilterItemWidget(QWidget):
         self.missing_label.setStyleSheet("QLabel { color: #E8A33D; }")
         self.missing_label.setToolTip(AppStrings.FOLDER_MISSING_TOOLTIP)
         self.missing_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        raise_label_text(self.missing_label)
         self.missing_label.hide()
         layout.addWidget(self.missing_label)
         layout.addStretch()
@@ -256,7 +272,9 @@ class FilterItemWidget(QWidget):
 
     def _refresh_tooltip(self):
         """없는 폴더면 그 안내를, 아니면 "…"로 줄었을 때 볼 수 있게 전체 이름을 보여 줍니다."""
-        self.setToolTip(AppStrings.FOLDER_MISSING_TOOLTIP if self.is_missing() else self.name_label.text())
+        # 없는 폴더도 줄어든 경로를 볼 수 있게 전체 이름을 함께 보여 줍니다(7.6.5).
+        name = self.name_label.text()
+        self.setToolTip(f"{name}\n{AppStrings.FOLDER_MISSING_TOOLTIP}" if self.is_missing() else name)
 
     def isChecked(self):
         return self.checkbox.isChecked()
@@ -288,6 +306,8 @@ class FolderGroupHeader(FilterItemWidget):
 
     def __init__(self, name, collapsed=False, on_delete=None, on_toggle=None, on_check=None):
         super().__init__(name, False, on_delete=on_delete, on_change=None, fit_to_viewport=True)
+        # 그룹 이름은 앞부분이 중요하므로 끝을 줄입니다.
+        self.name_label.elide_mode = Qt.TextElideMode.ElideRight
         self._on_toggle = on_toggle
         self._on_check = on_check
         self.collapsed = collapsed
@@ -310,6 +330,7 @@ class FolderGroupHeader(FilterItemWidget):
         self.count_label = QLabel()
         # 개수는 그룹 이름과 같은 글자색으로 보입니다(7.6.4, 이전에는 흐린 회색).
         self.count_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        raise_label_text(self.count_label)
         # 개수는 행 오른쪽 끝(× 바로 앞)에 둡니다. 이름이 남는 폭을 차지하고 모자라면 이름만 "…"로 줄어,
         # 창을 좁혀도 개수가 가려지지 않습니다(7.6.4).
         layout.insertWidget(layout.indexOf(self.name_label) + 1, self.count_label)

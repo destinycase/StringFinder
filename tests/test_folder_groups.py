@@ -459,3 +459,48 @@ def test_f2_renames_current_group_and_menu_shows_shortcut(panel, qtbot, monkeypa
     panel._show_context_menu(panel.folder_list.visualItemRect(panel.folder_list.item(header_row)).center())
     rename = next(a for a in shown if a.text() == AppStrings.FOLDER_GROUP_RENAME)
     assert rename.shortcut().toString() == "F2" and rename.isShortcutVisibleInContextMenu()
+
+
+def test_folder_path_elides_in_middle_and_group_name_at_end(qtbot):
+    """폴더 경로는 가운데를 줄여 끝이 보이고, 그룹 이름은 끝을 줄입니다(7.6.5)."""
+    from PySide6.QtCore import Qt as QtCore
+
+    widget = FolderFilterPanel()
+    qtbot.addWidget(widget)
+    widget.show()
+    widget.add_folder("D:/Project/Game/Content/Localization/Game/ko")
+    widget.add_folder("D:/Project/Game/Content/Localization/Game/en")
+    widget.add_group("아주 긴 그룹 이름입니다 아주 긴 그룹 이름입니다")
+    widget.resize(160, 300)
+    qtbot.wait(30)
+    listing = widget.folder_list
+    rows = [listing.itemWidget(listing.item(r)) for r in range(listing.count())]
+    folders = [w for w in rows if not isinstance(w, FolderGroupHeader)]
+    head = next(w for w in rows if isinstance(w, FolderGroupHeader))
+    assert all(w.name_label.elide_mode == QtCore.TextElideMode.ElideMiddle for w in folders)
+    assert head.name_label.elide_mode == QtCore.TextElideMode.ElideRight
+    shown = [w.name_label.fontMetrics().elidedText(w.text(), w.name_label.elide_mode,
+                                                    w.name_label.contentsRect().width()) for w in folders]
+    assert all(w.name_label.is_elided() for w in folders)
+    # 끝만 다른 두 경로가 줄어든 뒤에도 구별됩니다.
+    assert shown[0] != shown[1] and shown[0].endswith("ko") and shown[1].endswith("en")
+
+
+def test_missing_folder_tooltip_shows_full_path(panel):
+    widget = panel.folder_list.itemWidget(panel.folder_list.item(0))
+    widget.set_missing(True)
+    assert widget.toolTip() == f"{widget.text()}\n{AppStrings.FOLDER_MISSING_TOOLTIP}"
+    widget.set_missing(False)
+    assert widget.toolTip() == widget.text()
+
+
+def test_row_text_is_raised_to_balance_font_spacing(panel):
+    """글꼴의 위 여백이 아래보다 커서 이름·개수·⚠를 1px 올립니다(실제 글꼴 측정 기준, 7.6.5)."""
+    from ui.panels import TEXT_RAISE_PX
+
+    assert TEXT_RAISE_PX == 1
+    _, game = header(panel, "Game")
+    loose = panel.folder_list.itemWidget(panel.folder_list.item(0))
+    for label in (game.name_label, game.count_label, loose.name_label, loose.missing_label):
+        margins = label.contentsMargins()
+        assert (margins.top(), margins.bottom()) == (0, 2 * TEXT_RAISE_PX)
