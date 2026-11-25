@@ -61,9 +61,10 @@ class SearchTab(QMainWindow):
     inputs_changed = Signal()
     DOCK_LAYOUT_VERSION = 2  # Pre-merge layouts contain two obsolete filter docks.
     LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
-    # 필터 영역 여백(7.6.9): 그릇 여백(좌·위·우·아래), 확장자·파일명 사이 구분선 두께.
+    # 필터 영역 여백(7.6.9·7.7.2): 그릇 여백(좌·위·우·아래), 확장자·파일명 사이 구분선 두께, 파일명 제목 위 여백.
     FILTER_CONTAINER_MARGINS = (0, 8, 0, 0)
-    FILTER_SPLITTER_HANDLE_WIDTH = 12
+    FILTER_SPLITTER_HANDLE_WIDTH = 6  # 7.6.9의 12px에서 절반으로(7.7.2)
+    FILTER_LOWER_GROUP_TOP_GAP = 8  # 구분선과 파일명 제목 사이(7.7.2)
     # 로그 창 배치(7.6.4): 처음 크기, 창 안쪽 여백(좌·위·우·아래), 로그 글자 둘레 여백.
     LOG_DIALOG_DEFAULT_SIZE = (1100, 680)
     LOG_DIALOG_MARGINS = (12, 12, 12, 12)
@@ -148,11 +149,17 @@ class SearchTab(QMainWindow):
         self.ext_group = QGroupBox()
         self.filename_group = QGroupBox()
         self._filter_group_layouts = []
-        for group in (self.ext_group, self.filename_group):
+        for index, group in enumerate((self.ext_group, self.filename_group)):
             group_layout = QVBoxLayout(group)
             group_layout.setContentsMargins(4, 4, 4, 4)
             self._filter_group_layouts.append(group_layout)
-            self.filter_splitter.addWidget(group)
+            # 아래 그룹(파일명)은 구분선 바로 아래에 제목이 붙지 않게 위를 띄웁니다(7.7.2).
+            # 그룹을 작은 그릇에 담아도 스플리터 칸은 둘이라 저장된 구분선 위치는 그대로 쓰입니다.
+            holder = QWidget()
+            holder_layout = QVBoxLayout(holder)
+            holder_layout.setContentsMargins(0, self.FILTER_LOWER_GROUP_TOP_GAP if index else 0, 0, 0)
+            holder_layout.addWidget(group)
+            self.filter_splitter.addWidget(holder)
         self.filter_container = QWidget()
         container_layout = QVBoxLayout(self.filter_container)
         # 도크 제목("필터")과 첫 그룹 제목(확장자)이 붙어 보이지 않게 위를 띄웁니다(7.6.9).

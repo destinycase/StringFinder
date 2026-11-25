@@ -248,5 +248,9 @@ def test_filter_groups_have_space_above_titles(qtbot, mock_config_manager):
     qtbot.addWidget(tab)
     top = tab.filter_container.layout().contentsMargins().top()
     assert top == SearchTab.FILTER_CONTAINER_MARGINS[1] >= 6
-    assert tab.filter_splitter.handleWidth() == SearchTab.FILTER_SPLITTER_HANDLE_WIDTH >= 10
+    # 구분선은 6px(7.7.2에서 12px의 절반), 파일명 제목은 구분선에서 띄웁니다.
+    assert tab.filter_splitter.handleWidth() == SearchTab.FILTER_SPLITTER_HANDLE_WIDTH == 6
+    lower = tab.filter_splitter.widget(1)
+    assert lower.layout().contentsMargins().top() == SearchTab.FILTER_LOWER_GROUP_TOP_GAP >= 6
+    assert tab.filename_group.parentWidget() is lower
     tab.cleanup()
