@@ -861,3 +861,46 @@ def test_file_list_copies_file_names_and_unique_folders(qtbot, mock_config_manag
     assert len(folders) == 2
     assert {f.replace("\\", "/").lower() for f in folders} == {"d:/game/ko", "d:/game/en"}
     assert folders[0].replace("\\", "/").lower() == order[0].replace("\\", "/").rsplit("/", 1)[0].lower()
+
+
+def _ctrl_select(view, table, proxy, rows):
+    """Ctrl+클릭처럼 rows를 주어진 순서대로 하나씩 더해 고릅니다."""
+    selection = table.selectionModel()
+    selection.clearSelection()
+    for row in rows:
+        selection.select(proxy.index(row, 0),
+                         QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+
+
+def test_path_copy_uses_list_order_like_name_copy(qtbot, mock_config_manager, monkeypatch):
+    """경로 복사도 목록 순서라, 아래 줄을 먼저 골라도 파일만 복사와 줄이 맞습니다(7.7.5)."""
+    from PySide6.QtWidgets import QApplication
+
+    view = _view(qtbot, mock_config_manager)
+    qtbot.wait(300)
+    _ctrl_select(view, view.result_view, view.proxy_model, [2, 0])
+    items = _result_menu_items(view, monkeypatch)
+    items[[t for t in items if t.startswith(AppStrings.COPY_PATH.split(" (")[0])][0]].trigger()
+    paths = QApplication.clipboard().text().split("\n")
+    items[AppStrings.COPY_FILE_NAMES_ONLY].trigger()
+    names = QApplication.clipboard().text().split("\n")
+    assert paths == [_path_of_row(view, 0), _path_of_row(view, 2)]
+    assert [p.rsplit("/", 1)[1] for p in paths] == names
+    view._copy_selected_result_path()  # Ctrl+C와 같은 함수
+    assert QApplication.clipboard().text().split("\n") == paths
+
+
+def test_detail_content_copy_uses_list_order_like_field_copy(qtbot, mock_config_manager):
+    """상세 내용 복사도 목록 순서라 칸별 복사와 줄이 맞습니다(7.7.5)."""
+    from PySide6.QtWidgets import QApplication
+
+    view = _view(qtbot, mock_config_manager)
+    _select_rows(view, [_row_of(view, "a.txt")])
+    qtbot.waitUntil(lambda: view.match_model.current_file_path.endswith("a.txt"))
+    _ctrl_select(view, view.match_view, view.match_proxy_model, [2, 0])
+    view._copy_selected_match_content()
+    content = QApplication.clipboard().text().split("\n")
+    view._copy_selected_match_field(0)
+    positions = QApplication.clipboard().text().split("\n")
+    assert positions == ["1", "3"]
+    assert [line.split(" | ")[0] for line in content] == positions

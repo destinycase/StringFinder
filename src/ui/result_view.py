@@ -2048,19 +2048,8 @@ class ResultView(QWidget):
             self._copy_to_clipboard("\n".join(folders))
 
     def _copy_selected_result_path(self):
-        selection = self.result_view.selectionModel().selectedRows()
-        if not selection:
-            index = self.result_view.currentIndex()
-            if index.isValid():
-                selection = [index]
-            else:
-                return
-        paths = []
-        for index in selection:
-            source_index = self.proxy_model.mapToSource(index)
-            file_path, _ = self.result_model.get_full_data(source_index.row())
-            if file_path:
-                paths.append(file_path)
+        # 파일만·폴더만 복사와 같은 목록 순서로 복사해, 따로 복사해 나란히 붙여도 줄이 맞습니다(7.7.5).
+        paths = self._selected_result_paths_in_order()
         if paths:
             self._copy_to_clipboard("\n".join(paths))
 
@@ -2073,12 +2062,12 @@ class ResultView(QWidget):
             else:
                 return
         contents = []
-        # 현재는 화면에 보이는 데이터(필터 적용됨)를 기준으로 복사합니다.
-        for index in selection:
+        # 화면에 보이는 데이터(필터 적용됨)를 목록 순서로 복사합니다. 칸별 복사와 순서가 같습니다(7.7.5).
+        for row in sorted({index.row() for index in selection}):
             row_data = []
             for col in range(self.match_proxy_model.columnCount()):
                 val = self.match_proxy_model.data(
-                    self.match_proxy_model.index(index.row(), col), Qt.ItemDataRole.EditRole
+                    self.match_proxy_model.index(row, col), Qt.ItemDataRole.EditRole
                 )
                 row_data.append(str(val))
             contents.append("\t".join(row_data))
