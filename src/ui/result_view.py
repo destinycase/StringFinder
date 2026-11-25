@@ -1101,16 +1101,17 @@ class ResultView(QWidget):
             return
         self._show_detail_entries([(path, visible[path]) for path in keep])
 
-    def _user_cleared_selection(self) -> bool:
-        """사용자가 Ctrl+클릭으로 선택을 모두 푼 상태인지 봅니다.
+    def _detail_in_use(self) -> bool:
+        """고른 파일은 없지만 오른쪽 상세가 무언가를 보여 주고 있는지 봅니다(7.6.8).
 
-        고른 것은 없지만 현재 위치가 있고 상세가 그 파일을 보여 주고 있으면 그렇습니다. 이때는 검색 종료·정렬 완료
-        때도 첫 파일을 대신 고르지 않습니다(7.5.8, 7.5.7 검수 3.2). 새 검색은 clear()로 상세가 비어 해당하지 않습니다.
+        이때는 검색 종료·정렬 완료 때 첫 파일을 대신 고르지 않습니다. 사용자가 선택을 모두 푼 경우뿐 아니라,
+        파일을 고르고 다른 페이지로 갔거나 정렬로 그 파일이 다른 페이지로 간 경우도 포함합니다(현재 위치가 없어도 됨).
+        새 검색(clear())이나 필터로 상세가 비워진 뒤에는 상세가 없으므로 해당하지 않습니다.
         """
         selection = self.result_view.selectionModel()
         if selection is not None and selection.hasSelection():
             return False
-        return self.result_view.currentIndex().isValid() and self._detail_signature is not None
+        return self._detail_signature is not None
 
     def _clear_detail_view(self):
         """오른쪽 상세 목록·파일 정보 줄·미리보기를 비웁니다. 파일 목록과 결과는 그대로 둡니다."""
@@ -1522,7 +1523,7 @@ class ResultView(QWidget):
                 selection_model = self.result_view.selectionModel()
                 if selection_model and selection_model.hasSelection() and not force:
                     return
-                if not force and self._user_cleared_selection():
+                if not force and self._detail_in_use():
                     return
 
                 if selection_model:
@@ -2315,7 +2316,7 @@ class ResultView(QWidget):
         selection = self.result_view.selectionModel()
         if selection is not None and selection.hasSelection():
             return
-        if self._user_cleared_selection():
+        if self._detail_in_use():
             return
         if self.proxy_model.rowCount() > 0:
             index = self.proxy_model.index(0, 0)

@@ -750,3 +750,72 @@ def test_prune_only_collects_files_shown_in_detail(qtbot, mock_config_manager, m
     view._detail_signature = ("D:/d/a.txt",)
     view._prune_detail_to_filtered_results()
     assert len(seen) == a_index + 1
+
+
+def _paged_view(qtbot, mock_config_manager, count=2300):
+    """파일이 1,000개를 넘어 페이지가 나뉘는 결과(페이지 크기 1,000)."""
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    view.set_search_context("sword", Constants.MODE_NORMAL)
+    view.set_results([[1, f"f{i:04d}.txt", "D:/d", f"D:/d/f{i:04d}.txt", [[1, "sword", 0, 5]]] for i in range(count)])
+    qtbot.wait(300)  # 결과를 넣을 때 시작한 정렬이 끝나기를 기다립니다.
+    return view
+
+
+def _choose_f0005(view, qtbot):
+    row = _row_of(view, "f0005.txt")
+    _select_rows(view, [row])
+    qtbot.waitUntil(lambda: view._detail_signature == ("D:/d/f0005.txt",))
+    return row
+
+
+def test_finish_after_page_change_keeps_detail(qtbot, mock_config_manager):
+    """파일을 고르고 다음 페이지에 머문 채 검색이 끝나도 첫 파일을 고르지 않고 상세를 둡니다(7.6.8)."""
+    view = _paged_view(qtbot, mock_config_manager)
+    _choose_f0005(view, qtbot)
+    view._on_next_page()
+    qtbot.wait(20)
+    view.auto_select_first_result()
+    assert not view.result_view.selectionModel().hasSelection()
+    assert view._detail_signature == ("D:/d/f0005.txt",)
+
+
+def test_finish_after_returning_from_next_page_keeps_detail(qtbot, mock_config_manager):
+    """다음 페이지에 갔다 돌아온 뒤 검색이 끝나도 상세를 둡니다(7.6.8)."""
+    view = _paged_view(qtbot, mock_config_manager)
+    _choose_f0005(view, qtbot)
+    view._on_next_page()
+    view._on_prev_page()
+    qtbot.wait(20)
+    view.auto_select_first_result()
+    assert view._detail_signature == ("D:/d/f0005.txt",)
+    assert not view.result_view.selectionModel().hasSelection()
+
+
+def test_sort_after_deselect_moves_file_off_page_keeps_detail(qtbot, mock_config_manager):
+    """골랐다 푼 파일이 정렬로 다른 페이지로 가도, 정렬 완료 때 첫 파일을 고르지 않습니다(7.6.8)."""
+    view = _paged_view(qtbot, mock_config_manager)
+    row = _choose_f0005(view, qtbot)
+    _deselect(view, row)
+    qtbot.wait(20)
+    view.result_model.sort_all(1, Qt.SortOrder.DescendingOrder)
+    qtbot.waitUntil(lambda: _path_of_row(view, 0).endswith("f2299.txt"), timeout=5000)
+    qtbot.wait(50)
+    assert not view.result_view.selectionModel().hasSelection()
+    assert view._detail_signature == ("D:/d/f0005.txt",)
+
+
+def test_finish_after_filter_cleared_detail_selects_first(qtbot, mock_config_manager):
+    """필터로 상세가 비워진 뒤에는 검색이 끝나면 지금처럼 첫 파일을 고릅니다(7.6.8, 기존 동작 유지)."""
+    view = _view(qtbot, mock_config_manager)
+    qtbot.wait(300)  # 결과를 넣을 때 시작한 정렬이 끝나기를 기다립니다(끝날 때 첫 파일 자동 선택이 있음).
+    _select_rows(view, [_row_of(view, "a.txt")])
+    qtbot.waitUntil(lambda: view._detail_signature == ("D:/d/a.txt",))
+    view.result_file_filter_edit.setText("b.txt")
+    view._on_result_filters_changed()
+    qtbot.wait(20)
+    assert view._detail_signature is None
+    view.auto_select_first_result()
+    assert [i.row() for i in view.result_view.selectionModel().selectedRows()] == [0]
