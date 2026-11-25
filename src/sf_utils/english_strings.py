@@ -51,6 +51,8 @@ ENGLISH_STRINGS = {
     "OPEN_FOLDER": "Open folder",
     "OPEN_LINE_IN_EDITOR": "Open line",
     "COPY_PATH": "Copy path (Ctrl+C)",
+    "COPY_FILE_NAMES_ONLY": "Copy file names only",
+    "COPY_FOLDERS_ONLY": "Copy folders only (no duplicates)",
     "COPY_CONTENT": "Copy content (Ctrl+C)",
     "COPY_LOCATION_ONLY": "Copy location only",
     "COPY_TEXT_ONLY": "Copy text only",

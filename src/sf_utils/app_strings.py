@@ -42,6 +42,8 @@ class AppStrings:
     OPEN_FOLDER = "폴더 열기"
     OPEN_LINE_IN_EDITOR = "해당 줄 열기"
     COPY_PATH = "경로 복사 (Ctrl+C)"
+    COPY_FILE_NAMES_ONLY = "파일만 복사"
+    COPY_FOLDERS_ONLY = "폴더만 복사(중복 제외)"
     COPY_CONTENT = "내용 복사 (Ctrl+C)"
     COPY_LOCATION_ONLY = "위치만 복사"
     COPY_TEXT_ONLY = "내용만 복사"

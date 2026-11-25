@@ -1951,6 +1951,13 @@ class ResultView(QWidget):
             menu.addAction(folder_action)
             menu.addSeparator()
             menu.addAction(copy_action)
+            # 파일 이름만, 폴더만(같은 폴더는 한 번) 복사합니다(7.7.4).
+            names_action = QAction(AppStrings.COPY_FILE_NAMES_ONLY, self)
+            names_action.triggered.connect(self._copy_selected_result_file_names)
+            menu.addAction(names_action)
+            folders_action = QAction(AppStrings.COPY_FOLDERS_ONLY, self)
+            folders_action.triggered.connect(self._copy_selected_result_folders)
+            menu.addAction(folders_action)
         if self.result_model.rowCount() > 0:
             export_action = QAction(AppStrings.RESULT_EXPORT_ALL, self)
             export_action.triggered.connect(self._export_results)
@@ -2002,6 +2009,43 @@ class ResultView(QWidget):
             QKeySequence.StandardKey.Copy, self.match_view, context=Qt.ShortcutContext.WidgetShortcut
         )
         self.copy_match_shortcut.activated.connect(self._copy_selected_match_content)
+
+    def _selected_result_paths_in_order(self) -> list:
+        """고른 파일들의 전체 경로를 파일 목록에 보이는 순서대로 돌려줍니다. 고른 것이 없으면 현재 위치 한 줄입니다."""
+        selection = self.result_view.selectionModel().selectedRows()
+        if not selection:
+            index = self.result_view.currentIndex()
+            selection = [index] if index.isValid() else []
+        paths = []
+        for row in sorted({index.row() for index in selection}):
+            source_index = self.proxy_model.mapToSource(self.proxy_model.index(row, 0))
+            file_path, _ = self.result_model.get_full_data(source_index.row())
+            if file_path:
+                paths.append(file_path)
+        return paths
+
+    def _copy_selected_result_file_names(self):
+        """고른 파일들의 이름(폴더 제외)을 한 줄에 하나씩 복사합니다(7.7.4)."""
+        names = [os.path.basename(path.replace("\\", "/")) for path in self._selected_result_paths_in_order()]
+        if names:
+            self._copy_to_clipboard("\n".join(names))
+
+    def _copy_selected_result_folders(self):
+        """고른 파일들이 있는 폴더를 처음 나온 순서대로, 같은 폴더는 한 번만 복사합니다(7.7.4).
+
+        Windows처럼 대소문자와 / \\ 차이는 같은 폴더로 봅니다. 복사하는 글자는 처음 나온 표기 그대로입니다.
+        """
+        folders = []
+        seen = set()
+        for path in self._selected_result_paths_in_order():
+            folder = os.path.dirname(path)
+            key = os.path.normcase(os.path.normpath(folder)) if folder else ""
+            if key in seen:
+                continue
+            seen.add(key)
+            folders.append(folder)
+        if folders:
+            self._copy_to_clipboard("\n".join(folders))
 
     def _copy_selected_result_path(self):
         selection = self.result_view.selectionModel().selectedRows()

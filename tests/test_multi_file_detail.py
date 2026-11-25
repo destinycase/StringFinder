@@ -819,3 +819,45 @@ def test_finish_after_filter_cleared_detail_selects_first(qtbot, mock_config_man
     assert view._detail_signature is None
     view.auto_select_first_result()
     assert [i.row() for i in view.result_view.selectionModel().selectedRows()] == [0]
+
+
+def _result_menu_items(view, monkeypatch):
+    from PySide6.QtWidgets import QMenu
+
+    shown = []
+
+    class RecordingMenu(QMenu):
+        def exec(self, *_args):
+            shown.extend(self.actions())
+
+    monkeypatch.setattr("ui.result_view.QMenu", RecordingMenu)
+    view._show_result_context_menu(view.result_view.visualRect(view.proxy_model.index(0, 0)).center())
+    return {a.text(): a for a in shown}
+
+
+def test_file_list_copies_file_names_and_unique_folders(qtbot, mock_config_manager, monkeypatch):
+    """파일 목록 메뉴: 파일만 복사(이름만), 폴더만 복사(중복 제외, 목록 순서)(7.7.4)."""
+    from PySide6.QtWidgets import QApplication
+
+    view = ResultView(QFileIconProvider(), mock_config_manager)
+    qtbot.addWidget(view)
+    view.resize(1000, 700)
+    view.show()
+    view.set_search_context("sword", Constants.MODE_NORMAL)
+    rows = [
+        ("D:/game/ko/a.txt", 4), ("D:/game/en/b.txt", 3), (r"d:\GAME\ko\c.txt", 2), ("D:/game/ko/d.txt", 1),
+    ]
+    view.set_results([[count, path.replace("\\", "/").rsplit("/", 1)[1], path.rsplit("/", 1)[0] if "/" in path
+                       else path.rsplit("\\", 1)[0], path, [[1, "sword", 0, 5]]] for path, count in rows])
+    qtbot.wait(300)
+    view.result_view.selectAll()
+    order = [_path_of_row(view, r) for r in range(view.proxy_model.rowCount())]
+    items = _result_menu_items(view, monkeypatch)
+    items[AppStrings.COPY_FILE_NAMES_ONLY].trigger()
+    assert QApplication.clipboard().text().split("\n") == [p.replace("\\", "/").rsplit("/", 1)[1] for p in order]
+    items[AppStrings.COPY_FOLDERS_ONLY].trigger()
+    folders = QApplication.clipboard().text().split("\n")
+    # D:/game/ko 와 d:\GAME\ko 는 같은 폴더로 보고 처음 나온 표기 하나만 남깁니다.
+    assert len(folders) == 2
+    assert {f.replace("\\", "/").lower() for f in folders} == {"d:/game/ko", "d:/game/en"}
+    assert folders[0].replace("\\", "/").lower() == order[0].replace("\\", "/").rsplit("/", 1)[0].lower()
