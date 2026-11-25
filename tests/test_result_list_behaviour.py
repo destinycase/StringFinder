@@ -223,3 +223,18 @@ def test_clear_logs_after_closing_another_tab(qtbot, mock_config_manager):
     second._clear_logs()
     assert second.logs_output.toPlainText() == ""
     second.cleanup()
+
+
+def test_log_window_has_margins_and_larger_default_size(qtbot, mock_config_manager):
+    """로그 창: 창 안쪽 여백, 로그 글자 둘레 여백, 넉넉한 처음 크기(7.6.4)."""
+    from ui.search_tab import SearchTab
+
+    tab = SearchTab(mock_config_manager)
+    qtbot.addWidget(tab)
+    margins = tab.log_dialog.layout().contentsMargins()
+    assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == SearchTab.LOG_DIALOG_MARGINS
+    assert min(SearchTab.LOG_DIALOG_MARGINS) >= 10
+    assert tab.logs_output.document().documentMargin() == SearchTab.LOG_TEXT_MARGIN
+    assert (tab.log_dialog.width(), tab.log_dialog.height()) == SearchTab.LOG_DIALOG_DEFAULT_SIZE
+    assert tab.log_dialog.width() > 760 and tab.log_dialog.height() > 420
+    tab.cleanup()

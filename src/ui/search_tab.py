@@ -61,6 +61,10 @@ class SearchTab(QMainWindow):
     inputs_changed = Signal()
     DOCK_LAYOUT_VERSION = 2  # Pre-merge layouts contain two obsolete filter docks.
     LOG_LEVELS = ("INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL")
+    # 로그 창 배치(7.6.4): 처음 크기, 창 안쪽 여백(좌·위·우·아래), 로그 글자 둘레 여백.
+    LOG_DIALOG_DEFAULT_SIZE = (1100, 680)
+    LOG_DIALOG_MARGINS = (12, 12, 12, 12)
+    LOG_TEXT_MARGIN = 8
 
     def __init__(self, config_manager):
         """검색 탭 객체를 초기화하고 기본 변수들을 설정합니다."""
@@ -179,9 +183,14 @@ class SearchTab(QMainWindow):
         self.log_dialog.setWindowTitle(AppStrings.TAB_LOGS)
         self.log_dialog.setModal(False)
         self.log_dialog.setMinimumSize(760, 420)
+        # 처음 열 때 크기를 넉넉히 둡니다. 사용자가 바꾼 크기는 같은 실행 동안 유지됩니다(7.6.4).
+        self.log_dialog.resize(self.LOG_DIALOG_DEFAULT_SIZE[0], self.LOG_DIALOG_DEFAULT_SIZE[1])
         logs_tab_layout = QVBoxLayout(self.log_dialog)
-        logs_tab_layout.setContentsMargins(0, 5, 0, 0)
+        # 창 테두리와 로그 글자·필터·버튼이 붙어 보이지 않게 여백을 둡니다(7.6.4).
+        logs_tab_layout.setContentsMargins(*self.LOG_DIALOG_MARGINS)
+        logs_tab_layout.setSpacing(10)
         self.logs_output = QPlainTextEdit()
+        self.logs_output.document().setDocumentMargin(self.LOG_TEXT_MARGIN)
         self.logs_output.setReadOnly(True)
         self.logs_output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         # [성능] 대량 로그 히스토리로 인한 UI 메모리 부하 방지 (최대 5,000줄로 제한)

@@ -239,11 +239,39 @@ def test_group_checkbox_lines_up_with_ungrouped_folder_checkboxes(panel):
     assert game.checkbox.x() == loose.checkbox.x()
     # 펼치기 단추는 체크 상자와 이름 사이에 있습니다(7.1.22).
     assert game.checkbox.x() < game.toggle_btn.x() < game.name_label.x() < game.count_label.x()
-    # 개수는 그룹 이름 바로 오른쪽에 붙습니다(7.4.9).
+    # 개수는 행 오른쪽 끝(× 앞)에 붙습니다(7.6.4).
     _, work = header(panel, "Work")
     for item in (game, work):
-        gap = item.count_label.x() - item.name_label.geometry().right()
-        assert 0 < gap <= item.layout().spacing() + 1
+        layout = item.layout()
+        assert item.width() - item.count_label.geometry().right() <= layout.contentsMargins().right() + 1
+
+
+def test_group_count_stays_visible_and_name_elides_when_narrow(qtbot):
+    """창을 좁혀도 개수가 × 앞에 보이고, 긴 이름만 "…"로 줄어듭니다. 가로 스크롤도 없습니다(7.6.4)."""
+    widget = FolderFilterPanel()
+    qtbot.addWidget(widget)
+    widget.show()
+    long_name = "아주 긴 그룹 이름입니다 " * 4
+    widget.add_group(long_name)
+    widget.add_folder("D:/very/long/folder/path/that/does/not/fit/in/a/narrow/panel/at/all")
+    for width in (420, 160):
+        widget.resize(width, 300)
+        qtbot.wait(30)
+        listing = widget.folder_list
+        viewport = listing.viewport().width()
+        assert not listing.horizontalScrollBar().isVisible()
+        for row in range(listing.count()):
+            assert listing.itemWidget(listing.item(row)).width() <= viewport
+        head = next(listing.itemWidget(listing.item(r)) for r in range(listing.count())
+                    if isinstance(listing.itemWidget(listing.item(r)), FolderGroupHeader))
+        assert head.count_label.isVisible()
+        assert head.count_label.geometry().right() <= head.width()
+        assert head.name_label.text() == long_name.strip() or head.name_label.text() == long_name
+        assert head.name_label.is_elided()
+        assert head.toolTip() == head.name_label.text()
+    # 개수 글자색은 그룹 이름과 같습니다(흐린 회색 아님).
+    assert head.count_label.styleSheet() == ""
+    assert head.count_label.palette().color(head.count_label.foregroundRole()) ==         head.name_label.palette().color(head.name_label.foregroundRole())
 
 
 @pytest.mark.parametrize("panel_type", [FolderFilterPanel, ExtensionFilterPanel, FilenameFilterPanel])

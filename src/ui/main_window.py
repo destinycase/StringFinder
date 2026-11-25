@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
     _startup_paint_observer: QObject  # Retain the Python wrapper until window teardown.
     # 백그라운드 세션 저장 실패를 화면 스레드로 넘깁니다(다른 스레드에서 emit해도 화면 스레드에서 처리).
     _session_save_failed = Signal(str)
+    STATUS_BAR_LEFT_MARGIN = 8  # 상태 표시줄 왼쪽 여백(px, 7.6.4)
 
     def __init__(self):
         """메인 윈도우를 초기화하고 필요한 시스템 설정을 수행합니다."""
@@ -182,7 +183,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         sb = QStatusBar()
         # Qt reserves a small top inset; balance it below the controls as well.
-        sb.setContentsMargins(0, 0, 0, 3)
+        # 왼쪽은 검색 설정 글자가 창 테두리에 붙어 보이지 않게 띄웁니다(7.6.4).
+        sb.setContentsMargins(self.STATUS_BAR_LEFT_MARGIN, 0, 0, 3)
         self.setStatusBar(sb)
         self.filter_status_warning = QLabel()
         self.filter_status_warning.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(16, 16))

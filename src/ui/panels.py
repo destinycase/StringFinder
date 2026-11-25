@@ -137,14 +137,39 @@ def check_paths_async(paths, callback, request: int = 0):
     return worker
 
 
+class ElidedLabel(QLabel):
+    """폭이 모자라면 끝을 "…"로 줄여 그리는 한 줄 라벨입니다(7.6.4).
+
+    목록 행이 보이는 폭보다 넓어지지 않게, 최소 폭은 몇 글자만큼만 요구합니다. text()는 줄이지 않은 전체 글자입니다.
+    """
+
+    MIN_CHARS = 4
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        return QSize(self.fontMetrics().horizontalAdvance("M" * self.MIN_CHARS), hint.height())
+
+    def is_elided(self) -> bool:
+        return self.fontMetrics().horizontalAdvance(self.text()) > self.contentsRect().width()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        rect = self.contentsRect()
+        text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, rect.width())
+        painter.setFont(self.font())
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(rect, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), text)
+
+
 class FilterItemWidget(QWidget):
     """
     리스트 위젯 내에서 개별 필터 항목(폴더 또는 확장자)을 표시하는 커스텀 위젯입니다.
     선택 상태(체크박스)와 제거 버튼 기능을 포함합니다.
     """
 
-    def __init__(self, text, checked=True, on_delete=None, on_change=None):
+    def __init__(self, text, checked=True, on_delete=None, on_change=None, fit_to_viewport=False):
         super().__init__()
+        self.fit_to_viewport = fit_to_viewport
         # 순서를 옮길 때 같은 동작의 위젯을 다시 만들 수 있도록 생성 인자를 보관합니다.
         self._on_delete = on_delete
         self._on_change = on_change
@@ -165,8 +190,10 @@ class FilterItemWidget(QWidget):
         # 글자 없는 체크 상자라 테마의 글자 간격이 이름 앞 빈칸으로 남지 않게 없앱니다.
         self.checkbox.setStyleSheet("QCheckBox { spacing: 0px; }")
         self.checkbox.setChecked(checked)
-        self.name_label = QLabel(text)
+        self.name_label = ElidedLabel(text)
         self.name_label.setTextFormat(Qt.TextFormat.PlainText)
+        # 이름이 남는 폭을 모두 쓰고, 모자라면 이름만 "…"로 줄어 개수·⚠·×가 가려지지 않습니다(7.6.4).
+        self.name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         if on_change:
             self.checkbox.stateChanged.connect(on_change)
@@ -181,7 +208,7 @@ class FilterItemWidget(QWidget):
             self.delete_btn.clicked.connect(on_delete)
         layout.addWidget(self.checkbox)
         layout.addSpacing(2 - layout.spacing())
-        layout.addWidget(self.name_label)
+        layout.addWidget(self.name_label, 1)  # 남는 폭은 이름이 차지합니다(7.6.4).
         # 지금 PC에 없는 폴더 표시(7.1.30). 확인 결과가 나오면 보입니다.
         self.missing_label = QLabel("⚠")
         self.missing_label.setStyleSheet("QLabel { color: #E8A33D; }")
@@ -191,12 +218,16 @@ class FilterItemWidget(QWidget):
         layout.addWidget(self.missing_label)
         layout.addStretch()
         layout.addWidget(self.delete_btn)
+        self._refresh_tooltip()
 
     def sizeHint(self):
         # 목록 항목 높이는 이 값으로 정합니다. 기본 sizeHint는 최소 높이를 반영하지 않아 항목(선택 강조)이
         # 위젯보다 낮아지고, 이름이 강조 영역의 가운데보다 아래에 보였습니다(7.6.3).
         hint = super().sizeHint()
-        return QSize(hint.width(), max(hint.height(), self.minimumHeight()))
+        # 검색 폴더 목록은 폭을 최소 폭만 알려, 긴 경로 때문에 행이 보이는 폭보다 넓어지지 않게 합니다.
+        # 그래야 그룹 개수가 오른쪽 끝(× 앞)에 늘 보입니다(7.6.4). 확장자·파일명 목록은 예전처럼 옆으로 스크롤합니다.
+        width = self.minimumSizeHint().width() if self.fit_to_viewport else hint.width()
+        return QSize(width, max(hint.height(), self.minimumHeight()))
 
     def set_compact(self, compact):
         self._compact = compact
@@ -221,6 +252,11 @@ class FilterItemWidget(QWidget):
     def set_text(self, text):
         self.name_label.setText(text)
         self.checkbox.setAccessibleName(text)
+        self._refresh_tooltip()
+
+    def _refresh_tooltip(self):
+        """없는 폴더면 그 안내를, 아니면 "…"로 줄었을 때 볼 수 있게 전체 이름을 보여 줍니다."""
+        self.setToolTip(AppStrings.FOLDER_MISSING_TOOLTIP if self.is_missing() else self.name_label.text())
 
     def isChecked(self):
         return self.checkbox.isChecked()
@@ -228,14 +264,15 @@ class FilterItemWidget(QWidget):
     def set_missing(self, missing: bool):
         missing = bool(missing)
         self.missing_label.setVisible(missing)
-        self.setToolTip(AppStrings.FOLDER_MISSING_TOOLTIP if missing else "")
+        self._refresh_tooltip()
 
     def is_missing(self) -> bool:
         return not self.missing_label.isHidden()
 
     def clone(self):
         """순서를 옮길 때 다시 붙일, 이름·체크·밀도·콜백이 같은 새 위젯을 만듭니다."""
-        widget = FilterItemWidget(self.text(), self.isChecked(), on_delete=self._on_delete, on_change=self._on_change)
+        widget = FilterItemWidget(self.text(), self.isChecked(), on_delete=self._on_delete, on_change=self._on_change,
+                                  fit_to_viewport=self.fit_to_viewport)
         if self._compact is not None:
             widget.set_compact(self._compact)
         widget.set_missing(self.is_missing())
@@ -246,11 +283,11 @@ class FolderGroupHeader(FilterItemWidget):
     """검색 폴더 그룹의 머리글 행입니다.
 
     그룹 안 폴더를 한꺼번에 선택·해제하는 체크(일부만 선택되면 부분 표시), 선택/전체 개수, 펼치기/접기 단추를 보여줍니다.
-    펼치기 단추는 체크 상자와 이름 사이, 개수는 이름 바로 오른쪽에 둡니다.
+    펼치기 단추는 체크 상자와 이름 사이, 개수는 행 오른쪽 끝(× 앞)에 둡니다. 좁으면 이름만 "…"로 줄어듭니다.
     """
 
     def __init__(self, name, collapsed=False, on_delete=None, on_toggle=None, on_check=None):
-        super().__init__(name, False, on_delete=on_delete, on_change=None)
+        super().__init__(name, False, on_delete=on_delete, on_change=None, fit_to_viewport=True)
         self._on_toggle = on_toggle
         self._on_check = on_check
         self.collapsed = collapsed
@@ -271,9 +308,10 @@ class FolderGroupHeader(FilterItemWidget):
         # Qt의 세 단계 순환 대신 패널이 "모두 선택/모두 해제"로 정합니다.
         self.checkbox.clicked.connect(lambda _checked=False: self._on_check(self) if self._on_check else None)
         self.count_label = QLabel()
-        self.count_label.setStyleSheet("QLabel { color: #888; }")
+        # 개수는 그룹 이름과 같은 글자색으로 보입니다(7.6.4, 이전에는 흐린 회색).
         self.count_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        # 개수는 그룹 이름 바로 오른쪽에 붙여 둡니다(7.4.9).
+        # 개수는 행 오른쪽 끝(× 바로 앞)에 둡니다. 이름이 남는 폭을 차지하고 모자라면 이름만 "…"로 줄어,
+        # 창을 좁혀도 개수가 가려지지 않습니다(7.6.4).
         layout.insertWidget(layout.indexOf(self.name_label) + 1, self.count_label)
         # 펼치기 단추는 체크 상자와 이름 사이에 둡니다(7.1.22).
         layout.insertWidget(layout.indexOf(self.name_label), self.toggle_btn)
@@ -876,7 +914,8 @@ class FolderFilterPanel(DenseFilterPanel):
         item = QListWidgetItem()
         self.folder_list.insertItem(row, item)
         widget = FilterItemWidget(
-            folder, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self._on_folder_toggled()
+            folder, checked, on_delete=lambda: self._delete_item(item), on_change=lambda _: self._on_folder_toggled(),
+            fit_to_viewport=True,
         )
         widget.set_compact(self._compact_rows)
         widget.set_missing(folder in self._missing_folders)

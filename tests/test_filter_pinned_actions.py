@@ -21,7 +21,14 @@ def panel_and_list(request, qtbot):
     listing.setFixedSize(180, 180)
     panel.resize(340, 320)
     panel.show()
-    qtbot.waitUntil(lambda: listing.horizontalScrollBar().maximum() > 0)
+    if isinstance(panel, FolderFilterPanel):
+        # 검색 폴더 목록은 긴 경로를 "…"로 줄여 보이는 폭에 맞추므로 옆으로 스크롤하지 않습니다(7.6.4).
+        qtbot.waitExposed(panel)
+        listing.doItemsLayout()
+        assert listing.horizontalScrollBar().maximum() == 0
+        assert listing.itemWidget(listing.item(0)).name_label.is_elided()
+    else:
+        qtbot.waitUntil(lambda: listing.horizontalScrollBar().maximum() > 0)
     return panel, listing
 
 

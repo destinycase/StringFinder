@@ -215,3 +215,12 @@ def test_saved_filter_layout_falls_back_to_tabs(mock_config_manager, saved):
         assert reloaded.get("filter_layout") is None
     finally:
         reloaded.stop()
+
+
+def test_status_bar_text_is_not_flush_with_window_edge(window, qtbot):
+    """상태 표시줄의 검색 설정 글자가 창 테두리에 붙지 않게 왼쪽 여백을 둡니다(7.6.4)."""
+    window.show()
+    qtbot.wait(20)
+    bar = window.statusBar()
+    assert bar.contentsMargins().left() == MainWindow.STATUS_BAR_LEFT_MARGIN >= 6
+    assert window.filter_status_label.geometry().x() >= MainWindow.STATUS_BAR_LEFT_MARGIN
