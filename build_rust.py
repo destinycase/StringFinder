@@ -87,6 +87,14 @@ def path_remap_rustflags(env: dict) -> list[str]:
 def rust_build_env(base: dict) -> dict:
     """엔진 빌드용 환경 변수. 기존 RUSTFLAGS는 유지하고 경로 치환 옵션을 덧붙입니다."""
     env = dict(base)
+    # PySide6를 불러온 프로세스(build.py)는 PATH 앞에 PySide6·shiboken6 폴더가 붙습니다. pyo3의 빌드 스크립트는
+    # PATH가 바뀌면 다시 돌아, build_rust.py와 build.py가 번갈아 pyo3부터 엔진을 처음부터 다시 컴파일했습니다.
+    # 엔진 빌드에는 쓰지 않는 그 폴더들을 빼 두 경로의 환경을 같게 맞춥니다.
+    if env.get("PATH"):
+        env["PATH"] = os.pathsep.join(
+            entry for entry in env["PATH"].split(os.pathsep)
+            if os.path.basename(os.path.normpath(entry)).lower() not in ("pyside6", "shiboken6")
+        )
     # Python 3.14 등 상위 버전 호환성을 위한 환경 변수 설정
     env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
     existing = env.pop("CARGO_ENCODED_RUSTFLAGS", None)
@@ -124,7 +132,9 @@ def build_rust_engine(clean_target=False):
     try:
         # 1. Cargo로 컴파일합니다. --locked: Cargo.lock을 빌드 중에 바꾸지 않습니다(CI와 같은 조건).
         #    다른 프로세스가 파일을 잡고 있을 때(OS Error 32)만 다시 시도하고, 컴파일 오류는 바로 멈춥니다.
-        cargo_cmd = ["cargo", "build", "--release", "--locked", "-j", "1"]
+        #    4.50.0에서 OS Error 32를 피하려고 한 작업씩(-j 1) 빌드하게 했으나, 그 오류는 아래 재시도가 맡습니다.
+        #    -j 1은 전체 빌드를 94초→38초(이 장비, 78개 묶음)로 늘리기만 해서 7.7.5 정리 때 뺐습니다.
+        cargo_cmd = ["cargo", "build", "--release", "--locked"]
         print(f"Running cargo: {' '.join(cargo_cmd)}")
 
         max_retries = 5

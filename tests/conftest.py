@@ -9,7 +9,7 @@
 
 - 주요 전역 피스처 및 훅:
   1. `session_worker_cleanup`: 각 테스트 세션 종료 시 전역 실행자 및 잔여 프로세스 강제 정리.
-  2. `cleanup_qt_threads`: 각 테스트 전후로 Qt 스레드 풀 및 이벤트 루프 초기화.
+  2. `cleanup_qt_threads`: 각 테스트 뒤 Qt 스레드 풀 대기·이벤트 처리. 메모리 정리(gc)는 `collect_garbage_per_module`이 시험 파일마다 한 번.
   3. `mock_config_manager`: 실제 설정 파일을 오염시키지 않는 독립적인 설정 관리자 환경 제공.
 """
 
@@ -111,13 +111,23 @@ def cleanup_qt_threads():
     if pool:
         pool.waitForDone(2000)
 
-    import gc
 
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app:
         app.processEvents()
+
+
+@pytest.fixture(autouse=True, scope="module")
+def collect_garbage_per_module():
+    """시험 파일(모듈)이 끝날 때 한 번 메모리를 정리합니다.
+
+    시험마다 gc.collect()를 돌리면 전체 시험 시간의 절반 가까이를 차지해(offscreen 85초→46초 측정),
+    스레드 풀 대기와 이벤트 처리는 시험마다 두고 메모리 정리만 파일 단위로 옮겼습니다(7.7.5 검증 시간 정리).
+    """
+    yield
+    import gc
 
     gc.collect()
 
