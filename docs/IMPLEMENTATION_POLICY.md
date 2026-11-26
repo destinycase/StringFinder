@@ -85,7 +85,7 @@ Excel 검색은 파서가 읽은 셀 값과 **저장된 수식 계산 결과 캐
 
 1. **에러 핸들링:** Rust 내부의 파일 접근·메타데이터·매핑·크기 제한 오류는 `SkippedEntries`로 기록하고, 검색 파이프라인 전체가 중단되지 않도록 작성합니다. 숨김·바이너리·빈 파일처럼 의도적으로 제외한 항목은 오류 스킵으로 보고되지 않을 수 있습니다.
 2. **사용자 대면 문자열:** 기본 문자열은 `src/sf_utils/app_strings.py`, 영어 번역은 `src/sf_utils/english_strings.py`에 같은 상수명으로 추가합니다. 두 언어의 `{}` 자리표시자 이름·순서·서식은 반드시 같아야 합니다. 새로 작성·수정하는 주석과 설명문은 한글을 우선하고 식별자·API·오류 코드는 원문을 유지합니다. 정확한 기존 영어 주석을 일괄 번역하지는 않습니다.
-3. **버전 관리:** `pyproject.toml`을 Python 프로젝트 버전의 기준으로 삼습니다. `build.py`가 이 값을 읽어 `src/sf_utils/_version.py`를 생성하며, Rust의 `CARGO_PKG_VERSION`은 `src/rust_engine/Cargo.toml`의 버전에서 나오므로 릴리스 시 두 선언을 함께 확인해야 합니다.
+3. **버전 관리:** `pyproject.toml`을 앱 버전의 기준으로 삼습니다. `build.py`가 이 값을 읽어 `src/sf_utils/_version.py`를 생성합니다. 엔진 버전(`src/rust_engine/Cargo.toml`, 엔진의 `ENGINE_VERSION`)은 앱 버전과 따로 매기며 Rust 소스가 바뀔 때만 올립니다(7.7.6, 1.0.0부터). 실행 파일은 앱이 쓰는 기능 약속 번호(`API_VERSION` ≥ `Constants.REQUIRED_ENGINE_API_VERSION`)로 엔진과 맞는지 봅니다. 엔진이 지금 소스로 빌드됐는지는 `build.rs`가 넣은 소스 지문(`SOURCE_HASH`: `src/`·`data/` 파일, 엔진 버전 줄을 뺀 `Cargo.toml`·`Cargo.lock`, 줄바꿈 LF 기준 FNV-1a 64비트)과 `tools/engine_source_hash.py`의 같은 계산을 견줘 개발 환경·CI 확인(`tools/check_dev_environment.py`)과 `tests/test_ci_engine_gate.py`가 확인합니다.
 
 ### 2.1 설정 기본값 및 버전 관리
 

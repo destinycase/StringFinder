@@ -2629,6 +2629,9 @@ fn sf_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("MAX_SEARCH_QUERY_LENGTH", MAX_SEARCH_QUERY_LENGTH)?;
     // Cargo.toml version 필드를 빌드 시점에 자동으로 읽어 Python 측에 노출합니다.
     m.add("ENGINE_VERSION", env!("CARGO_PKG_VERSION"))?;
+    // 엔진 소스 지문(build.rs). 엔진 버전은 앱 버전과 따로 매기므로, 엔진이 지금 소스로 빌드됐는지는
+    // 이 값과 tools/engine_source_hash.py의 계산을 견줘 확인합니다(7.7.6).
+    m.add("SOURCE_HASH", env!("SF_SOURCE_HASH"))?;
     Ok(())
 }
 

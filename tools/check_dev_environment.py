@@ -9,20 +9,29 @@ import shutil
 import sys
 
 
+def current_engine_source_hash(root: Path) -> str:
+    """지금 Rust 소스의 지문(tools/engine_source_hash.py). 스크립트로 실행해도 불러올 수 있게 경로로 읽습니다."""
+    spec = importlib.util.spec_from_file_location("engine_source_hash", root / "tools" / "engine_source_hash.py")
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    return module.engine_source_hash(root / "src" / "rust_engine")
+
+
 def check_native_engine() -> bool:
     """Fail CI rather than silently skipping the native search contracts."""
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root / "src"))
     try:
         from core import search_engine
-        from sf_utils._version import VERSION
 
         engine = search_engine.sf_engine
+        # 엔진 버전은 앱 버전과 따로 매깁니다(7.7.6). 엔진이 지금 Rust 소스로 빌드됐는지는 소스 지문으로 봅니다.
         return bool(
             search_engine.HAS_RUST_ENGINE
             and engine is not None
             and engine.API_VERSION >= search_engine.REQUIRED_API_VERSION
-            and engine.ENGINE_VERSION == VERSION
+            and getattr(engine, "SOURCE_HASH", None) == current_engine_source_hash(root)
             and Path(engine.__file__).resolve() == root / "src/rust_engine/sf_engine.pyd"
         )
     except (ImportError, AttributeError, OSError, TypeError):
@@ -41,7 +50,7 @@ def main() -> int:
         "PyInstaller": importlib.util.find_spec("PyInstaller") is not None,
     }
     if args.require_engine:
-        checks["native engine version/path/API"] = check_native_engine()
+        checks["native engine source-hash/path/API"] = check_native_engine()
     for name, ok in checks.items():
         print(f"[{'OK' if ok else 'MISSING'}] {name}")
     return 0 if all(checks.values()) else 1

@@ -328,6 +328,7 @@ python -m pip install -e ".[dev]"
 
 Windows 환경에서 `.pyd`를 단일 경로에 배포하는 통합 스크립트를 사용합니다. 새 바이너리를 대상 폴더의 임시 파일에 복사한 뒤 교체하며, 잠금으로 교체에 실패하면 기존 파일을 보존하고 오류로 종료합니다. 다른 프로세스를 강제 종료하지 않으므로 엔진을 사용 중인 앱을 직접 닫은 후 재시도하세요.
 빌드할 때 `--remap-path-prefix`로 Cargo·rustup 폴더와 프로젝트 폴더를 `/cargo`·`/rustup`·`/stringfinder`로 바꿔 넣어, 빌드한 PC의 경로(계정 이름 포함)가 엔진에 남지 않게 합니다(7.3.3). 이 옵션은 `CARGO_ENCODED_RUSTFLAGS`로 넘기며 기존 `RUSTFLAGS`는 유지합니다. `cargo build`를 직접 실행하면 이 처리가 빠지므로 배포용 엔진은 반드시 이 스크립트로 만듭니다. `tests/test_build_path_privacy.py`가 커밋된 엔진에 로컬 경로가 없는지 확인합니다.
+엔진 버전은 앱 버전과 따로 매깁니다(7.7.6). Rust 소스(`src/rust_engine/src/`·`data/`, 의존성)를 고쳤을 때만 `Cargo.toml`·`Cargo.lock`의 sf_engine 버전을 올리고 이 스크립트로 엔진을 다시 빌드해 함께 커밋합니다. 엔진에는 빌드 때의 소스 지문(`SOURCE_HASH`)이 들어가며, `python tools/check_dev_environment.py --require-engine`과 `tests/test_ci_engine_gate.py`가 지금 소스의 지문(`tools/engine_source_hash.py`)과 같은지 확인합니다. 소스를 고치고 엔진을 다시 빌드하지 않으면 여기서 실패합니다.
 `build.py`는 PySide6를 불러온 뒤 같은 함수로 엔진을 빌드합니다. PySide6가 `PATH` 앞에 자기 폴더를 붙이면 pyo3 빌드 스크립트가 다시 돌아 엔진을 처음부터 컴파일하므로, 엔진 빌드용 환경에서는 PySide6·shiboken6 폴더를 `PATH`에서 뺍니다. 그래서 `build_rust.py` 바로 뒤의 `build.py`는 엔진 단계가 몇 초 안에 끝납니다. 예전의 한 작업씩 빌드(`-j 1`)는 OS Error 32 회피용이었으나 그 오류는 재시도가 맡아 뺐습니다(전체 빌드 94초→38초).
 ```bash
 python build_rust.py

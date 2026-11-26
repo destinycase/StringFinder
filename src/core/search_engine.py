@@ -120,7 +120,7 @@ try:
     from rust_engine import sf_engine  # type: ignore
     import hashlib
 
-    REQUIRED_API_VERSION = 8
+    REQUIRED_API_VERSION = Constants.REQUIRED_ENGINE_API_VERSION
     engine_version = getattr(sf_engine, "API_VERSION", 0)
     # 앱은 옵션 객체(SearchOptions)와 종류·코드가 붙은 결과 객체(SearchMatch)를 주는 엔진만 씁니다(7.2.6).
     missing_api = [name for name in ("SearchOptions", "SearchMatch", "search_dir") if not hasattr(sf_engine, name)]

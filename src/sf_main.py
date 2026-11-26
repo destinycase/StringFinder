@@ -8,10 +8,12 @@ if __name__ == "__main__" and sys.argv[1:] == ["--smoke-test"]:
         from PySide6.QtWidgets import QApplication
         import qdarktheme
         from rust_engine import sf_engine  # type: ignore[attr-defined]  # Native extension.
-        from sf_utils._version import VERSION
+        from sf_utils.constants import Constants
 
-        if sf_engine.ENGINE_VERSION != VERSION:
-            raise RuntimeError("Python/Rust version mismatch")
+        # 엔진 버전은 앱 버전과 따로 매깁니다(7.7.6). 실행 파일은 앱이 쓰는 기능 약속 번호(API_VERSION)로 맞는지 보고,
+        # 엔진이 지금 소스로 빌드됐는지는 개발 환경·CI 확인(tools/check_dev_environment.py)이 소스 지문으로 봅니다.
+        if getattr(sf_engine, "API_VERSION", 0) < Constants.REQUIRED_ENGINE_API_VERSION:
+            raise RuntimeError("Python/Rust engine API mismatch")
         smoke_app = QApplication([sys.argv[0]])
         smoke_app.setStyleSheet(qdarktheme.load_stylesheet("dark"))
         from ui.main_window import MainWindow  # noqa: F401
