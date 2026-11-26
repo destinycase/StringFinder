@@ -47,6 +47,20 @@ class MainWindow(QMainWindow):
     _session_save_failed = Signal(str)
     STATUS_BAR_LEFT_MARGIN = 8  # 상태 표시줄 왼쪽 여백(px, 7.6.4)
 
+    @staticmethod
+    def window_title_text() -> str:
+        """창 제목: "StringFinder v앱버전 (엔진 v엔진버전)". 엔진을 불러오지 못했으면 앱 버전만 보입니다."""
+        title = f"{Constants.APP_NAME} v{Constants.APP_VERSION}"
+        try:
+            from core import search_engine
+
+            engine_version = getattr(search_engine.sf_engine, "ENGINE_VERSION", None)
+        except Exception:
+            engine_version = None
+        if engine_version:
+            title = f"{title} {AppStrings.WINDOW_TITLE_ENGINE.format(engine_version)}"
+        return title
+
     def __init__(self):
         """메인 윈도우를 초기화하고 필요한 시스템 설정을 수행합니다."""
         super().__init__()
@@ -78,8 +92,8 @@ class MainWindow(QMainWindow):
         icon_path = get_resource_path(os.path.join("assets", "icon.svg"))
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        # 사용자에게는 프로그램명과 앱 버전만 표시합니다. 엔진 버전은 진단 정보로만 사용합니다.
-        self.setWindowTitle(f"{Constants.APP_NAME} v{Constants.APP_VERSION}")
+        # 엔진 버전은 앱 버전과 따로 매기므로(7.7.6) 제목에 함께 보여 줍니다(7.7.7).
+        self.setWindowTitle(self.window_title_text())
         self._apply_theme()
         self.new_tab_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
         self.new_tab_shortcut.activated.connect(lambda: self.add_new_tab())

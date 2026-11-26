@@ -11,6 +11,8 @@ class AppStrings:
     # [1] 기본 앱 정보 (Basic App Info)
     # =========================================================================
     APP_TITLE = "StringFinder"
+    # 창 제목 뒤에 붙는 엔진 버전(7.7.7). {0}: 엔진 버전(예: 1.0.0)
+    WINDOW_TITLE_ENGINE = "(엔진 v{0})"
     APP_VERSION = get_app_version()  # pyproject.toml 기반 Single Source
     TITLE_CRITICAL_ERROR = "StringFinder 오류"
     TITLE_QT_WARNING = "스레드 경고"

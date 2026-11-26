@@ -224,3 +224,20 @@ def test_status_bar_text_is_not_flush_with_window_edge(window, qtbot):
     bar = window.statusBar()
     assert bar.contentsMargins().left() == MainWindow.STATUS_BAR_LEFT_MARGIN >= 6
     assert window.filter_status_label.geometry().x() >= MainWindow.STATUS_BAR_LEFT_MARGIN
+
+
+def test_window_title_shows_app_and_engine_versions(window):
+    """창 제목에 앱 버전과 엔진 버전이 따로 보입니다(7.7.7)."""
+    from core import search_engine
+
+    engine_version = search_engine.sf_engine.ENGINE_VERSION
+    expected = f"{C.APP_NAME} v{C.APP_VERSION} {AppStrings.WINDOW_TITLE_ENGINE.format(engine_version)}"
+    assert window.windowTitle() == expected
+    assert engine_version in window.windowTitle() and C.APP_VERSION in window.windowTitle()
+
+
+def test_window_title_without_engine_shows_app_version_only(monkeypatch):
+    from core import search_engine
+
+    monkeypatch.setattr(search_engine, "sf_engine", None)
+    assert MainWindow.window_title_text() == f"{C.APP_NAME} v{C.APP_VERSION}"
