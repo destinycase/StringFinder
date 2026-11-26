@@ -20,7 +20,7 @@ target/
 
 # Distribution / packaging
 build/
-/dist/*.zip
+/dist/
 /release/
 *.egg-info/
 coverage.xml
