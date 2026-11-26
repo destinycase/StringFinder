@@ -2,7 +2,7 @@
 
 StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색하는 데스크톱 애플리케이션입니다.
 
-현재 안정 버전은 **7.7.1**, 개발 버전은 **7.7.8**이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB, UE 현지화 archive 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
+현재 안정 버전은 **8.1.1**(엔진 1.0.0)이며 한국어와 English UI를 제공합니다. 일반 텍스트·소스 코드뿐 아니라 JSON, XML, XLSX/XLSM/XLS/XLSB, UE 현지화 archive 파일의 검색 결과를 파일·위치·값 단위로 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -16,7 +16,7 @@ StringFinder는 Windows에서 텍스트와 구조화 문서를 빠르게 검색�
 
 ## 실행
 
-바로 쓰는 실행 파일은 `dist/StringFinder.exe`이며, 항상 마지막 안정 버전입니다. 버전별 빌드 결과는 `python build.py`로 만드는 `release/StringFinder-vX.Y.Z.exe`(Git 제외)입니다. 안정 버전 목록과 각 실행 파일의 SHA-256은 `docs/master-baseline-v*.md`에 있습니다(현재 8차 안정 버전: [v7.7.1](docs/master-baseline-v7.7.1.md), 7차: [v7.6.1](docs/master-baseline-v7.6.1.md), 6차: [v7.5.1](docs/master-baseline-v7.5.1.md), 5차: [v7.4.1](docs/master-baseline-v7.4.1.md), 4차: [v7.3.1](docs/master-baseline-v7.3.1.md), 3차: [v7.2.1](docs/master-baseline-v7.2.1.md), 2차: [v7.1.1](docs/master-baseline-v7.1.1.md), 1차: [v6.4.1](docs/archive/before-v7/master-baseline-v6.4.1.md)). 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
+바로 쓰는 실행 파일은 `dist/StringFinder.exe`이며, 항상 마지막 안정 버전입니다. 버전별 빌드 결과는 `python build.py`로 만드는 `release/StringFinder-vX.Y.Z.exe`(Git 제외)입니다. 안정 버전 목록과 각 실행 파일의 SHA-256은 `docs/master-baseline-v*.md`에 있습니다(현재 9차 안정 버전: [v8.1.1](docs/master-baseline-v8.1.1.md). 7.x 안정 버전(2~8차)은 [v8 이전 기록](docs/archive/before-v8/README.md), 1차 6.4.1은 [v7 이전 기록](docs/archive/before-v7/README.md)에 있습니다). 개발 환경에서 실행하려면 Python 3.12 이상과 Rust toolchain이 필요합니다.
 
 ```powershell
 python run.py
@@ -40,6 +40,6 @@ python run.py
 - [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 채택한 설계의 배경, 개발·검증 절차
 - [구현 정책](docs/IMPLEMENTATION_POLICY.md) — 현재 검색·설정·UI 계약
 - [개발 히스토리](docs/DEVELOPMENT_HISTORY.md) — 7.1.1부터의 버전별 기능 변경
-- [벤치마크 기준선](docs/BENCHMARK_BASELINE.md) — 7.7.1 성능 기준값·표본·판정 규칙
+- [벤치마크 기준선](docs/BENCHMARK_BASELINE.md) — 8.1.1 성능 기준값·표본·판정 규칙
 - [성능 기록](docs/PERFORMANCE_HISTORY.md) — 기준선과 비교한 측정 결과
 - [v7 이전 기록](docs/archive/before-v7/README.md) — 6.x까지의 이력·성능 기록·설계 검토
