@@ -146,7 +146,7 @@ def build(clean_first=False):
         f.write(version_file_content)
     print(f"Created temporary version file: {version_file_path}")
 
-    # 임시 빌드 폴더만 정리하고 기존 dist 배포본은 성공적으로 교체할 때까지 보존
+    # 임시 빌드 폴더만 정리한다(결과물은 release/에 버전 이름으로 남는다)
     for folder in ["build", "rust_bin"]:
         abs_folder = os.path.join(PROJECT_ROOT, folder)
         if os.path.exists(abs_folder):

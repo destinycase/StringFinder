@@ -57,8 +57,8 @@ def test_release_folder_is_not_tracked_by_git() -> None:
     assert "/release/" in gitignore
 
 
-def test_stable_dist_executable_is_local_only_and_untouched_by_build() -> None:
-    # dist/StringFinder.exe는 이 PC의 바로가기가 가리키는 마지막 안정 버전이며, 공개 배포는 GitHub Release로 합니다.
+def test_dist_folder_is_retired_and_never_written_by_build() -> None:
+    # dist/는 8.1.1 뒤 폐지했습니다. 배포는 release/와 GitHub Release로 합니다.
     gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "/dist/" in gitignore
     build_source = (PROJECT_ROOT / "build.py").read_text(encoding="utf-8")
