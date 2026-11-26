@@ -39,7 +39,8 @@ python run.py
 - [사용자 가이드](docs/USER_GUIDE.md) — 화면, 검색 방식, 설정, 결과 및 문제 해결
 - [개발자 가이드](docs/DEVELOPER_GUIDE.md) — 구조, 채택한 설계의 배경, 개발·검증 절차
 - [구현 정책](docs/IMPLEMENTATION_POLICY.md) — 현재 검색·설정·UI 계약
-- [개발 히스토리](docs/DEVELOPMENT_HISTORY.md) — 7.1.1부터의 버전별 기능 변경
+- [개발 히스토리](docs/DEVELOPMENT_HISTORY.md) — 8.1.1부터의 버전별 기능 변경
 - [벤치마크 기준선](docs/BENCHMARK_BASELINE.md) — 8.1.1 성능 기준값·표본·판정 규칙
 - [성능 기록](docs/PERFORMANCE_HISTORY.md) — 기준선과 비교한 측정 결과
+- [v8 이전 기록](docs/archive/before-v8/README.md) — 7.x 안정 버전 고정 문서·이력·성능 기록
 - [v7 이전 기록](docs/archive/before-v7/README.md) — 6.x까지의 이력·성능 기록·설계 검토
