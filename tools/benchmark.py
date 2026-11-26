@@ -320,10 +320,8 @@ def run(rounds: int, only: list[str] | None, data_dir: Path = DATA, engine=None)
             if previous != (hits, digest):
                 raise SystemExit(f"{sample.sid}: 회차마다 결과가 다릅니다 {previous} != {(hits, digest)}")
         print(f"회차 {rnd + 1}/{rounds} 완료", flush=True)
-    kst = timezone(timedelta(hours=9))
     return {
-        "measured_at": datetime.now(kst).strftime("%Y-%m-%d %H:%M:%S %z"),
-        "engine_version": getattr(engine, "ENGINE_VERSION", "unknown"),
+        **result_metadata(engine),
         "rounds": rounds,
         "machine": {"platform": platform.platform(), "processor": platform.processor(),
                     "cpu_count": os.cpu_count()},
@@ -334,6 +332,36 @@ def run(rounds: int, only: list[str] | None, data_dir: Path = DATA, engine=None)
             for s in samples
         },
     }
+
+
+def app_version() -> str:
+    """앱 버전(src/sf_utils/_version.py). 제품 모듈을 불러오지 않고 파일에서 읽습니다."""
+    try:
+        text = (ROOT / "src" / "sf_utils" / "_version.py").read_text(encoding="utf-8")
+    except OSError:
+        return "unknown"
+    for line in text.splitlines():
+        if line.strip().startswith("VERSION"):
+            return line.split("=", 1)[1].strip().strip("\"'")
+    return "unknown"
+
+
+def result_metadata(engine) -> dict:
+    """결과 파일 머리 정보. 7.7.6부터 엔진 버전을 앱 버전과 따로 매기므로 둘 다 적습니다."""
+    kst = timezone(timedelta(hours=9))
+    return {
+        "measured_at": datetime.now(kst).strftime("%Y-%m-%d %H:%M:%S %z"),
+        "app_version": app_version(),
+        "engine_version": getattr(engine, "ENGINE_VERSION", "unknown"),
+    }
+
+
+def version_line(result: dict, baseline: dict) -> str:
+    """비교할 때 앞에 보여 줄 앱·엔진 버전. 예전 기준선에는 app_version이 없을 수 있습니다."""
+    def describe(data: dict) -> str:
+        return f"앱 {data.get('app_version') or '기록 없음'} / 엔진 {data.get('engine_version') or '기록 없음'}"
+
+    return f"현재: {describe(result)}  ·  기준선: {describe(baseline)}"
 
 
 def compare(result: dict, baseline: dict, threshold: float) -> list[str]:
@@ -384,7 +412,9 @@ def main(argv: list[str] | None = None) -> int:
         for sid, row in result["samples"].items():
             print(f"{sid:12s} {row['median_ms']:10.2f}ms  ({row['min_ms']:.2f}~{row['max_ms']:.2f})  일치 {row['hits']}")
         return 0
-    lines = compare(result, json.loads(args.baseline.read_text(encoding="utf-8")), args.threshold)
+    baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+    print(version_line(result, baseline))
+    lines = compare(result, baseline, args.threshold)
     print("\n".join(lines))
     return 1 if any(line.endswith(("결과 다름", "느려짐")) for line in lines) else 0
 

@@ -106,8 +106,55 @@ def rust_build_env(base: dict) -> dict:
     return env
 
 
-def build_rust_engine(clean_target=False):
-    """Rust 엔진(sf_engine) 컴파일 및 배포"""
+_READ_SOURCE_HASH = (
+    "import importlib.util, sys\n"
+    "spec = importlib.util.spec_from_file_location('sf_engine', sys.argv[1])\n"
+    "module = importlib.util.module_from_spec(spec)\n"
+    "spec.loader.exec_module(module)\n"
+    "print(getattr(module, 'SOURCE_HASH', ''))\n"
+)
+
+
+def installed_engine_source_hash(path: str = SSOT_ENGINE_PYD):
+    """설치된 엔진의 소스 지문을 따로 띄운 Python에서 읽습니다. 읽지 못하면 None.
+
+    빌드하는 이 프로세스에 엔진을 불러오면 Windows에서 파일이 잡혀 덮어쓰기가 막힐 수 있어, 값만 받아 옵니다.
+    """
+    if not os.path.isfile(path):
+        return None
+    try:
+        result = subprocess.run([sys.executable, "-c", _READ_SOURCE_HASH, path], capture_output=True,
+                                text=True, encoding="utf-8", errors="replace", timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = result.stdout.strip().splitlines()[-1].strip() if result.returncode == 0 and result.stdout.strip() else ""
+    return value or None
+
+
+def current_engine_source_hash() -> str:
+    """지금 Rust 소스의 지문(tools/engine_source_hash.py와 같은 계산)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "engine_source_hash", os.path.join(PROJECT_ROOT, "tools", "engine_source_hash.py"))
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(module)
+    return module.engine_source_hash()
+
+
+def build_rust_engine(clean_target=False, force=False):
+    """Rust 엔진(sf_engine) 컴파일 및 배포
+
+    엔진은 같은 소스로 다시 빌드해도 파일 내용이 달라집니다. 그래서 설치된 엔진의 소스 지문이 지금 소스와 같으면
+    cargo를 부르지 않고 그 파일을 그대로 씁니다(force·clean_target이면 항상 빌드). CI는 force로 빌드합니다.
+    """
+    if not force and not clean_target:
+        installed = installed_engine_source_hash()
+        if installed is not None and installed == current_engine_source_hash():
+            print("엔진이 지금 소스와 같아 다시 빌드하지 않음 (SOURCE_HASH " + installed + ")")
+            return SSOT_ENGINE_PYD
+
     # 빌드 시작 시 기존 부산물(.old_*) 선제적 정리
     clean_old_binaries()
     clean_non_ssot_engine_binaries()
@@ -218,6 +265,8 @@ def clean_binary(clean_all=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build and deploy Rust engine for StringFinder development.")
     parser.add_argument("--clean", action="store_true", help="Remove deployed binary from src folder.")
+    parser.add_argument("--force", action="store_true",
+                        help="Rebuild even if the installed engine already matches the current Rust source.")
     args = parser.parse_args()
 
     # 상위 디렉토리로 작업 경로 설정 (프로젝트 루트 보장)
@@ -227,4 +276,4 @@ if __name__ == "__main__":
         clean_binary(clean_all=True)
     else:
         # 빌드 전 가벼운 클린업 수행 (선택 가능)
-        build_rust_engine(clean_target=False)
+        build_rust_engine(clean_target=False, force=args.force)

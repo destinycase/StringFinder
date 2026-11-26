@@ -52,7 +52,8 @@ jobs:
       - name: Verify dependency compatibility
         run: python -m pip check
       - name: Build the engine from this checkout
-        run: python build_rust.py
+        # 커밋된 엔진을 재사용하지 않고 현재 소스로 빌드합니다(지문이 같아도 강제).
+        run: python build_rust.py --force
       - name: Require native engine and matching version
         run: python tools/check_dev_environment.py --require-engine
       - name: Python lint
