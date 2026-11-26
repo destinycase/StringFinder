@@ -227,12 +227,13 @@ def test_status_bar_text_is_not_flush_with_window_edge(window, qtbot):
 
 
 def test_window_title_shows_app_and_engine_versions(window):
-    """창 제목에 앱 버전과 엔진 버전이 따로 보입니다(7.7.7)."""
+    """창 제목에 앱 버전과 엔진 버전이 따로 보이고, 한국어·영어 화면 모두 영어 제목입니다(7.7.7·7.7.8)."""
     from core import search_engine
 
     engine_version = search_engine.sf_engine.ENGINE_VERSION
-    expected = f"{C.APP_NAME} v{C.APP_VERSION} {AppStrings.WINDOW_TITLE_ENGINE.format(engine_version)}"
+    expected = f"{C.APP_NAME} v{C.APP_VERSION} (Engine v{engine_version})"
     assert window.windowTitle() == expected
+    assert "엔진" not in window.windowTitle()
     assert engine_version in window.windowTitle() and C.APP_VERSION in window.windowTitle()
 
 

@@ -49,7 +49,10 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def window_title_text() -> str:
-        """창 제목: "StringFinder v앱버전 (엔진 v엔진버전)". 엔진을 불러오지 못했으면 앱 버전만 보입니다."""
+        """창 제목: "StringFinder v앱버전 (Engine v엔진버전)". 화면 언어와 상관없이 영어입니다(7.7.8).
+
+        엔진을 불러오지 못했으면 앱 버전만 보입니다.
+        """
         title = f"{Constants.APP_NAME} v{Constants.APP_VERSION}"
         try:
             from core import search_engine
@@ -58,7 +61,7 @@ class MainWindow(QMainWindow):
         except Exception:
             engine_version = None
         if engine_version:
-            title = f"{title} {AppStrings.WINDOW_TITLE_ENGINE.format(engine_version)}"
+            title = f"{title} {Constants.WINDOW_TITLE_ENGINE.format(engine_version)}"
         return title
 
     def __init__(self):

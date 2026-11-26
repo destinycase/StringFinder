@@ -17,6 +17,8 @@ class Constants:
     MAX_SEARCH_QUERY_LENGTH = 1000
     # 앱이 쓰는 엔진 기능 약속 번호입니다. 엔진 버전은 앱 버전과 따로 매기므로(7.7.6) 실행 파일은 이 번호로 엔진과 맞는지 봅니다.
     REQUIRED_ENGINE_API_VERSION = 8
+    # 창 제목 뒤에 붙는 엔진 버전입니다. 제목은 화면 언어와 상관없이 항상 영어로 둡니다(7.7.8). {0}: 엔진 버전
+    WINDOW_TITLE_ENGINE = "(Engine v{0})"
     APP_VERSION = AppStrings.APP_VERSION  # 애플리케이션 버전 정보를 통합 관리합니다.
     ENV_APPDATA = "APPDATA"
     APPDATA_FALLBACK_DIR = ".stringfinder"
