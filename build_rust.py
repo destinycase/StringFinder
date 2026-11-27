@@ -106,29 +106,34 @@ def rust_build_env(base: dict) -> dict:
     return env
 
 
-_READ_SOURCE_HASH = (
+_READ_ENGINE_IDENTITY = (
     "import importlib.util, sys\n"
     "spec = importlib.util.spec_from_file_location('sf_engine', sys.argv[1])\n"
     "module = importlib.util.module_from_spec(spec)\n"
     "spec.loader.exec_module(module)\n"
     "print(getattr(module, 'SOURCE_HASH', ''))\n"
+    "print(getattr(module, 'ENGINE_VERSION', ''))\n"
 )
 
 
-def installed_engine_source_hash(path: str = SSOT_ENGINE_PYD):
-    """설치된 엔진의 소스 지문을 따로 띄운 Python에서 읽습니다. 읽지 못하면 None.
+def installed_engine_identity(path: str = SSOT_ENGINE_PYD):
+    """설치된 엔진의 (소스 지문, 엔진 버전)을 따로 띄운 Python에서 읽습니다. 읽지 못하면 None.
+
+    소스 지문은 Cargo.toml의 엔진 버전 줄을 빼고 계산하므로, 버전만 올린 경우를 잡으려고 엔진 버전도 함께 읽습니다.
 
     빌드하는 이 프로세스에 엔진을 불러오면 Windows에서 파일이 잡혀 덮어쓰기가 막힐 수 있어, 값만 받아 옵니다.
     """
     if not os.path.isfile(path):
         return None
     try:
-        result = subprocess.run([sys.executable, "-c", _READ_SOURCE_HASH, path], capture_output=True,
+        result = subprocess.run([sys.executable, "-c", _READ_ENGINE_IDENTITY, path], capture_output=True,
                                 text=True, encoding="utf-8", errors="replace", timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
-    value = result.stdout.strip().splitlines()[-1].strip() if result.returncode == 0 and result.stdout.strip() else ""
-    return value or None
+    lines = [line.strip() for line in result.stdout.strip().splitlines()] if result.returncode == 0 else []
+    if len(lines) < 2 or not lines[-2] or not lines[-1]:
+        return None
+    return lines[-2], lines[-1]
 
 
 def current_engine_source_hash() -> str:
@@ -143,16 +148,29 @@ def current_engine_source_hash() -> str:
     return module.engine_source_hash()
 
 
+def current_engine_version() -> str:
+    """Cargo.toml의 엔진(sf_engine) 버전."""
+    import tomllib
+
+    with open(os.path.join(PROJECT_ROOT, "src", "rust_engine", "Cargo.toml"), "rb") as file:
+        return str(tomllib.load(file)["package"]["version"])
+
+
+def current_engine_identity():
+    """지금 소스 기준의 (소스 지문, 엔진 버전)."""
+    return current_engine_source_hash(), current_engine_version()
+
+
 def build_rust_engine(clean_target=False, force=False):
     """Rust 엔진(sf_engine) 컴파일 및 배포
 
-    엔진은 같은 소스로 다시 빌드해도 파일 내용이 달라집니다. 그래서 설치된 엔진의 소스 지문이 지금 소스와 같으면
+    엔진은 같은 소스로 다시 빌드해도 파일 내용이 달라집니다. 그래서 설치된 엔진의 소스 지문과 엔진 버전이 지금 소스와 같으면
     cargo를 부르지 않고 그 파일을 그대로 씁니다(force·clean_target이면 항상 빌드). CI는 force로 빌드합니다.
     """
     if not force and not clean_target:
-        installed = installed_engine_source_hash()
-        if installed is not None and installed == current_engine_source_hash():
-            print("엔진이 지금 소스와 같아 다시 빌드하지 않음 (SOURCE_HASH " + installed + ")")
+        installed = installed_engine_identity()
+        if installed is not None and installed == current_engine_identity():
+            print(f"엔진이 지금 소스와 같아 다시 빌드하지 않음 (SOURCE_HASH {installed[0]}, 엔진 {installed[1]})")
             return SSOT_ENGINE_PYD
 
     # 빌드 시작 시 기존 부산물(.old_*) 선제적 정리

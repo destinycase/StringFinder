@@ -363,7 +363,7 @@ XML 파서 변경 시에는 최소한 다음 회귀 조건도 확인합니다.
 
 ### 6.4.1 Windows 자동 검사
 
-`.github/workflows/ci.yml`은 main 푸시와 main 대상 PR, 수동 실행, 주간 예약 실행을 정의합니다. Python 3.12와 Rust 1.93.0을 준비하고 .github/ci-constraints.txt의 기준 버전으로 의존성을 설치한 뒤, 커밋된 엔진을 재사용하지 않고 `build_rust.py`로 현재 소스의 엔진을 빌드합니다. `check_dev_environment.py --require-engine`으로 활성화·공식 경로·앱 버전·API를 확인하여 네이티브 검사가 조용히 건너뛰어지는 것을 방지합니다. 검사 권한은 저장소 읽기이며 EXE 생성·자동 게시·Git 이력 변경은 하지 않습니다. pip·Cargo 캐시와 최신 커밋만 가져오는 checkout으로 반복 비용을 줄입니다.
+`.github/workflows/ci.yml`은 main 푸시와 main 대상 PR, 수동 실행, 주간 예약 실행을 정의합니다. Python 3.12와 Rust 1.93.0을 준비하고 .github/ci-constraints.txt의 기준 버전으로 의존성을 설치한 뒤, 커밋된 엔진을 재사용하지 않고 `build_rust.py --force`로 현재 소스의 엔진을 빌드합니다. `check_dev_environment.py --require-engine`으로 활성화·공식 경로·소스 지문(`SOURCE_HASH`)·API를 확인하여 네이티브 검사가 조용히 건너뛰어지는 것을 방지합니다. 검사 권한은 저장소 읽기이며 EXE 생성·자동 게시·Git 이력 변경은 하지 않습니다. pip·Cargo 캐시와 최신 커밋만 가져오는 checkout으로 반복 비용을 줄입니다.
 
 기본 작업은 Ruff, 제품·벤치마크 도구 mypy, Rust 포맷·Clippy·테스트, 격리된 Python 기본 검사를 수행합니다. Qt는 `offscreen`으로 실행합니다. 주간·수동 실행은 stress/chaos와 실제 Windows Qt 클립보드 연동도 추가합니다. 예약 시각은 매주 일요일 UTC 00:00(한국 시간 09:00)입니다. 저장소의 Actions가 활성화되어야 하며, 설정 파일을 원격에 푸시한 후 실제 실행 결과를 확인해야 합니다. 로컬 통과를 GitHub 실행 성공으로 표기하지 않습니다.
 
@@ -375,7 +375,7 @@ python -m pip install -e ".[dev]" -c .github/ci-constraints.txt
 python -m pip check
 $env:QT_QPA_PLATFORM = "offscreen"
 $env:APPDATA = Join-Path $PWD "scratch/ci_local/appdata"
-python build_rust.py
+python build_rust.py --force
 python tools/check_dev_environment.py --require-engine
 python -m ruff check src tests tools
 python -m mypy src tools/benchmark.py --cache-dir scratch/ci_local/mypy_cache
@@ -405,11 +405,11 @@ python tools/check_dev_environment.py
 
 ### 6.6 Windows 배포본 빌드
 
-`build.py`는 `pyproject.toml`의 버전을 읽고 Rust 엔진을 다시 빌드한 뒤 PyInstaller 단일 실행 파일을 생성합니다. 결과물은 버전 이름이 붙은 `release/StringFinder-vX.Y.Z.exe`이며, `release/` 폴더는 Git에 올리지 않습니다. 공개 배포는 안정 버전 태그마다 GitHub Release를 만들고 해당 `release/` 실행 파일을 첨부하는 방식입니다(8.1.1부터). 실행 파일은 Git 이력에 넣지 않습니다. 예전에 마지막 안정 버전을 두던 `dist/` 폴더는 8.1.1 뒤 폐지해 로컬에서도 만들지 않습니다. 현재 이 절차는 Windows 배포를 기준으로 합니다.
+`build.py`는 `pyproject.toml`의 앱 버전을 읽고, 설치된 엔진의 소스 지문·엔진 버전이 지금 소스와 다를 때만 Rust 엔진을 다시 빌드한 뒤 PyInstaller 단일 실행 파일을 생성합니다. 결과물은 버전 이름이 붙은 `release/StringFinder-vX.Y.Z.exe`이며, `release/` 폴더는 Git에 올리지 않습니다. 공개 배포는 안정 버전 태그마다 GitHub Release를 만들고 해당 `release/` 실행 파일을 첨부하는 방식입니다(8.1.1부터). 실행 파일은 Git 이력에 넣지 않습니다. 예전에 마지막 안정 버전을 두던 `dist/` 폴더는 8.1.1 뒤 폐지해 로컬에서도 만들지 않습니다. 현재 이 절차는 Windows 배포를 기준으로 합니다.
 
 같은 버전의 배포 파일이 이미 있으면 빌드를 시작하기 전에 멈추며, 기존 파일을 덮어쓰지 않습니다. 실행 파일은 먼저 `build/release`에 생성하고 검사를 통과하면 임시 이름으로 복사한 뒤 배포 이름으로 바꿔 답니다. 끝나면 파일 크기와 SHA-256을 출력합니다. 버전마다 파일 이름이 다르므로, 실행 중인 이전 버전 때문에 빌드가 막히지 않습니다. Rust 개발용 `.pyd`는 앞 단계에서 갱신될 수 있으므로 EXE 빌드 실패가 소스와 개발 엔진까지 되돌린다는 의미는 아닙니다.
 
-패키징 단계의 PATH는 Windows 및 현재 Python 경로로 제한합니다. 외부 도구(예: Poppler)의 동명 ICU DLL이 Qt 의존성으로 포함되는 것을 방지하기 위한 조치입니다. 배포 교체 전 `build_support.py`가 포함된 ICU의 Qt 요구 심볼을 검사하고, 완성된 EXE의 `--smoke-test`를 실행합니다. 이 모드는 사용자 세션을 열지 않고 Qt 플랫폼·테마·UI 모듈 로드 및 Python/Rust 버전 일치를 확인한 뒤 종료합니다. 실패 또는 45초 초과 시 배포 파일을 만들지 않습니다. 이는 수동 UI 흐름이나 Python 미설치 장비 검증을 대체하지 않습니다.
+패키징 단계의 PATH는 Windows 및 현재 Python 경로로 제한합니다. 외부 도구(예: Poppler)의 동명 ICU DLL이 Qt 의존성으로 포함되는 것을 방지하기 위한 조치입니다. 배포 교체 전 `build_support.py`가 포함된 ICU의 Qt 요구 심볼을 검사하고, 완성된 EXE의 `--smoke-test`를 실행합니다. 이 모드는 사용자 세션을 열지 않고 Qt 플랫폼·테마·UI 모듈 로드와 엔진 API 버전(앱이 요구하는 버전 이상인지)을 확인한 뒤 종료합니다. 실패 또는 45초 초과 시 배포 파일을 만들지 않습니다. 이는 수동 UI 흐름이나 Python 미설치 장비 검증을 대체하지 않습니다.
 
 ```powershell
 python build.py
@@ -456,7 +456,7 @@ python tools/benchmark.py run --only K-LF-h,N-h --rounds 8
 - 결과 지문이 기준선과 다르면 "결과 다름", 중앙값이 기준선의 1.15배를 넘으면 "느려짐"으로 표시하고 종료 코드 1을 돌려줍니다. 같은 컴퓨터·같은 표본에서만 비교합니다.
 - 기준선은 안정 버전을 선언할 때 `--write-baseline`으로 다시 저장합니다. 도구의 회귀 테스트는 `tests/test_benchmark_tool.py`입니다.
 
-릴리스 전에는 Python/Rust 테스트와 정적 검사를 수행하고 **6.6절**의 `python build.py`로 배포본을 생성합니다. `release/StringFinder-vX.Y.Z.exe`와 `src/rust_engine/sf_engine.pyd`의 버전·포함 코드 일치를 확인합니다. 안정 버전은 태그 `vX.Y.Z`와 고정 문서 `docs/master-baseline-vX.Y.Z.md`(기준 커밋, 실행 파일 크기·SHA-256, 직전 안정 버전 이후 기능)로 선언합니다. 빌드가 엔진을 다시 생성하므로 최종 엔진을 사용하는 회귀 테스트도 확인합니다.
+릴리스 전에는 Python/Rust 테스트와 정적 검사를 수행하고 **6.6절**의 `python build.py`로 배포본을 생성합니다. `python tools/check_dev_environment.py --require-engine`으로 `src/rust_engine/sf_engine.pyd`가 지금 소스로 빌드됐는지(소스 지문) 확인합니다. 안정 버전은 태그 `vX.Y.Z`와 고정 문서 `docs/master-baseline-vX.Y.Z.md`(기준 커밋, 실행 파일 크기·SHA-256, 직전 안정 버전 이후 기능)로 선언합니다. 엔진 소스가 바뀐 버전은 다시 빌드한 최종 엔진으로 회귀 테스트를 돌립니다.
 
 ```powershell
 cargo fmt --manifest-path src/rust_engine/Cargo.toml -- --check
@@ -502,7 +502,7 @@ python tools/validate_parallel_resources.py
 | 메모리 가드·예상량 계수 | 4/8/16/32/64/128GB 장치별 한도, 정확한 경계값, 유효하지 않은 계측값, 파일 단위 스킵/전체 중단 분리; `system_percent`는 판정에 사용하지 않음 |
 | 사용자 문자열 | 한글·영문 리소스 계약, UI 콜백 최종 문구, skip reason 현지화 |
 | GUI 테이블·정렬 | 결과 추가 중 정렬, 검색 초기화, 리비전 변경, FHD 100%/125% 시각 확인 |
-| 배포/의존성 | Rust 테스트·Clippy, Python 테스트·Ruff, Rust 바이너리 교체, PyInstaller smoke test, Python/Rust/EXE 버전 일치 |
+| 배포/의존성 | Rust 테스트·Clippy, Python 테스트·Ruff, Rust 바이너리 교체, PyInstaller smoke test, 엔진 소스 지문·API 버전 확인 |
 
 **검증 범위(개발판·안정 버전).**
 

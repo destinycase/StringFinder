@@ -6,4 +6,5 @@
 
 - 7.7.8을 **9차 안정 버전 8.1.1**로 지정했습니다. 코드는 7.7.8과 같고 앱 버전 표기만 바꿨습니다.
 - 8 버전부터 검색 엔진의 버전을 앱 버전과 따로 매깁니다(엔진 1.0.0). 창 제목에 `StringFinder v8.1.1 (Engine v1.0.0)`처럼 둘 다 보입니다.
-- 7.7.1 이후 바뀐 기능은 [v8.1.1 고정 문서](master-baseline-v8.1.1.md)에 있습니다. `dist/StringFinder.exe`가 8.1.1로 바뀝니다.
+- 7.7.1 이후 바뀐 기능은 [v8.1.1 고정 문서](master-baseline-v8.1.1.md)에 있습니다.
+- 8.1.1 선언 뒤 배포 방식을 바꿨습니다. 실행 파일은 GitHub [Releases](https://github.com/destinycase/StringFinder/releases)에서 받습니다(이전 안정 버전 6.4.1~7.7.1 포함). 저장소의 `dist/StringFinder.exe`는 없앴습니다.
