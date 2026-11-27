@@ -6,7 +6,7 @@ import threading
 import tempfile
 from pathlib import Path
 from PySide6.QtCore import QByteArray, QItemSelection, QItemSelectionModel, QSignalBlocker, Qt, QTimer, Signal
-from PySide6.QtCore import QEvent, QObject, QRunnable, QThreadPool
+from PySide6.QtCore import QThreadPool
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QComboBox,
-    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -48,6 +47,23 @@ from ui.proxies import MatchProxyModel, ResultProxyModel
 from ui.styles import UIStyles
 from ui.syntax_highlighter import LightweightSyntaxHighlighter
 from ui.widgets import HtmlDelegate
+from ui.result_column_layout import MatchColumnWatcher, compute_match_column_widths
+from ui.result_preview import (  # noqa: F401  (예전 import 위치 유지)
+    CONTEXT_MAX_SCAN_LINES,
+    ContextPreviewSignals,
+    ContextPreviewWorker,
+    _detect_text_encoding,
+    _read_context_lines_from_file,
+)
+from ui.result_widgets import (  # noqa: F401  (예전 import 위치 유지)
+    SearchShimmer,
+    SearchSpinner,
+    SkippedFilesDialog,
+    _format_skipped_files_text,
+    _is_walk_failure,
+    _skipped_count_text,
+    normalize_skipped_files,
+)
 
 
 _EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
@@ -75,247 +91,6 @@ def _append_excel_row(worksheet, values):
     worksheet.append([_sanitize_excel_cell(value) for value in values])
 
 
-def _detect_text_encoding(file_path):
-    """미리보기 인코딩을 검색 엔진과 같은 판정(파일 전체 기준, 설정의 지정 인코딩 우선)으로 정합니다."""
-    with open(file_path, "rb") as file:
-        sample = file.read(4)
-    if sample.startswith(b"\xff\xfe\x00\x00"):
-        return "utf-32-le"
-    if sample.startswith(b"\x00\x00\xfe\xff"):
-        return "utf-32-be"
-    from core.search_engine import detect_preview_encoding
-
-    return detect_preview_encoding(file_path)
-
-
-def _read_context_lines_from_file(file_path, target_line, before_lines, after_lines, cancel_event=None):
-    """파일에서 필요한 문맥만 읽습니다. UI 객체에는 접근하지 않습니다."""
-    if target_line > ResultView.CONTEXT_MAX_SCAN_LINES:
-        return None
-    first_line = max(1, target_line - before_lines)
-    last_line = target_line + after_lines
-    encoding = _detect_text_encoding(file_path)
-    context = []
-    with open(file_path, "r", encoding=encoding, errors="replace") as file:
-        for line_number, line in enumerate(file, start=1):
-            if cancel_event is not None and cancel_event.is_set():
-                return []
-            if line_number >= first_line:
-                context.append((line_number, line.rstrip("\r\n")))
-            if line_number >= last_line:
-                break
-    return context
-
-
-class MatchColumnWatcher(QObject):
-    """검색 상세 표의 보이는 폭 변화와 열 경계 끌기 끝을 알려 줍니다(7.5.4).
-
-    미리보기 창과의 분할선을 옮기거나 창 크기를 바꾸면 표의 보이는 폭이 바뀌어 열 폭을 다시 나눕니다.
-    """
-
-    def __init__(self, view, on_width_changed, on_drag_finished):
-        super().__init__(view)
-        self._view = view
-        self._on_width_changed = on_width_changed
-        self._on_drag_finished = on_drag_finished
-        self._last_width = -1
-        # 머리글에서 마우스를 누르고 있는 동안만 참입니다. 이때 바뀐 열 폭만 "사용자가 끈 폭"으로 봅니다(7.5.6).
-        self.header_pressed = False
-        # 표가 지워지는 중에도 이벤트가 오므로, 감시 대상은 미리 잡아 두고 이벤트마다 표를 부르지 않습니다.
-        self._viewport = view.viewport()
-        self._header_viewport = view.horizontalHeader().viewport()
-        self._viewport.installEventFilter(self)
-        self._header_viewport.installEventFilter(self)
-
-    def eventFilter(self, watched, event):
-        event_type = event.type()
-        if event_type == QEvent.Type.Resize and watched is self._viewport:
-            width = watched.width()
-            if width != self._last_width:
-                self._last_width = width
-                self._on_width_changed()
-        elif watched is self._header_viewport:
-            if event_type == QEvent.Type.MouseButtonPress:
-                self.header_pressed = True
-            elif event_type == QEvent.Type.MouseButtonRelease:
-                self.header_pressed = False
-                self._on_drag_finished()
-        return False
-
-
-class ContextPreviewSignals(QObject):
-    finished = Signal(int, object, object, bool)
-
-
-class ContextPreviewWorker(QRunnable):
-    """문맥 미리보기용 파일 읽기를 UI 스레드 밖에서 수행합니다."""
-
-    def __init__(self, request_id, file_path, target_line, before_lines, after_lines, cancel_event):
-        super().__init__()
-        self.setAutoDelete(False)
-        self.request_id = request_id
-        self.file_path = file_path
-        self.target_line = target_line
-        self.before_lines = before_lines
-        self.after_lines = after_lines
-        self.cancel_event = cancel_event
-        self.signals = ContextPreviewSignals()
-
-    def run(self):
-        try:
-            lines = _read_context_lines_from_file(
-                self.file_path,
-                self.target_line,
-                self.before_lines,
-                self.after_lines,
-                self.cancel_event,
-            )
-            cancelled = self.cancel_event.is_set()
-            self.signals.finished.emit(self.request_id, lines, None, cancelled)
-        except Exception as error:  # 파일/인코딩/예상하지 못한 읽기 오류를 UI로 전달
-            self.signals.finished.emit(self.request_id, None, error, self.cancel_event.is_set())
-
-
-def _is_walk_failure(path, reason):
-    """폴더 탐색 실패(경로를 모르는 항목 포함)인지입니다. 사유는 코드 형식입니다(7.2.5)."""
-    from core.skip_reason_codes import SKIP_CODE_WALK, UNKNOWN_WALK_PATH_PREFIX, decode_skip_reason
-
-    return path.startswith(UNKNOWN_WALK_PATH_PREFIX) or any(
-        decode_skip_reason(line)[0] == SKIP_CODE_WALK for line in str(reason or "").splitlines() if line.strip()
-    )
-
-
-def _skipped_count_text(entries, total):
-    template = AppStrings.SKIPPED_ITEMS_COUNT if any(
-        _is_walk_failure(path, reason) for path, reason in entries
-    ) else AppStrings.SKIPPED_FILES_COUNT
-    return template.format(total)
-
-
-def normalize_skipped_files(skipped_files, *, strict_session: bool = False):
-    """건너뛴 항목을 ``(경로, 사유 코드)`` 목록으로 정리합니다. 같은 경로의 사유는 줄로 합칩니다.
-
-    사유는 코드 형식(``ERR_…|상세``)으로 두고, 문장은 보여 줄 때 ``render_skip_reason``으로 만듭니다(7.2.5).
-    ``strict_session``이면 세션에서 읽은 값이라 모양을 엄격히 확인하고, 코드 형식이 아닌 사유는 버립니다.
-    """
-    from core.skip_reason_codes import TEMPLATE_NAMES, decode_skip_reason, is_coded_reason
-
-    normalized_by_path: dict[str, str] = {}
-    if not isinstance(skipped_files, (list, tuple)):
-        return []
-    for item in skipped_files:
-        if isinstance(item, (list, tuple)):
-            if not item:
-                continue
-            raw_path = item[0]
-            raw_reason = item[1] if len(item) > 1 else ""
-        else:
-            if strict_session:
-                continue
-            raw_path = item
-            raw_reason = ""
-
-        if strict_session:
-            if not isinstance(raw_path, str) or not isinstance(raw_reason, str):
-                continue
-            if (
-                not raw_path.strip()
-                or len(raw_path) > 32767
-                or any(character in raw_path for character in ("\x00", "\r", "\n"))
-                or len(raw_reason) > 65536
-                or not is_coded_reason(raw_reason)
-                or any(decode_skip_reason(line)[0] not in TEMPLATE_NAMES
-                       for line in raw_reason.splitlines() if line.strip())
-            ):
-                continue
-
-        path = str(raw_path).strip()
-        if not path:
-            continue
-        reason = str(raw_reason or "").strip()
-        previous_reason = normalized_by_path.get(path, "")
-        if previous_reason and reason:
-            reason_lines = list(dict.fromkeys(
-                line for value in (previous_reason, reason) for line in value.splitlines() if line
-            ))
-            normalized_by_path[path] = "\n".join(reason_lines)
-        elif reason or path not in normalized_by_path:
-            normalized_by_path[path] = reason
-    return list(normalized_by_path.items())
-
-
-def _format_skipped_files_text(skipped_files, total_count):
-    """건너뛴 파일 경로와 사유를 클립보드 친화적인 일반 텍스트로 만듭니다."""
-    entries = normalize_skipped_files(skipped_files)
-    blocks = []
-    from core.skip_reason_codes import UNKNOWN_WALK_PATH_PREFIX
-
-    walk_count = sum(_is_walk_failure(path, reason) for path, reason in entries)
-    if walk_count:
-        blocks.append(AppStrings.SKIPPED_FILES_AND_WALK_ERRORS.format(len(entries) - walk_count, walk_count))
-    for index, (path, reason) in enumerate(entries, start=1):
-        is_walk = _is_walk_failure(path, reason)
-        if path.startswith(UNKNOWN_WALK_PATH_PREFIX):
-            path = AppStrings.SKIPPED_WALK_PATH_UNKNOWN
-        if is_walk:
-            path = AppStrings.SKIPPED_WALK_ENTRY.format(path)
-        lines = [f"{index}. {path}"]
-        if reason:
-            from core.skip_reason_formatter import render_skip_reason
-
-            lines.append(f"   {AppStrings.SKIPPED_FILES_REASON.format(render_skip_reason(reason))}")
-        blocks.append("\n".join(lines))
-
-    missing_count = max(0, int(total_count or 0) - len(entries))
-    if missing_count:
-        blocks.append(AppStrings.SKIPPED_FILES_DETAILS_MISSING.format(missing_count))
-    return "\n\n".join(blocks)
-
-
-class SkippedFilesDialog(QDialog):
-    """건너뛴 파일과 사유를 표시하고 전체 목록 복사를 제공하는 대화상자입니다."""
-
-    def __init__(self, skipped_files, total_count, parent=None):
-        super().__init__(parent)
-        self.skipped_files = normalize_skipped_files(skipped_files)
-        self.total_count = max(int(total_count or 0), len(self.skipped_files))
-        self.list_text = _format_skipped_files_text(self.skipped_files, self.total_count)
-
-        has_walk_errors = any(_is_walk_failure(path, reason) for path, reason in self.skipped_files)
-        self.setWindowTitle(AppStrings.SKIPPED_ITEMS_DIALOG_TITLE if has_walk_errors else AppStrings.SKIPPED_FILES_DIALOG_TITLE)
-        self.resize(760, 460)
-        layout = QVBoxLayout(self)
-
-        count_label = QLabel(_skipped_count_text(self.skipped_files, self.total_count))
-        count_label.setStyleSheet("font-weight: 700;")
-        layout.addWidget(count_label)
-
-        self.list_edit = QPlainTextEdit()
-        self.list_edit.setReadOnly(True)
-        self.list_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.list_edit.setPlainText(self.list_text)
-        layout.addWidget(self.list_edit)
-
-        button_layout = QHBoxLayout()
-        self.copy_confirmation_label = QLabel(AppStrings.SKIPPED_FILES_COPIED)
-        self.copy_confirmation_label.setVisible(False)
-        button_layout.addWidget(self.copy_confirmation_label)
-        button_layout.addStretch(1)
-
-        self.copy_button = QPushButton(AppStrings.SKIPPED_FILES_COPY_BUTTON)
-        self.copy_button.clicked.connect(self.copy_to_clipboard)
-        button_layout.addWidget(self.copy_button)
-
-        close_button = QPushButton(AppStrings.SKIPPED_FILES_CLOSE_BUTTON)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
-        layout.addLayout(button_layout)
-
-    def copy_to_clipboard(self):
-        QApplication.clipboard().setText(self.list_text)
-        self.copy_confirmation_label.setVisible(True)
-
-
 def _result_note(result_model, path) -> str:
     """내보낼 때 쓸 파일 목록 기타 칸의 사유 문장입니다(지금 언어)."""
     note_for = getattr(result_model, "note_for", None)
@@ -324,132 +99,6 @@ def _result_note(result_model, path) -> str:
     from core.skip_reason_formatter import render_skip_reason
 
     return render_skip_reason(note_for(path))
-
-
-class SearchSpinner(QWidget):
-    """검색 중 문구 앞에서 도는 원호입니다. 글자 기호는 글꼴마다 폭이 달라 흔들리므로 직접 그립니다."""
-
-    SIZE = 14
-    STEP_DEGREES = 30
-    INTERVAL_MS = 80
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(self.SIZE, self.SIZE)
-        # 부모(요약 줄)의 테두리·여백·최소 높이 스타일을 물려받지 않게 합니다.
-        self.setStyleSheet("border: none; background: transparent; padding: 0; margin: 0; min-height: 0;")
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._angle = 0
-        self._color = QColor("#C47B00")
-        self._timer = QTimer(self)
-        self._timer.setInterval(self.INTERVAL_MS)
-        self._timer.timeout.connect(self._advance)
-        self.hide()
-
-    def set_color(self, color):
-        self._color = QColor(color)
-        self.update()
-
-    def start(self):
-        if not self._timer.isActive():
-            self._timer.start()
-        self.show()
-
-    def stop(self):
-        self._timer.stop()
-        self.hide()
-
-    def is_spinning(self):
-        return self._timer.isActive()
-
-    def _advance(self):
-        self._angle = (self._angle + self.STEP_DEGREES) % 360
-        self.update()
-
-    def paintEvent(self, _event):
-        from PySide6.QtGui import QPainter, QPen
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pen = QPen(self._color, 2)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        rect = self.rect().adjusted(2, 2, -2, -2)
-        painter.drawArc(rect, -self._angle * 16, 270 * 16)
-        painter.end()
-
-
-class SearchShimmer(QWidget):
-    """검색 중 요약 줄 위로 밝은 띠가 왼쪽에서 오른쪽으로 지나가는 효과입니다(7.1.20).
-
-    요약 줄과 같은 크기로 겹쳐 그리며, 마우스 입력은 아래로 넘깁니다.
-    """
-
-    PERIOD_MS = 1800
-    INTERVAL_MS = 30
-    BAND_RATIO = 0.4
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setStyleSheet("border: none; background: transparent; padding: 0; margin: 0; min-height: 0;")
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._target = parent
-        self._phase = 0.0
-        self._color = QColor(240, 196, 106, 70)
-        self._timer = QTimer(self)
-        self._timer.setInterval(self.INTERVAL_MS)
-        self._timer.timeout.connect(self._advance)
-        parent.installEventFilter(self)
-        self.hide()
-
-    def eventFilter(self, watched, event):
-        if watched is self.parent() and event.type() == QEvent.Type.Resize:
-            self.setGeometry(watched.rect())
-        return False
-
-    def set_color(self, color):
-        self._color = QColor(color)
-        self.update()
-
-    def start(self):
-        self.setGeometry(self._target.rect())
-        if not self._timer.isActive():
-            self._phase = 0.0
-            self._timer.start()
-        self.show()
-        self.raise_()
-
-    def stop(self):
-        self._timer.stop()
-        self.hide()
-
-    def is_running(self):
-        return self._timer.isActive()
-
-    def _advance(self):
-        self._phase = (self._phase + self.INTERVAL_MS / self.PERIOD_MS) % 1.0
-        self.update()
-
-    def paintEvent(self, _event):
-        from PySide6.QtGui import QLinearGradient, QPainter
-
-        width = self.width()
-        band = max(1.0, width * self.BAND_RATIO)
-        # 띠가 왼쪽 밖에서 들어와 오른쪽 밖으로 완전히 나갈 때까지 움직입니다.
-        left = -band + (width + band) * self._phase
-        gradient = QLinearGradient(left, 0, left + band, 0)
-        clear = QColor(self._color)
-        clear.setAlpha(0)
-        gradient.setColorAt(0.0, clear)
-        gradient.setColorAt(0.5, self._color)
-        gradient.setColorAt(1.0, clear)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(gradient)
-        # 테두리 안쪽만 칠합니다.
-        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 3, 3)
-        painter.end()
 
 
 class ResultView(QWidget):
@@ -464,7 +113,7 @@ class ResultView(QWidget):
     # 사용자가 열 경계를 직접 끈 비율입니다. 검색 방식(열 구성)마다 기억하며 모든 탭이 함께 씁니다.
     _match_user_ratios: dict = {}
     CONTEXT_MAX_RADIUS = Constants.MAX_CONTEXT_PREVIEW_LINES
-    CONTEXT_MAX_SCAN_LINES = 200_000
+    CONTEXT_MAX_SCAN_LINES = CONTEXT_MAX_SCAN_LINES
     CONTEXT_MAX_LINE_CHARS = 4_000
     # Long-line previews show a compact asymmetric window around the match.
     CONTEXT_TRUNCATED_BEFORE_CHARS = 20
@@ -2437,37 +2086,21 @@ class ResultView(QWidget):
           이름·키 열을 같은 비율로 줄입니다.
         """
         count = self.match_proxy_model.columnCount()
-        minimum = self.MATCH_COLUMN_MIN_WIDTH
         if count <= 0:
             return []
-        available = max(int(available), minimum * count)
-        ratios = self._match_user_ratios.get(self._match_column_key())
-        if ratios and len(ratios) == count:
-            widths = [max(minimum, int(available * ratio)) for ratio in ratios]
-        else:
-            natural = list(self._match_natural_widths)
-            if len(natural) != count:
-                natural = [60] + [150] * (count - 1)
-            value_columns = self._match_value_columns(count)
-            key_cap = max(self.MATCH_KEY_MIN_WIDTH, int(available * self.MATCH_KEY_MAX_RATIO))
-            widths = [0] * count
-            fixed_columns = [column for column in range(count) if column not in value_columns]
-            for column in fixed_columns:
-                cap = self.MATCH_POSITION_MAX_WIDTH if column == 0 else key_cap
-                widths[column] = max(minimum, min(natural[column], cap))
-            value_floor = int(available * self.MATCH_VALUE_MIN_RATIO)
-            fixed_total = sum(widths[column] for column in fixed_columns)
-            if fixed_total > available - value_floor and fixed_total > 0:
-                scale = max(0.0, (available - value_floor) / fixed_total)
-                for column in fixed_columns:
-                    widths[column] = max(minimum, int(widths[column] * scale))
-            remaining = available - sum(widths[column] for column in fixed_columns)
-            share = max(minimum, remaining // len(value_columns))
-            for column in value_columns:
-                widths[column] = share
-        # 반올림으로 남거나 모자란 폭은 마지막 열이 맡아 합을 표 폭에 정확히 맞춥니다.
-        widths[-1] = max(minimum, widths[-1] + available - sum(widths))
-        return widths
+        natural = list(self._match_natural_widths)
+        return compute_match_column_widths(
+            available,
+            count,
+            natural if len(natural) == count else None,
+            self._match_value_columns(count),
+            self._match_user_ratios.get(self._match_column_key()),
+            minimum=self.MATCH_COLUMN_MIN_WIDTH,
+            key_min=self.MATCH_KEY_MIN_WIDTH,
+            key_max_ratio=self.MATCH_KEY_MAX_RATIO,
+            position_max=self.MATCH_POSITION_MAX_WIDTH,
+            value_min_ratio=self.MATCH_VALUE_MIN_RATIO,
+        )
 
     def _layout_match_columns(self):
         """현재 보이는 폭에 맞춰 열 폭을 나눕니다. 미리보기 창 분할선·창 크기가 바뀔 때도 불립니다."""
