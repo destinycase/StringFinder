@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "string-finder"
-version = "8.1.1"
+version = "8.1.2"
 authors = [{ name = "N2" }]
 
 description = "Windows desktop search for text, JSON, XML, Excel, and Unreal Engine localization archive files, powered by Rust and Python with Korean and English interfaces."
@@ -22,7 +22,6 @@ classifiers = [
 
 dependencies = [
     "PySide6>=6.6.0",
-    "pyqtdarktheme>=2.1.0",
     "psutil>=5.9.0",
     "openpyxl>=3.1.2",
 ]

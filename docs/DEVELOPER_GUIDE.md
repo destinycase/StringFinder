@@ -30,7 +30,7 @@
 │                        StringFinder 기술 스택                          │
 ├───────────────────┬────────────────────────────────────────────────────┤
 │ UI Framework      │ Python 3.12+, PySide6 (Qt for Python 6.6+)         │
-│ Theme / Styling   │ pyqtdarktheme (qdarktheme), Custom QSS             │
+│ Theme / Styling   │ 앱 내장 테마(assets/theme), Custom QSS             │
 │ Native Core       │ Rust 1.88+ (2021 Edition), PyO3 0.23               │
 │ Matching Engine   │ aho-corasick 1.1, memmap2 0.9, simdutf8 0.1       │
 │ Structured Parsers│ serde_json 1.0 (Visitor Streaming), quick-xml 0.31 │
@@ -318,11 +318,10 @@ python -m venv .venv
 
 # Python 런타임 및 개발 의존성 설치
 
-python -m pip install pyqtdarktheme==2.1.0 --ignore-requires-python --no-deps
 python -m pip install -e ".[dev]"
 ```
 
-현재 화면에 사용하는 테마 2.1.0은 배포 메타데이터의 Python 상한 때문에 3.12에서 일반 설치가 거부될 수 있습니다. 위 첫 명령은 이 패키지에만 버전 메타데이터 예외를 적용하며 의존성은 다음 명령에서 설치합니다. 다른 패키지에는 예외를 적용하지 않습니다. 새 테마로 바꾸지 않고 현재 동작을 검증하는 방식이며, 설치 후 `python -m pip check`와 UI 검사를 확인하세요.
+화면 테마는 외부 라이브러리 없이 `src/assets/theme/`의 스타일시트·아이콘으로 그립니다(8.1.2부터). 8.1.1까지 쓰던 pyqtdarktheme 2.1.0의 결과를 `tools/vendor_theme.py`로 옮겨 적은 것이라 화면은 같고, 원본의 MIT 라이선스를 같은 폴더에 함께 둡니다. 그래서 Python 버전 예외 설치가 필요 없습니다.
 
 ### 6.3 Rust 엔진 릴리스 빌드
 
@@ -370,7 +369,6 @@ XML 파서 변경 시에는 최소한 다음 회귀 조건도 확인합니다.
 로컬에서는 아래처럼 같은 검사를 재현합니다. 임시 자료는 Git에서 제외되는 `scratch/` 아래에 두고 사용자의 실제 설정과 분리합니다.
 
 ```powershell
-python -m pip install pyqtdarktheme==2.1.0 --ignore-requires-python --no-deps
 python -m pip install -e ".[dev]" -c .github/ci-constraints.txt
 python -m pip check
 $env:QT_QPA_PLATFORM = "offscreen"

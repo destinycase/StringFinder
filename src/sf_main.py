@@ -6,7 +6,6 @@ if __name__ == "__main__" and sys.argv[1:] == ["--smoke-test"]:
     try:
         from PySide6.QtCore import QTimer
         from PySide6.QtWidgets import QApplication
-        import qdarktheme
         from rust_engine import sf_engine  # type: ignore[attr-defined]  # Native extension.
         from sf_utils.constants import Constants
 
@@ -15,7 +14,9 @@ if __name__ == "__main__" and sys.argv[1:] == ["--smoke-test"]:
         if getattr(sf_engine, "API_VERSION", 0) < Constants.REQUIRED_ENGINE_API_VERSION:
             raise RuntimeError("Python/Rust engine API mismatch")
         smoke_app = QApplication([sys.argv[0]])
-        smoke_app.setStyleSheet(qdarktheme.load_stylesheet("dark"))
+        from ui.theme import load_stylesheet
+
+        smoke_app.setStyleSheet(load_stylesheet("dark"))  # 실행 파일에 테마 파일이 들어 있는지도 확인합니다.
         from ui.main_window import MainWindow  # noqa: F401
 
         QTimer.singleShot(0, smoke_app.quit)

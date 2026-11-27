@@ -3,7 +3,6 @@ import os
 import time
 import warnings
 
-import qdarktheme
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -35,6 +34,7 @@ from sf_utils.resource_helper import get_resource_path
 from ui.search_tab import SearchTab
 from ui.settings_dialog import SettingsDialog
 from ui.styles import UIStyles
+from ui import theme as app_theme
 
 
 class MainWindow(QMainWindow):
@@ -653,7 +653,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if isinstance(app, QApplication):
             try:
-                stylesheet = qdarktheme.load_stylesheet(theme)
+                stylesheet = app_theme.load_stylesheet(theme)
                 app.setStyleSheet(stylesheet + UIStyles.STYLE_SCROLLBAR + UIStyles.STYLE_CHECKBOX_NO_HOVER_LINE)
 
                 # 열려있는 탭들에게 테마 변경 사항 반영

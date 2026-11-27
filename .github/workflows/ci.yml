@@ -45,8 +45,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/rust_engine -> target
-      - name: Install tested theme with its legacy Python metadata exception
-        run: python -m pip install pyqtdarktheme==2.1.0 --ignore-requires-python --no-deps
       - name: Install development dependencies
         run: python -m pip install -e '.[dev]' -c .github/ci-constraints.txt
       - name: Verify dependency compatibility

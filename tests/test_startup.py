@@ -93,7 +93,7 @@ def test_real_entry_applies_theme_once_and_cleans_after_paint(tmp_path):
     code = r'''
 import threading
 import sf_main
-import qdarktheme
+import ui.theme as app_theme
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 from core.system_manager import SystemManager
@@ -101,11 +101,11 @@ from ui.main_window import MainWindow
 import sf_utils.single_instance
 sf_utils.single_instance.ensure_single_instance = lambda: None
 loads = []
-original_load = qdarktheme.load_stylesheet
+original_load = app_theme.load_stylesheet
 def load(*args, **kwargs):
     loads.append(1)
     return original_load(*args, **kwargs)
-qdarktheme.load_stylesheet = load
+app_theme.load_stylesheet = load
 threads = []
 painted = threading.Event()
 original_paint = MainWindow.paintEvent
