@@ -1,10 +1,10 @@
-"""8.1.3에서 result_view.py에서 떼어 낸 모듈을 ResultView 없이 검사합니다."""
+"""8.1.3·8.1.4에서 result_view.py에서 떼어 낸 모듈을 ResultView 없이 검사합니다."""
 
 import ast
 import threading
 from pathlib import Path
 
-from ui import result_column_layout, result_preview, result_view, result_widgets
+from ui import result_column_layout, result_copy_export, result_preview, result_view, result_widgets
 from ui.result_column_layout import compute_match_column_widths
 
 SRC_UI = Path(__file__).resolve().parents[1] / "src" / "ui"
@@ -54,6 +54,71 @@ def test_preview_reads_only_needed_lines_and_honours_cancel(tmp_path):
     assert result_preview._read_context_lines_from_file(str(path), 10, 2, 1, cancelled) == []
     beyond = result_preview.CONTEXT_MAX_SCAN_LINES + 1
     assert result_preview._read_context_lines_from_file(str(path), beyond, 1, 1) is None
+
+
+class _FakeResults:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def get_all_results(self):
+        return self.rows
+
+
+class _Exporter(result_copy_export.ResultCopyExportMixin):
+    """ResultView 없이 복사·내보내기 메서드만 씁니다."""
+
+    def __init__(self, mode, rows=(), paths=()):
+        self.search_mode = mode
+        self.result_model = _FakeResults(list(rows))
+        self._paths = list(paths)
+        self.copied = []
+
+    def _selected_result_paths_in_order(self):
+        return self._paths
+
+    def _copy_to_clipboard(self, text):
+        self.copied.append(text)
+
+
+def test_copy_export_module_never_imports_result_view():
+    tree = ast.parse((SRC_UI / "result_copy_export.py").read_text(encoding="utf-8"))
+    modules = [n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
+    assert not any(m and "result_view" in m for m in modules)
+    assert issubclass(result_view.ResultView, result_copy_export.ResultCopyExportMixin)
+    assert result_view._sanitize_excel_cell is result_copy_export._sanitize_excel_cell
+
+
+def test_export_fields_follow_search_mode():
+    item = ("3", "ns", "key", "src", "dst", "extra")
+    assert _Exporter("ARCHIVE")._match_fields_for_export(item) == ("3", "ns", "key", "src", "dst")
+    assert _Exporter("EXCEL")._match_fields_for_export(item) == ("3", "ns", "key", "src")
+    assert _Exporter("JSON")._match_fields_for_export(item) == ("3", "ns", "key")
+    assert _Exporter("NORMAL")._match_fields_for_export((7, None)) == ("7", "")
+    assert _Exporter("NORMAL")._match_fields_for_export(("only",)) == ()
+
+
+def test_copy_names_and_unique_folders_keep_list_order():
+    exporter = _Exporter("NORMAL", paths=[r"C:\b\x.txt", r"C:\a\y.txt", r"c:/B/z.txt"])
+    exporter._copy_selected_result_file_names()
+    exporter._copy_selected_result_folders()
+    assert exporter.copied[0] == "x.txt\ny.txt\nz.txt"
+    assert exporter.copied[1].splitlines()[:2] == [r"C:\b", r"C:\a"]
+    assert len(exporter.copied[1].splitlines()) == 2
+
+
+def test_text_export_writes_atomically(tmp_path):
+    target = tmp_path / "out.txt"
+    exporter = _Exporter("NORMAL", rows=[(2, "a.txt", "C:/", "C:/a.txt", [(1, "hello"), (5, "world")])])
+    exporter._export_to_text(str(target))
+    text = target.read_text(encoding="utf-8")
+    assert "[2] C:/a.txt" in text and "hello" in text and "world" in text
+    assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]  # 임시 파일이 남지 않음
+
+
+def test_excel_cells_never_become_formulas():
+    assert result_copy_export._sanitize_excel_cell("=1+1") == "'=1+1"
+    assert result_copy_export._sanitize_excel_cell("a\x1bb") == "ab"
+    assert result_copy_export._text_or_empty(None) == ""
 
 
 def test_skipped_files_merge_reasons_per_path():
