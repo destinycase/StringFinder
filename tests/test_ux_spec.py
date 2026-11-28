@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from sf_utils.constants import Constants
@@ -50,6 +51,26 @@ def test_result_context_preview_is_bounded_and_highlights_match(search_tab_fixtu
     assert panel.context_preview.extraSelections()
     assert "      1 | one" in panel.context_preview.toPlainText()
     assert "     11 | eleven" in panel.context_preview.toPlainText()
+
+
+def test_context_line_highlight_follows_theme_change(search_tab_fixture, qtbot, tmp_path):
+    file_path = tmp_path / "theme.txt"
+    file_path.write_text("one\nneedle\nthree\n", encoding="utf-8")
+    panel = search_tab_fixture.result_view_panel
+    panel.set_search_context("needle", Constants.MODE_NORMAL)
+    panel.set_results([[1, file_path.name, str(tmp_path), str(file_path), [[2, "needle", 4, 6]]]])
+    panel._on_result_clicked(panel.proxy_model.index(0, 0))
+    panel._on_match_clicked(panel.match_proxy_model.index(0, 0))
+    qtbot.waitUntil(lambda: bool(panel.context_preview.extraSelections()), timeout=2000)
+
+    def highlight():
+        selections = panel.context_preview.extraSelections()  # 목록을 붙잡아 두어야 format이 살아 있습니다.
+        return QColor(selections[0].format.background().color()).name().upper()
+
+    for theme, expected in (("light", "#FFF2CC"), ("dark", "#355C7D"), ("light", "#FFF2CC")):
+        panel.config_manager.get_theme = lambda theme=theme: theme
+        panel._apply_theme_style()  # 다른 줄을 누르지 않아도 바로 바뀌어야 합니다.
+        assert highlight() == expected, theme
 
 
 def test_context_preview_uses_cp949_detection(tmp_path):

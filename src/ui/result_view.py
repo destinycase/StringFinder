@@ -66,6 +66,11 @@ from ui.result_widgets import (  # noqa: F401  (예전 import 위치 유지)
 )
 
 
+def _context_line_highlight_color(is_dark: bool) -> QColor:
+    """미리보기에서 현재 줄을 강조할 배경색입니다."""
+    return QColor("#355C7D" if is_dark else "#FFF2CC")
+
+
 class ResultView(ResultCopyExportMixin, QWidget):
     CONTEXT_RADIUS = Constants.DEFAULT_CONTEXT_PREVIEW_LINES
     # 검색 상세 열 폭 배분(7.5.4)
@@ -438,6 +443,19 @@ class ResultView(ResultCopyExportMixin, QWidget):
         self.file_info_label.setStyleSheet(UIStyles.get_file_info_header_style(is_dark))
         self.context_preview.setStyleSheet(UIStyles.get_context_preview_style(is_dark))
         self.context_highlighter.set_dark_mode(is_dark)
+        # 이미 보이는 미리보기의 현재 줄 강조도 새 테마 색으로 다시 칠합니다.
+        selections = self.context_preview.extraSelections()
+        if selections:
+            color = _context_line_highlight_color(is_dark)
+            recolored = []
+            for old in selections:
+                selection = QTextEdit.ExtraSelection()
+                selection.cursor = QTextCursor(old.cursor)  # type: ignore[attr-defined]
+                char_format = QTextCharFormat(old.format)  # type: ignore[attr-defined]
+                char_format.setBackground(color)
+                selection.format = char_format  # type: ignore[attr-defined]
+                recolored.append(selection)
+            self.context_preview.setExtraSelections(recolored)
 
     def _is_dark_theme(self) -> bool:
         """현재 설정된 테마가 다크 계열인지 반환합니다."""
@@ -1025,7 +1043,7 @@ class ResultView(ResultCopyExportMixin, QWidget):
         selection.cursor = QTextCursor(self.context_preview.document().findBlockByLineNumber(target_block))  # type: ignore[attr-defined]
         selection.format = QTextCharFormat()  # type: ignore[attr-defined]
         selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)  # type: ignore[attr-defined]
-        selection.format.setBackground(QColor("#355C7D" if self._is_dark_theme() else "#FFF2CC"))  # type: ignore[attr-defined]
+        selection.format.setBackground(_context_line_highlight_color(self._is_dark_theme()))  # type: ignore[attr-defined]
         self.context_preview.setExtraSelections([selection])
 
     def _show_context_preview(self, match_item):
