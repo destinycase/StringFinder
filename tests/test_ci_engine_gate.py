@@ -1,4 +1,5 @@
 """CI must fail if native contracts would silently run without the real engine."""
+import tomllib
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -43,11 +44,13 @@ def test_engine_source_hash_matches_built_engine_and_ignores_version_only(tmp_pa
     base = engine_source_hash(copy)
     assert base == engine_source_hash(root)
     toml = (copy / "Cargo.toml").read_bytes().replace(b"\r\n", b"\n")
-    (copy / "Cargo.toml").write_bytes(toml.replace(b'version = "1.0.0"', b'version = "9.9.9"', 1))
+    # 지금 엔진 버전을 읽어 씁니다(엔진 버전을 올려도 이 시험은 그대로).
+    current = tomllib.loads(toml.decode("utf-8"))["package"]["version"].encode()
+    (copy / "Cargo.toml").write_bytes(toml.replace(b'version = "' + current + b'"', b'version = "9.9.9"', 1))
     lock = (copy / "Cargo.lock").read_bytes().replace(b"\r\n", b"\n")
-    assert b'name = "sf_engine"\nversion = "1.0.0"' in lock
-    (copy / "Cargo.lock").write_bytes(lock.replace(b'name = "sf_engine"\nversion = "1.0.0"',
-                                                   b'name = "sf_engine"\nversion = "9.9.9"'))
+    lock_entry = b'name = "sf_engine"\nversion = "' + current + b'"'
+    assert lock_entry in lock
+    (copy / "Cargo.lock").write_bytes(lock.replace(lock_entry, b'name = "sf_engine"\nversion = "9.9.9"'))
     assert engine_source_hash(copy) == base
     # 줄바꿈만 CRLF로 바뀌어도 같습니다(Windows 체크아웃과 CI가 같은 값).
     lib = copy / "src" / "lib.rs"
