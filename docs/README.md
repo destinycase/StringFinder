@@ -1,6 +1,6 @@
 # StringFinder 문서 안내
 
-현재 안정 버전은 **8.1.1**(엔진 1.0.0)입니다. 검색은 Rust 엔진 하나로 하고, Python은 화면·작업 조정·결과 정리를 맡습니다. 8 버전부터 엔진 버전을 앱 버전과 따로 매겨, 기록도 8.1.1부터 새로 시작합니다. 7.x 기록은 [v8 이전 기록](archive/before-v8/README.md), 6.x 기록은 [v7 이전 기록](archive/before-v7/README.md)에 그대로 보관합니다.
+현재 안정 버전은 **8.2.1**(엔진 1.0.2)입니다. 검색은 Rust 엔진 하나로 하고, Python은 화면·작업 조정·결과 정리를 맡습니다. 8 버전부터 엔진 버전을 앱 버전과 따로 매겨, 기록도 8.1.1부터 새로 시작합니다. 7.x 기록은 [v8 이전 기록](archive/before-v8/README.md), 6.x 기록은 [v7 이전 기록](archive/before-v7/README.md)에 그대로 보관합니다.
 
 | 분류 | 문서 | 관리하는 내용 |
 | --- | --- | --- |
@@ -9,9 +9,9 @@
 | 개발 방법과 설계 | [개발자 가이드](DEVELOPER_GUIDE.md) | 구조·책임·FFI·설계 배경·빌드·검증 절차 |
 | 구현을 위한 정책 | [구현 정책](IMPLEMENTATION_POLICY.md) | 현재 구현이 지켜야 하는 검색·오류·자원·설정·UI 계약 |
 | 버전별 변경 | [개발 히스토리](DEVELOPMENT_HISTORY.md) | 8.1.1부터의 기능 추가·개선·제거, 안정 버전 지정 |
-| 성능 기준값 | [벤치마크 기준선](BENCHMARK_BASELINE.md) | 표본 목록·8.1.1 기준값·판정 규칙 (값 원본: `benchmark_baseline.json`) |
+| 성능 기준값 | [벤치마크 기준선](BENCHMARK_BASELINE.md) | 표본 목록·8.2.1 기준값·판정 규칙 (값 원본: `benchmark_baseline.json`) |
 | 성능 측정 이력 | [성능 기록](PERFORMANCE_HISTORY.md) | 기준선과 비교한 측정 결과와 해석 |
-| 안정 버전 | [v8.1.1 고정 문서](master-baseline-v8.1.1.md) | 기준 커밋·실행 파일·엔진 해시·갖춘 기능 |
+| 안정 버전 | [v8.2.1 고정 문서](master-baseline-v8.2.1.md) | 기준 커밋·실행 파일·엔진 해시·8.1.1 이후 기능 (9차: [v8.1.1](master-baseline-v8.1.1.md)) |
 | 보관 | [v8 이전 기록](archive/before-v8/README.md) · [v7 이전 기록](archive/before-v7/README.md) | 7.x의 이력·성능 기록·안정 버전 문서(2~8차), 6.x까지의 이력·성능 기록·설계 검토·1차 안정 버전 문서 |
 
 ## 문서를 갱신하는 기준

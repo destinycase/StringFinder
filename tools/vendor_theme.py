@@ -50,7 +50,9 @@ def main() -> int:
         qss = re.sub(r"url\(([^)]*)\)", repl, qss)
         (OUT / f"{theme}.qss").write_text(qss, encoding="utf-8", newline="\n")
     license_file = next(Path(p.locate()) for p in metadata.files("pyqtdarktheme") or [] if p.name == "LICENSE.txt")
-    shutil.copyfile(license_file, OUT / "LICENSE-pyqtdarktheme.txt")
+    # 저장소와 같은 LF 줄바꿈으로 씁니다(원본을 그대로 복사하면 PC에 따라 CRLF가 됨).
+    license_text = license_file.read_text(encoding="utf-8").replace("\r\n", "\n")
+    (OUT / "LICENSE-pyqtdarktheme.txt").write_text(license_text, encoding="utf-8", newline="\n")
     print(f"QSS 2개, 아이콘 {len(used)}개를 {OUT.relative_to(ROOT)}에 저장했습니다.")
     return 0
 
