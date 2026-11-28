@@ -62,18 +62,42 @@ def test_without_callback_returns_every_file_every_time(corpus):
         assert len(found) == FILES and skipped == []
 
 
-def test_stop_during_search_finishes_and_keeps_partial_results(corpus):
-    for _ in range(ROUNDS):
+BIG_FILES = 20_000
+BIG_DIRS = 200
+STOP_ROUNDS = 60
+STOP_AFTER = 50
+
+
+@pytest.fixture(scope="module")
+def big_corpus(tmp_path_factory):
+    """도중 중지 시험 전용: 검색이 감시 간격(0.1초)보다 오래 걸릴 만큼 큰 폴더."""
+    root = tmp_path_factory.mktemp("dir_search_stop")
+    for d in range(BIG_DIRS):
+        (root / f"d{d:03}").mkdir()
+    for i in range(BIG_FILES):
+        (root / f"d{i % BIG_DIRS:03}" / f"f{i:05}.txt").write_text(f"x\nneedle {i}\n", encoding="utf-8")
+    return str(root)
+
+
+def test_stop_during_search_finishes_and_keeps_partial_results(big_corpus):
+    stopped_midway = 0
+    for round_index in range(STOP_ROUNDS):
         stop = threading.Event()
         delivered = []
 
         def on_results(batch):
             delivered.extend(batch)
-            stop.set()
+            if len(delivered) >= STOP_AFTER:
+                stop.set()
 
-        box = _run(root_paths=[corpus], pattern="needle", stop_event=stop, results_callback=on_results, batch_size=1)
+        box = _run(root_paths=[big_corpus], pattern="needle", stop_event=stop, results_callback=on_results,
+                   batch_size=1 + round_index % 50, _flush_ms=1 + round_index % 20)
         assert "error" not in box, box
-        assert 1 <= len(delivered) <= FILES
+        assert 1 <= len(delivered) <= BIG_FILES
+        if len(delivered) < BIG_FILES:
+            stopped_midway += 1
+    # 장비 속도에 흔들리지 않도록 매 회차가 아니라 대부분의 회차에서 도중에 멈췄는지 봅니다.
+    assert stopped_midway >= STOP_ROUNDS * 0.8, stopped_midway
 
 
 def test_failing_results_callback_stops_and_reports(corpus):

@@ -99,7 +99,12 @@ StringFinder/
 │   │   ├── Cargo.toml             # Rust 의존성 및 cdylib 라이브러리 설정
 │   │   ├── sf_engine.pyd          # 컴파일된 네이티브 바이너리
 │   │   └── src/
-│   │       ├── lib.rs             # FFI 진입점(search_dir, search_file), mmap 검색기, 결과 디스패처
+│   │       ├── lib.rs             # 모듈 선언·상수, 파일 종류별로 검색을 갈라 보내는 함수, Python 모듈 등록
+│   │       ├── py_api.rs          # Python에서 부르는 함수(search_dir, search_file, 강조 위치, 인코딩 판별), 폴더 검색 단계별 함수·결과 전달 스레드
+│   │       ├── text_search.rs     # 일반 텍스트 검색 본체(UTF-8, CP949, UTF-16, 줄 번호)
+│   │       ├── walker.rs          # 폴더 순회 보조(휴지통 제외, 정션, 크기 확인, 중복 방문, 순회 오류 기록)
+│   │       ├── snapshot.rs        # 파일 스냅샷(검색 중 파일이 바뀔 때의 방어)
+│   │       ├── memory_budget.rs   # 큰 구조화 파일의 메모리 예산
 │   │       ├── types.rs           # SearchMatch, SearchOptions, 비트플래그 정의
 │   │       ├── textkey.rs         # 공통 비교 기준 key(x) = NFC(casefold(NFC(x)))와 Matcher
 │   │       ├── casefold_table.rs  # Unicode CaseFolding 표 (tools/gen_casefold_table.py로 생성)
@@ -112,7 +117,12 @@ StringFinder/
 │   ├── ui/                        # PySide6 GUI 계층
 │   │   ├── main_window.py         # 메인 윈도우, 다중 탭 관리, 상태 표시줄 버튼
 │   │   ├── search_tab.py          # 검색 탭 위젯, 도크 패널 배치, 세션 연동
-│   │   ├── result_view.py         # 결과 테이블, 문맥 미리보기, 구문 강조
+│   │   ├── result_view.py         # 결과 테이블·검색 상세 표, 미리보기 표시, 컨텍스트 메뉴
+│   │   ├── result_widgets.py      # 건너뛴 파일 창, 검색 중 스피너·빛 띠
+│   │   ├── result_column_layout.py # 검색 상세 표의 열 폭 감시와 폭 나누기 계산
+│   │   ├── result_preview.py      # 미리보기 파일 읽기(인코딩 판정, 필요한 줄만 읽기)
+│   │   ├── result_copy_export.py  # 복사·탐색기에서 열기·TXT/XLSX 내보내기
+│   │   ├── theme.py               # 앱 내장 다크·라이트 테마 읽기(assets/theme)
 │   │   ├── models.py              # SearchResultModel, MatchDetailModel, 비동기 정렬
 │   │   ├── panels.py              # 폴더, 확장자, 파일명, 검색 조건 도크 패널
 │   │   ├── settings_dialog.py     # 일반/고급 설정 UI
@@ -161,7 +171,7 @@ UI (src/ui)
 - **UI 계층**은 검색 입력·표시·사용자 동작을 책임집니다. `SearchTab`은 탭 상태와 검색 패널을 연결하고, `ResultView`는 결과 표시·미리보기·내보내기를, `models.py`는 테이블 데이터 모델을 담당합니다. UI에서 파일 탐색이나 문서 파싱을 직접 하지 않습니다.
 - **작업 오케스트레이션**은 `core/worker.py`의 `SearchWorker`가 맡습니다. 진행·결과·스킵·오류·완료를 Qt 시그널로 전달하고, 중지와 전체 결과 제한을 조정합니다. Python 프로세스 풀은 쓰지 않습니다.
 - **검색 정책/어댑터**는 `core/search_engine.py`가 맡습니다. 검색 옵션 정규화, Rust 모드 비트 변환, Rust 결과의 Python 계약 변환, 구조화 문서 메모리 예측 검사가 여기에 모입니다. 검색 자체는 하지 않습니다. 스킵 사유를 문장으로 만드는 일은 7.2.7부터 `core/skip_reason_formatter.py`가 따로 맡습니다.
-- **Rust 엔진**은 파일 순회와 기본 검색 구현을 담당합니다. PyO3 진입점은 `lib.rs`, 공통 데이터 형식은 `types.rs`, 인코딩·패턴 처리는 `utils.rs`, 구조화 파서는 `json_search.rs`, `xml_search.rs`, `excel_search.rs`에 둡니다.
+- **Rust 엔진**은 파일 순회와 기본 검색 구현을 담당합니다. Python에서 부르는 함수는 `py_api.rs`, 모듈 등록은 `lib.rs`, 텍스트 검색은 `text_search.rs`, 폴더 순회 보조는 `walker.rs`, 공통 데이터 형식은 `types.rs`, 인코딩·패턴 처리는 `utils.rs`, 구조화 파서는 `json_search.rs`, `xml_search.rs`, `excel_search.rs`에 둡니다.
 - **공통 유틸리티**는 UI와 코어 간 순환 의존을 만들지 않습니다. `settings_defaults.py`는 기본값과 버전, `constants.py`는 설정 키와 모드 계약, `config_manager.py`는 저장·검증·마이그레이션을 담당합니다. 현지화 카탈로그는 UI 모듈보다 먼저 적용되어야 합니다.
 - **테스트**는 사용자 데이터나 실제 저장소 상태에 의존하지 않아야 합니다. 임시 경로·fixture를 사용하고, 임시 산출물이 Git에 들어가지 않는지 확인합니다.
 
